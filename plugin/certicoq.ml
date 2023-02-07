@@ -405,7 +405,7 @@ module CompileFunctor (CI : CompilerInterface) = struct
       let time = Unix.gettimeofday() in
       let suff = opts.ext in
       let fname = opts.filename in
-      let file = fname ^ suff ^ ".ir" in
+      let file = fname ^ suff ^ ".wat" in
       print_to_file (string_of_bytestring prg) file;
       let time = (Unix.gettimeofday() -. time) in
       debug_msg debug (Printf.sprintf "Printed to file %s in %f s.." file time);
