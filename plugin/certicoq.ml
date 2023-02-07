@@ -394,6 +394,28 @@ module CompileFunctor (CI : CompilerInterface) = struct
       debug_msg debug (string_of_bytestring dbg);
       CErrors.user_err ~hdr:"show-ir" (str "Could not compile: " ++ (pr_string s) ++ str "\n")
 
+  let compile_wasm opts gr =
+    let term = quote opts gr in
+    let debug = opts.debug in
+    let options = make_pipeline_options opts in
+    let p = Pipeline.compile_WASM options (Obj.magic term) in
+    match p with
+    | (CompM.Ret prg, dbg) ->
+      debug_msg debug "Finished compiling, printing to file.";
+      let time = Unix.gettimeofday() in
+      let suff = opts.ext in
+      let fname = opts.filename in
+      let file = fname ^ suff ^ ".ir" in
+      print_to_file (string_of_bytestring prg) file;
+      let time = (Unix.gettimeofday() -. time) in
+      debug_msg debug (Printf.sprintf "Printed to file %s in %f s.." file time);
+      debug_msg debug "Pipeline debug:";
+      debug_msg debug (string_of_bytestring dbg)
+    | (CompM.Err s, dbg) ->
+      debug_msg debug "Pipeline debug:";
+      debug_msg debug (string_of_bytestring dbg);
+      CErrors.user_err ~hdr:"compile_wasm" (str "Could not compile: " ++ (pr_string s) ++ str "\n")
+
 
   (* Quote Coq inductive type *)
   let quote_ind opts gr : Metacoq_template_plugin.Ast_quoter.quoted_program * string =

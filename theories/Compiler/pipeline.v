@@ -191,3 +191,20 @@ Definition show_IR (opts : Options) (p : Template.Ast.Env.program) : (error stri
     (Ret (cps_show.show_exp nenv cenv false e), log)
   | Err s => (Err s, log)
   end.
+
+(* compiling WASM: copy of show IR *)
+Definition compile_WASM (opts : Options) (p : Template.Ast.Env.program) : (error string * string) :=
+  let genv := fst p in
+  let ir_term p :=
+      o <- get_options ;;
+      '(prims, next_id) <- register_prims next_id genv.(Ast.Env.declarations) ;;
+      (* The flag -dev 3 *)
+      (* p <- erase_PCUIC p ;; *) CertiCoq_pipeline next_id prims (dev o =? 3)%nat p
+  in
+  let (perr, log) := run_pipeline _ _ opts p ir_term in
+  match perr with
+  | Ret p =>
+    let '(pr, cenv, _, _, nenv, fenv, _,  e) := p in
+    (Ret (cps_show.show_exp nenv cenv false e), log)
+  | Err s => (Err s, log)
+  end.
