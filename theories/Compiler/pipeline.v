@@ -1,4 +1,4 @@
-Require Export LambdaBoxMut.toplevel LambdaBoxLocal.toplevel LambdaANF.toplevel Codegen.toplevel.
+Require Export LambdaBoxMut.toplevel LambdaBoxLocal.toplevel LambdaANF.toplevel Codegen.toplevel CodegenWASM.toplevel.
 Require Import compcert.lib.Maps.
 Require Import ZArith.
 Require Import Common.Common Common.compM Common.Pipeline_utils.
@@ -192,7 +192,7 @@ Definition show_IR (opts : Options) (p : Template.Ast.Env.program) : (error stri
   | Err s => (Err s, log)
   end.
 
-(* compiling WASM: copy of show IR *)
+(** * For compiling lambda_ANF to WASM *)
 Definition compile_WASM (opts : Options) (p : Template.Ast.Env.program) : (error string * string) :=
   let genv := fst p in
   let ir_term p :=
@@ -205,6 +205,6 @@ Definition compile_WASM (opts : Options) (p : Template.Ast.Env.program) : (error
   match perr with
   | Ret p =>
     let '(pr, cenv, _, _, nenv, fenv, _,  e) := p in
-    (Ret (cps_show.show_exp nenv cenv false e), log)
+      (compile_LambdaANF_to_WASM e, log)
   | Err s => (Err s, log)
   end.

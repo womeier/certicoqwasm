@@ -127,8 +127,6 @@ Codegen/LambdaANF_to_Clight_stack.v
 Codegen/toplevel.v
 
 # CodegenWASM
-CodegenWASM/LambdaANF_to_WASM.v
-CodegenWASM/LambdaANF_to_WASM_stack.v
 CodegenWASM/toplevel.v
 
 # Glue
