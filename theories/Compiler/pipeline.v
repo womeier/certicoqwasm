@@ -130,7 +130,13 @@ Definition pipeline (p : Template.Ast.Env.program) :=
 (*   p <- erase_PCUIC p ;;
  *)  p <- CertiCoq_pipeline next_id prs false p ;;
   compile_Clight prs p.
- 
+
+Definition pipeline_WASM (p : Template.Ast.Env.program) :=
+  let genv := fst p in
+  '(prs, next_id) <- register_prims next_id genv.(Ast.Env.declarations) ;;
+(*   p <- erase_PCUIC p ;;
+ *)  p <- CertiCoq_pipeline next_id prs false p ;;
+     compile_LambdaANF_to_WASM prs p.
 
 Definition default_opts : Options :=
   {| direct := false;
@@ -192,19 +198,11 @@ Definition show_IR (opts : Options) (p : Template.Ast.Env.program) : (error stri
   | Err s => (Err s, log)
   end.
 
+
 (** * For compiling lambda_ANF to WASM *)
 Definition compile_WASM (opts : Options) (p : Template.Ast.Env.program) : (error string * string) :=
-  let genv := fst p in
-  let ir_term p :=
-      o <- get_options ;;
-      '(prims, next_id) <- register_prims next_id genv.(Ast.Env.declarations) ;;
-      (* The flag -dev 3 *)
-      (* p <- erase_PCUIC p ;; *) CertiCoq_pipeline next_id prims (dev o =? 3)%nat p
-  in
-  let (perr, log) := run_pipeline _ _ opts p ir_term in
+let (perr, log) := run_pipeline _ _ opts p pipeline_WASM in
   match perr with
-  | Ret p =>
-    let '(pr, cenv, _, _, nenv, fenv, _,  e) := p in
-      (compile_LambdaANF_to_WASM e, log)
+  | Ret p => (Ret (wasm_show p), log)
   | Err s => (Err s, log)
   end.
