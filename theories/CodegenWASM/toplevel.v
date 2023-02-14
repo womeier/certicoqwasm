@@ -67,14 +67,35 @@ Definition type_show (t : type) :=
 Definition var_show (v : var) :=
   match v with Generic s => s end.
 
+
+Definition instr_list_show (l : list wasm_instr) (show : wasm_instr -> string) : string :=
+  (fold_left (fun _s i => _s ++ show i ++ nl) l "") ++ nl.
+
 (* TODO: typeclass show *)
 (* TODO readd environment variables and stuff *)
 Fixpoint instr_show (e : wasm_instr) : string := 
-  match e with
+  (match e with
+  | WI_unreachable => "unreachable"
+  | WI_noop  => "nop"
   | WI_noop_comment s => "nop ;; " ++ s
-  | WI_block instructions => fold_left (fun _s i => _s ++ instr_show i ++ nl) instructions ""
-  | _ => "WASM_SHOW instr"
-  end.
+  | WI_block instructions => "(block " ++ instr_list_show instructions instr_show ++ ")"
+  | WI_return => "return"
+  | WI_local_get x => "local.get " ++ var_show x
+  | WI_local_set x => "local.set " ++ var_show x
+  | WI_global_get x => "global.get " ++ var_show x
+  | WI_global_set x => "global.set " ++ var_show x
+  | WI_if thenBranch elseBranch => "if (result i64) " ++ nl
+                                ++ "(then " ++ instr_list_show thenBranch instr_show ++ ")"
+                                ++ "(else " ++ instr_list_show elseBranch instr_show ++ ")"
+  | _ => "nop ;; this instruction can't be translated yet"
+(*
+  | Indirect function calls
+  | WI_call : var -> wasm_instr                               (* call function *) 
+  | WI_load : var -> wasm_instr                               (* read memory at address *)
+  | WI_store : var -> wasm_instr                              (* write memory at address *)
+  | WI_const : var -> wasm_instr                             (* constant *)
+  | WI_drop : wasm_instr                                      (* forget a value *) *)
+  end) ++ nl.
 
 Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
   fold_left (fun _s p => 
@@ -109,23 +130,32 @@ with fundefs : Type :=
 
 *)
 
-(* translate all expressions except fundefs *)
+Definition translate_var (nenv : name_env) (v : cps.var) : var :=
+  Generic ("$" ++ show_tree (show_var nenv v)).
+
+
+(* translate all expressions (except fundefs)
+
+  the return value of an instruction is pushed on the stack
+*)
 Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_instr :=
    match e with
    | Efun fundefs e => Err "unexpected nested function definition"
    | Econstr x c ys e => Ret (WI_noop_comment ("econstr: " ++ show_tree (show_var nenv x)))
-   | Ecase x arms => Ret (WI_noop_comment ("ecase: " ++ show_tree (show_var nenv x)))
-   | Eproj _ _ _ _ _ => Ret (WI_noop_comment "proj")
-   | Eletapp _ _ _ _ _ => Ret (WI_noop_comment "letapp")
-   | Eapp _ _ _ => Ret (WI_noop_comment "app")
-   | Eprim_val _ _ _ => Ret (WI_noop_comment "prim val")
-   | Eprim _ _ _ _ => Ret (WI_noop_comment "prim")
-   | Ehalt e => Ret (WI_noop_comment "halt")
+   | Ecase x arms => Ret (
+     WI_block (* TODO: choose dynamically *)
+              [ WI_noop_comment ("ecase: " ++ show_tree (show_var nenv x))
+              ; WI_local_get (translate_var nenv x)
+              ; WI_return
+              ])
+
+   | Eproj x tg n y e => Ret (WI_noop_comment "proj")
+   | Eletapp x f ft ys e => Ret (WI_noop_comment "letapp")
+   | Eapp x ft ys => Ret (WI_noop_comment "app")
+   | Eprim_val x p e => Ret (WI_noop_comment "prim val")
+   | Eprim x p ys e => Ret (WI_noop_comment "prim")
+   | Ehalt e => Ret WI_return
    end.
-
-Definition translate_var (nenv : name_env) (v : cps.var) : var :=
-  Generic ("$" ++ show_tree (show_var nenv v)).
-
 
 Fixpoint collect_local_variables' (nenv : name_env) (e : exp) {struct e} : list cps.var :=
   match e with
