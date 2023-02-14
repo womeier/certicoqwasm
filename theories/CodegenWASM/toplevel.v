@@ -34,6 +34,7 @@ Inductive var :=
 Inductive wasm_instr :=
   | WI_unreachable : wasm_instr                               (* trap unconditionally *)
   | WI_noop : wasm_instr                                      (* do nothing *)
+  | WI_noop_comment : string -> wasm_instr                    (* do nothing *)
   | WI_drop : wasm_instr                                      (* forget a value *)
   | WI_block : list wasm_instr -> wasm_instr                  (* execute in sequence *)
   | WI_if : list wasm_instr -> list wasm_instr -> wasm_instr  (* conditional *)
@@ -45,13 +46,14 @@ Inductive wasm_instr :=
   | WI_global_set : var -> wasm_instr                         (* write global variable *)
   | WI_load : var -> wasm_instr                               (* read memory at address *)
   | WI_store : var -> wasm_instr                              (* write memory at address *)
-  | WI_const : var -> wasm_instr                              (* constant *)
-  | WI_debug : string -> wasm_instr.
+  | WI_const : var -> wasm_instr.                             (* constant *)
 
 Record function :=
   { name : string
   ; args : list (var * type)
-  ; body : list wasm_instr
+  ; retType : type
+  ; locals : list (var * type)
+  ; body : list wasm_instr (* normal expression *)
   }.
 
 Record wasm_module :=
@@ -69,15 +71,19 @@ Definition var_show (v : var) :=
 (* TODO readd environment variables and stuff *)
 Definition instr_show (e : wasm_instr) := 
   match e with
-  | WI_debug s => "WASM_SHOW: " ++ s
-  | _ => "WASM_SHOW"
+  | _ => "WASM_SHOW instr"
   end.
 
+Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
+  fold_left (fun _s p => 
+    let name := var_show (fst p) in
+    let type := type_show (snd p) in
+      _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type ++ ")") l "".
+  
 Definition function_show (f : function) : string :=
-  "(func" ++ f.(name) ++ (fold_left (fun s p => " (param " ++
-                                                  (var_show (fst p) ++ " " ++
-                                                  type_show (snd p) ++ ")")
-                                                ) f.(args) "" ).
+  "(func" ++ f.(name) ++ parameters_show "param" f.(args) ++ parameters_show "local" f.(locals) ++ nl ++ 
+   "(return " ++ type_show f.(retType) ++ ")"
+  ++ ")".
 
 Definition wasm_module_show (m : wasm_module) : string :=
   "(module " ++ (fold_left (fun s f => s ++ nl ++ function_show f) m.(functions) "") ++ nl ++ ")".
@@ -100,28 +106,35 @@ with fundefs : Type :=
 
 *)
 
-Fixpoint fundefs_length (fs : cps.fundefs) :=
-  match fs with
-  | Fnil => 0
-  | Fcons _ _ _ _ fds' => 1 + fundefs_length fds'
-  end.
-
 Fixpoint LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_module := 
   Ret 
-  {| functions := [];
+  {| functions :=
+        match e with
+        | Efun fds _ => 
+          (* translate functions *)
+(*          (fix iter (fds : fundefs) : M unit :=
+            match fds with
+            | Fnil =>
+            | Fcons x tg xs e fds' =>
+                   iter fds'
+            end) fds *)
+            []
+           
+        | _ => []
+        end;
+    
      start :=
-      (WI_debug ("kjljkL" ++ (* show_env nenv cenv ftag_flag nenv ++ *)
       match e with
-      | Econstr x c ys e => "econstr: " ++ show_tree (show_var nenv x)
-      | Ecase x arms => "ecase: " ++ show_tree (show_var nenv x)
-      | Eproj _ _ _ _ _ => "proj"
-      | Eletapp _ _ _ _ _ => "letapp"
-      | Efun fundefs e => "fun (" ++ string_of_nat (fundefs_length fundefs) ++ ")"
-      | Eapp _ _ _ => "app"
-      | Eprim_val _ _ _ => "prim val"
-      | Eprim _ _ _ _ => "prim"
-      | Ehalt e => "halt"
-      end))
+      | Econstr x c ys e => WI_noop_comment ("econstr: " ++ show_tree (show_var nenv x))
+      | Ecase x arms => WI_noop_comment ("ecase: " ++ show_tree (show_var nenv x))
+      | Eproj _ _ _ _ _ => WI_noop_comment "proj"
+      | Eletapp _ _ _ _ _ => WI_noop_comment "letapp"
+      | Efun fundefs e => WI_noop_comment "TODO: unexpected nested function definition" (* TODO *)
+      | Eapp _ _ _ => WI_noop_comment "app"
+      | Eprim_val _ _ _ => WI_noop_comment "prim val"
+      | Eprim _ _ _ _ => WI_noop_comment "prim"
+      | Ehalt e => WI_noop_comment "halt"
+      end
   |}.
 
 Definition LambdaANF_to_WASM_Wrapper (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error wasm_module * string :=
