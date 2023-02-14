@@ -69,9 +69,10 @@ Definition var_show (v : var) :=
 
 (* TODO: typeclass show *)
 (* TODO readd environment variables and stuff *)
-Definition instr_show (e : wasm_instr) := 
+Fixpoint instr_show (e : wasm_instr) : string := 
   match e with
   | WI_noop_comment s => "nop ;; " ++ s
+  | WI_block instructions => fold_left (fun _s i => _s ++ instr_show i ++ nl) instructions ""
   | _ => "WASM_SHOW instr"
   end.
 
@@ -82,7 +83,7 @@ Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
       _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type ++ ")") l "".
   
 Definition function_show (f : wasm_function) : string :=
-  "(func" ++ var_show f.(name) ++ parameters_show "param" f.(args)
+  "(func " ++ var_show f.(name) ++ parameters_show "param" f.(args)
                                ++ parameters_show "local" f.(locals) ++ nl
                                ++ "(return " ++ type_show f.(retType) ++ ")" ++ nl
     ++ instr_show f.(body) ++ nl ++ ")".
@@ -122,11 +123,26 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
    | Ehalt e => Ret (WI_noop_comment "halt")
    end.
 
-(* TODO var parameters prefix with $ *)
 Definition translate_var (nenv : name_env) (v : cps.var) : var :=
-  Generic (show_tree (show_var nenv v)).
+  Generic ("$" ++ show_tree (show_var nenv v)).
 
-Definition collect_local_variables (e : exp) : list var := [].
+
+Fixpoint collect_local_variables' (nenv : name_env) (e : exp) {struct e} : list cps.var :=
+  match e with
+  | Efun _ e' => collect_local_variables' nenv e'
+  | Econstr x _ _ e' => x :: collect_local_variables' nenv e'
+  | Ecase _ arms => List.concat (map (fun a => collect_local_variables' nenv (snd a)) arms)
+  | Eproj x _ _ _ e' => x :: collect_local_variables' nenv e'
+  | Eletapp x _ _ _ e' => collect_local_variables' nenv e'
+  | Eprim x _ _ e' => x :: collect_local_variables' nenv e'
+  | Eprim_val x _ e' => x :: collect_local_variables' nenv e'
+  | Eapp _ _ _ => []
+  | Ehalt _ => []
+  end.
+
+Definition collect_local_variables (nenv : name_env) (e : exp) : list var :=
+  map (translate_var nenv) (collect_local_variables' nenv e).
+
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool)
                             (name : cps.var) (args : list cps.var) (body : exp): error wasm_function :=
@@ -135,7 +151,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : b
   {| name := translate_var nenv name;
      args := map (fun p => (translate_var nenv p, I64)) args;
      retType := I64;
-     locals := map (fun p => (p, I64)) (collect_local_variables body);
+     locals := map (fun p => (p, I64)) (collect_local_variables nenv body);
      body := bodyRes |}.
 
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_module := 
