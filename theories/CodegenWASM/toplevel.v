@@ -49,11 +49,11 @@ Inductive wasm_instr :=
   | WI_const : var -> wasm_instr.                             (* constant *)
 
 Record wasm_function :=
-  { name : string
+  { name : var
   ; args : list (var * type)
   ; retType : type
   ; locals : list (var * type)
-  ; body : list wasm_instr (* normal expression *)
+  ; body : wasm_instr
   }.
 
 Record wasm_module :=
@@ -71,6 +71,7 @@ Definition var_show (v : var) :=
 (* TODO readd environment variables and stuff *)
 Definition instr_show (e : wasm_instr) := 
   match e with
+  | WI_noop_comment s => "nop ;; " ++ s
   | _ => "WASM_SHOW instr"
   end.
 
@@ -81,9 +82,10 @@ Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
       _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type ++ ")") l "".
   
 Definition function_show (f : wasm_function) : string :=
-  "(func" ++ f.(name) ++ parameters_show "param" f.(args) ++ parameters_show "local" f.(locals) ++ nl ++ 
-   "(return " ++ type_show f.(retType) ++ ")"
-  ++ ")".
+  "(func" ++ var_show f.(name) ++ parameters_show "param" f.(args)
+                               ++ parameters_show "local" f.(locals) ++ nl
+                               ++ "(return " ++ type_show f.(retType) ++ ")" ++ nl
+    ++ instr_show f.(body) ++ nl ++ ")".
 
 Definition wasm_module_show (m : wasm_module) : string :=
   "(module " ++ (fold_left (fun s f => s ++ nl ++ function_show f) m.(functions) "") ++ nl ++ ")".
@@ -121,26 +123,35 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
    end.
 
 (* TODO var parameters prefix with $ *)
-Fixpoint translate_var (v : cps.var) : var :=
-  show_tree (show_var v).
+Definition translate_var (nenv : name_env) (v : cps.var) : var :=
+  Generic (show_tree (show_var nenv v)).
 
-Fixpoint collect_local_variables (e : exp) : list var := [].
+Definition collect_local_variables (e : exp) : list var := [].
 
-Fixpoint translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool)
-                            (name : var) (args : list var) (body : exp): error wasm_function :=
-  Err "(" ++ var_show name ++ "): not yet implemented".
+Definition translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool)
+                            (name : cps.var) (args : list cps.var) (body : exp): error wasm_function :=
+  bodyRes <- translate_exp nenv cenv ftag_flag body ;;
+  Ret
+  {| name := translate_var nenv name;
+     args := map (fun p => (translate_var nenv p, I64)) args;
+     retType := I64;
+     locals := map (fun p => (p, I64)) (collect_local_variables body);
+     body := bodyRes |}.
 
-Fixpoint LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_module := 
+Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_module := 
   let (fns, mainExpr) :=
     match e with
-    | Efun fundefs exp => (* fundefs only allowed on the uppermost level *)
-       ((fix iter fds : list wasm_function :=
+    | Efun fds exp => (* fundefs only allowed on the uppermost level *)
+      ((fix iter (fds : fundefs) : list wasm_function :=
           match fds with
           | Fnil => []
           | Fcons x tg xs e fds' =>
-              fn <- translate_function nenv cenv ftag_flag x xs e ;;
-              fn ++ iter fds'
-          end) fundefs, exp)
+              match translate_function nenv cenv ftag_flag x xs e with
+              | Ret fn => fn :: (iter fds')
+              (* TODO : pass on error*)
+              | Err _ => []
+              end
+          end) fds, exp)
     | _ => ([], e)
   end in
 
