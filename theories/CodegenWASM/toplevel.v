@@ -48,7 +48,7 @@ Inductive wasm_instr :=
   | WI_store : var -> wasm_instr                              (* write memory at address *)
   | WI_const : var -> wasm_instr.                             (* constant *)
 
-Record function :=
+Record wasm_function :=
   { name : string
   ; args : list (var * type)
   ; retType : type
@@ -57,7 +57,7 @@ Record function :=
   }.
 
 Record wasm_module :=
-  { functions : list function
+  { functions : list wasm_function
   ; start : wasm_instr
   }.
 
@@ -80,7 +80,7 @@ Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
     let type := type_show (snd p) in
       _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type ++ ")") l "".
   
-Definition function_show (f : function) : string :=
+Definition function_show (f : wasm_function) : string :=
   "(func" ++ f.(name) ++ parameters_show "param" f.(args) ++ parameters_show "local" f.(locals) ++ nl ++ 
    "(return " ++ type_show f.(retType) ++ ")"
   ++ ")".
@@ -106,36 +106,47 @@ with fundefs : Type :=
 
 *)
 
+(* translate all expressions except fundefs *)
+Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_instr :=
+   match e with
+   | Efun fundefs e => Err "unexpected nested function definition"
+   | Econstr x c ys e => Ret (WI_noop_comment ("econstr: " ++ show_tree (show_var nenv x)))
+   | Ecase x arms => Ret (WI_noop_comment ("ecase: " ++ show_tree (show_var nenv x)))
+   | Eproj _ _ _ _ _ => Ret (WI_noop_comment "proj")
+   | Eletapp _ _ _ _ _ => Ret (WI_noop_comment "letapp")
+   | Eapp _ _ _ => Ret (WI_noop_comment "app")
+   | Eprim_val _ _ _ => Ret (WI_noop_comment "prim val")
+   | Eprim _ _ _ _ => Ret (WI_noop_comment "prim")
+   | Ehalt e => Ret (WI_noop_comment "halt")
+   end.
+
+(* TODO var parameters prefix with $ *)
+Fixpoint translate_var (v : cps.var) : var :=
+  show_tree (show_var v).
+
+Fixpoint collect_local_variables (e : exp) : list var := [].
+
+Fixpoint translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool)
+                            (name : var) (args : list var) (body : exp): error wasm_function :=
+  Err "(" ++ var_show name ++ "): not yet implemented".
+
 Fixpoint LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_module := 
-  Ret 
-  {| functions :=
-        match e with
-        | Efun fds _ => 
-          (* translate functions *)
-(*          (fix iter (fds : fundefs) : M unit :=
-            match fds with
-            | Fnil =>
-            | Fcons x tg xs e fds' =>
-                   iter fds'
-            end) fds *)
-            []
-           
-        | _ => []
-        end;
-    
-     start :=
-      match e with
-      | Econstr x c ys e => WI_noop_comment ("econstr: " ++ show_tree (show_var nenv x))
-      | Ecase x arms => WI_noop_comment ("ecase: " ++ show_tree (show_var nenv x))
-      | Eproj _ _ _ _ _ => WI_noop_comment "proj"
-      | Eletapp _ _ _ _ _ => WI_noop_comment "letapp"
-      | Efun fundefs e => WI_noop_comment "TODO: unexpected nested function definition" (* TODO *)
-      | Eapp _ _ _ => WI_noop_comment "app"
-      | Eprim_val _ _ _ => WI_noop_comment "prim val"
-      | Eprim _ _ _ _ => WI_noop_comment "prim"
-      | Ehalt e => WI_noop_comment "halt"
-      end
-  |}.
+  let (fns, mainExpr) :=
+    match e with
+    | Efun fundefs exp => (* fundefs only allowed on the uppermost level *)
+       ((fix iter fds : list wasm_function :=
+          match fds with
+          | Fnil => []
+          | Fcons x tg xs e fds' =>
+              fn <- translate_function nenv cenv ftag_flag x xs e ;;
+              fn ++ iter fds'
+          end) fundefs, exp)
+    | _ => ([], e)
+  end in
+
+  mainInstr <- translate_exp nenv cenv ftag_flag mainExpr ;;
+  Ret {| functions := fns;
+         start := mainInstr |}.
 
 Definition LambdaANF_to_WASM_Wrapper (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error wasm_module * string :=
   let '(_, pr_env, cenv, ctag, itag, nenv, fenv, _, prog) := t in
