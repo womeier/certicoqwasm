@@ -25,6 +25,7 @@ Import MonadNotation.
 *)
 
 Inductive type :=
+  | I32
   | I64.
 
 Inductive var :=
@@ -35,34 +36,46 @@ Inductive wasm_instr :=
   | WI_unreachable : wasm_instr                               (* trap unconditionally *)
   | WI_noop : wasm_instr                                      (* do nothing *)
   | WI_noop_comment : string -> wasm_instr                    (* do nothing *)
-  | WI_drop : wasm_instr                                      (* forget a value *)
   | WI_block : list wasm_instr -> wasm_instr                  (* execute in sequence *)
-  | WI_if : list wasm_instr -> list wasm_instr -> wasm_instr  (* conditional *)
+  | WI_if : wasm_instr -> wasm_instr -> wasm_instr            (* conditional *)
   | WI_return : wasm_instr                                    (* break from function body *)
   | WI_call : var -> wasm_instr                               (* call function *) 
   | WI_local_get : var -> wasm_instr                          (* read local variable *)
   | WI_local_set : var -> wasm_instr                          (* write local variable *)
   | WI_global_get : var -> wasm_instr                         (* read global variable *)
   | WI_global_set : var -> wasm_instr                         (* write global variable *)
-  | WI_load : var -> wasm_instr                               (* read memory at address *)
-  | WI_store : var -> wasm_instr                              (* write memory at address *)
-  | WI_const : var -> wasm_instr.                             (* constant *)
+  | WI_load_i32 : wasm_instr                                  (* read memory at address *)
+  | WI_store_i32 : wasm_instr                                 (* write memory at address *)
+  | WI_load_i64 : wasm_instr                                  (* read memory at address *)
+  | WI_store_i64 : wasm_instr                                 (* write memory at address *)
+  | WI_const_i32 : var -> wasm_instr                          (* constant *)
+  | WI_const_i64 : var -> wasm_instr                          (* constant *)
+  | WI_add_i32 : wasm_instr                                   (* add *)
+  | WI_add_i64 : wasm_instr                                   (* add *)
+  | WI_eq_i32 : wasm_instr                                    (* equality check *)
+  | WI_eq_i64 : wasm_instr.                                   (* equality check *)
 
 Record wasm_function :=
   { name : var
+  ; export_name : option var
   ; args : list (var * type)
-  ; retType : type
+  ; ret_type : type
   ; locals : list (var * type)
   ; body : wasm_instr
   }.
 
 Record wasm_module :=
   { functions : list wasm_function
+  ; memory : var                                              (* size *)
+  ; global_vars : list (var * type * var)                     (* var, type, init_value *)
   ; start : wasm_instr
   }.
 
 Definition type_show (t : type) :=
-  match t with I64 => "i64" end.
+  match t with 
+  | I32 => "i32"
+  | I64 => "i64"
+  end.
 
 Definition var_show (v : var) :=
   match v with Generic s => s end.
@@ -78,23 +91,30 @@ Fixpoint instr_show (e : wasm_instr) : string :=
   | WI_unreachable => "unreachable"
   | WI_noop  => "nop"
   | WI_noop_comment s => "nop ;; " ++ s
-  | WI_block instructions => "(block " ++ instr_list_show instructions instr_show ++ ")"
+  | WI_block instructions => "(block" ++ nl ++ instr_list_show instructions instr_show ++ ")"
   | WI_return => "return"
   | WI_local_get x => "local.get " ++ var_show x
   | WI_local_set x => "local.set " ++ var_show x
   | WI_global_get x => "global.get " ++ var_show x
   | WI_global_set x => "global.set " ++ var_show x
-  | WI_if thenBranch elseBranch => "if (result i64) " ++ nl
-                                ++ "(then " ++ instr_list_show thenBranch instr_show ++ ")"
-                                ++ "(else " ++ instr_list_show elseBranch instr_show ++ ")"
-  | _ => "nop ;; this instruction can't be translated yet"
-(*
-  | Indirect function calls
-  | WI_call : var -> wasm_instr                               (* call function *) 
-  | WI_load : var -> wasm_instr                               (* read memory at address *)
-  | WI_store : var -> wasm_instr                              (* write memory at address *)
-  | WI_const : var -> wasm_instr                             (* constant *)
-  | WI_drop : wasm_instr                                      (* forget a value *) *)
+  | WI_if thenBranch elseBranch => "if" ++ nl ++
+                                      (* then *)
+                                      instr_show thenBranch ++ nl ++
+                                    "else" ++ nl ++
+                                    instr_show elseBranch ++ nl ++
+                                    "end"
+  | WI_call f => "call " ++ var_show f
+  | WI_load_i32 => "i32.load"
+  | WI_store_i32 => "i32.store"
+  | WI_load_i64 => "i64.load"
+  | WI_store_i64 => "i64.store"
+  | WI_const_i32 n => "i32.const " ++ var_show n
+  | WI_const_i64 n => "i64.const " ++ var_show n
+  | WI_add_i32 => "i32.add"
+  | WI_add_i64 => "i64.add"
+  | WI_eq_i32 => "i32.eq"
+  | WI_eq_i64 => "i64.eq"
+(*| Indirect function calls *)
   end) ++ nl.
 
 Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
@@ -106,7 +126,7 @@ Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
 Definition function_show (f : wasm_function) : string :=
   "(func " ++ var_show f.(name) ++ parameters_show "param" f.(args)
                                ++ parameters_show "local" f.(locals) ++ nl
-                               ++ "(return " ++ type_show f.(retType) ++ ")" ++ nl
+                               ++ "(return " ++ type_show f.(ret_type) ++ ")" ++ nl
     ++ instr_show f.(body) ++ nl ++ ")".
 
 Definition wasm_module_show (m : wasm_module) : string :=
@@ -145,6 +165,8 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
    | Ecase x arms => Ret (
      WI_block (* TODO: choose dynamically *)
               [ WI_noop_comment ("ecase: " ++ show_tree (show_var nenv x))
+              ; WI_noop_comment "load <mem address>"
+              ; WI_noop_comment "compare with possible constructors"
               ; WI_local_get (translate_var nenv x)
               ; WI_return
               ])
@@ -179,8 +201,9 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : b
   bodyRes <- translate_exp nenv cenv ftag_flag body ;;
   Ret
   {| name := translate_var nenv name;
+     export_name := Some (translate_var nenv name);
      args := map (fun p => (translate_var nenv p, I64)) args;
-     retType := I64;
+     ret_type := I64;
      locals := map (fun p => (p, I64)) (collect_local_variables nenv body);
      body := bodyRes |}.
 
@@ -202,7 +225,9 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bo
   end in
 
   mainInstr <- translate_exp nenv cenv ftag_flag mainExpr ;;
-  Ret {| functions := fns;
+  Ret {| memory := Generic "100";
+         functions := fns;
+         global_vars := [];
          start := mainInstr |}.
 
 Definition LambdaANF_to_WASM_Wrapper (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error wasm_module * string :=
