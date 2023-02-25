@@ -71,6 +71,8 @@ Record wasm_module :=
   ; start : wasm_instr
   }.
 
+Definition quote : string := String.String "034"%byte String.EmptyString.
+
 Definition type_show (t : type) :=
   match t with 
   | I32 => "i32"
@@ -125,11 +127,10 @@ Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
   
 Definition function_show (f : wasm_function) : string :=
   "(func " ++ var_show f.(name) ++ (if f.(export)
-                                    then " (export " ++ var_show f.(name) ++ ")"
+                                    then " (export " ++ quote ++ var_show f.(name) ++ quote ++ ")"
                                     else "") ++ nl
-    ++ parameters_show "param" f.(args) ++ nl
+    ++ parameters_show "param" f.(args) ++ " (result " ++ type_show f.(ret_type) ++ ")" ++ nl
     ++ parameters_show "local" f.(locals) ++ nl
-    ++ "(return " ++ type_show f.(ret_type) ++ ")" ++ nl
     ++ instr_show f.(body) ++ nl ++ ")".
 
 Definition global_vars_show (prefix : string) (l : list (var * type * var)) : string :=
@@ -141,11 +142,11 @@ Definition global_vars_show (prefix : string) (l : list (var * type * var)) : st
                  | I32 => "i32.const " ++ var_show i
                  | I64 => "i64.const " ++ var_show i
                  end) in
-      _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type  ++ "(" ++ init ++ ")" ++ ")") l "".
+      _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type  ++ " (" ++ init ++ ")" ++ ")") l "".
 
 Definition wasm_module_show (m : wasm_module) : string :=
-  "(module" ++ nl ++
-    "(memory " ++ var_show m.(memory) ++ ")" ++ nl ++
+  "(module" ++ nl ++ ";;" ++ nl ++
+  "(memory " ++ var_show m.(memory) ++ ")" ++ nl ++
     global_vars_show "global" m.(global_vars) ++ nl ++
     (fold_left (fun s f => s ++ nl ++ function_show f) m.(functions) "") ++ nl ++ ")".
 
