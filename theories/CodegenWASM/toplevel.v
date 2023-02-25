@@ -44,16 +44,11 @@ Inductive wasm_instr :=
   | WI_local_set : var -> wasm_instr                          (* write local variable *)
   | WI_global_get : var -> wasm_instr                         (* read global variable *)
   | WI_global_set : var -> wasm_instr                         (* write global variable *)
-  | WI_load_i32 : wasm_instr                                  (* read memory at address *)
-  | WI_store_i32 : wasm_instr                                 (* write memory at address *)
-  | WI_load_i64 : wasm_instr                                  (* read memory at address *)
-  | WI_store_i64 : wasm_instr                                 (* write memory at address *)
-  | WI_const_i32 : var -> wasm_instr                          (* constant *)
-  | WI_const_i64 : var -> wasm_instr                          (* constant *)
-  | WI_add_i32 : wasm_instr                                   (* add *)
-  | WI_add_i64 : wasm_instr                                   (* add *)
-  | WI_eq_i32 : wasm_instr                                    (* equality check *)
-  | WI_eq_i64 : wasm_instr.                                   (* equality check *)
+  | WI_load : type -> wasm_instr                              (* read memory at address *)
+  | WI_store : type -> wasm_instr                             (* write memory at address *)
+  | WI_const : var -> type -> wasm_instr                      (* constant *)
+  | WI_add : type -> wasm_instr                               (* add *)
+  | WI_eq : type -> wasm_instr.                               (* equality check *)
 
 Record wasm_function :=
   { name : var
@@ -106,16 +101,11 @@ Fixpoint instr_show (e : wasm_instr) : string :=
                                     instr_show elseBranch ++ nl ++
                                     "end"
   | WI_call f => "call " ++ var_show f
-  | WI_load_i32 => "i32.load"
-  | WI_store_i32 => "i32.store"
-  | WI_load_i64 => "i64.load"
-  | WI_store_i64 => "i64.store"
-  | WI_const_i32 n => "i32.const " ++ var_show n
-  | WI_const_i64 n => "i64.const " ++ var_show n
-  | WI_add_i32 => "i32.add"
-  | WI_add_i64 => "i64.add"
-  | WI_eq_i32 => "i32.eq"
-  | WI_eq_i64 => "i64.eq"
+  | WI_load t => type_show t ++ ".load"
+  | WI_store t => type_show t ++ ".store"
+  | WI_const n t => type_show t ++ ".const " ++ var_show n
+  | WI_add t => type_show t ++ ".add"
+  | WI_eq t => type_show t ++ ".eq"
 (*| Indirect function calls *)
   end) ++ nl.
 
