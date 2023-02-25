@@ -265,6 +265,8 @@ extraction/lambdaANF_to_Clight_stack.mli
 
 extraction/toplevel3.ml
 extraction/toplevel3.mli
+extraction/wasm.ml
+extraction/wasm.mli
 
 extraction/lambda_lifting.ml
 extraction/lambda_lifting.mli

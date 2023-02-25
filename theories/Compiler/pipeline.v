@@ -203,6 +203,6 @@ Definition show_IR (opts : Options) (p : Template.Ast.Env.program) : (error stri
 Definition compile_WASM (opts : Options) (p : Template.Ast.Env.program) : (error string * string) :=
 let (perr, log) := run_pipeline _ _ opts p pipeline_WASM in
   match perr with
-  | Ret p => (Ret (wasm_module_show p), log)
+  | Ret p => (Ret (wasm.wasm_module_show p), log)
   | Err s => (Err s, log)
   end.
