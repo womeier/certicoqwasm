@@ -57,7 +57,7 @@ Inductive wasm_instr :=
 
 Record wasm_function :=
   { name : var
-  ; export_name : option var
+  ; export : bool                                             (* export publicly *)
   ; args : list (var * type)
   ; ret_type : type
   ; locals : list (var * type)
@@ -124,13 +124,30 @@ Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
       _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type ++ ")") l "".
   
 Definition function_show (f : wasm_function) : string :=
-  "(func " ++ var_show f.(name) ++ parameters_show "param" f.(args)
-                               ++ parameters_show "local" f.(locals) ++ nl
-                               ++ "(return " ++ type_show f.(ret_type) ++ ")" ++ nl
+  "(func " ++ var_show f.(name) ++ (if f.(export)
+                                    then " (export " ++ var_show f.(name) ++ ")"
+                                    else "") ++ nl
+    ++ parameters_show "param" f.(args) ++ nl
+    ++ parameters_show "local" f.(locals) ++ nl
+    ++ "(return " ++ type_show f.(ret_type) ++ ")" ++ nl
     ++ instr_show f.(body) ++ nl ++ ")".
 
+Definition global_vars_show (prefix : string) (l : list (var * type * var)) : string :=
+  fold_left (fun _s p => 
+    let '(v, t, i) := p in
+    let name := var_show v in
+    let type := type_show t in
+    let init := (match t with
+                 | I32 => "i32.const " ++ var_show i
+                 | I64 => "i64.const " ++ var_show i
+                 end) in
+      _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type  ++ "(" ++ init ++ ")" ++ ")") l "".
+
 Definition wasm_module_show (m : wasm_module) : string :=
-  "(module " ++ (fold_left (fun s f => s ++ nl ++ function_show f) m.(functions) "") ++ nl ++ ")".
+  "(module" ++ nl ++
+    "(memory " ++ var_show m.(memory) ++ ")" ++ nl ++
+    global_vars_show "global" m.(global_vars) ++ nl ++
+    (fold_left (fun s f => s ++ nl ++ function_show f) m.(functions) "") ++ nl ++ ")".
 
 (*
 (* Expressions [exp] of the LambdaANF language. *)
@@ -201,7 +218,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : b
   bodyRes <- translate_exp nenv cenv ftag_flag body ;;
   Ret
   {| name := translate_var nenv name;
-     export_name := Some (translate_var nenv name);
+     export := true;
      args := map (fun p => (translate_var nenv p, I64)) args;
      ret_type := I64;
      locals := map (fun p => (p, I64)) (collect_local_variables nenv body);
@@ -227,7 +244,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bo
   mainInstr <- translate_exp nenv cenv ftag_flag mainExpr ;;
   Ret {| memory := Generic "100";
          functions := fns;
-         global_vars := [];
+         global_vars := [(Generic "$ptr", I64, Generic "0")];
          start := mainInstr |}.
 
 Definition LambdaANF_to_WASM_Wrapper (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error wasm_module * string :=
