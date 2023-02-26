@@ -90,12 +90,15 @@ Fixpoint instr_show (e : wasm_instr) : string :=
   | WI_local_set x => "local.set " ++ var_show x
   | WI_global_get x => "global.get " ++ var_show x
   | WI_global_set x => "global.set " ++ var_show x
+  | WI_if thenBranch WI_nop => "if" ++ nl ++
+                                  instr_show thenBranch ++ nl ++
+                               "end"
   | WI_if thenBranch elseBranch => "if" ++ nl ++
                                       (* then *)
                                       instr_show thenBranch ++ nl ++
-                                    "else" ++ nl ++
-                                    instr_show elseBranch ++ nl ++
-                                    "end"
+                                   "else" ++ nl ++
+                                      instr_show elseBranch ++ nl ++
+                                   "end"
   | WI_call f => "call " ++ var_show f
   | WI_load t => type_show t ++ ".load"
   | WI_store t => type_show t ++ ".store"
@@ -133,6 +136,6 @@ Definition global_vars_show (prefix : string) (l : list (var * type * var)) : st
 Definition wasm_module_show (m : wasm_module) : string :=
   "(module" ++ nl ++ ";;" ++ nl ++
   ";; " ++ m.(comment) ++ nl ++
-  "(memory " ++ var_show m.(memory) ++ ")" ++ nl ++
+  "(memory " ++ var_show m.(memory) ++ ") ;; * 64 KB" ++ nl ++
     global_vars_show "global" m.(global_vars) ++ nl ++
     (fold_left (fun s f => s ++ nl ++ function_show f) m.(functions) "") ++ ")".

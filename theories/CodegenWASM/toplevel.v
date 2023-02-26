@@ -11,6 +11,8 @@ Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm.
 
 Import MonadNotation.
 
+(* TODO: most vars i32 for now, need i64? *)
+
 (*
 (* Expressions [exp] of the LambdaANF language. *)
 Inductive exp : Type :=
@@ -44,14 +46,27 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
    match e with
    | Efun fundefs e => Err "unexpected nested function definition"
    | Econstr x c ys e => Ret (WI_comment ("econstr: " ++ show_tree (show_var nenv x)))
-   | Ecase x arms => Ret (
-     WI_block (* TODO: choose dynamically *)
-              [ WI_comment ("ecase: " ++ show_tree (show_var nenv x))
-              ; WI_comment "load <mem address>"
-              ; WI_comment "compare with possible constrs"
-              ; WI_local_get (translate_var nenv x)
-              ; WI_return
-              ])
+   | Ecase x arms =>
+     let ifBlocks : list (error wasm_instr) :=
+     (map (fun (arm : ctor_tag * exp) =>
+       let (a, e') := arm in
+       let ctor_id := string_of_nat (Pos.to_nat a) in
+       let ctor_name := show_tree (show_con cenv a) in
+
+       thenInstr <- translate_exp nenv cenv ftag_flag e';;
+
+       Ret (WI_block
+                [ WI_comment ("ecase: " ++ show_tree (show_var nenv x) ++ ", " ++ ctor_name)
+                ; WI_local_get (translate_var nenv x)
+                ; WI_load I32
+                ; WI_const (Generic (ctor_id)) I32
+                ; WI_eq I32
+                ; WI_if thenInstr WI_nop
+                ])
+      ) arms) in 
+
+      instructions <- sequence ifBlocks ;;
+      Ret (WI_block (instructions ++ [WI_comment "TODO: don't fail here, no matchin clause"; WI_unreachable ]))
 
    | Eproj x tg n y e => Ret (WI_comment "proj")
    | Eletapp x f ft ys e => Ret (WI_comment "letapp")
@@ -74,8 +89,8 @@ Fixpoint collect_local_variables' (nenv : name_env) (e : exp) {struct e} : list 
   | Ehalt _ => []
   end.
 
-Definition collect_local_variables (nenv : name_env) (e : exp) : list var :=
-  map (translate_var nenv) (collect_local_variables' nenv e).
+Definition collect_local_variables (nenv : name_env) (e : exp) : list (var * type) :=
+  map (fun p => (translate_var nenv p, I32)) (collect_local_variables' nenv e).
 
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool)
@@ -84,9 +99,9 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : b
   Ret
   {| name := translate_var nenv name
    ; export := true
-   ; args := map (fun p => (translate_var nenv p, I64)) args
-   ; ret_type := I64
-   ; locals := map (fun p => (p, I64)) (collect_local_variables nenv body)
+   ; args := map (fun p => (translate_var nenv p, I32)) args
+   ; ret_type := I32
+   ; locals := collect_local_variables nenv body
    ; body := bodyRes
    |}.
 
@@ -132,11 +147,8 @@ Fixpoint arg_list (n : nat) : list (var * type) :=
   | S n' => arg_list n' ++ [(Generic ("$arg" ++ string_of_nat n'), I32)]
   end.
 
-Definition constr_id (cenv : ctor_env) (c : ctor_tag) : nat :=
-  Pos.to_nat c.
-
 Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : wasm_function :=
-  let ctor_id := string_of_nat (constr_id cenv c) in
+  let ctor_id := string_of_nat (Pos.to_nat c) in
   let ctor_name := show_tree (show_con cenv c) in
   let return_var := Generic "$ret_pointer" in
 (*  let info :=
@@ -218,7 +230,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bo
   Ret {| memory := Generic "100"
        ; functions := constr_alloc_functions ++ fns
        ; global_vars := [(global_mem_ptr, I32, Generic "0")]
-       ; comment := "constructors: " ++ (fold_left (fun _s p => _s ++ string_of_nat (constr_id cenv p) ++ ", ") (collect_constr_tags e) "")
+       ; comment := "constructors: " ++ (fold_left (fun _s p => _s ++ string_of_nat (Pos.to_nat p) ++ ", ") (collect_constr_tags e) "")
        ; start := mainInstr
        |}.
 
