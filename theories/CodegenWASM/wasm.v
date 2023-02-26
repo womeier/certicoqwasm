@@ -59,6 +59,7 @@ Record wasm_module :=
   { functions : list wasm_function
   ; memory : var                                              (* size *)
   ; global_vars : list (var * type * var)                     (* var, type, init_value *)
+  ; comment : string
   ; start : wasm_instr
   }.
 
@@ -116,7 +117,7 @@ Definition function_show (f : wasm_function) : string :=
                                     else "") ++ nl
     ++ parameters_show "param" f.(args) ++ " (result " ++ type_show f.(ret_type) ++ ")" ++ nl
     ++ parameters_show "local" f.(locals) ++ nl
-    ++ instr_show f.(body) ++ nl ++ ")".
+    ++ instr_show f.(body) ++ ")" ++ nl.
 
 Definition global_vars_show (prefix : string) (l : list (var * type * var)) : string :=
   fold_left (fun _s p => 
@@ -127,10 +128,11 @@ Definition global_vars_show (prefix : string) (l : list (var * type * var)) : st
                  | I32 => "i32.const " ++ var_show i
                  | I64 => "i64.const " ++ var_show i
                  end) in
-      _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type  ++ " (" ++ init ++ ")" ++ ")") l "".
+      _s ++ " (" ++ prefix ++ " " ++ name ++ " (mut " ++ type  ++ ") (" ++ init ++ ")" ++ ")") l "".
 
 Definition wasm_module_show (m : wasm_module) : string :=
   "(module" ++ nl ++ ";;" ++ nl ++
+  ";; " ++ m.(comment) ++ nl ++
   "(memory " ++ var_show m.(memory) ++ ")" ++ nl ++
     global_vars_show "global" m.(global_vars) ++ nl ++
-    (fold_left (fun s f => s ++ nl ++ function_show f) m.(functions) "") ++ nl ++ ")".
+    (fold_left (fun s f => s ++ nl ++ function_show f) m.(functions) "") ++ ")".

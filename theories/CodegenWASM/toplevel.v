@@ -4,6 +4,9 @@ Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import ExtLib.Structures.Monad.
 From MetaCoq.Template Require Import bytestring MCString.
 
+Require Import MSets.MSetAVL.
+Require Import POrderedType.
+
 Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm.
 
 Import MonadNotation.
@@ -87,19 +90,29 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : b
    ; body := bodyRes
    |}.
 
-Fixpoint collect_constr_tags (e : exp) {struct e} : list ctor_tag :=
-(* TODO: make unique, use set *)
+Module S := Make Positive_as_OT.
+
+Fixpoint collect_constr_tags' (e : exp) {struct e} : S.t :=
   match e with
-  | Efun _ e' => collect_constr_tags e'
-  | Econstr _ t _ e' => t :: collect_constr_tags e'
-  | Ecase _ arms => List.concat (map (fun a => collect_constr_tags (snd a)) arms)
-  | Eproj _ _ _ _ e' => collect_constr_tags e'
-  | Eletapp _ _ _ _ e' => collect_constr_tags e'
-  | Eprim _ _ _ e' => collect_constr_tags e'
-  | Eprim_val _ _ e' => collect_constr_tags e'
-  | Eapp _ _ _ => []
-  | Ehalt _ => []
+  | Efun fds e' => S.union (collect_constr_tags' e')
+          ((fix iter (fds : fundefs) : S.t :=
+            match fds with
+            | Fnil => S.empty
+            | Fcons _ _ _ e'' fds' =>
+                S.union (collect_constr_tags' e'') (iter fds')
+            end) fds)
+  | Econstr _ tg _ e' => S.add tg (collect_constr_tags' e')
+  | Ecase _ arms => fold_left (fun _s a => S.union _s (S.add (fst a) (collect_constr_tags' (snd a)))) arms S.empty
+  | Eproj _ _ _ _ e' => collect_constr_tags' e'
+  | Eletapp _ _ _ _ e' => collect_constr_tags' e'
+  | Eprim _ _ _ e' => collect_constr_tags' e'
+  | Eprim_val _ _ e' => collect_constr_tags' e'
+  | Eapp _ _ _ => S.empty
+  | Ehalt _ => S.empty
   end.
+
+Definition collect_constr_tags (e : exp) : list ctor_tag :=
+  S.elements (collect_constr_tags' e).
 
 (* cenv : Map[ctor_tag -> rec]:
 
@@ -119,8 +132,12 @@ Fixpoint arg_list (n : nat) : list (var * type) :=
   | S n' => arg_list n' ++ [(Generic ("$arg" ++ string_of_nat n'), I32)]
   end.
 
+Definition constr_id (cenv : ctor_env) (c : ctor_tag) : nat :=
+  Pos.to_nat c.
+
 Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : wasm_function :=
-  let ctor_id := show_tree (show_con cenv c) in  (*TODO: translate to I32, fail if e.g. too large*)
+  let ctor_id := string_of_nat (constr_id cenv c) in
+  let ctor_name := show_tree (show_con cenv c) in
   let return_var := Generic "$ret_pointer" in
 (*  let info :=
     (match M.get c cenv with
@@ -142,11 +159,12 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : was
    ; ret_type := I32
    ; locals := [(return_var, I32)]
    ; body := WI_block
-    ([ WI_comment "save ret pointer"
+    ([ WI_comment ("constructor: " ++ ctor_name)
+     ; WI_comment "save ret pointer"
      ; WI_global_get global_mem_ptr
      ; WI_local_set return_var
 
-     ; WI_comment "copy const id"
+     ; WI_comment "store const id"
      ; WI_global_get global_mem_ptr
      ; WI_const (Generic (ctor_id)) I32
      ; WI_store I32
@@ -156,7 +174,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : was
      ; WI_global_set global_mem_ptr
      ] ++ (* store argument pointers in memory *)
        concat (map (fun arg =>
-         [ WI_comment ("storing " ++ var_show (fst arg) ++ " in memory")
+         [ WI_comment ("store " ++ var_show (fst arg) ++ " in memory")
          ; WI_global_get global_mem_ptr
          ; WI_local_get (fst arg)
          ; WI_store I32
@@ -167,7 +185,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : was
          ]
        ) args) 
      ++
-     [ WI_comment "return pointer to beginning of memory segment"
+     [ WI_comment "ptr to beginning of memory segment"
      ; WI_local_get return_var
      ; WI_return
      ])
@@ -194,12 +212,13 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bo
   end in
 
   let constr_alloc_functions :=
-    map (generate_constr_alloc_function cenv) (collect_constr_tags mainExpr) in
+    map (generate_constr_alloc_function cenv) (collect_constr_tags e) in
 
   mainInstr <- translate_exp nenv cenv ftag_flag mainExpr ;;
   Ret {| memory := Generic "100"
        ; functions := constr_alloc_functions ++ fns
-       ; global_vars := [(Generic "$ptr", I64, Generic "0")]
+       ; global_vars := [(global_mem_ptr, I32, Generic "0")]
+       ; comment := "constructors: " ++ (fold_left (fun _s p => _s ++ string_of_nat (constr_id cenv p) ++ ", ") (collect_constr_tags e) "")
        ; start := mainInstr
        |}.
 
