@@ -31,7 +31,23 @@ with fundefs : Type :=
 
 *)
 
-Definition constr_alloc_function_prefix := "$alloc_constr_".
+(* Example placement of constructors in the linear memory:
+     data Bintree := Leaf | Node Bintree Value Bintree
+
+     Leaf: --> +---+
+               |T_l|
+               +---+
+
+     Node: --> +---+---+---+---+
+               |T_n| L | V | R |
+               +---+---+---+---+
+    T_l, T_n unique constructor tags
+    L, V, R pointers to linear memory
+*)
+
+Definition constr_alloc_function_name (tg : ctor_tag) : var := 
+  Generic ("$alloc_constr_" ++ string_of_nat (Pos.to_nat tg)).
+
 Definition global_mem_ptr := Generic "$ptr".
 
 Definition translate_var (nenv : name_env) (v : cps.var) : var :=
@@ -44,16 +60,25 @@ Definition translate_var (nenv : name_env) (v : cps.var) : var :=
 *)
 Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_instr :=
    match e with
-   | Efun fundefs e => Err "unexpected nested function definition"
-   | Econstr x c ys e => Ret (WI_comment ("econstr: " ++ show_tree (show_var nenv x)))
+   | Efun fundefs e' => Err "unexpected nested function definition"
+   | Econstr x tg ys e' => 
+      following_instr <- translate_exp nenv cenv ftag_flag e' ;;
+                         Ret (WI_block
+                                (WI_comment ("econstr: " ++ show_tree (show_var nenv x)) ::
+                                (map (fun v => WI_local_get (translate_var nenv v)) ys) ++
+                                [ WI_call (constr_alloc_function_name tg)
+                                ; WI_local_set (translate_var nenv x)
+                                ; WI_comment ""
+                                ; following_instr
+                                ]))
    | Ecase x arms =>
-     let ifBlocks : list (error wasm_instr) :=
+     let if_blocks : list (error wasm_instr) :=
      (map (fun (arm : ctor_tag * exp) =>
        let (a, e') := arm in
        let ctor_id := string_of_nat (Pos.to_nat a) in
        let ctor_name := show_tree (show_con cenv a) in
 
-       thenInstr <- translate_exp nenv cenv ftag_flag e';;
+       then_instr <- translate_exp nenv cenv ftag_flag e';;
 
        Ret (WI_block
                 [ WI_comment ("ecase: " ++ show_tree (show_var nenv x) ++ ", " ++ ctor_name)
@@ -61,19 +86,31 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
                 ; WI_load I32
                 ; WI_const (Generic (ctor_id)) I32
                 ; WI_eq I32
-                ; WI_if thenInstr WI_nop
+                ; WI_if then_instr WI_nop
                 ])
       ) arms) in 
 
-      instructions <- sequence ifBlocks ;;
-      Ret (WI_block (instructions ++ [WI_comment "TODO: don't fail here, no matchin clause"; WI_unreachable ]))
-
-   | Eproj x tg n y e => Ret (WI_comment "proj")
-   | Eletapp x f ft ys e => Ret (WI_comment "letapp")
+      instructions <- sequence if_blocks ;;
+      Ret (WI_block (instructions ++ [ WI_comment "TODO: don't fail here, no matchin clause"
+                                     ; WI_unreachable
+                                     ]))
+   | Eproj x tg n y e' => 
+      following_instr <- translate_exp nenv cenv ftag_flag e' ;;
+      
+      Ret (WI_block ((WI_comment "proj") ::
+                     [ WI_local_get (translate_var nenv y)
+                     ; WI_const (Generic (string_of_nat (4 * ((N.to_nat n) + 1)))) I32  (* skip ctor_id and previous constr arguments *)
+                     ; WI_add I32
+                     ; WI_load I32
+                     ; WI_local_set (translate_var nenv x)
+                     ; WI_comment ""
+                     ; following_instr
+                     ]))
+   | Eletapp x f ft ys e' => Ret (WI_comment "letapp")
    | Eapp x ft ys => Ret (WI_comment "app")
-   | Eprim_val x p e => Ret (WI_comment "prim val")
-   | Eprim x p ys e => Ret (WI_comment "prim")
-   | Ehalt e => Ret WI_return
+   | Eprim_val x p e' => Ret (WI_comment "prim val")
+   | Eprim x p ys e' => Ret (WI_comment "prim")
+   | Ehalt x => Ret (WI_block [ WI_local_get (translate_var nenv x); WI_return ])
    end.
 
 Fixpoint collect_local_variables' (nenv : name_env) (e : exp) {struct e} : list cps.var :=
@@ -165,7 +202,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : was
      | _ => 42 (*TODO: handle error*)
      end) in
 
-  {| name := Generic (constr_alloc_function_prefix ++ ctor_id)
+  {| name := constr_alloc_function_name c
    ; export := true
    ; args := args
    ; ret_type := I32
