@@ -68,7 +68,6 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
                                 (map (fun v => WI_local_get (translate_var nenv v)) ys) ++
                                 [ WI_call (constr_alloc_function_name tg)
                                 ; WI_local_set (translate_var nenv x)
-                                ; WI_comment ""
                                 ; following_instr
                                 ]))
    | Ecase x arms =>
@@ -97,19 +96,36 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
    | Eproj x tg n y e' => 
       following_instr <- translate_exp nenv cenv ftag_flag e' ;;
       
-      Ret (WI_block ((WI_comment "proj") ::
-                     [ WI_local_get (translate_var nenv y)
-                     ; WI_const (Generic (string_of_nat (4 * ((N.to_nat n) + 1)))) I32  (* skip ctor_id and previous constr arguments *)
-                     ; WI_add I32
-                     ; WI_load I32
-                     ; WI_local_set (translate_var nenv x)
-                     ; WI_comment ""
-                     ; following_instr
-                     ]))
-   | Eletapp x f ft ys e' => Ret (WI_comment "letapp")
-   | Eapp x ft ys => Ret (WI_comment "app")
-   | Eprim_val x p e' => Ret (WI_comment "prim val")
-   | Eprim x p ys e' => Ret (WI_comment "prim")
+      Ret (WI_block [ WI_comment "proj"
+                    ; WI_local_get (translate_var nenv y)
+                    ; WI_const (Generic (string_of_nat (4 * ((N.to_nat n) + 1)))) I32  (* skip ctor_id and previous constr arguments *)
+                    ; WI_add I32
+                    ; WI_load I32
+                    ; WI_local_set (translate_var nenv x)
+                    ; WI_comment ""
+                    ; following_instr
+                    ])
+   | Eletapp x f ft ys e' => 
+     following_instr <- translate_exp nenv cenv ftag_flag e' ;;
+
+     Ret (WI_block ((WI_comment ("letapp, ftag: " ++ (show_tree (show_var nenv f)) ++ ", " ++ (show_tree (show_ftag ftag_flag ft)))) ::
+                    (map (fun y => WI_local_get (translate_var nenv y)) ys) ++
+                    [ WI_call (translate_var nenv f)
+                    ; WI_local_set (translate_var nenv x)
+                    ; following_instr
+                    ]))
+
+   | Eapp f ft ys => (* wasm doesn't treat tail call in a special way at the time *)
+
+     Ret (WI_block ((WI_comment ("app, ftag: " ++ (show_tree (show_ftag ftag_flag ft)))) ::
+                    (map (fun y => WI_local_get (translate_var nenv y)) ys) ++
+                    [ WI_call (translate_var nenv f)
+                    ; WI_comment "tail calls not supported yet in wasm. won't return"
+                    ; WI_unreachable
+                    ]))
+
+   | Eprim_val x p e' => Err "translating prim_val to WASM not supported yet"
+   | Eprim x p ys e' => Err "translating prim to WASM not supported yet"
    | Ehalt x => Ret (WI_block [ WI_local_get (translate_var nenv x); WI_return ])
    end.
 
@@ -119,7 +135,7 @@ Fixpoint collect_local_variables' (nenv : name_env) (e : exp) {struct e} : list 
   | Econstr x _ _ e' => x :: collect_local_variables' nenv e'
   | Ecase _ arms => List.concat (map (fun a => collect_local_variables' nenv (snd a)) arms)
   | Eproj x _ _ _ e' => x :: collect_local_variables' nenv e'
-  | Eletapp x _ _ _ e' => collect_local_variables' nenv e'
+  | Eletapp x _ _ _ e' => x :: collect_local_variables' nenv e'
   | Eprim x _ _ e' => x :: collect_local_variables' nenv e'
   | Eprim_val x _ e' => x :: collect_local_variables' nenv e'
   | Eapp _ _ _ => []
@@ -246,7 +262,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : was
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_module := 
   let (fns, mainExpr) :=
     match e with
-    | Efun fds exp => (* fundefs only allowed on the uppermost level *)
+    | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
       ((fix iter (fds : fundefs) : list wasm_function :=
           match fds with
           | Fnil => []
