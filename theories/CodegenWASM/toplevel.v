@@ -148,14 +148,14 @@ Definition collect_local_variables (nenv : name_env) (e : exp) : list (var * typ
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool)
                             (name : cps.var) (args : list cps.var) (body : exp): error wasm_function :=
-  bodyRes <- translate_exp nenv cenv ftag_flag body ;;
+  body_res <- translate_exp nenv cenv ftag_flag body ;;
   Ret
   {| name := translate_var nenv name
    ; export := true
    ; args := map (fun p => (translate_var nenv p, I32)) args
    ; ret_type := I32
    ; locals := collect_local_variables nenv body
-   ; body := bodyRes
+   ; body := body_res
    |}.
 
 Module S := Make Positive_as_OT.
@@ -260,7 +260,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : was
 *)
 
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_module := 
-  let (fns, mainExpr) :=
+  let (fns, main_expr) :=
     match e with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
       ((fix iter (fds : fundefs) : list wasm_function :=
@@ -279,12 +279,18 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bo
   let constr_alloc_functions :=
     map (generate_constr_alloc_function cenv) (collect_constr_tags e) in
 
-  mainInstr <- translate_exp nenv cenv ftag_flag mainExpr ;;
+  main_instr <- translate_exp nenv cenv ftag_flag main_expr ;;
+  let main_function := {| name := Generic "$main_function"
+                        ; export := true
+                        ; args := []
+                        ; ret_type := I32
+                        ; locals := collect_local_variables nenv main_expr
+                        ; body := main_instr
+                        |} in
   Ret {| memory := Generic "100"
-       ; functions := constr_alloc_functions ++ fns
+       ; functions := constr_alloc_functions ++ fns ++ [main_function]
        ; global_vars := [(global_mem_ptr, I32, Generic "0")]
        ; comment := "constructors: " ++ (fold_left (fun _s p => _s ++ string_of_nat (Pos.to_nat p) ++ ", ") (collect_constr_tags e) "")
-       ; start := mainInstr
        |}.
 
 Definition LambdaANF_to_WASM_Wrapper (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error wasm_module * string :=

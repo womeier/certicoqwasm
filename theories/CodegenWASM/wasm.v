@@ -60,7 +60,6 @@ Record wasm_module :=
   ; memory : var                                              (* size *)
   ; global_vars : list (var * type * var)                     (* var, type, init_value *)
   ; comment : string
-  ; start : wasm_instr
   }.
 
 Definition quote : string := String.String "034"%byte String.EmptyString.
