@@ -90,7 +90,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
       ) arms) in 
 
       instructions <- sequence if_blocks ;;
-      Ret (WI_block (instructions ++ [ WI_comment "TODO: don't fail here, no matchin clause"
+      Ret (WI_block (instructions ++ [ WI_comment "no matching clause for case analysis" (* result of match isn't bound, doesn't return *)
                                      ; WI_unreachable
                                      ]))
    | Eproj x tg n y e' => 
