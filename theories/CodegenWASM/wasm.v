@@ -27,6 +27,9 @@ Inductive type :=
 Inductive var :=
   (* TODO*)
   | Generic : string -> var.
+
+Definition var_eqb (v1 v2 : var) :=
+  match v1,v2 with Generic s1, Generic s2 => String.eqb s1 s2 end.
     
 Inductive wasm_instr :=
   | WI_unreachable : wasm_instr                               (* trap unconditionally *)

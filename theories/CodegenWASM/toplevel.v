@@ -54,6 +54,28 @@ Definition translate_var (nenv : name_env) (v : cps.var) : var :=
   Generic ("$" ++ show_tree (show_var nenv v)).
 
 
+Fixpoint var_references_function (nenv : name_env) (func_names : list (var * fun_tag)) (v : var) : option (var * fun_tag) :=
+  match func_names with
+  | [] => None  (* standard variable *)
+  | (fn, tg) :: names' => if var_eqb fn v
+                        then Some (fn, tg)
+                        else var_references_function nenv names' v
+  end.
+
+Definition translate_call (nenv : name_env) (func_names : list (var * fun_tag)) (v : var) : wasm_instr :=
+  match var_references_function nenv func_names v with
+  | Some _ => WI_call v (* direct call *)
+  | None => WI_block [ WI_comment "indirect call" ]
+  end.
+
+Definition translate_local_var_read (nenv : name_env) (func_names : list (var * fun_tag)) (v : var) : wasm_instr :=
+  match var_references_function nenv func_names v with
+  | None => WI_local_get v
+  | Some (fn, tg) => WI_block [ WI_comment ("passing ftag: " ++ var_show fn)
+                              ; WI_const (Generic (string_of_nat (Pos.to_nat tg))) I32
+                              ]
+  end.
+
 (* translate all expressions (except fundefs)
 
   the return value of an instruction is pushed on the stack
@@ -65,7 +87,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (func_names : list (v
       following_instr <- translate_exp nenv cenv func_names e' ;;
                          Ret (WI_block
                                 (WI_comment ("econstr: " ++ show_tree (show_var nenv x)) ::
-                                (map (fun v => WI_local_get (translate_var nenv v)) ys) ++
+                                (map (fun y => translate_local_var_read nenv func_names (translate_var nenv y)) ys) ++
                                 [ WI_call (constr_alloc_function_name tg)
                                 ; WI_local_set (translate_var nenv x)
                                 ; following_instr
@@ -110,7 +132,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (func_names : list (v
 
      Ret (WI_block ((WI_comment ("letapp, ftag: " ++ (show_tree (show_var nenv f)) ++ ", " ++ (show_tree (show_ftag true ft)))) ::
                     (map (fun y => WI_local_get (translate_var nenv y)) ys) ++
-                    [ WI_call (translate_var nenv f)
+                    [ translate_call nenv func_names (translate_var nenv f)
                     ; WI_local_set (translate_var nenv x)
                     ; following_instr
                     ]))
@@ -119,7 +141,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (func_names : list (v
 
      Ret (WI_block ((WI_comment ("app, ftag: " ++ (show_tree (show_ftag true ft)))) ::
                     (map (fun y => WI_local_get (translate_var nenv y)) ys) ++
-                    [ WI_call (translate_var nenv f)
+                    [ translate_call nenv func_names (translate_var nenv f)
                     ; WI_comment "tail calls not supported yet in wasm. won't return"
                     ; WI_unreachable
                     ]))
