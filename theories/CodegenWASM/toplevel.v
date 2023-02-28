@@ -58,11 +58,11 @@ Definition translate_var (nenv : name_env) (v : cps.var) : var :=
 
   the return value of an instruction is pushed on the stack
 *)
-Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_instr :=
+Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (func_names : list (var * fun_tag)) (e : exp) : error wasm_instr :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' => 
-      following_instr <- translate_exp nenv cenv ftag_flag e' ;;
+      following_instr <- translate_exp nenv cenv func_names e' ;;
                          Ret (WI_block
                                 (WI_comment ("econstr: " ++ show_tree (show_var nenv x)) ::
                                 (map (fun v => WI_local_get (translate_var nenv v)) ys) ++
@@ -77,7 +77,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
        let ctor_id := string_of_nat (Pos.to_nat a) in
        let ctor_name := show_tree (show_con cenv a) in
 
-       then_instr <- translate_exp nenv cenv ftag_flag e';;
+       then_instr <- translate_exp nenv cenv func_names e';;
 
        Ret (WI_block
                 [ WI_comment ("ecase: " ++ show_tree (show_var nenv x) ++ ", " ++ ctor_name)
@@ -94,7 +94,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
                                      ; WI_unreachable
                                      ]))
    | Eproj x tg n y e' => 
-      following_instr <- translate_exp nenv cenv ftag_flag e' ;;
+      following_instr <- translate_exp nenv cenv func_names e' ;;
       
       Ret (WI_block [ WI_comment "proj"
                     ; WI_local_get (translate_var nenv y)
@@ -106,9 +106,9 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
                     ; following_instr
                     ])
    | Eletapp x f ft ys e' => 
-     following_instr <- translate_exp nenv cenv ftag_flag e' ;;
+     following_instr <- translate_exp nenv cenv func_names e' ;;
 
-     Ret (WI_block ((WI_comment ("letapp, ftag: " ++ (show_tree (show_var nenv f)) ++ ", " ++ (show_tree (show_ftag ftag_flag ft)))) ::
+     Ret (WI_block ((WI_comment ("letapp, ftag: " ++ (show_tree (show_var nenv f)) ++ ", " ++ (show_tree (show_ftag true ft)))) ::
                     (map (fun y => WI_local_get (translate_var nenv y)) ys) ++
                     [ WI_call (translate_var nenv f)
                     ; WI_local_set (translate_var nenv x)
@@ -117,7 +117,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e
 
    | Eapp f ft ys => (* wasm doesn't treat tail call in a special way at the time *)
 
-     Ret (WI_block ((WI_comment ("app, ftag: " ++ (show_tree (show_ftag ftag_flag ft)))) ::
+     Ret (WI_block ((WI_comment ("app, ftag: " ++ (show_tree (show_ftag true ft)))) ::
                     (map (fun y => WI_local_get (translate_var nenv y)) ys) ++
                     [ WI_call (translate_var nenv f)
                     ; WI_comment "tail calls not supported yet in wasm. won't return"
@@ -146,9 +146,9 @@ Definition collect_local_variables (nenv : name_env) (e : exp) : list (var * typ
   map (fun p => (translate_var nenv p, I32)) (collect_local_variables' nenv e).
 
 
-Definition translate_function (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool)
-                            (name : cps.var) (args : list cps.var) (body : exp): error wasm_function :=
-  body_res <- translate_exp nenv cenv ftag_flag body ;;
+Definition translate_function (nenv : name_env) (cenv : ctor_env) (func_names : list (var * fun_tag))
+                              (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
+  body_res <- translate_exp nenv cenv func_names body ;;
   Ret
   {| name := translate_var nenv name
    ; export := true
@@ -259,7 +259,18 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : was
   and allocates a record in the linear memory
 *)
 
-Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bool) (e : exp) : error wasm_module := 
+Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error wasm_module := 
+  let func_names := (* for translating indirect function calls *)
+    match e with
+    | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
+      (fix iter (fds : fundefs) : list (var * fun_tag) :=
+          match fds with
+          | Fnil => []
+          | Fcons x tg xs e fds' => (translate_var nenv x, tg) :: (iter fds')
+          end) fds
+    | _ => []
+  end in
+
   let (fns, main_expr) :=
     match e with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
@@ -267,7 +278,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bo
           match fds with
           | Fnil => []
           | Fcons x tg xs e fds' =>
-              match translate_function nenv cenv ftag_flag x xs e with
+              match translate_function nenv cenv func_names x xs e with
               | Ret fn => fn :: (iter fds')
               (* TODO : pass on error*)
               | Err _ => []
@@ -279,7 +290,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bo
   let constr_alloc_functions :=
     map (generate_constr_alloc_function cenv) (collect_constr_tags e) in
 
-  main_instr <- translate_exp nenv cenv ftag_flag main_expr ;;
+  main_instr <- translate_exp nenv cenv func_names main_expr ;;
   let main_function := {| name := Generic "$main_function"
                         ; export := true
                         ; args := []
@@ -295,7 +306,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (ftag_flag : bo
 
 Definition LambdaANF_to_WASM_Wrapper (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error wasm_module * string :=
   let '(_, pr_env, cenv, ctag, itag, nenv, fenv, _, prog) := t in
-  (LambdaANF_to_WASM nenv cenv true (* print flag *) prog, "").
+  (LambdaANF_to_WASM nenv cenv prog, "").
 
 Definition compile_LambdaANF_to_WASM (prims : list (kername * string * bool * nat * positive)) : CertiCoqTrans toplevel.LambdaANF_FullTerm wasm_module :=
   fun s =>
