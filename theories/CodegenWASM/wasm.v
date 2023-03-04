@@ -7,19 +7,6 @@ Import MonadNotation.
 
 (* TODO use WasmCert-Coq*)
 
-(* from: https://github.com/WebAssembly/spec/blob/main/interpreter/syntax/ast.ml
-  | Br of var                         (* break to n-th surrounding label *)
-  | BrIf of var                       (* conditional break *)
-  | BrTable of var list * var         (* indexed break *)
-  | CallIndirect of var * var         (* call function through table *)
-  | MemorySize                        (* size of memory *)
-  | MemoryGrow                        (* grow memory *)
-  | Test of testop                    (* numeric test *)
-  | Compare of relop                  (* numeric comparison *)
-  | Unary of unop                     (* unary numeric operator *)
-  | Binary of binop                   (* binary numeric operator *)
-*)
-
 Inductive type :=
   | I32
   | I64.
@@ -53,7 +40,7 @@ Record wasm_function :=
   { name : var
   ; export : bool                                             (* export publicly *)
   ; args : list (var * type)
-  ; ret_type : type
+  ; ret_type : option type
   ; locals : list (var * type)
   ; body : wasm_instr
   }.
@@ -107,7 +94,6 @@ Fixpoint instr_show (e : wasm_instr) : string :=
   | WI_const n t => type_show t ++ ".const " ++ var_show n
   | WI_add t => type_show t ++ ".add"
   | WI_eq t => type_show t ++ ".eq"
-(*| Indirect function calls *)
   end) ++ nl.
 
 Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
@@ -117,10 +103,15 @@ Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
       _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type ++ ")") l "".
   
 Definition function_show (f : wasm_function) : string :=
+  let ret_type := match f.(ret_type) with
+                  | None => ""
+                  | Some t => "(result " ++ type_show t ++ ")"
+                  end
+  in
   "(func " ++ var_show f.(name) ++ (if f.(export)
                                     then " (export " ++ quote ++ var_show f.(name) ++ quote ++ ")"
                                     else "") ++ nl
-    ++ parameters_show "param" f.(args) ++ " (result " ++ type_show f.(ret_type) ++ ")" ++ nl
+    ++ parameters_show "param" f.(args) ++ " " ++ ret_type ++ nl
     ++ parameters_show "local" f.(locals) ++ nl
     ++ instr_show f.(body) ++ ")" ++ nl.
 
