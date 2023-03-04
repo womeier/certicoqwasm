@@ -15,6 +15,7 @@ RUNTIME_FILES = ${RUNTIME_DIR}/gc_stack.o ${RUNTIME_DIR}/prim_floats.o ${RUNTIME
 # ffi.CertiCoq.CertiCoqC.compile.QuoteFFI.c
 COQOPTS = -Q ../../theories/Codegen CertiCoq.Codegen -Q ../../libraries CertiCoq.Libraries \
 	-Q ../../theories/LambdaANF CertiCoq.LambdaANF -Q ../../theories/LambdaBoxLocal CertiCoq.LambdaBoxLocal \
+	-Q ../../theories/CodegenWASM CertiCoq.CodegenWASM\
 	-Q ../../theories/Compiler CertiCoq.Compiler -Q ../../theories/common CertiCoq.Common \
 	-Q ../../theories/Glue CertiCoq.Glue \
 	-Q ../../theories/LambdaBoxMut CertiCoq.LambdaBoxMut \
