@@ -12,6 +12,7 @@ Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm.
 Import MonadNotation.
 
 (* TODO: most vars i32 for now, need i64? *)
+(* TODO: move to separate file *)
 
 (*
 (* Expressions [exp] of the LambdaANF language. *)
@@ -55,6 +56,13 @@ Definition enumerate_nat {A : Type} (xs : list A) : list (nat * A) :=
           end
     in aux 0 xs.
 
+Fixpoint zip {A B : Type} (l1 : list A) (l2 : list B) : option (list (A * B)) :=
+  match l1, l2 with
+  | [], [] => Some []
+  | x::l1', y::l2' => l <- zip l1' l2' ;; Some ((x, y) :: l)
+  | _, _ => None
+  end.
+
 Record func_signature :=
   { s_name : var
   ; s_tag : fun_tag
@@ -62,11 +70,11 @@ Record func_signature :=
   ; s_ret_type : option type
   }.
 
-Definition indirect_call_redirect_function_name (sig : func_signature) : var :=
-  let arg_types := fold_left (fun _s a => _s ++ type_show (snd a) ++ "_") sig.(s_args) "" in
-  let ret_type := match sig.(s_ret_type) with None => "nothing" | Some t => type_show t end
+Definition indirect_call_redirect_function_name (arg_types : list type) (ret_type : option type) : var :=
+  let arg_types' := fold_left (fun _s a => _s ++ type_show a ++ "_") arg_types "" in
+  let ret_type' := match ret_type with None => "nothing" | Some t => type_show t end
   in
-  Generic ("$indirect_" ++ arg_types ++ "ret_" ++ ret_type).
+  Generic ("$indirect_" ++ arg_types' ++ "ret_" ++ ret_type').
 
 Definition constr_alloc_function_name (tg : ctor_tag) : var := 
   Generic ("$alloc_constr_" ++ string_of_nat (Pos.to_nat tg)).
@@ -84,23 +92,34 @@ Fixpoint var_references_function (nenv : name_env) (fsigs : list func_signature)
                    else var_references_function nenv names' v
   end.
 
-(* TODO: rename typevar *)
-Definition translate_call (nenv : name_env) (fsigs : list func_signature) (typevar : var) (v : var) : wasm_instr :=
-  match var_references_function nenv fsigs v with
-  | Some _ => WI_call v (* direct call *)
-  | None => WI_block [ WI_comment "indirect call"
-                     ; WI_comment ("to: " ++ var_show typevar)
-                     ]
+Definition translate_call (nenv : name_env) (fsigs : list func_signature) (f : var) (args : list cps.var) (ret : bool) : wasm_instr :=
+  let instr_pass_params := WI_comment "pushing func parameters on stack" ::
+                           map (fun a => WI_local_get (translate_var nenv a)) args in
+  let arg_types := map (fun _ => I32) args (* TODO limitation: only I32, there is no type information available anymore *)
+  in
+  match var_references_function nenv fsigs f with
+  | Some _ => WI_block (instr_pass_params ++
+                        [ WI_call f
+                        ]) (* direct call *)
+  | None => WI_block (instr_pass_params ++
+                      [ WI_comment ("indirect call to: " ++ var_show f) (* indirect call *)
+                      ; WI_local_get f (* function tag is last parameter *) 
+                      ; WI_call (indirect_call_redirect_function_name arg_types (if ret then Some I32 else None))
+                      ])
   end.
 
-Definition generate_redirect_function (arg_types : list type) (ret_type : option type) (fns : list func_signature) : option wasm_function :=
-  sig <- hd_error fns ;;
+(* all fns should have the same type *)
+Definition generate_redirect_function (fns : list func_signature) : option wasm_function :=
+  sig_head <- hd_error fns ;;
+
+  let arg_types := map snd sig_head.(s_args) in
+  let ret_type := sig_head.(s_ret_type) in
 
   let tag_var := Generic "$tag" in
   let args := (map (fun t => (Generic ("$arg" ++ string_of_nat (fst t)), I32)) (enumerate_nat arg_types)) in
 
   let check_tag := (fun sig => WI_block [ WI_local_get tag_var
-                                        ; WI_const (Generic (string_of_nat (Pos.to_nat (sig.(s_tag))))) I32
+                                        ; WI_const (Generic (string_of_nat (Pos.to_nat sig.(s_tag)))) I32
                                         ; WI_eq I32
                                         ; WI_if (WI_block (List.app (map (fun arg => WI_local_get (fst arg)) args) [WI_call sig.(s_name)]))
                                                 WI_nop
@@ -109,7 +128,7 @@ Definition generate_redirect_function (arg_types : list type) (ret_type : option
   let body := WI_block ((map check_tag fns) ++ [ WI_comment "when unexpected function tag"; WI_unreachable ])
                      
   in
-  Some {| name := indirect_call_redirect_function_name sig
+  Some {| name := indirect_call_redirect_function_name arg_types ret_type
         ; export := true
         ; args := List.app args [(tag_var, I32)]
         ; ret_type := ret_type
@@ -117,13 +136,39 @@ Definition generate_redirect_function (arg_types : list type) (ret_type : option
         ; body := body
         |}.
 
+Definition unique_types (sigs : list func_signature) : list (list type * option type) := 
+  map (fun s => (map snd s.(s_args), s.(s_ret_type))) sigs.
+(*  let fix aux (selected : list func_signature) (candidates : list func_signature) :=
+          match candidates with
+          | [] => selected
+          | s :: xs => (n, x) :: aux (S n) xs
+          end
+    in aux [] sigs.*)
+
+Fixpoint select_sigs_by_type (sigs : list func_signature) (t : list type * option type) : list func_signature :=
+  match sigs with
+  | [] => []
+  | s :: sigs' => if (andb (match s.(s_ret_type), (snd t) with
+                            | None, None => true
+                            | Some t1, Some t2 => type_eqb t1 t2
+                            | _, _ => false
+                            end)
+                            (match (zip (fst t) (map snd s.(s_args))) with
+                            | None => false
+                            | Some l => forallb type_eqb_uncurried l
+                            end))
+                  then s :: (select_sigs_by_type sigs' t)
+                  else select_sigs_by_type sigs' t
+  end.
+
+
 Definition generate_redirect_functions (sigs : list func_signature): list wasm_function :=
-  let sigs_by_types := [] in
-  flat_map (fun sbt => let '(arg_types, ret_type, fns) := sbt in
-                       (match generate_redirect_function arg_types ret_type fns with
+  let types := unique_types sigs in
+  let sigs_one_type := map (select_sigs_by_type sigs) types in
+  flat_map (fun fns => (match generate_redirect_function fns with
                         | None => []
                         | Some f => [f]
-                        end)) sigs_by_types.
+                        end)) sigs_one_type.
 
 (* TODO check usage*)
 Definition translate_local_var_read (nenv : name_env) (fsigs : list func_signature) (v : var) : wasm_instr :=
@@ -189,8 +234,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (fsigs : list func_si
      following_instr <- translate_exp nenv cenv fsigs e' ;;
 
      Ret (WI_block ((WI_comment ("letapp, ftag: " ++ (show_tree (show_var nenv f)) ++ ", " ++ (show_tree (show_ftag true ft)))) ::
-                    (map (fun y => WI_local_get (translate_var nenv y)) ys) ++
-                    [ translate_call nenv fsigs (Generic "typevar TODO") (translate_var nenv f)
+                    [ translate_call nenv fsigs (translate_var nenv f) ys true  (* true: function returns *)
                     ; WI_local_set (translate_var nenv x)
                     ; following_instr
                     ]))
@@ -198,8 +242,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (fsigs : list func_si
    | Eapp f ft ys => (* wasm doesn't treat tail call in a special way at the time *)
 
      Ret (WI_block ((WI_comment ("app, ftag: " ++ (show_tree (show_ftag true ft)))) ::
-                    (map (fun y => WI_local_get (translate_var nenv y)) ys) ++
-                    [ translate_call nenv fsigs (Generic "typevar TODO") (translate_var nenv f)
+                    [ translate_call nenv fsigs (translate_var nenv f) ys false (* false: function doesn't return *)
                     ; WI_comment "tail calls not supported yet in wasm. won't return"
                     ; WI_unreachable
                     ]))
@@ -375,7 +418,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   let constr_alloc_functions :=
     map (generate_constr_alloc_function cenv) (collect_constr_tags e) in
 
-  let indirect_call_redirect_functions := [] in
+  let indirect_call_redirect_functions := generate_redirect_functions fsigs in
 
   main_instr <- translate_exp nenv cenv fsigs main_expr ;;
   let main_function := {| name := Generic "$main_function"

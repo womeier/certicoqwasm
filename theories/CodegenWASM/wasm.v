@@ -17,6 +17,15 @@ Inductive var :=
 
 Definition var_eqb (v1 v2 : var) :=
   match v1,v2 with Generic s1, Generic s2 => String.eqb s1 s2 end.
+
+Definition type_eqb (t1 t2 : type) :=
+  match t1,t2 with
+  | I32, I32 => true
+  | I64, I64 => true
+  | _, _ => false
+  end.
+
+Definition type_eqb_uncurried (t : type * type) := type_eqb (fst t) (snd t).
     
 Inductive wasm_instr :=
   | WI_unreachable : wasm_instr                               (* trap unconditionally *)

@@ -419,6 +419,8 @@ extraction/state.ml
 extraction/state.mli
 extraction/stateMonad.ml
 extraction/stateMonad.mli
+extraction/optionMonad.ml
+extraction/optionMonad.mli
 extraction/string0.ml
 extraction/string0.mli
 extraction/templateEnvMap.mli
