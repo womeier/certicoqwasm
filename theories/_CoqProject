@@ -129,6 +129,7 @@ Codegen/toplevel.v
 # CodegenWASM
 CodegenWASM/toplevel.v
 CodegenWASM/wasm.v
+CodegenWASM/LambdaANF_to_WASM.v
 
 # Glue
 Glue/glue_utils.v
