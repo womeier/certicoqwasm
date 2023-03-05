@@ -18,19 +18,14 @@ Module S_pos := MSetAVL.Make Positive_as_OT.
 Module S_string := MSetAVL.Make StringOT.
 
 
-(* ***** UTILS ****** *)
+(* ***** UTILS and BASIC TRANSLATIONS ****** *)
 
-(* Enumerate items starting from 0. *)
-Definition enumerate_nat {A : Type} (xs : list A) : list (nat * A) :=
-  let fix aux (n : nat) (xs : list A) :=
-          match xs with
-          | nil => nil
-          | x :: xs => (n, x) :: aux (S n) xs
-          end
-    in aux 0 xs.
-
-
-(* ***** BASIC TRANSLATIONS ****** *)
+(* generates list of n arguments named $arg{i} *)
+Fixpoint arg_list (n : nat) : list (var * type) :=
+  match n with
+  | 0 => []
+  | S n' => arg_list n' ++ [(Generic ("$arg" ++ string_of_nat n'), I32)]
+  end.
 
 Definition translate_var (nenv : name_env) (v : cps.var) : var :=
   Generic ("$" ++ show_tree (show_var nenv v)).
@@ -78,13 +73,6 @@ Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
 
 Definition collect_constr_tags (e : exp) : list ctor_tag :=
   S_pos.elements (collect_constr_tags' e).
-
-(* generates argument list for constructor with arity n*)
-Fixpoint arg_list (n : nat) : list (var * type) :=
-  match n with
-  | 0 => []
-  | S n' => arg_list n' ++ [(Generic ("$arg" ++ string_of_nat n'), I32)]
-  end.
 
 (* generates function that takes the arguments of a constructor
   and allocates a record in the linear memory *)
@@ -139,7 +127,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : err
        |}.
 
 
-(* ***** GENERATE REDIRECTION FOR INDIRECT FUNCTION CALLS ****** *)
+(* ***** GENERATE INDIRECTION FUNCTIONS FOR INDIRECT FUNCTION CALLS ****** *)
 
 Record func_signature :=
   { s_name : var
@@ -148,14 +136,14 @@ Record func_signature :=
   ; s_ret_type : option type
   }.
 
-Definition indirect_call_redirect_function_name (arg_types : list type) (ret_type : option type) : string := (* injective *)
+Definition indirection_function_name (arg_types : list type) (ret_type : option type) : string := (* injective *)
   let arg_types' := fold_left (fun _s a => _s ++ type_show a ++ "_") arg_types "" in
   let ret_type' := match ret_type with None => "nothing" | Some t => type_show t end
   in
   "$indirect_" ++ arg_types' ++ "ret_" ++ ret_type'.
 
-Definition indirect_call_redirect_function_var (arg_types : list type) (ret_type : option type) : var :=
-  Generic (indirect_call_redirect_function_name arg_types ret_type).
+Definition indirection_function_var (arg_types : list type) (ret_type : option type) : var :=
+  Generic (indirection_function_name arg_types ret_type).
 
 Fixpoint var_references_function (nenv : name_env) (fsigs : list func_signature) (v : var) : option func_signature :=
   match fsigs with
@@ -166,14 +154,14 @@ Fixpoint var_references_function (nenv : name_env) (fsigs : list func_signature)
   end.
 
 (* it is expected that all fns should have the same type *)
-Definition generate_redirect_function (fns : list func_signature) : option wasm_function :=
+Definition generate_indirection_function (fns : list func_signature) : option wasm_function :=
   sig_head <- hd_error fns ;;
 
   let arg_types := sig_head.(s_arg_types) in
   let ret_type := sig_head.(s_ret_type) in
 
   let tag_var := Generic "$tag" in
-  let args := (map (fun t => (Generic ("$arg" ++ string_of_nat (fst t)), I32)) (enumerate_nat arg_types)) in
+  let args := arg_list (length arg_types) in
 
   let check_tag := (fun sig => WI_block [ WI_local_get tag_var
                                         ; WI_const (Generic (string_of_nat (Pos.to_nat sig.(s_tag)))) I32
@@ -191,7 +179,7 @@ Definition generate_redirect_function (fns : list func_signature) : option wasm_
                        ])
                      
   in
-  Some {| name := indirect_call_redirect_function_var arg_types ret_type
+  Some {| name := indirection_function_var arg_types ret_type
         ; export := true
         ; args := List.app args [(tag_var, I32)]
         ; ret_type := ret_type
@@ -199,31 +187,30 @@ Definition generate_redirect_function (fns : list func_signature) : option wasm_
         ; body := body
         |}.
 
-          (* TODO: better name *)
-Definition unique_redirect_names (sigs : list func_signature) : list string := 
+Definition unique_indirection_function_names (sigs : list func_signature) : list string := 
   let fix aux (selected : S_string.t) (candidates : list func_signature) : S_string.t :=
           match candidates with
           | [] => selected
-          | s :: cand' => aux (S_string.add (indirect_call_redirect_function_name s.(s_arg_types) s.(s_ret_type)) selected) cand'
+          | s :: cand' => aux (S_string.add (indirection_function_name s.(s_arg_types) s.(s_ret_type)) selected) cand'
           end
     in (S_string.elements (aux S_string.empty sigs)).
 
-Fixpoint select_sigs_by_type (sigs : list func_signature) (redirect_name : string) : list func_signature :=
+(* TODO: rename *)
+Fixpoint select_sigs_by_type (sigs : list func_signature) (indirection_name : string) : list func_signature :=
   match sigs with
   | [] => []
   | s :: sigs' =>
-      let red_name := indirect_call_redirect_function_name s.(s_arg_types) s.(s_ret_type) in
-                if String.eqb red_name redirect_name
-                  then s :: (select_sigs_by_type sigs' red_name)
-                  else select_sigs_by_type sigs' red_name
+      let ind_name := indirection_function_name s.(s_arg_types) s.(s_ret_type) in
+                if String.eqb ind_name indirection_name
+                  then s :: (select_sigs_by_type sigs' indirection_name)
+                  else select_sigs_by_type sigs' indirection_name
   end.
 
 
-(* TODO: rename redirect_names *)
-Definition generate_redirect_functions (sigs : list func_signature): list wasm_function :=
-  let redirect_names := unique_redirect_names sigs in
-  let sigs_one_type := map (select_sigs_by_type sigs) redirect_names in
-  flat_map (fun fns => (match generate_redirect_function fns with
+Definition generate_indirection_functions (sigs : list func_signature): list wasm_function :=
+  let indirection_fn_names := unique_indirection_function_names sigs in
+  let sigs_one_type := map (select_sigs_by_type sigs) indirection_fn_names in
+  flat_map (fun fns => (match generate_indirection_function fns with
                         | None => []
                         | Some f => [f]
                         end)) sigs_one_type.
@@ -252,7 +239,7 @@ Definition translate_call (nenv : name_env) (fsigs : list func_signature) (f : v
   | None => WI_block (instr_pass_params ++
                       [ WI_comment ("indirect call to: " ++ var_show f) (* indirect call *)
                       ; WI_local_get f (* function tag is last parameter *) 
-                      ; WI_call (indirect_call_redirect_function_var arg_types (if ret then Some I32 else None))
+                      ; WI_call (indirection_function_var arg_types (if ret then Some I32 else None))
                       ])
   end.
 
@@ -376,7 +363,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
               {| s_name := translate_var nenv x
                ; s_tag := tg
                ; s_arg_types := map (fun _ => I32) xs
-               ; s_ret_type := Some I32 (* TODO *)
+               ; s_ret_type := Some I32
                |} :: (iter fds')
           end) fds
     | _ => []
@@ -398,7 +385,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
     | _ => ([], e)
   end in
 
-  let indirect_call_redirect_functions := generate_redirect_functions fsigs in
+  let indirection_functions := generate_indirection_functions fsigs in
 
   main_instr <- translate_exp nenv cenv fsigs main_expr ;;
   let main_function := {| name := Generic "$main_function"
@@ -413,7 +400,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
     sequence (map (generate_constr_alloc_function cenv) (collect_constr_tags e)) ;;
 
   Ret {| memory := Generic "100"
-       ; functions := constr_alloc_functions ++ indirect_call_redirect_functions ++ fns ++ [main_function]
+       ; functions := constr_alloc_functions ++ indirection_functions ++ fns ++ [main_function]
        ; global_vars := [(global_mem_ptr, I32, Generic "0")]
        ; comment := "constructors: " ++ (fold_left (fun _s p => _s ++ string_of_nat (Pos.to_nat p) ++ ", ") (collect_constr_tags e) "")
        |}.
