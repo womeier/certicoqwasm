@@ -17,6 +17,32 @@ Import MonadNotation.
 Module S_pos := MSetAVL.Make Positive_as_OT.
 Module S_string := MSetAVL.Make StringOT.
 
+
+(* ***** UTILS ****** *)
+
+(* Enumerate items starting from 0. *)
+Definition enumerate_nat {A : Type} (xs : list A) : list (nat * A) :=
+  let fix aux (n : nat) (xs : list A) :=
+          match xs with
+          | nil => nil
+          | x :: xs => (n, x) :: aux (S n) xs
+          end
+    in aux 0 xs.
+
+
+(* ***** BASIC TRANSLATIONS ****** *)
+
+Definition translate_var (nenv : name_env) (v : cps.var) : var :=
+  Generic ("$" ++ show_tree (show_var nenv v)).
+
+
+(* ***** GENERATE ALLOCATOR FUNCTIONS FOR CONSTRUCTORS ****** *)
+
+Definition global_mem_ptr := Generic "$ptr".
+
+Definition constr_alloc_function_name (tg : ctor_tag) : var := 
+  Generic ("$alloc_constr_" ++ string_of_nat (Pos.to_nat tg)).
+
 (* Example placement of constructors in the linear memory:
      data Bintree := Leaf | Node Bintree Value Bintree
 
@@ -31,14 +57,89 @@ Module S_string := MSetAVL.Make StringOT.
     L, V, R pointers to linear memory
 *)
 
-(* Enumerate items starting from 0. *)
-Definition enumerate_nat {A : Type} (xs : list A) : list (nat * A) :=
-  let fix aux (n : nat) (xs : list A) :=
-          match xs with
-          | nil => nil
-          | x :: xs => (n, x) :: aux (S n) xs
-          end
-    in aux 0 xs.
+Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
+  match e with
+  | Efun fds e' => S_pos.union (collect_constr_tags' e')
+          ((fix iter (fds : fundefs) : S_pos.t :=
+            match fds with
+            | Fnil => S_pos.empty
+            | Fcons _ _ _ e'' fds' =>
+                S_pos.union (collect_constr_tags' e'') (iter fds')
+            end) fds)
+  | Econstr _ tg _ e' => S_pos.add tg (collect_constr_tags' e')
+  | Ecase _ arms => fold_left (fun _s a => S_pos.union _s (S_pos.add (fst a) (collect_constr_tags' (snd a)))) arms S_pos.empty
+  | Eproj _ _ _ _ e' => collect_constr_tags' e'
+  | Eletapp _ _ _ _ e' => collect_constr_tags' e'
+  | Eprim _ _ _ e' => collect_constr_tags' e'
+  | Eprim_val _ _ e' => collect_constr_tags' e'
+  | Eapp _ _ _ => S_pos.empty
+  | Ehalt _ => S_pos.empty
+  end.
+
+Definition collect_constr_tags (e : exp) : list ctor_tag :=
+  S_pos.elements (collect_constr_tags' e).
+
+(* generates argument list for constructor with arity n*)
+Fixpoint arg_list (n : nat) : list (var * type) :=
+  match n with
+  | 0 => []
+  | S n' => arg_list n' ++ [(Generic ("$arg" ++ string_of_nat n'), I32)]
+  end.
+
+(* generates function that takes the arguments of a constructor
+  and allocates a record in the linear memory *)
+Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : error wasm_function :=
+  let ctor_id := string_of_nat (Pos.to_nat c) in
+  let ctor_name := show_tree (show_con cenv c) in
+  let return_var := Generic "$ret_pointer" in
+
+  num_args <- (match M.get c cenv with 
+               | Some {| ctor_arity := n |} => Ret (N.to_nat n)
+               | _ => Err "found constructor without ctor_arity set"
+               end) ;;
+  let args := arg_list num_args
+
+  in
+  Ret {| name := constr_alloc_function_name c
+       ; export := true
+       ; args := arg_list num_args
+       ; ret_type := Some I32
+       ; locals := [(return_var, I32)]
+       ; body := WI_block
+        ([ WI_comment ("constructor: " ++ ctor_name)
+         ; WI_comment "save ret pointer"
+         ; WI_global_get global_mem_ptr
+         ; WI_local_set return_var
+
+         ; WI_comment "store const id"
+         ; WI_global_get global_mem_ptr
+         ; WI_const (Generic (ctor_id)) I32
+         ; WI_store I32
+         ; WI_global_get global_mem_ptr
+         ; WI_const (Generic "4") I32
+         ; WI_add I32
+         ; WI_global_set global_mem_ptr
+         ] ++ (* store argument pointers in memory *)
+           concat (map (fun arg =>
+             [ WI_comment ("store " ++ var_show (fst arg) ++ " in memory")
+             ; WI_global_get global_mem_ptr
+             ; WI_local_get (fst arg)
+             ; WI_store I32
+             ; WI_global_get global_mem_ptr
+             ; WI_const (Generic "4") I32
+             ; WI_add I32
+             ; WI_global_set global_mem_ptr
+             ]
+           ) args) 
+         ++
+         [ WI_comment "ptr to beginning of memory segment"
+         ; WI_local_get return_var
+         ; WI_return
+         ])
+       |}.
+
+
+(* ***** GENERATE REDIRECTION FOR INDIRECT FUNCTION CALLS ****** *)
 
 Record func_signature :=
   { s_name : var
@@ -56,14 +157,6 @@ Definition indirect_call_redirect_function_name (arg_types : list type) (ret_typ
 Definition indirect_call_redirect_function_var (arg_types : list type) (ret_type : option type) : var :=
   Generic (indirect_call_redirect_function_name arg_types ret_type).
 
-Definition constr_alloc_function_name (tg : ctor_tag) : var := 
-  Generic ("$alloc_constr_" ++ string_of_nat (Pos.to_nat tg)).
-
-Definition global_mem_ptr := Generic "$ptr".
-
-Definition translate_var (nenv : name_env) (v : cps.var) : var :=
-  Generic ("$" ++ show_tree (show_var nenv v)).
-
 Fixpoint var_references_function (nenv : name_env) (fsigs : list func_signature) (v : var) : option func_signature :=
   match fsigs with
   | [] => None  (* standard variable *)
@@ -72,23 +165,7 @@ Fixpoint var_references_function (nenv : name_env) (fsigs : list func_signature)
                    else var_references_function nenv names' v
   end.
 
-Definition translate_call (nenv : name_env) (fsigs : list func_signature) (f : var) (args : list cps.var) (ret : bool) : wasm_instr :=
-  let instr_pass_params := WI_comment "pushing func parameters on stack" ::
-                           map (fun a => WI_local_get (translate_var nenv a)) args in
-  let arg_types := map (fun _ => I32) args (* TODO limitation: only I32, there is no type information available anymore *)
-  in
-  match var_references_function nenv fsigs f with
-  | Some _ => WI_block (instr_pass_params ++
-                        [ WI_call f
-                        ]) (* direct call *)
-  | None => WI_block (instr_pass_params ++
-                      [ WI_comment ("indirect call to: " ++ var_show f) (* indirect call *)
-                      ; WI_local_get f (* function tag is last parameter *) 
-                      ; WI_call (indirect_call_redirect_function_var arg_types (if ret then Some I32 else None))
-                      ])
-  end.
-
-(* all fns should have the same type *)
+(* it is expected that all fns should have the same type *)
 Definition generate_redirect_function (fns : list func_signature) : option wasm_function :=
   sig_head <- hd_error fns ;;
 
@@ -160,10 +237,29 @@ Definition translate_local_var_read (nenv : name_env) (fsigs : list func_signatu
                          ]
   end.
 
-(* translate all expressions (except fundefs)
 
-  the return value of an instruction is pushed on the stack
-*)
+(* ***** TRANSLATE FUNCTION CALLS ****** *)
+
+Definition translate_call (nenv : name_env) (fsigs : list func_signature) (f : var) (args : list cps.var) (ret : bool) : wasm_instr :=
+  let instr_pass_params := WI_comment "pushing func parameters on stack" ::
+                           map (fun a => WI_local_get (translate_var nenv a)) args in
+  let arg_types := map (fun _ => I32) args (* TODO limitation: only I32, there is no type information available anymore *)
+  in
+  match var_references_function nenv fsigs f with
+  | Some _ => WI_block (instr_pass_params ++
+                        [ WI_call f
+                        ]) (* direct call *)
+  | None => WI_block (instr_pass_params ++
+                      [ WI_comment ("indirect call to: " ++ var_show f) (* indirect call *)
+                      ; WI_local_get f (* function tag is last parameter *) 
+                      ; WI_call (indirect_call_redirect_function_var arg_types (if ret then Some I32 else None))
+                      ])
+  end.
+
+
+(* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
+
+(* the return value of an instruction is pushed on the stack *)
 Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (fsigs : list func_signature) (e : exp) : error wasm_instr :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
@@ -233,6 +329,9 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (fsigs : list func_si
    | Ehalt x => Ret (WI_block [ WI_local_get (translate_var nenv x); WI_return ])
    end.
 
+
+(* ***** TRANSLATE FUNCTIONS ****** *)
+
 (* TODO: unique? *)
 Fixpoint collect_local_variables' (nenv : name_env) (e : exp) {struct e} : list cps.var :=
   match e with
@@ -263,104 +362,8 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fsigs : list 
    ; body := body_res
    |}.
 
-Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
-  match e with
-  | Efun fds e' => S_pos.union (collect_constr_tags' e')
-          ((fix iter (fds : fundefs) : S_pos.t :=
-            match fds with
-            | Fnil => S_pos.empty
-            | Fcons _ _ _ e'' fds' =>
-                S_pos.union (collect_constr_tags' e'') (iter fds')
-            end) fds)
-  | Econstr _ tg _ e' => S_pos.add tg (collect_constr_tags' e')
-  | Ecase _ arms => fold_left (fun _s a => S_pos.union _s (S_pos.add (fst a) (collect_constr_tags' (snd a)))) arms S_pos.empty
-  | Eproj _ _ _ _ e' => collect_constr_tags' e'
-  | Eletapp _ _ _ _ e' => collect_constr_tags' e'
-  | Eprim _ _ _ e' => collect_constr_tags' e'
-  | Eprim_val _ _ e' => collect_constr_tags' e'
-  | Eapp _ _ _ => S_pos.empty
-  | Ehalt _ => S_pos.empty
-  end.
 
-Definition collect_constr_tags (e : exp) : list ctor_tag :=
-  S_pos.elements (collect_constr_tags' e).
-
-(* cenv : Map[ctor_tag -> rec]:
-
-{ ctor_name     : name    (* the name of the constructor *)
-; ctor_ind_name : name    (* the name of its inductive type *)
-; ctor_ind_tag  : ind_tag (* ind_tag of corresponding inductive type *)
-; ctor_arity    : N       (* the arity of the constructor *)
-; ctor_ordinal  : N       (* the [ctor_tag]s ordinal in inductive defn starting at zero *)
-}.
-
-*)
-
-(* generates argument list for constructor with arity n*)
-Fixpoint arg_list (n : nat) : list (var * type) :=
-  match n with
-  | 0 => []
-  | S n' => arg_list n' ++ [(Generic ("$arg" ++ string_of_nat n'), I32)]
-  end.
-
-Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : wasm_function :=
-  let ctor_id := string_of_nat (Pos.to_nat c) in
-  let ctor_name := show_tree (show_con cenv c) in
-  let return_var := Generic "$ret_pointer" in
-(*  let info :=
-    (match M.get c cenv with
-     | Some {| ctor_name := nNamed name
-             ; ctor_ind_name := nNamed ind_name
-             |} => "ind type: " ++ ind_name ++ ", constr name: " ++ name
-     | _ => "error: didn't find information of constructor"
-     end) in *)
-
-  let args := arg_list
-    (match M.get c cenv with 
-     | Some {| ctor_arity := n |} => N.to_nat n
-     | _ => 42 (*TODO: handle error*)
-     end) in
-
-  {| name := constr_alloc_function_name c
-   ; export := true
-   ; args := args
-   ; ret_type := Some I32
-   ; locals := [(return_var, I32)]
-   ; body := WI_block
-    ([ WI_comment ("constructor: " ++ ctor_name)
-     ; WI_comment "save ret pointer"
-     ; WI_global_get global_mem_ptr
-     ; WI_local_set return_var
-
-     ; WI_comment "store const id"
-     ; WI_global_get global_mem_ptr
-     ; WI_const (Generic (ctor_id)) I32
-     ; WI_store I32
-     ; WI_global_get global_mem_ptr
-     ; WI_const (Generic "4") I32
-     ; WI_add I32
-     ; WI_global_set global_mem_ptr
-     ] ++ (* store argument pointers in memory *)
-       concat (map (fun arg =>
-         [ WI_comment ("store " ++ var_show (fst arg) ++ " in memory")
-         ; WI_global_get global_mem_ptr
-         ; WI_local_get (fst arg)
-         ; WI_store I32
-         ; WI_global_get global_mem_ptr
-         ; WI_const (Generic "4") I32
-         ; WI_add I32
-         ; WI_global_set global_mem_ptr
-         ]
-       ) args) 
-     ++
-     [ WI_comment "ptr to beginning of memory segment"
-     ; WI_local_get return_var
-     ; WI_return
-     ])
-   |}.
-(* generates for constr e a function that takes the arguments
-  and allocates a record in the linear memory
-*)
+(* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
 
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error wasm_module := 
   let fsigs := (* for translating indirect function calls *)
@@ -395,9 +398,6 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
     | _ => ([], e)
   end in
 
-  let constr_alloc_functions :=
-    map (generate_constr_alloc_function cenv) (collect_constr_tags e) in
-
   let indirect_call_redirect_functions := generate_redirect_functions fsigs in
 
   main_instr <- translate_exp nenv cenv fsigs main_expr ;;
@@ -408,6 +408,10 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                         ; locals := collect_local_variables nenv main_expr
                         ; body := main_instr
                         |} in
+
+  constr_alloc_functions <-
+    sequence (map (generate_constr_alloc_function cenv) (collect_constr_tags e)) ;;
+
   Ret {| memory := Generic "100"
        ; functions := constr_alloc_functions ++ indirect_call_redirect_functions ++ fns ++ [main_function]
        ; global_vars := [(global_mem_ptr, I32, Generic "0")]
