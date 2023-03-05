@@ -11,6 +11,7 @@ Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm.
 
 Import MonadNotation.
 
+(* currently: all? functions have return type i32 *)
 (* TODO: most vars i32 for now, need i64? *)
 (* TODO: move to separate file *)
 
@@ -32,7 +33,6 @@ Module S_string := MSetAVL.Make StringOT.
 *)
 
 (* Enumerate items starting from 0. *)
-(* TODO: move to utils file *)
 Definition enumerate_nat {A : Type} (xs : list A) : list (nat * A) :=
   let fix aux (n : nat) (xs : list A) :=
           match xs with
@@ -40,13 +40,6 @@ Definition enumerate_nat {A : Type} (xs : list A) : list (nat * A) :=
           | x :: xs => (n, x) :: aux (S n) xs
           end
     in aux 0 xs.
-
-Fixpoint zip {A B : Type} (l1 : list A) (l2 : list B) : option (list (A * B)) :=
-  match l1, l2 with
-  | [], [] => Some []
-  | x::l1', y::l2' => l <- zip l1' l2' ;; Some ((x, y) :: l)
-  | _, _ => None
-  end.
 
 Record func_signature :=
   { s_name : var
@@ -109,11 +102,17 @@ Definition generate_redirect_function (fns : list func_signature) : option wasm_
   let check_tag := (fun sig => WI_block [ WI_local_get tag_var
                                         ; WI_const (Generic (string_of_nat (Pos.to_nat sig.(s_tag)))) I32
                                         ; WI_eq I32
-                                        ; WI_if (WI_block (List.app (map (fun arg => WI_local_get (fst arg)) args) [WI_call sig.(s_name)]))
+                                        ; WI_if (WI_block (List.app (map (fun arg => WI_local_get (fst arg)) args)
+                                                                    [ WI_call sig.(s_name)
+                                                                    ; WI_return
+                                                                    ]))
                                                 WI_nop
                                         ]) in
 
-  let body := WI_block ((map check_tag fns) ++ [ WI_comment "when unexpected function tag"; WI_unreachable ])
+  let body := WI_block ((map check_tag fns) ++
+                       [ WI_comment "when unexpected function tag"
+                       ; WI_unreachable
+                       ])
                      
   in
   Some {| name := indirect_call_redirect_function_var arg_types ret_type
