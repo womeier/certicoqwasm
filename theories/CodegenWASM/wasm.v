@@ -74,7 +74,7 @@ Definition var_show (v : var) :=
 
 
 Definition instr_list_show (l : list wasm_instr) (show : wasm_instr -> string) : string :=
-  (fold_left (fun _s i => _s ++ show i) l "").
+  (fold_left (fun _s i => _s ++ show i) l ""). (* TODO: print block properly *)
 
 (* TODO: typeclass show *)
 Fixpoint instr_show (e : wasm_instr) : string := 

@@ -14,23 +14,8 @@ Import MonadNotation.
 (* TODO: most vars i32 for now, need i64? *)
 (* TODO: move to separate file *)
 
-(*
-(* Expressions [exp] of the LambdaANF language. *)
-Inductive exp : Type :=
-| Econstr: var -> ctor_tag -> list var -> exp -> exp
-| Ecase: var -> list (ctor_tag * exp) -> exp
-| Eproj: var -> ctor_tag -> N -> var -> exp -> exp
-| Eletapp: var -> var -> fun_tag -> list var -> exp -> exp
-| Efun: fundefs -> exp -> exp
-| Eapp: var -> fun_tag -> list var -> exp
-| Eprim_val : var -> primitive -> exp -> exp
-| Eprim: var -> prim -> list var -> exp -> exp (* where prim is id *)
-| Ehalt : var -> exp
-with fundefs : Type :=
-| Fcons: var -> fun_tag -> list var -> exp -> fundefs -> fundefs
-| Fnil: fundefs.
-
-*)
+Module S_pos := MSetAVL.Make Positive_as_OT.
+Module S_string := MSetAVL.Make StringOT.
 
 (* Example placement of constructors in the linear memory:
      data Bintree := Leaf | Node Bintree Value Bintree
@@ -66,15 +51,18 @@ Fixpoint zip {A B : Type} (l1 : list A) (l2 : list B) : option (list (A * B)) :=
 Record func_signature :=
   { s_name : var
   ; s_tag : fun_tag
-  ; s_args : list (var * type)
+  ; s_arg_types : list type
   ; s_ret_type : option type
   }.
 
-Definition indirect_call_redirect_function_name (arg_types : list type) (ret_type : option type) : var :=
+Definition indirect_call_redirect_function_name (arg_types : list type) (ret_type : option type) : string := (* injective *)
   let arg_types' := fold_left (fun _s a => _s ++ type_show a ++ "_") arg_types "" in
   let ret_type' := match ret_type with None => "nothing" | Some t => type_show t end
   in
-  Generic ("$indirect_" ++ arg_types' ++ "ret_" ++ ret_type').
+  "$indirect_" ++ arg_types' ++ "ret_" ++ ret_type'.
+
+Definition indirect_call_redirect_function_var (arg_types : list type) (ret_type : option type) : var :=
+  Generic (indirect_call_redirect_function_name arg_types ret_type).
 
 Definition constr_alloc_function_name (tg : ctor_tag) : var := 
   Generic ("$alloc_constr_" ++ string_of_nat (Pos.to_nat tg)).
@@ -104,7 +92,7 @@ Definition translate_call (nenv : name_env) (fsigs : list func_signature) (f : v
   | None => WI_block (instr_pass_params ++
                       [ WI_comment ("indirect call to: " ++ var_show f) (* indirect call *)
                       ; WI_local_get f (* function tag is last parameter *) 
-                      ; WI_call (indirect_call_redirect_function_name arg_types (if ret then Some I32 else None))
+                      ; WI_call (indirect_call_redirect_function_var arg_types (if ret then Some I32 else None))
                       ])
   end.
 
@@ -112,7 +100,7 @@ Definition translate_call (nenv : name_env) (fsigs : list func_signature) (f : v
 Definition generate_redirect_function (fns : list func_signature) : option wasm_function :=
   sig_head <- hd_error fns ;;
 
-  let arg_types := map snd sig_head.(s_args) in
+  let arg_types := sig_head.(s_arg_types) in
   let ret_type := sig_head.(s_ret_type) in
 
   let tag_var := Generic "$tag" in
@@ -128,7 +116,7 @@ Definition generate_redirect_function (fns : list func_signature) : option wasm_
   let body := WI_block ((map check_tag fns) ++ [ WI_comment "when unexpected function tag"; WI_unreachable ])
                      
   in
-  Some {| name := indirect_call_redirect_function_name arg_types ret_type
+  Some {| name := indirect_call_redirect_function_var arg_types ret_type
         ; export := true
         ; args := List.app args [(tag_var, I32)]
         ; ret_type := ret_type
@@ -136,35 +124,30 @@ Definition generate_redirect_function (fns : list func_signature) : option wasm_
         ; body := body
         |}.
 
-Definition unique_types (sigs : list func_signature) : list (list type * option type) := 
-  map (fun s => (map snd s.(s_args), s.(s_ret_type))) sigs.
-(*  let fix aux (selected : list func_signature) (candidates : list func_signature) :=
+          (* TODO: better name *)
+Definition unique_redirect_names (sigs : list func_signature) : list string := 
+  let fix aux (selected : S_string.t) (candidates : list func_signature) : S_string.t :=
           match candidates with
           | [] => selected
-          | s :: xs => (n, x) :: aux (S n) xs
+          | s :: cand' => aux (S_string.add (indirect_call_redirect_function_name s.(s_arg_types) s.(s_ret_type)) selected) cand'
           end
-    in aux [] sigs.*)
+    in (S_string.elements (aux S_string.empty sigs)).
 
-Fixpoint select_sigs_by_type (sigs : list func_signature) (t : list type * option type) : list func_signature :=
+Fixpoint select_sigs_by_type (sigs : list func_signature) (redirect_name : string) : list func_signature :=
   match sigs with
   | [] => []
-  | s :: sigs' => if (andb (match s.(s_ret_type), (snd t) with
-                            | None, None => true
-                            | Some t1, Some t2 => type_eqb t1 t2
-                            | _, _ => false
-                            end)
-                            (match (zip (fst t) (map snd s.(s_args))) with
-                            | None => false
-                            | Some l => forallb type_eqb_uncurried l
-                            end))
-                  then s :: (select_sigs_by_type sigs' t)
-                  else select_sigs_by_type sigs' t
+  | s :: sigs' =>
+      let red_name := indirect_call_redirect_function_name s.(s_arg_types) s.(s_ret_type) in
+                if String.eqb red_name redirect_name
+                  then s :: (select_sigs_by_type sigs' red_name)
+                  else select_sigs_by_type sigs' red_name
   end.
 
 
+(* TODO: rename redirect_names *)
 Definition generate_redirect_functions (sigs : list func_signature): list wasm_function :=
-  let types := unique_types sigs in
-  let sigs_one_type := map (select_sigs_by_type sigs) types in
+  let redirect_names := unique_redirect_names sigs in
+  let sigs_one_type := map (select_sigs_by_type sigs) redirect_names in
   flat_map (fun fns => (match generate_redirect_function fns with
                         | None => []
                         | Some f => [f]
@@ -252,6 +235,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (fsigs : list func_si
    | Ehalt x => Ret (WI_block [ WI_local_get (translate_var nenv x); WI_return ])
    end.
 
+(* TODO: unique? *)
 Fixpoint collect_local_variables' (nenv : name_env) (e : exp) {struct e} : list cps.var :=
   match e with
   | Efun _ e' => collect_local_variables' nenv e'
@@ -281,29 +265,27 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fsigs : list 
    ; body := body_res
    |}.
 
-Module S := Make Positive_as_OT.
-
-Fixpoint collect_constr_tags' (e : exp) {struct e} : S.t :=
+Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
   match e with
-  | Efun fds e' => S.union (collect_constr_tags' e')
-          ((fix iter (fds : fundefs) : S.t :=
+  | Efun fds e' => S_pos.union (collect_constr_tags' e')
+          ((fix iter (fds : fundefs) : S_pos.t :=
             match fds with
-            | Fnil => S.empty
+            | Fnil => S_pos.empty
             | Fcons _ _ _ e'' fds' =>
-                S.union (collect_constr_tags' e'') (iter fds')
+                S_pos.union (collect_constr_tags' e'') (iter fds')
             end) fds)
-  | Econstr _ tg _ e' => S.add tg (collect_constr_tags' e')
-  | Ecase _ arms => fold_left (fun _s a => S.union _s (S.add (fst a) (collect_constr_tags' (snd a)))) arms S.empty
+  | Econstr _ tg _ e' => S_pos.add tg (collect_constr_tags' e')
+  | Ecase _ arms => fold_left (fun _s a => S_pos.union _s (S_pos.add (fst a) (collect_constr_tags' (snd a)))) arms S_pos.empty
   | Eproj _ _ _ _ e' => collect_constr_tags' e'
   | Eletapp _ _ _ _ e' => collect_constr_tags' e'
   | Eprim _ _ _ e' => collect_constr_tags' e'
   | Eprim_val _ _ e' => collect_constr_tags' e'
-  | Eapp _ _ _ => S.empty
-  | Ehalt _ => S.empty
+  | Eapp _ _ _ => S_pos.empty
+  | Ehalt _ => S_pos.empty
   end.
 
 Definition collect_constr_tags (e : exp) : list ctor_tag :=
-  S.elements (collect_constr_tags' e).
+  S_pos.elements (collect_constr_tags' e).
 
 (* cenv : Map[ctor_tag -> rec]:
 
@@ -392,7 +374,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
           | Fcons x tg xs e fds' => 
               {| s_name := translate_var nenv x
                ; s_tag := tg
-               ; s_args := map (fun a => (translate_var nenv a, I32)) xs
+               ; s_arg_types := map (fun _ => I32) xs
                ; s_ret_type := Some I32 (* TODO *)
                |} :: (iter fds')
           end) fds
