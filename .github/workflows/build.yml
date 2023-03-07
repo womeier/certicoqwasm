@@ -44,6 +44,7 @@ jobs:
               opam list
             endGroup
             startGroup "Run benchmarks"
+              sudo apt install wabt
               ulimit -s unlimited
               make -C ~/repo/benchmarks all
             endGroup
