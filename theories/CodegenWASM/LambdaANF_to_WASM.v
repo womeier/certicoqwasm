@@ -200,7 +200,7 @@ Fixpoint select_sigs_by_type (sigs : list func_signature) (indirection_name : st
   match sigs with
   | [] => []
   | s :: sigs' =>
-      let ind_name := indirection_function_name s.(s_arg_types) s.(s_ret_type) in
+      let ind_name := indirection_function_name s.(s_arg_types) (Some I32) in  (* Some I32, see comment in translate_call function *)
                 if String.eqb ind_name indirection_name
                   then s :: (select_sigs_by_type sigs' indirection_name)
                   else select_sigs_by_type sigs' indirection_name
@@ -239,7 +239,11 @@ Definition translate_call (nenv : name_env) (fsigs : list func_signature) (f : v
   | None => WI_block (instr_pass_params ++
                       [ WI_comment ("indirect call to: " ++ var_show f) (* indirect call *)
                       ; WI_local_get f (* function tag is last parameter *) 
-                      ; WI_call (indirection_function_var arg_types (if ret then Some I32 else None))
+                      ; if ret then WI_call (indirection_function_var arg_types (Some I32))
+                               else WI_block [ WI_call (indirection_function_var arg_types (Some I32))
+                                             ; WI_drop (* currently: indirection function names end with "ret_i32" even for ones
+                                                                                                          without return type TODO*)
+                                             ]
                       ])
   end.
 

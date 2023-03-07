@@ -31,6 +31,7 @@ Inductive wasm_instr :=
   | WI_unreachable : wasm_instr                               (* trap unconditionally *)
   | WI_nop : wasm_instr                                       (* do nothing *)
   | WI_comment : string -> wasm_instr                         (* do nothing *)
+  | WI_drop : wasm_instr                                      (* drop value from stack *)
   | WI_block : list wasm_instr -> wasm_instr                  (* execute in sequence, for now just a list of instructions without block nesting *)
   | WI_if : wasm_instr -> wasm_instr -> wasm_instr            (* conditional *)
   | WI_return : wasm_instr                                    (* break from function body *)
@@ -82,6 +83,7 @@ Fixpoint instr_show (e : wasm_instr) : string :=
   | WI_unreachable => "unreachable"
   | WI_nop  => "nop"
   | WI_comment s => nl ++ ";; " ++ s
+  | WI_drop => "drop"
   | WI_block instructions => instr_list_show instructions instr_show
   | WI_return => "return"
   | WI_local_get x => "local.get " ++ var_show x
