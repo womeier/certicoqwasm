@@ -194,7 +194,7 @@ Definition show_IR (opts : Options) (p : Template.Ast.Env.program) : (error stri
   match perr with
   | Ret p =>
     let '(pr, cenv, _, _, nenv, fenv, _,  e) := p in
-    (Ret (cps_show.show_exp nenv cenv false e), log)
+    (Ret (cps_show.show_exp nenv cenv true e), log)
   | Err s => (Err s, log)
   end.
 
