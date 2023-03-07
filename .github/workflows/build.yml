@@ -25,15 +25,14 @@ jobs:
         with:
           submodules: true
 
+      - name: Install wat2wasm
+        run: sudo apt install wabt
+
       - uses: coq-community/docker-coq-action@v1
         with:
           custom_image: ${{ matrix.image }}
           opam_file: ${{ matrix.opam_file }}
           before_install: |
-            startGroup "Install wasm tools"
-              sudo apt-get update -y -q && sudo apt-get upgrade -y
-              sudo apt install wabt 
-            endGroup
             startGroup "Copy repo (for later benchmarking)"
               cp -r `pwd` ~/repo
             endGroup
