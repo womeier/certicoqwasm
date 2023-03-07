@@ -25,9 +25,6 @@ jobs:
         with:
           submodules: true
 
-      - name: Install wat2wasm
-        run: sudo apt install wabt
-
       - uses: coq-community/docker-coq-action@v1
         with:
           custom_image: ${{ matrix.image }}
