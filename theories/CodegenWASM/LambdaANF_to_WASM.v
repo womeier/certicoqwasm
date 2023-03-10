@@ -30,6 +30,9 @@ Fixpoint arg_list (n : nat) : list (var * type) :=
 Definition translate_var (nenv : name_env) (v : cps.var) : var :=
   Generic ("$" ++ show_tree (show_var nenv v)).
 
+(* ***** IMPORTED FUNCTIONS ****** *)
+Definition write_char := Generic "$write_char".
+Definition write_int := Generic "$write_int".
 
 (* ***** GENERATE ALLOCATOR FUNCTIONS FOR CONSTRUCTORS ****** *)
 
@@ -85,21 +88,14 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : err
                | Some {| ctor_arity := n |} => Ret (N.to_nat n)
                | _ => Err "found constructor without ctor_arity set"
                end) ;;
-  let args := arg_list num_args
-
-  in
-  Ret {| name := constr_alloc_function_name c
-       ; export := true
-       ; args := arg_list num_args
-       ; ret_type := Some I32
-       ; locals := [(return_var, I32)]
-       ; body := WI_block
+  let args := arg_list num_args in
+  let body := WI_block
         ([ WI_comment ("constructor: " ++ ctor_name)
          ; WI_comment "save ret pointer"
          ; WI_global_get global_mem_ptr
          ; WI_local_set return_var
 
-         ; WI_comment "store const id"
+         ; WI_comment "store constr id"
          ; WI_global_get global_mem_ptr
          ; WI_const (Generic (ctor_id)) I32
          ; WI_store I32
@@ -123,9 +119,87 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : err
          [ WI_comment "ptr to beginning of memory segment"
          ; WI_local_get return_var
          ; WI_return
-         ])
+        ])
+  in
+  Ret {| name := constr_alloc_function_name c
+       ; export := true
+       ; args := arg_list num_args
+       ; ret_type := Some I32
+       ; locals := [(return_var, I32)]
+       ; body := body
        |}.
 
+(* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)
+
+Definition constr_pp_function_name : var :=
+  Generic "$pretty_print_constructor".
+
+Definition instr_write_string (s : string) : wasm_instr :=
+  let fix to_ascii_list s' :=
+    match s' with
+    | String.EmptyString => []
+    | String.String b s'' => Byte.to_nat b :: to_ascii_list s''
+    end in
+  WI_block (WI_comment ("write: " ++ s) :: flat_map (fun c => [WI_const (Generic (string_of_nat c)) I32; WI_call write_char]) (to_ascii_list s)).
+
+(* prints constructors as S-expressions *)
+Definition generate_constr_pp_function (cenv : ctor_env) (tags : list ctor_tag) : error wasm_function :=
+  let constr_ptr := Generic "$constr_ptr" in
+  let tmp := Generic "$constr_ptr_tmp" in
+
+  let fix gen_rec_calls (calls : nat) (arity : nat) :=
+    match calls with
+    | 0 => if arity =? 0 then WI_return else WI_block [instr_write_string ")"; WI_return]
+    | S n' => WI_block (List.app [ WI_local_get tmp
+                                 ; WI_const (Generic "4") I32
+                                 ; WI_add I32
+                                 ; WI_local_set tmp
+                                 ; WI_local_get tmp
+                                 ; WI_load I32
+                                 ; WI_call constr_pp_function_name 
+                                 ] [(gen_rec_calls n' arity)])
+    end in
+
+  let gen_print_constr_block (c : ctor_tag) :=
+    let ctor_id := string_of_nat (Pos.to_nat c) in
+    let ctor_name := show_tree (show_con cenv c) in
+
+    ctor_arity <- (match M.get c cenv with 
+                  | Some {| ctor_arity := n |} => Ret (N.to_nat n)
+                  | _ => Err "found constructor without ctor_arity set"
+                  end) ;;
+
+    Ret (WI_block [ WI_comment (ctor_id ++ ": " ++ ctor_name)
+                  ; WI_const (Generic ctor_id) I32
+                  ; WI_local_get constr_ptr
+                  ; WI_load I32
+                  ; WI_eq I32
+                  ; WI_if (WI_block [ instr_write_string " "
+                                    ; if ctor_arity =? 0 then WI_nop else instr_write_string "("
+                                    ; instr_write_string ctor_name
+                                    ; WI_local_get constr_ptr
+                                    ; WI_local_set tmp
+                                    ; gen_rec_calls ctor_arity ctor_arity
+                                    ])
+                           WI_nop
+                 ])
+  in
+  blocks <- sequence (map gen_print_constr_block tags) ;;
+
+  let body := WI_block (List.app (WI_comment "printing s-exp for constructors" :: blocks)
+                                 [ instr_write_string "<bad constr id: " (* e.g. could be fn-pointer or env-pointer *)
+                                 ; WI_local_get constr_ptr
+                                 ; WI_call write_int
+                                 ; instr_write_string ">"
+                                 ])
+  in
+  Ret {| name := constr_pp_function_name
+       ; export := true
+       ; args := [(constr_ptr, I32)]
+       ; ret_type := None
+       ; locals := [(tmp, I32)]
+       ; body := body
+       |}.
 
 (* ***** GENERATE INDIRECTION FUNCTIONS FOR INDIRECT FUNCTION CALLS ****** *)
 
@@ -163,15 +237,15 @@ Definition generate_indirection_function (fns : list func_signature) : option wa
   let tag_var := Generic "$tag" in
   let args := arg_list (length arg_types) in
 
-  let check_tag := (fun sig => WI_block [ WI_local_get tag_var
-                                        ; WI_const (Generic (string_of_nat (Pos.to_nat sig.(s_tag)))) I32
-                                        ; WI_eq I32
-                                        ; WI_if (WI_block (List.app (map (fun arg => WI_local_get (fst arg)) args)
-                                                                    [ WI_call sig.(s_name)
-                                                                    ; WI_return
-                                                                    ]))
-                                                WI_nop
-                                        ]) in
+  let check_tag sig := WI_block [ WI_local_get tag_var
+                                ; WI_const (Generic (string_of_nat (Pos.to_nat sig.(s_tag)))) I32
+                                ; WI_eq I32
+                                ; WI_if (WI_block (List.app (map (fun arg => WI_local_get (fst arg)) args)
+                                                            [ WI_call sig.(s_name)
+                                                            ; WI_return
+                                                            ]))
+                                        WI_nop
+                                ] in
 
   let body := WI_block ((map check_tag fns) ++
                        [ WI_comment "when unexpected function tag"
@@ -215,7 +289,7 @@ Definition generate_indirection_functions (sigs : list func_signature): list was
                         | Some f => [f]
                         end)) sigs_one_type.
 
-(* TODO check usage*)
+(* TODO check usage, this should probably be used at more places than is currently the case *)
 Definition translate_local_var_read (nenv : name_env) (fsigs : list func_signature) (v : var) : wasm_instr :=
   match var_references_function nenv fsigs v with
   | None => WI_local_get v
@@ -400,11 +474,18 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                         ; body := main_instr
                         |} in
 
+  let constr_tags := collect_constr_tags e in
+
   constr_alloc_functions <-
-    sequence (map (generate_constr_alloc_function cenv) (collect_constr_tags e)) ;;
+    sequence (map (generate_constr_alloc_function cenv) constr_tags) ;;
+
+  constr_pp_function <- generate_constr_pp_function cenv constr_tags ;;
 
   Ret {| memory := Generic "100"
-       ; functions := constr_alloc_functions ++ indirection_functions ++ fns ++ [main_function]
+       ; functions := constr_alloc_functions ++ indirection_functions ++ fns ++ [constr_pp_function; main_function]
        ; global_vars := [(global_mem_ptr, I32, Generic "0")]
+       ; function_imports := [ ("env", write_char, [I32])
+                             ; ("env", write_int, [I32])
+                             ]
        ; comment := "constructors: " ++ (fold_left (fun _s p => _s ++ string_of_nat (Pos.to_nat p) ++ ", ") (collect_constr_tags e) "")
        |}.

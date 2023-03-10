@@ -59,6 +59,7 @@ Record wasm_module :=
   { functions : list wasm_function
   ; memory : var                                              (* size *)
   ; global_vars : list (var * type * var)                     (* var, type, init_value *)
+  ; function_imports : list (string * var * list type)        (* namespace, variable (name), parameter types, currently no return type needed *)
   ; comment : string
   }.
 
@@ -135,11 +136,20 @@ Definition global_vars_show (prefix : string) (l : list (var * type * var)) : st
                  | I32 => "i32.const " ++ var_show i
                  | I64 => "i64.const " ++ var_show i
                  end) in
-      _s ++ " (" ++ prefix ++ " " ++ name ++ " (mut " ++ type  ++ ") (" ++ init ++ ")" ++ ")") l "".
+      _s ++ "(" ++ prefix ++ " " ++ name ++ " (mut " ++ type  ++ ") (" ++ init ++ ")" ++ ") ") l "".
+
+Definition function_imports_show (fns : list (string * var * list type)) :=
+  fold_left (fun _s f =>
+    let '(namespace, name, arg_types) := f in
+    let func := "(func " ++ var_show name ++ " (param" ++ (fold_left (fun _s' t => _s' ++ " " ++ type_show t) arg_types "") ++ "))"
+    in
+    _s ++ nl ++ "(import " ++ quote ++ namespace ++ quote ++ " " ++ quote ++ var_show name ++ quote ++ func ++ ")"
+  ) fns "".
 
 Definition wasm_module_show (m : wasm_module) : string :=
   "(module" ++ nl ++ ";;" ++ nl ++
   ";; " ++ m.(comment) ++ nl ++
+  function_imports_show m.(function_imports) ++ nl ++
   "(memory " ++ var_show m.(memory) ++ ") ;; * 64 KB" ++ nl ++
-    global_vars_show "global" m.(global_vars) ++ nl ++
-    (fold_left (fun s f => s ++ nl ++ function_show f) m.(functions) "") ++ ")".
+  global_vars_show "global" m.(global_vars) ++ nl ++
+  (fold_left (fun _s f => _s ++ nl ++ function_show f) m.(functions) "") ++ ")".
