@@ -134,9 +134,9 @@ CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
 
 
-Eval compute in "Compiling color".
+(* Eval compute in "Compiling color". *)
 
-CertiCoq Generate WASM -debug color.
+(* CertiCoq Generate WASM -debug color. *)
 (* CertiCoq Compile -O 0 -time -cps -ext "_cps" color. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" color. *)
 
