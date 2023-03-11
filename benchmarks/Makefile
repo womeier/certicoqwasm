@@ -6,23 +6,30 @@ TESTS=$(shell cat TESTS)
 # Name of generated webassembly files
 WATFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wat, $(TESTS))
 WASMFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wasm, $(TESTS))
+JSFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.js, $(TESTS))
 WAT2WASM=wat2wasm
 
-all: lib tests compilewasm
+all: lib tests runwasm
 
 .PHONY: all default clean lib cleanlib tests $(TESTS)
 
 $(WATFILES): tests
+
+%.js: %.wasm
+	cp ./run-wasm-template.js $@
+	sed -i 's/{{file}}/$</g' $@
 
 %.wasm: %.wat
 	$(WAT2WASM) $<
 
 compilewasm: $(WASMFILES)
 
+runwasm: compilewasm $(JSFILES)
+	./run_wasm_benchmarks.py
+
 clean:
-	rm -f ./*.c
-	rm -f ./*.h
-	rm -f ./*.wat ./*.wasm
+	rm -f ./*.wat ./*.wasm ./*.tests.*.js *.ir
+
 	rm -f ./*.vo
 	rm -f ./*.vos
 	rm -f ./*.vok
@@ -38,5 +45,6 @@ cleanlib:
 	$(MAKE) clean -C lib
 
 tests: tests.v
+	ulimit -s unlimited
 	coqc $(COQOPTS) tests.v
 

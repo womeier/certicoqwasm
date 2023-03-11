@@ -16,7 +16,7 @@ Import VeriStar.
 
 CertiCoq -help.
 
-CertiCoq Generate Glue -file "basics" [ nat, list, bool ].
+(* CertiCoq Generate Glue -file "basics" [ nat, list, bool ]. *)
 
 (* Demo 1 *)
 
