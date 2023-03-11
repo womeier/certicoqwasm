@@ -314,10 +314,8 @@ Definition translate_call (nenv : name_env) (fsigs : list func_signature) (f : v
                       [ WI_comment ("indirect call to: " ++ var_show f) (* indirect call *)
                       ; WI_local_get f (* function tag is last parameter *) 
                       ; if ret then WI_call (indirection_function_var arg_types (Some I32))
-                               else WI_block [ WI_call (indirection_function_var arg_types (Some I32))
-                                             ; WI_drop (* currently: indirection function names end with "ret_i32" even for ones
-                                                                                                          without return type TODO*)
-                                             ]
+                               else WI_call (indirection_function_var arg_types (Some I32)) (* currently: indirection function names end
+                                                                                                with "ret_i32" even for ones without return type TODO*)
                       ])
   end.
 
@@ -385,8 +383,8 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (fsigs : list func_si
 
      Ret (WI_block ((WI_comment ("app, ftag: " ++ (show_tree (show_ftag true ft)))) ::
                     [ translate_call nenv fsigs (translate_var nenv f) ys false (* false: function doesn't return *)
-                    ; WI_comment "tail calls not supported yet in wasm. won't return"
-                    ; WI_unreachable
+                    ; WI_comment "tail calls not supported yet in wasm. return result in ordinary way."
+                    ; WI_return
                     ]))
 
    | Eprim_val x p e' => Err "translating prim_val to WASM not supported yet"
