@@ -1,4 +1,4 @@
-From Coq Require Import ZArith. 
+From Coq Require Import ZArith.
 Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import ExtLib.Structures.Monad.
 From MetaCoq.Template Require Import bytestring MCString.
@@ -26,16 +26,14 @@ Definition type_eqb (t1 t2 : type) :=
   end.
 
 Definition type_eqb_uncurried (t : type * type) := type_eqb (fst t) (snd t).
-    
+
 Inductive wasm_instr :=
   | WI_unreachable : wasm_instr                               (* trap unconditionally *)
   | WI_nop : wasm_instr                                       (* do nothing *)
   | WI_comment : string -> wasm_instr                         (* do nothing *)
-  | WI_drop : wasm_instr                                      (* drop value from stack *)
-  | WI_block : list wasm_instr -> wasm_instr                  (* execute in sequence, for now just a list of instructions without block nesting *)
-  | WI_if : wasm_instr -> wasm_instr -> wasm_instr            (* conditional *)
+  | WI_if : list wasm_instr -> list wasm_instr -> wasm_instr  (* conditional *)
   | WI_return : wasm_instr                                    (* break from function body *)
-  | WI_call : var -> wasm_instr                               (* call function *) 
+  | WI_call : var -> wasm_instr                               (* call function *)
   | WI_local_get : var -> wasm_instr                          (* read local variable *)
   | WI_local_set : var -> wasm_instr                          (* write local variable *)
   | WI_global_get : var -> wasm_instr                         (* read global variable *)
@@ -52,7 +50,7 @@ Record wasm_function :=
   ; args : list (var * type)
   ; ret_type : option type
   ; locals : list (var * type)
-  ; body : wasm_instr
+  ; body : list wasm_instr
   }.
 
 Record wasm_module :=
@@ -66,7 +64,7 @@ Record wasm_module :=
 Definition quote : string := String.String "034"%byte String.EmptyString.
 
 Definition type_show (t : type) :=
-  match t with 
+  match t with
   | I32 => "i32"
   | I64 => "i64"
   end.
@@ -74,31 +72,24 @@ Definition type_show (t : type) :=
 Definition var_show (v : var) :=
   match v with Generic s => s end.
 
-
-Definition instr_list_show (l : list wasm_instr) (show : wasm_instr -> string) : string :=
-  (fold_left (fun _s i => _s ++ show i) l ""). (* TODO: print block properly *)
+Definition instr_list_show' (show : wasm_instr -> string) (l : list wasm_instr) : string
+  := (fold_left (fun _s i => _s ++ show i) l "").
 
 (* TODO: typeclass show *)
-Fixpoint instr_show (e : wasm_instr) : string := 
+Fixpoint instr_show (e : wasm_instr) : string :=
   (match e with
   | WI_unreachable => "unreachable"
   | WI_nop  => "nop"
   | WI_comment s => nl ++ ";; " ++ s
-  | WI_drop => "drop"
-  | WI_block instructions => instr_list_show instructions instr_show
   | WI_return => "return"
   | WI_local_get x => "local.get " ++ var_show x
   | WI_local_set x => "local.set " ++ var_show x
   | WI_global_get x => "global.get " ++ var_show x
   | WI_global_set x => "global.set " ++ var_show x
-  | WI_if thenBranch WI_nop => "if" ++ nl ++
-                                  instr_show thenBranch ++ nl ++
-                               "end"
   | WI_if thenBranch elseBranch => "if" ++ nl ++
-                                      (* then *)
-                                      instr_show thenBranch ++ nl ++
+                                      instr_list_show' instr_show thenBranch ++ nl ++
                                    "else" ++ nl ++
-                                      instr_show elseBranch ++ nl ++
+                                      instr_list_show' instr_show elseBranch ++ nl ++
                                    "end"
   | WI_call f => "call " ++ var_show f
   | WI_load t => type_show t ++ ".load"
@@ -108,12 +99,16 @@ Fixpoint instr_show (e : wasm_instr) : string :=
   | WI_eq t => type_show t ++ ".eq"
   end) ++ nl.
 
+(* TODO: make recursive definition *)
+Definition instr_list_show (l : list wasm_instr) : string
+  := (fold_left (fun _s i => _s ++ instr_show i) l "").
+
 Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
-  fold_left (fun _s p => 
+  fold_left (fun _s p =>
     let name := var_show (fst p) in
     let type := type_show (snd p) in
       _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type ++ ")") l "".
-  
+
 Definition function_show (f : wasm_function) : string :=
   let ret_type := match f.(ret_type) with
                   | None => ""
@@ -125,10 +120,10 @@ Definition function_show (f : wasm_function) : string :=
                                     else "") ++ nl
     ++ parameters_show "param" f.(args) ++ " " ++ ret_type ++ nl
     ++ parameters_show "local" f.(locals) ++ nl
-    ++ instr_show f.(body) ++ ")" ++ nl.
+    ++ instr_list_show f.(body) ++ ")" ++ nl.
 
 Definition global_vars_show (prefix : string) (l : list (var * type * var)) : string :=
-  fold_left (fun _s p => 
+  fold_left (fun _s p =>
     let '(v, t, i) := p in
     let name := var_show v in
     let type := type_show t in
