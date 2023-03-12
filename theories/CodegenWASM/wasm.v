@@ -12,7 +12,7 @@ Inductive type :=
   | I64.
 
 Inductive var :=
-  (* TODO*)
+  (* TODO: use nat *)
   | Generic : string -> var.
 
 Definition var_eqb (v1 v2 : var) :=
@@ -75,7 +75,6 @@ Definition var_show (v : var) :=
 Definition instr_list_show' (show : wasm_instr -> string) (l : list wasm_instr) : string
   := (fold_left (fun _s i => _s ++ show i) l "").
 
-(* TODO: typeclass show *)
 Fixpoint instr_show (e : wasm_instr) : string :=
   (match e with
   | WI_unreachable => "unreachable"
@@ -99,7 +98,6 @@ Fixpoint instr_show (e : wasm_instr) : string :=
   | WI_eq t => type_show t ++ ".eq"
   end) ++ nl.
 
-(* TODO: make recursive definition *)
 Definition instr_list_show (l : list wasm_instr) : string
   := (fold_left (fun _s i => _s ++ instr_show i) l "").
 
