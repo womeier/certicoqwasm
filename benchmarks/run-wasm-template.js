@@ -4,7 +4,7 @@ const bytes = fs.readFileSync(__dirname + '/{{file}}');
 let importObject = {
     env: {
         $write_int: (value) => { process.stdout.write(value.toString()) },
-        $write_char: (value) => { 
+        $write_char: (value) => {
             var chr = String.fromCharCode(value);
             process.stdout.write(chr);
         },
@@ -21,7 +21,12 @@ let importObject = {
         new Uint8Array (bytes), importObject
     );
 
-    let res = obj.instance.exports.$main_function();
-    process.stdout.write("\n====>");
-    obj.instance.exports.$pretty_print_constructor(res); console.log(""); // newline
+    try {
+        let res = obj.instance.exports.$main_function();
+        process.stdout.write("\n====>");
+        obj.instance.exports.$pretty_print_constructor(res); console.log(""); // newline
+    } catch (error) {
+        console.log(error);
+        process.exit(1);
+    }
 })();
