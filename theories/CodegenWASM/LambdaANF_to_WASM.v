@@ -297,7 +297,7 @@ Definition generate_indirection_functions (sigs : list func_signature): list was
 Definition translate_local_var_read (nenv : name_env) (fsigs : list func_signature) (v : var) : list wasm_instr :=
   match var_references_function nenv fsigs v with
   | None => [ WI_local_get v ]
-  | Some sig => [ WI_comment ("passing tag for function " ++ var_show sig.(s_name))
+  | Some sig => [ WI_comment ("passing id for function " ++ var_show sig.(s_name))
                 ; WI_const (Generic (string_of_nat (sig.(s_id)))) I32
                 ]
   end.
@@ -371,14 +371,14 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (fsigs : list func_si
    | Eletapp x f ft ys e' =>
      following_instr <- (translate_exp nenv cenv fsigs e' : error (list wasm_instr)) ;;
 
-     Ret ((WI_comment ("letapp, ftag: " ++ (show_tree (show_var nenv f)) ++ ", " ++ (show_tree (show_ftag true ft)))%bs) ::
+     Ret ((WI_comment ("letapp: " ++ (show_tree (show_var nenv f)))) ::
           (translate_call nenv fsigs (translate_var nenv f) ys) ++
           [ WI_local_set (translate_var nenv x)
           ] ++ following_instr)
 
    | Eapp f ft ys => (* wasm doesn't treat tail call in a special way at the time *)
 
-     Ret ((WI_comment ("app, ftag: " ++ (show_tree (show_ftag true ft)))) ::
+     Ret ((WI_comment ("app: " ++ (show_tree (show_var nenv f)))) ::
           (translate_call nenv fsigs (translate_var nenv f) ys) ++
           [ WI_comment "tail calls not supported yet in wasm. return result in ordinary way."
           ; WI_return
