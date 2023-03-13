@@ -41,7 +41,7 @@ jobs:
               opam list
             endGroup
             startGroup "Run benchmarks"
-              sudo apt install wabt nodejs
+              sudo apt-get install --yes wabt nodejs
               ulimit -s unlimited
               make -C ~/repo/benchmarks all
             endGroup
