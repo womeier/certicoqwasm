@@ -5,6 +5,7 @@ From MetaCoq.Template Require Import bytestring MCString.
 From Coq Require Import ZArith List.
 
 Require Import MSets.MSetAVL.
+Require Import FMapAVL.
 Require Import POrderedType.
 
 Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm.
@@ -16,6 +17,11 @@ Import MonadNotation.
 
 Module S_pos := MSetAVL.Make Positive_as_OT.
 Module S_string := MSetAVL.Make StringOT.
+
+Require Import CodegenWASM.my_map.
+Definition M := partial_map nat.
+(* TODO: map from standard library *)
+(* Module M := FMapAVL.Make StringOT. *)
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
 
@@ -202,7 +208,8 @@ Definition generate_constr_pp_function (cenv : ctor_env) (tags : list ctor_tag) 
 
 Record func_signature :=
   { s_name : var
-  ; s_tag : fun_tag
+  ; s_id : nat                (* unique function id, used for indirection *)
+  ; s_tag : fun_tag           (* TODO: look up: for type? *)
   ; s_arg_types : list type
   ; s_ret_type : option type
   }.
@@ -231,28 +238,28 @@ Definition generate_indirection_function (fns : list func_signature) : option wa
   let arg_types := sig_head.(s_arg_types) in
   let ret_type := sig_head.(s_ret_type) in
 
-  let tag_var := Generic "$tag" in
+  let id_var := Generic "$id" in
   let args := arg_list (length arg_types) in
 
-  let check_tag sig := [ WI_local_get tag_var
-                       ; WI_const (Generic (string_of_nat (Pos.to_nat sig.(s_tag)))) I32
-                       ; WI_eq I32
-                       ; WI_if ((map (fun arg => WI_local_get (fst arg)) args) ++
-                                [ WI_call sig.(s_name)
-                                ; WI_return
-                                ])
-                               [ WI_nop ]
-                       ] in
+  let check_id sig := [ WI_local_get id_var
+                      ; WI_const (Generic (string_of_nat (sig.(s_id)))) I32
+                      ; WI_eq I32
+                      ; WI_if ((map (fun arg => WI_local_get (fst arg)) args) ++
+                               [ WI_call sig.(s_name)
+                               ; WI_return
+                               ])
+                              [ WI_nop ]
+                      ] in
 
-  let body := (flat_map check_tag fns) ++
-              [ WI_comment "when unexpected function tag"
+  let body := (flat_map check_id fns) ++
+              [ WI_comment "when unexpected function id"
               ; WI_unreachable
               ]
 
   in
   Some {| name := indirection_function_var arg_types ret_type
         ; export := true
-        ; args := args ++ [(tag_var, I32)]
+        ; args := args ++ [(id_var, I32)]
         ; ret_type := ret_type
         ; locals := []
         ; body := body
@@ -291,7 +298,7 @@ Definition translate_local_var_read (nenv : name_env) (fsigs : list func_signatu
   match var_references_function nenv fsigs v with
   | None => [ WI_local_get v ]
   | Some sig => [ WI_comment ("passing tag for function " ++ var_show sig.(s_name))
-                ; WI_const (Generic (string_of_nat (Pos.to_nat sig.(s_tag)))) I32
+                ; WI_const (Generic (string_of_nat (sig.(s_id)))) I32
                 ]
   end.
 
@@ -418,22 +425,47 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fsigs : list 
 
 (* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
 
+(* maps function names to nats for indirect calls -> signature.s_id *)
+Fixpoint create_function_name_mapping' (names : list string) (counter : nat) (m : M) : M :=
+  match names with
+  | [] => empty
+  | n :: names' => update (create_function_name_mapping' names' (1 + counter) m) n counter
+  end.
+
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error wasm_module :=
-  let fsigs := (* for translating indirect function calls *)
+  let fun_names :=
     match e with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
-      (fix iter (fds : fundefs) :=
+      (fix iter (fds : fundefs) : list string :=
           match fds with
           | Fnil => []
-          | Fcons x tg xs e fds' =>
-              {| s_name := translate_var nenv x
-               ; s_tag := tg
-               ; s_arg_types := map (fun _ => I32) xs
-               ; s_ret_type := Some I32
-               |} :: (iter fds')
+          | Fcons x _ _ _ fds' => (var_show (translate_var nenv x)) :: (iter fds')
           end) fds
     | _ => []
   end in
+
+  let mapping := create_function_name_mapping' fun_names 0 empty in
+  let option2error o : error nat := match o with | None => Err "function name mapping failed" | Some i => Ret i end in
+
+  fsigs <- (* for translating indirect function calls *)
+    (match e with
+    | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
+      (fix iter (fds : fundefs) : error (list func_signature) :=
+          match fds with
+          | Fnil => Ret []
+          | Fcons x tg xs e fds' =>
+              let var := translate_var nenv x in
+              s_id <- option2error (mapping (var_show var)) ;;
+              following <- iter fds' ;;
+              Ret ({| s_name := translate_var nenv x
+                    ; s_id := s_id
+                    ; s_tag := tg
+                    ; s_arg_types := map (fun _ => I32) xs
+                    ; s_ret_type := Some I32
+                    |} :: following)
+          end) fds
+    | _ => Err "found unexpected fundef"
+  end : error (list func_signature)) ;;
 
   let (fns, main_expr) :=
     match e with
