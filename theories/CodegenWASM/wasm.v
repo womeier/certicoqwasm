@@ -72,23 +72,31 @@ Definition type_show (t : type) :=
 Definition var_show (v : var) :=
   match v with Generic s => s end.
 
-Definition instr_list_show' (show : wasm_instr -> string) (l : list wasm_instr) : string
-  := (fold_left (fun _s i => _s ++ show i) l "").
+Definition instr_list_show' (indent : nat) (show : nat -> wasm_instr -> string) (l : list wasm_instr) : string
+  := (fold_left (fun _s i => _s ++ show indent i) l "").
 
-Fixpoint instr_show (e : wasm_instr) : string :=
+
+Fixpoint spaces (n : nat) : string :=
+  match n with
+  | 0 => ""
+  | S n' => " " ++ spaces n'
+  end.
+
+Fixpoint instr_show (indent : nat) (e : wasm_instr) : string :=
+  (spaces indent) ++
   (match e with
   | WI_unreachable => "unreachable"
   | WI_nop  => "nop"
-  | WI_comment s => nl ++ ";; " ++ s
+  | WI_comment s => nl ++ (spaces indent) ++ ";; " ++ s
   | WI_return => "return"
   | WI_local_get x => "local.get " ++ var_show x
   | WI_local_set x => "local.set " ++ var_show x
   | WI_global_get x => "global.get " ++ var_show x
   | WI_global_set x => "global.set " ++ var_show x
   | WI_if thenBranch elseBranch => "if" ++ nl ++
-                                      instr_list_show' instr_show thenBranch ++ nl ++
+                                      instr_list_show' (2 + indent) instr_show thenBranch ++ nl ++ (spaces indent) ++
                                    "else" ++ nl ++
-                                      instr_list_show' instr_show elseBranch ++ nl ++
+                                      instr_list_show' (2 + indent) instr_show elseBranch ++ nl ++ (spaces indent) ++
                                    "end"
   | WI_call f => "call " ++ var_show f
   | WI_load t => type_show t ++ ".load"
@@ -98,8 +106,8 @@ Fixpoint instr_show (e : wasm_instr) : string :=
   | WI_eq t => type_show t ++ ".eq"
   end) ++ nl.
 
-Definition instr_list_show (l : list wasm_instr) : string
-  := (fold_left (fun _s i => _s ++ instr_show i) l "").
+Definition instr_list_show (indent : nat) (l : list wasm_instr) : string
+  := (fold_left (fun _s i => _s ++ instr_show indent i) l "").
 
 Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
   fold_left (fun _s p =>
@@ -118,7 +126,7 @@ Definition function_show (f : wasm_function) : string :=
                                     else "") ++ nl
     ++ parameters_show "param" f.(args) ++ " " ++ ret_type ++ nl
     ++ parameters_show "local" f.(locals) ++ nl
-    ++ instr_list_show f.(body) ++ ")" ++ nl.
+    ++ instr_list_show 2 f.(body) ++ ")" ++ nl.
 
 Definition global_vars_show (prefix : string) (l : list (var * type * var)) : string :=
   fold_left (fun _s p =>

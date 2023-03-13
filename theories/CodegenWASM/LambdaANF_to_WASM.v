@@ -103,7 +103,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : err
          ; WI_add I32
          ; WI_global_set global_mem_ptr
          ] ++ (* store argument pointers in memory *)
-         (concat (map (fun arg =>
+         (flat_map (fun arg =>
              [ WI_comment ("store " ++ var_show (fst arg) ++ " in memory")
              ; WI_global_get global_mem_ptr
              ; WI_local_get (fst arg)
@@ -113,7 +113,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (c : ctor_tag) : err
              ; WI_add I32
              ; WI_global_set global_mem_ptr
              ]
-           ) args))
+           ) args)
          ++
          [ WI_comment "ptr to beginning of memory segment"
          ; WI_local_get return_var
@@ -390,7 +390,7 @@ Fixpoint collect_local_variables' (nenv : name_env) (e : exp) {struct e} : list 
   match e with
   | Efun _ e' => collect_local_variables' nenv e'
   | Econstr x _ _ e' => x :: collect_local_variables' nenv e'
-  | Ecase _ arms => List.concat (map (fun a => collect_local_variables' nenv (snd a)) arms)
+  | Ecase _ arms => flat_map (fun a => collect_local_variables' nenv (snd a)) arms
   | Eproj x _ _ _ e' => x :: collect_local_variables' nenv e'
   | Eletapp x _ _ _ e' => x :: collect_local_variables' nenv e'
   | Eprim x _ _ e' => x :: collect_local_variables' nenv e'
