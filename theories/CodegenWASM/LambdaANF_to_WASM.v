@@ -501,7 +501,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
 
   constr_pp_function <- generate_constr_pp_function cenv constr_tags ;;
 
-  Ret {| memory := Generic "100"
+  Ret {| memory := Generic "10_000" (* KB*)
        ; functions := constr_alloc_functions ++ indirection_functions ++ fns ++ [constr_pp_function; main_function]
        ; global_vars := [(global_mem_ptr, I32, Generic "0")]
        ; function_imports := [ ("env", write_char, [I32])
