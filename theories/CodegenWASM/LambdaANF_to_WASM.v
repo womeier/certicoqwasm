@@ -422,6 +422,17 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fsigs : list 
    ; body := body_res
    |}.
 
+(* ***** GENERATE FUNCTION THAT RETURNS THE MEMORY USED SO FAR ****** *)
+Definition get_memory_usage_function_var := Generic "$get_memory_usage_in_bytes".
+
+Definition get_memory_usage_function : wasm_function :=
+  {| name := get_memory_usage_function_var
+   ; export := true
+   ; args := []
+   ; ret_type := Some I32
+   ; locals := []
+   ; body := [ WI_global_get global_mem_ptr; WI_return ]
+   |}.
 
 (* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
 
@@ -502,7 +513,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   constr_pp_function <- generate_constr_pp_function cenv constr_tags ;;
 
   Ret {| memory := Generic "10_000" (* KB*)
-       ; functions := constr_alloc_functions ++ indirection_functions ++ fns ++ [constr_pp_function; main_function]
+       ; functions := constr_alloc_functions ++ indirection_functions ++ fns ++ [constr_pp_function; get_memory_usage_function; main_function]
        ; global_vars := [(global_mem_ptr, I32, Generic "0")]
        ; function_imports := [ ("env", write_char, [I32])
                              ; ("env", write_int, [I32])

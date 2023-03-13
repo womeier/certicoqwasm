@@ -25,6 +25,9 @@ let importObject = {
         let res = obj.instance.exports.$main_function();
         process.stdout.write("\n====>");
         obj.instance.exports.$pretty_print_constructor(res); console.log(""); // newline
+
+        let bytes = obj.instance.exports.$get_memory_usage_in_bytes();
+        console.log(`====> used ${bytes} bytes of memory`);
     } catch (error) {
         console.log(error);
         process.exit(1);
