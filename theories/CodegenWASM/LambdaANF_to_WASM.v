@@ -279,7 +279,7 @@ Fixpoint select_sigs_by_type (sigs : list func_signature) (indirection_name : st
   | [] => []
   | s :: sigs' =>
       let ind_name := indirection_function_name s.(s_arg_types) (Some I32) in  (* Some I32, see comment in translate_call function *)
-                if String.eqb ind_name indirection_name
+                if String.eqb ind_name indirection_name (* TODO: slow, compare types directly *)
                   then s :: (select_sigs_by_type sigs' indirection_name)
                   else select_sigs_by_type sigs' indirection_name
   end.
