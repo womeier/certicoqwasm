@@ -1,3 +1,12 @@
 [submodule "submodules/metacoq"]
 	path = submodules/metacoq
 	url = https://github.com/MetaCoq/metacoq.git
+[submodule "submodules/wasmcert"]
+	path = submodules/wasmcert
+	url = https://github.com/womeier/WasmCert-Coq
+[submodule "submodules/parseque"]
+	path = submodules/parseque
+	url = https://github.com/womeier/parseque
+[submodule "submodules/interactiontrees"]
+	path = submodules/interactiontrees
+	url = https://github.com/womeier/InteractionTrees

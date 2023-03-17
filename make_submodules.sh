@@ -12,17 +12,31 @@ clean() {
 
 cd submodules
 
-cd Equations
-echo "Rebuilding Equations"
-clean
-./configure.sh
-make
-make install
-cd ..
-
 cd metacoq
 echo "Rebuilding MetaCoq"
 clean
 ./configure.sh local
 make -j 2 translations all
 make install
+cd ..
+
+cd parseque
+echo "Rebuilding parseque"
+clean
+make
+make install
+cd ..
+
+cd interactiontrees
+echo "Rebuilding interactiontrees"
+clean
+make
+make install
+cd ..
+
+cd wasmcert
+echo "Rebuilding wasmcert"
+clean
+make
+make install
+cd ..
