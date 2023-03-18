@@ -8,7 +8,6 @@ Require Import MSets.MSetAVL.
 Require Import FMapAVL.
 Require Import POrderedType.
 
-From Wasm Require Import pp.
 
 Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm.
 
