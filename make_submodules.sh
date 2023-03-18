@@ -12,30 +12,44 @@ clean() {
 
 cd submodules
 
-cd metacoq
-echo "Rebuilding MetaCoq"
+# cd metacoq
+# echo "Rebuilding MetaCoq"
+# clean
+# ./configure.sh local
+# make -j 2 translations all
+# make install
+# cd ..
+
+cd coq-paco
+echo "Building coq-paco"
 clean
-./configure.sh local
-make -j 2 translations all
+cd src
+make
+make -f Makefile.coq install
+cd ../..
+
+cd strong-induction
+echo "Building Strong-Induction"
+make
 make install
 cd ..
 
 cd parseque
-echo "Rebuilding parseque"
+echo "Building parseque"
 clean
 make
 make install
 cd ..
 
 cd interactiontrees
-echo "Rebuilding interactiontrees"
+echo "Building interactiontrees"
 clean
 make
 make install
 cd ..
 
 cd wasmcert
-echo "Rebuilding wasmcert"
+echo "Building wasmcert"
 clean
 make
 make install

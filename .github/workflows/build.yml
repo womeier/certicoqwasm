@@ -4,9 +4,7 @@ on:
   push:
     branches:
       - master
-  pull_request:
-    branches:
-      - "**"
+      - ci-test
   workflow_dispatch:
     inputs:
 
@@ -22,8 +20,6 @@ jobs:
       fail-fast: false  # don't stop jobs if one fails
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: true
 
       - uses: coq-community/docker-coq-action@v1
         with:
@@ -33,8 +29,23 @@ jobs:
             startGroup "Copy repo (for later benchmarking)"
               cp -r `pwd` ~/repo
             endGroup
-            startGroup "opam pin"
-              opam pin -n -y submodules/metacoq
+            startGroup "Install some more opam packages"
+              opam repo add coq-released https://coq.inria.fr/opam/released
+              opam update
+              opam pin -y coq-mathcomp-ssreflect 1.16.0
+              opam install coq-mathcomp-ssreflect
+            endGroup
+            startGroup "clone subrepos"
+              sudo chmod 777 . -R
+              sudo chmod 777 ~/.opam/ -R
+              git config --global --add safe.directory /github/workspace
+              git config --global --add safe.directory /github/workspace/submodules/wasmcert
+              git config --global --add safe.directory /github/workspace/submodules/strong-induction
+              git config --global --add safe.directory /github/workspace/submodules/coq-paco
+              git config --global --add safe.directory /github/workspace/submodules/metacoq
+              git config --global --add safe.directory /github/workspace/submodules/parseque
+              git config --global --add safe.directory /github/workspace/submodules/interactiontrees
+              git submodule update --init
             endGroup
           after_script: |
             startGroup "List installed packages"

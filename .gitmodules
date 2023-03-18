@@ -10,3 +10,9 @@
 [submodule "submodules/interactiontrees"]
 	path = submodules/interactiontrees
 	url = https://github.com/womeier/InteractionTrees
+[submodule "submodules/coq-paco"]
+	path = submodules/coq-paco
+	url = https://github.com/womeier/coq-paco
+[submodule "submodules/strong-induction"]
+	path = submodules/strong-induction
+	url = https://github.com/womeier/strong-induction

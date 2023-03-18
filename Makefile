@@ -13,8 +13,7 @@ libraries/Makefile: libraries/_CoqProject
 
 
 submodules:
-	git submodule update
-	./make_submodules.sh
+	./make_submodules.sh noclean
 
 plugins: plugin cplugin
 
