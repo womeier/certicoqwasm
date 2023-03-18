@@ -17,7 +17,8 @@ jobs:
           - 'coq-certicoq.opam'
         image:
           - 'ghcr.io/womeier/certicoqwasm:2.0'
-      fail-fast: false  # don't stop jobs if one fails
+      fail-fast: true
+
     steps:
       - uses: actions/checkout@v2
 
