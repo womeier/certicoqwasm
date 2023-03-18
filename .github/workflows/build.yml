@@ -30,12 +30,6 @@ jobs:
             startGroup "Copy repo (for later benchmarking)"
               cp -r `pwd` ~/repo
             endGroup
-            startGroup "Install some more opam packages"
-              opam repo add coq-released https://coq.inria.fr/opam/released
-              opam update
-              opam pin -y coq-mathcomp-ssreflect 1.16.0
-              opam install coq-mathcomp-ssreflect
-            endGroup
             startGroup "clone subrepos"
               sudo chmod 777 . -R
               sudo chmod 777 ~/.opam/ -R
@@ -47,6 +41,15 @@ jobs:
               git config --global --add safe.directory /github/workspace/submodules/parseque
               git config --global --add safe.directory /github/workspace/submodules/interactiontrees
               git submodule update --init
+            endGroup
+            startGroup "Install some more opam packages"
+              opam repo add coq-released https://coq.inria.fr/opam/released
+              opam update
+              opam pin -y coq-mathcomp-ssreflect 1.16.0
+              opam install coq-mathcomp-ssreflect
+
+              cd ~/repo
+              opam pin -n -y  submodules/metacoq # was pinned to the submodule at the same path in the dockerfile before -> is not rebuilt
             endGroup
           after_script: |
             startGroup "List installed packages"
