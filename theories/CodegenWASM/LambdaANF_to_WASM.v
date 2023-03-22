@@ -1,3 +1,5 @@
+Unset Universe Checking.
+
 From CertiCoq Require Import LambdaANF.toplevel.
 Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import ExtLib.Structures.Monad.
@@ -7,6 +9,8 @@ From Coq Require Import ZArith List.
 Require Import MSets.MSetAVL.
 Require Import FMapAVL.
 Require Import POrderedType.
+
+From Wasm Require Import pp.
 
 
 Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm.
