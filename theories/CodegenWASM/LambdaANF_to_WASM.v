@@ -312,7 +312,7 @@ Fixpoint select_sigs_by_type (sigs : list func_signature) (indirection_name : st
   | [] => []
   | s :: sigs' =>
       let ind_name := indirection_function_name s.(s_arg_types) (Some I32) in  (* Some I32, see comment in translate_call function *)
-                if String.eqb ind_name indirection_name (* TODO: slow, compare types directly *)
+                if String.eqb ind_name indirection_name (* TODO: slow, compare types directly, tg *)
                   then s :: (select_sigs_by_type sigs' indirection_name)
                   else select_sigs_by_type sigs' indirection_name
   end.
@@ -339,7 +339,7 @@ Definition translate_local_var_read (nenv : name_env) (venv : var_env) (fenv : f
 
 (* ***** TRANSLATE FUNCTION CALLS ****** *)
 
-Definition translate_call (nenv : name_env) (venv : var_env) (fenv : fname_env) (fsigs : list func_signature) (f : cps.var) (args : list cps.var) : error (list wasm_instr) :=
+Definition translate_call (nenv : name_env) (venv : var_env) (fenv : fname_env) (f : cps.var) (args : list cps.var) : error (list wasm_instr) :=
   params <- sequence (map (fun p => translate_var nenv venv p "translate_call params") args);;
   let instr_pass_params := map WI_local_get params in
   let arg_types := map (fun _ => I32) args in (* TODO limitation: only I32, there is no type information available anymore *)
@@ -364,11 +364,11 @@ Definition translate_call (nenv : name_env) (venv : var_env) (fenv : fname_env) 
 
 (* Definition translate_var (nenv : name_env) (venv : var_env) (v : cps.var) : error var := *)
 
-Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv : fname_env) (fsigs : list func_signature) (e : exp) : error (list wasm_instr) :=
+Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv : fname_env) (e : exp) : error (list wasm_instr) :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' =>
-      following_instr <- translate_exp nenv cenv venv fenv fsigs e' ;;
+      following_instr <- translate_exp nenv cenv venv fenv e' ;;
       x_var <- translate_var nenv venv x "translate_exp constr";;
       instr_params_read <- sequence (map (translate_local_var_read nenv venv fenv) ys);;
       alloc_fn_var <- lookup_function_var (constr_alloc_function_name tg) fenv "translate exp: econstr" ;;
@@ -386,7 +386,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
        let ctor_id := Pos.to_nat a in
        let ctor_name := show_tree (show_con cenv a) in
 
-       then_instr <- translate_exp nenv cenv venv fenv fsigs e';;
+       then_instr <- translate_exp nenv cenv venv fenv e';;
        x_var <- translate_var nenv venv x "translate_exp case";;
 
        Ret [ WI_comment ("ecase: " ++ show_tree (show_var nenv x) ++ ", " ++ ctor_name)
@@ -403,7 +403,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
                                     ; WI_unreachable
                                     ])
    | Eproj x tg n y e' =>
-      following_instr <- translate_exp nenv cenv venv fenv fsigs e' ;;
+      following_instr <- translate_exp nenv cenv venv fenv e' ;;
        y_var <- translate_var nenv venv y "translate_exp proj y";;
        x_var <- translate_var nenv venv x "translate_exp proj x";;
 
@@ -416,9 +416,9 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
            ] ++ following_instr)
 
    | Eletapp x f ft ys e' =>
-     following_instr <- (translate_exp nenv cenv venv fenv fsigs e' : error (list wasm_instr)) ;;
+     following_instr <- (translate_exp nenv cenv venv fenv e' : error (list wasm_instr)) ;;
      x_var <- translate_var nenv venv x "translate_exp app";;
-     instr_call <- translate_call nenv venv fenv fsigs f ys ;;
+     instr_call <- translate_call nenv venv fenv f ys ;;
 
      Ret ((WI_comment ("letapp: " ++ (show_tree (show_var nenv f)))) ::
           instr_call ++
@@ -426,7 +426,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
           ] ++ following_instr)
 
    | Eapp f ft ys => (* wasm doesn't treat tail call in a special way at the time *)
-     instr_call <- translate_call nenv venv fenv fsigs f ys ;;
+     instr_call <- translate_call nenv venv fenv f ys ;;
 
      Ret ((WI_comment ("app: " ++ (show_tree (show_var nenv f)))) ::
           instr_call ++
@@ -458,10 +458,6 @@ Fixpoint collect_local_variables (e : exp) {struct e} : list cps.var :=
   | Ehalt _ => []
   end.
 
-(*
-Definition collect_local_variables (nenv : name_env) (e : exp) : list (var * type) :=
-  map (fun p => (translate_var nenv p, I32)) (collect_local_variables' nenv e). *)
-
 (* locals should be unique *)
 Definition create_local_variable_mapping (nenv : name_env) (fenv : fname_env) (locals : list cps.var) (initial : var_env) : var_env :=
   let fix aux (start_id : nat) (locals : list cps.var) (venv : var_env) :=
@@ -473,11 +469,11 @@ Definition create_local_variable_mapping (nenv : name_env) (fenv : fname_env) (l
     end in
   aux 0 locals initial.
 
-Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env) (fsigs : list func_signature)
+Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
                               (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
   let local_vars := collect_local_variables body in
   let var_env := create_local_variable_mapping nenv fenv (args ++ local_vars) empty in
-  body_res <- translate_exp nenv cenv var_env fenv fsigs body ;;
+  body_res <- translate_exp nenv cenv var_env fenv body ;;
   args   <- sequence (map (fun p => v <- translate_var nenv var_env p "translate_function";; Ret (v, I32)) args);;
   locals <- sequence (map (fun p => v <- translate_var nenv var_env p "translate_function";; Ret (v, I32)) local_vars);;
 
@@ -535,11 +531,8 @@ Fixpoint add_to_fname_mapping (names : list string) (start_id : nat) (initial : 
 
 (* maps function names to ids (id=index in function list of module) *)
 Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
-  (* mapping function name strings to their id=index of function list in module, num_fns: starting idx for mapping additional functions TODO: stateMonad?
-     - map write_char, write_int *)
   let (fname_mapping, num_fns) := (add_to_fname_mapping [write_char_function_name; write_int_function_name] 0 empty, 2) in
 
-  (* - map function names from LambdaANF definitions *)
   let fun_names :=
     match e with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
@@ -553,23 +546,17 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
   let (fname_mapping, num_fns) := (add_to_fname_mapping fun_names num_fns fname_mapping, num_fns + length fun_names) in
 
   let constr_tags := collect_constr_tags e in
-
-  (* - map names for constructor allocations *)
   let constr_alloc_fnames := map constr_alloc_function_name constr_tags in
   let (fname_mapping, num_fns) := (add_to_fname_mapping constr_alloc_fnames num_fns fname_mapping, num_fns + length constr_alloc_fnames) in
 
-  (* - map name for constructor pretty print fn *)
   let (fname_mapping, num_fns) := (add_to_fname_mapping [constr_pp_function_name] num_fns fname_mapping, num_fns + 1) in
 
-  (* - map names for indirection functions *)
   fsigs <- collect_function_signatures nenv e;;
   let indirection_fn_names := unique_indirection_function_names fsigs in
   let (fname_mapping, num_fns) := (add_to_fname_mapping indirection_fn_names num_fns fname_mapping, num_fns + length indirection_fn_names) in
 
-  (* - map name for debug function to get memory usage *)
   let (fname_mapping, num_fns) := (add_to_fname_mapping [get_memory_usage_function_name] num_fns fname_mapping, num_fns + 1) in
 
-  (* - map name for main function *)
   let (fname_mapping, num_fns) := (add_to_fname_mapping [main_function_name] num_fns fname_mapping, num_fns + 1) in
 
   Ret fname_mapping.
@@ -584,8 +571,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
 
   constr_pp_function <- generate_constr_pp_function cenv fname_mapping constr_tags ;;
 
-  fsigs <- collect_function_signatures nenv e ;; (* for translating indirect function calls *)
-
+  fsigs <- collect_function_signatures nenv e ;;
   indirection_functions <- generate_indirection_functions fsigs fname_mapping;;
 
   let main_expr := match e with
@@ -599,7 +585,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
           match fds with
           | Fnil => Ret []
           | Fcons x tg xs e fds' =>
-             fn <- translate_function nenv cenv fname_mapping fsigs x xs e ;;
+             fn <- translate_function nenv cenv fname_mapping x xs e ;;
              following <- iter fds' ;;
              Ret (fn :: following)
           end) fds
@@ -610,7 +596,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   let main_venv := create_local_variable_mapping nenv fname_mapping main_vars empty in
   locals <- sequence (map (fun p => v <- translate_var nenv main_venv p "main locals";; Ret (v, I32)) main_vars);;
 
-  main_instr <- translate_exp nenv cenv main_venv fname_mapping fsigs main_expr ;;
+  main_instr <- translate_exp nenv cenv main_venv fname_mapping main_expr ;;
   main_function_var <- lookup_function_var main_function_name fname_mapping "main function";;
 
   mem_usage_function <- get_memory_usage_function fname_mapping;;
