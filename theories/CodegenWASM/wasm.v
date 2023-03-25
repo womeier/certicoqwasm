@@ -5,18 +5,17 @@ From MetaCoq.Template Require Import bytestring MCString.
 
 Import MonadNotation.
 
-(* TODO use WasmCert-Coq*)
-
 Inductive type :=
   | I32
   | I64.
 
 Inductive var :=
-  (* TODO: use nat *)
-  | Generic : string -> var.
+  | VNat : nat -> var.
 
 Definition var_eqb (v1 v2 : var) :=
-  match v1,v2 with Generic s1, Generic s2 => String.eqb s1 s2 end.
+  match v1,v2 with
+  | VNat n1, VNat n2 => n1 =? n2
+  end.
 
 Definition type_eqb (t1 t2 : type) :=
   match t1,t2 with
@@ -46,7 +45,7 @@ Inductive wasm_instr :=
 
 Record wasm_function :=
   { name : var
-  ; export : bool                                             (* export publicly *)
+  ; export_name : string
   ; args : list (var * type)
   ; ret_type : option type
   ; locals : list (var * type)
@@ -55,9 +54,9 @@ Record wasm_function :=
 
 Record wasm_module :=
   { functions : list wasm_function
-  ; memory : var                                              (* size *)
-  ; global_vars : list (var * type * var)                     (* var, type, init_value *)
-  ; function_imports : list (string * var * list type)        (* namespace, variable (name), parameter types, currently no return type needed *)
+  ; memory : var                                                 (* size *)
+  ; global_vars : list (var * type * var)                        (* var, type, init_value *)
+  ; function_imports : list (string * var * string * list type)  (* namespace, function variable, import name, parameter types, currently no return type needed *)
   ; comment : string
   }.
 
@@ -70,7 +69,14 @@ Definition type_show (t : type) :=
   end.
 
 Definition var_show (v : var) :=
-  match v with Generic s => s end.
+  match v with
+  | VNat n => string_of_nat n
+  end.
+
+Definition var_show_identifier (v : var) :=
+  match v with
+  | VNat n => "(;" ++ string_of_nat n ++ ";)"
+  end.
 
 Definition instr_list_show' (indent : nat) (show : nat -> wasm_instr -> string) (l : list wasm_instr) : string
   := (fold_left (fun _s i => _s ++ show indent i) l "").
@@ -111,7 +117,7 @@ Definition instr_list_show (indent : nat) (l : list wasm_instr) : string
 
 Definition parameters_show (prefix : string) (l : list (var * type)) : string :=
   fold_left (fun _s p =>
-    let name := var_show (fst p) in
+    let name := var_show_identifier (fst p) in
     let type := type_show (snd p) in
       _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type ++ ")") l "".
 
@@ -121,9 +127,7 @@ Definition function_show (f : wasm_function) : string :=
                   | Some t => "(result " ++ type_show t ++ ")"
                   end
   in
-  "(func " ++ var_show f.(name) ++ (if f.(export)
-                                    then " (export " ++ quote ++ var_show f.(name) ++ quote ++ ")"
-                                    else "") ++ nl
+  "(func " ++ var_show_identifier f.(name) ++ " (export " ++ quote ++ f.(export_name) ++ quote ++ ")"
     ++ parameters_show "param" f.(args) ++ " " ++ ret_type ++ nl
     ++ parameters_show "local" f.(locals) ++ nl
     ++ instr_list_show 2 f.(body) ++ ")" ++ nl.
@@ -131,7 +135,7 @@ Definition function_show (f : wasm_function) : string :=
 Definition global_vars_show (prefix : string) (l : list (var * type * var)) : string :=
   fold_left (fun _s p =>
     let '(v, t, i) := p in
-    let name := var_show v in
+    let name := var_show_identifier v in
     let type := type_show t in
     let init := (match t with
                  | I32 => "i32.const " ++ var_show i
@@ -139,12 +143,12 @@ Definition global_vars_show (prefix : string) (l : list (var * type * var)) : st
                  end) in
       _s ++ "(" ++ prefix ++ " " ++ name ++ " (mut " ++ type  ++ ") (" ++ init ++ ")" ++ ") ") l "".
 
-Definition function_imports_show (fns : list (string * var * list type)) :=
+Definition function_imports_show (fns : list (string * var * string * list type)) :=
   fold_left (fun _s f =>
-    let '(namespace, name, arg_types) := f in
-    let func := "(func " ++ var_show name ++ " (param" ++ (fold_left (fun _s' t => _s' ++ " " ++ type_show t) arg_types "") ++ "))"
+    let '(namespace, var, import_name, arg_types) := f in
+    let func := "(func " ++ var_show_identifier var ++ " (param" ++ (fold_left (fun _s' t => _s' ++ " " ++ type_show t) arg_types "") ++ "))"
     in
-    _s ++ nl ++ "(import " ++ quote ++ namespace ++ quote ++ " " ++ quote ++ var_show name ++ quote ++ func ++ ")"
+    _s ++ nl ++ "(import " ++ quote ++ namespace ++ quote ++ " " ++ quote ++ import_name ++ quote ++ " " ++ func ++ ")"
   ) fns "".
 
 Definition wasm_module_show (m : wasm_module) : string :=

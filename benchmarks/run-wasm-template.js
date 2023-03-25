@@ -1,14 +1,22 @@
 const fs = require('fs');
 const bytes = fs.readFileSync(__dirname + '/{{file}}');
 
+function write_int (value) {
+    process.stdout.write(value.toString())
+}
+
+function write_char (value) {
+    var chr = String.fromCharCode(value);
+    process.stdout.write(chr);
+}
+
 let importObject = {
     env: {
-        $write_int: (value) => { process.stdout.write(value.toString()) },
-        $write_char: (value) => {
-            var chr = String.fromCharCode(value);
-            process.stdout.write(chr);
-        },
-    },
+        $write_char: write_char,
+        $fn_0 : write_char,          // current name of write, TODO: export nice name
+        $write_int: write_int,
+        $fn_1 : write_int,
+    }
 /*    env: {
         import_i32: 5_000_000_000, // _ is ignored in numbers in JS and WAT
         import_f32: 123.0123456789,

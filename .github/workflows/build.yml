@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - master
-      - ci-test
+      - migrate-wasm
   workflow_dispatch:
     inputs:
 
@@ -50,6 +50,44 @@ jobs:
 
               cd ~/repo
               opam pin -n -y  submodules/metacoq # was pinned to the submodule at the same path in the dockerfile before -> is not rebuilt
+            endGroup
+
+            startGroup "Make submodules"
+              cd ~/repo/submodules/
+              git submodule update --init
+
+              cd coq-paco
+              echo "Building coq-paco"
+              cd src
+              make
+              make -f Makefile.coq install
+              cd ../..
+
+              cd strong-induction
+              echo "Building Strong-Induction"
+              make
+              make install
+              cd ..
+
+              cd parseque
+              echo "Building parseque"
+              make
+              make install
+              cd ..
+
+              cd interactiontrees
+              echo "Building interactiontrees"
+              make
+              make install
+              cd ..
+
+              cd wasmcert
+              echo "Building wasmcert"
+              make
+              make install
+              cd ..
+
+              cd ..
             endGroup
           after_script: |
             startGroup "List installed packages"

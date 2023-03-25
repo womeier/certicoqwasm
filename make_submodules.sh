@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 DOCLEAN=$1
 
@@ -11,6 +12,12 @@ clean() {
 }
 
 cd submodules
+cd ..
+
+pwd -P
+ls -l
+ls -l submodules
+cd submodules
 
 # cd metacoq
 # echo "Rebuilding MetaCoq"
@@ -20,9 +27,12 @@ cd submodules
 # make install
 # cd ..
 
+pwd -P
 cd coq-paco
 echo "Building coq-paco"
+pwd -P
 clean
+pwd -P
 cd src
 make
 make -f Makefile.coq install
