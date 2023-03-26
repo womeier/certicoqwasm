@@ -1,3 +1,5 @@
+Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
+
 Require Export LambdaBoxMut.toplevel LambdaBoxLocal.toplevel LambdaANF.toplevel Codegen.toplevel CodegenWASM.toplevel.
 Require Import compcert.lib.Maps.
 Require Import ZArith.
@@ -54,7 +56,7 @@ Fixpoint find_prim_arities (env : Ast.Env.global_declarations) (prs : list (kern
     | Err _ => (* Be lenient, if a declared primitive is not part of the environment, just skip it *)
       prs' <- find_prim_arities env prs ;;
       Ret prs'
-    | Ret arity => 
+    | Ret arity =>
       prs' <- find_prim_arities env prs ;;
       Ret ((pr, s, b, arity, 1%positive) :: prs')
     end
@@ -88,22 +90,22 @@ Section Pipeline.
           (prims : list (kername * string * bool * nat * positive))
           (debug : bool).
 
-  Fixpoint find_axioms {T} acc (env : environ T) := 
+  Fixpoint find_axioms {T} acc (env : environ T) :=
     match env with
     | [] => acc
-    | (kn, d) :: decls => 
+    | (kn, d) :: decls =>
       match d with
       | ecTrm _ => find_axioms acc decls
-      | ecTyp 0 [] => 
+      | ecTyp 0 [] =>
         if List.find (fun prim => ReflectEq.eqb kn (fst (fst (fst (fst prim))))) prims then find_axioms acc decls
         else find_axioms (kn :: acc) decls
       | ecTyp _ _ => find_axioms acc decls
-      end 
+      end
     end.
 
   Definition check_axioms (p : Program (compile.Term)) : pipelineM Datatypes.unit :=
     match find_axioms [] p.(env) with
-    | [] => ret tt 
+    | [] => ret tt
     | l => failwith ("Axioms found, use Extract Constant to realize them in C: " ++ newline ++
       print_list string_of_kername ", " l)%bs
     end.
@@ -116,7 +118,7 @@ Section Pipeline.
     p <- (if direct o then compile_LambdaANF_ANF next_id prims p else compile_LambdaANF_CPS next_id prims p) ;;
     if debug then compile_LambdaANF_debug next_id p  (* For debugging intermediate states of the λanf pipeline *)
     else compile_LambdaANF next_id p.
-    
+
 
 End Pipeline.
 

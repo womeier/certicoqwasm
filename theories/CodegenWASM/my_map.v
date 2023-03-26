@@ -1,5 +1,6 @@
 (* From SF *)
 
+Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
 
 Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import ExtLib.Structures.Monad.

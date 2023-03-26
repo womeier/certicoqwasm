@@ -1,3 +1,5 @@
+Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
+
 Require compcert.common.AST
         compcert.common.Errors
         compcert.common.Values
@@ -18,8 +20,8 @@ Require Import Coq.extraction.Extraction.
 Require Import VanillaExtrOCamlInt63 VanillaExtrOCamlFloats.
 (* Standard lib *)
 
-(** Extraction to Ocaml : use of basic Ocaml types: be careful that this should 
-  the representation in ML should exactly match the one of certicoq. 
+(** Extraction to Ocaml : use of basic Ocaml types: be careful that this should
+  the representation in ML should exactly match the one of certicoq.
   E.g. no constructor swapping allowed.
   *)
 
@@ -79,7 +81,7 @@ Extraction Inline Equations.Init.hidebody.
 Extraction Inline Equations.Prop.DepElim.solution_left.
 
 (* Avoid name clashes with OCaml or Coq module names *)
-Extraction Blacklist config List String Nat Int Ast Universes UnivSubst Typing Retyping 
+Extraction Blacklist config List String Nat Int Ast Universes UnivSubst Typing Retyping
            OrderedType Logic Common Equality Char char uGraph
            Instances Classes Term Monad Coqlib Errors Compile Checker Eq Classes0 Numeral
            Uint63 Number.

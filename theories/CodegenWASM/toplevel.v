@@ -1,3 +1,5 @@
+Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
+
 From Coq Require Import ZArith List.
 Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm CodegenWASM.LambdaANF_to_WASM.
