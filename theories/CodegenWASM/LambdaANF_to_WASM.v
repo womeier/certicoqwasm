@@ -1,6 +1,6 @@
 Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
 
-From Wasm Require Import datatypes.
+From Wasm Require Import datatypes prettyprint.
 
 From CertiCoq Require Import LambdaANF.toplevel.
 Require Import Common.Common Common.compM Common.Pipeline_utils.
@@ -12,15 +12,19 @@ Require Import MSets.MSetAVL.
 Require Import FMapAVL.
 Require Import POrderedType.
 
-
-Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm.
-
+Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm CodegenWASM.my_map.
 Import MonadNotation.
+
+(* Main file for compiler backend targeting WASM. *)
+
+(* Currently: all variables/parameters are of type i32, no types available anymore in lambdaANF, only arity TODO check *)
+
+
+(* ***** MAPPINGS ****** *)
 
 Module S_pos := MSetAVL.Make Positive_as_OT.
 Module S_string := MSetAVL.Make StringOT.
 
-Require Import CodegenWASM.my_map.
 Definition M := partial_map nat. (* string -> nat *)
 (* TODO: map from standard library *)
 (* Module M := FMapAVL.Make StringOT. *)
@@ -250,8 +254,8 @@ Record func_signature :=
   }.
 
 Definition indirection_function_name (arg_types : list value_type) (ret_type : option value_type) : string :=
-  let arg_types' := fold_left (fun _s a => _s ++ type_show a ++ "_")%bs arg_types "" in
-  let ret_type' := match ret_type with None => "nothing" | Some t => type_show t end
+  let arg_types' := fold_left (fun _s a => _s ++ pp_value_type a ++ "_")%bs arg_types "" in
+  let ret_type' := match ret_type with None => "nothing" | Some t => pp_value_type t end
   in
   "$indirect_" ++ arg_types' ++ "ret_" ++ ret_type'.
 
@@ -342,7 +346,7 @@ Definition translate_local_var_read (nenv : name_env) (venv : var_env) (fenv : f
 Definition translate_call (nenv : name_env) (venv : var_env) (fenv : fname_env) (f : cps.var) (args : list cps.var) : error (list basic_instruction) :=
   params <- sequence (map (fun p => translate_var nenv venv p "translate_call params") args);;
   let instr_pass_params := map (fun par => BI_get_local par) params in
-  let arg_types := map (fun _ => T_i32) args in (* TODO limitation: only T_i32, there is no type information available anymore *)
+  let arg_types := map (fun _ => T_i32) args in
   let f_var_string := translate_var_to_string nenv f
   in
   if is_function_name fenv f_var_string

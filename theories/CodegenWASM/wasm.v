@@ -27,27 +27,19 @@ Record wasm_module :=
 
 Definition quote : string := String.String "034"%byte String.EmptyString.
 
-Definition type_show (t : value_type) :=
-  match t with
-  | T_i32 => "i32"
-  | T_i64 => "i64"
-  | T_f32 => "f32"
-  | T_f64 => "f64"
-  end.
-
 Definition var_show_identifier (v : immediate) :=
   "(;" ++ string_of_nat v ++ ";)".
 
 Definition parameters_show (prefix : string) (l : list (immediate * value_type)) : string :=
   fold_left (fun _s p =>
     let name := var_show_identifier (fst p) in
-    let type := type_show (snd p) in
+    let type := pp_value_type (snd p) in
       _s ++ " (" ++ prefix ++ " " ++ name ++ " " ++ type ++ ")") l "".
 
 Definition function_show (f : wasm_function) : string :=
   let ret_type := match f.(ret_type) with
                   | None => ""
-                  | Some t => "(result " ++ type_show t ++ ")"
+                  | Some t => "(result " ++ pp_value_type t ++ ")"
                   end
   in
   "(func " ++ var_show_identifier f.(name) ++ " (export " ++ quote ++ f.(export_name) ++ quote ++ ")"
@@ -59,15 +51,15 @@ Definition global_vars_show (prefix : string) (l : list (immediate * value_type 
   fold_left (fun _s p =>
     let '(v, t, i) := p in
     let name := var_show_identifier v in
-    let type := type_show t in
-    let init := type_show t ++ ".const " ++ string_of_nat i
+    let type := pp_value_type t in
+    let init := pp_value_type t ++ ".const " ++ string_of_nat i
     in
     _s ++ "(" ++ prefix ++ " " ++ name ++ " (mut " ++ type  ++ ") (" ++ init ++ ")" ++ ") ") l "".
 
 Definition function_imports_show (fns : list (string * immediate * string * list value_type)) :=
   fold_left (fun _s f =>
     let '(namespace, var, import_name, arg_types) := f in
-    let func := "(func " ++ var_show_identifier var ++ " (param" ++ (fold_left (fun _s' t => _s' ++ " " ++ type_show t) arg_types "") ++ "))"
+    let func := "(func " ++ var_show_identifier var ++ " (param" ++ (fold_left (fun _s' t => _s' ++ " " ++ pp_value_type t) arg_types "") ++ "))"
     in
     _s ++ nl ++ "(import " ++ quote ++ namespace ++ quote ++ " " ++ quote ++ import_name ++ quote ++ " " ++ func ++ ")"
   ) fns "".
