@@ -36,7 +36,7 @@ plugin: theories/compile.vo certicoqc
 
 Makefile.certicoqc: _CoqProject
 	coq_makefile -f _CoqProject -o Makefile.certicoqc
-	
+
 certicoqc: Makefile.certicoqc certicoqc_plugin.cmxs
 	$(MAKE) -f Makefile.certicoqc
 
@@ -46,8 +46,8 @@ test.vo: test.v
 	mkdir -p tests
 	ulimit -Ss 65500 && ulimit -a && coqc -I . ${COQOPTS} test.v
 
-clean: 
-	rm *.cm* *.o *.vo
+clean:
+	rm -f *.cm* *.o *.vo
 
 theories/compile.vo ${GENCFILES} &: theories/compile.v
 	coqc ${COQOPTS} $<

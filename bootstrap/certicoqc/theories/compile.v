@@ -1,3 +1,6 @@
+Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues
+/254 *)
+
 From CertiCoq.Plugin Require Import CertiCoq.
 From MetaCoq.Template Require Import utils.
 Open Scope bs_scope.
@@ -30,10 +33,10 @@ Definition pipeline (p : Template.Ast.Env.program) :=
   '(prs, next_id) <- register_prims next_id genv.(Ast.Env.declarations) ;;
   p' <- CertiCoq_pipeline next_id prs p ;;
   compile_Clight prs p'.
-  
+
 Definition compile (opts : Options) (p : Template.Ast.Env.program) :=
   run_pipeline _ _ opts p pipeline.
-  
+
 Transparent compile.compile.
 
 Definition cps_show (t : LambdaANF_FullTerm) :=
@@ -41,19 +44,19 @@ Definition cps_show (t : LambdaANF_FullTerm) :=
   let s := cps_show.show_exp nameenv ctorenv false e in
   coq_msg_info s.
 
-Definition certicoqc (opts : Options) (p : Template.Ast.Env.program) := 
+Definition certicoqc (opts : Options) (p : Template.Ast.Env.program) :=
   let () := coq_msg_info "certicoqc called" in
   compile opts p.
 
 Set Warnings "-primitive-turned-into-axiom".
-(* 
+(*
 From MetaCoq Require Import Primitive Template.Ast.
 
-Definition certicoqc (opts : Options) (p : Template.Ast.Env.program) := 
+Definition certicoqc (opts : Options) (p : Template.Ast.Env.program) :=
   (* let () := coq_msg_info "certicoqc called" in *)
   (* let () := coq_msg_info ("got program: " ++ Pretty.print_program false 100 p) in *)
-  match snd p with 
-  | Template.Ast.tConst kn _ => 
+  match snd p with
+  | Template.Ast.tConst kn _ =>
     match Env.lookup_env (fst p) kn with
     | Some (ConstantDecl {| cst_body := Some (tInt i) |}) => coq_msg_info (string_of_prim_int i)
     | _ => tt
