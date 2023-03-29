@@ -258,13 +258,11 @@ Ssrnat
 Eqtype
 Seq
 Numerics
-BinIntDef
 Bytes
 Leb128
 Datatypes0
 Datatypes_properties
 Binary_format_printer
-Bytes_pp
 Prettyprint
 My_map
 LambdaANF_to_WASM

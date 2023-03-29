@@ -269,10 +269,6 @@ extraction/numerics.ml
 extraction/numerics.mli
 extraction/eqtype.ml
 extraction/eqtype.mli
-extraction/bytes_pp.ml
-extraction/bytes_pp.mli
-extraction/binIntDef.ml
-extraction/binIntDef.mli
 extraction/common0.ml
 extraction/common0.mli
 extraction/datatypes0.ml
