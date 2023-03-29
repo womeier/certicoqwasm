@@ -7,24 +7,24 @@ TESTS=$(shell cat TESTS)
 WATFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wat, $(TESTS))
 WASMFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wasm, $(TESTS))
 JSFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.js, $(TESTS))
-WAT2WASM=wat2wasm
+WASM2WAT=wasm2wat
 
-all: lib tests runwasm
+all: lib tests runwasm convert2wat
 
 .PHONY: all default clean lib cleanlib tests $(TESTS)
 
-$(WATFILES): tests
+$(WASMFILES): tests
 
 %.js: %.wasm
 	cp ./run-wasm-template.js $@
 	sed -i 's/{{file}}/$</g' $@
 
-%.wasm: %.wat
-	$(WAT2WASM) $<
+%.wat: %.wasm
+	$(WASM2WAT) $< > $@
 
-compilewasm: $(WASMFILES)
+convert2wat: $(WATFILES)
 
-runwasm: compilewasm $(JSFILES)
+runwasm: $(JSFILES)
 	./run_wasm_benchmarks.py
 
 clean:
@@ -47,4 +47,3 @@ cleanlib:
 tests: tests.v
 	ulimit -s unlimited
 	coqc $(COQOPTS) tests.v
-
