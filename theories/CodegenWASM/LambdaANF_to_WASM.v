@@ -9,11 +9,12 @@ From MetaCoq.Template Require Import bytestring MCString.
 From Coq Require Import ZArith List.
 
 Require Import MSets.MSetAVL.
-Require Import FMapAVL.
+From Coq Require Import FMapAVL.
 Require Import POrderedType.
 
-Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.my_map.
+Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm_map_util.
 Import MonadNotation.
+
 
 (* Main file for compiler backend targeting WASM. *)
 
@@ -24,14 +25,12 @@ Import MonadNotation.
 
 Module S_pos := MSetAVL.Make Positive_as_OT.
 Module S_string := MSetAVL.Make StringOT.
+Module M_string := FMapAVL.Make MyStringOT.
 
-Definition M := partial_map nat. (* string -> nat *)
-(* TODO: map from standard library *)
-(* Module M := FMapAVL.Make StringOT. *)
 
 (* TODO: map var/fn ids to new ids instead of string intermediate *)
-Definition var_env := M.    (* maps variable names to their id *)
-Definition fname_env := M.  (* maps function names to their id *)
+Definition var_env := M_string.t nat.    (* maps variable names to their id *)
+Definition fname_env := M_string.t nat.  (* maps function names to their id *)
 
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
@@ -59,7 +58,7 @@ Definition translate_var_to_string (nenv : name_env) (v : cps.var) : string :=
   "$" ++ show_tree (show_var nenv v).
 
 Definition lookup_local_var (name : string) (venv : var_env) (err : string) : error immediate :=
-  match venv name with
+  match M_string.find name venv with
   | Some n => Ret n
   | None => Err ("expected to find id for variable " ++ name ++ " in var mapping: " ++ err)
   end.
@@ -69,7 +68,7 @@ Definition translate_var (nenv : name_env) (venv : var_env) (v : cps.var) (err_l
   lookup_local_var name venv err_location.
 
 Definition lookup_function_var (name : string) (fenv : fname_env) (err : string): error immediate :=
-  match (fenv name) with
+  match M_string.find name fenv with
   | Some n => Ret n
   | None => Err err
   end.
@@ -267,7 +266,7 @@ Definition indirection_function_name (arg_types : list value_type) (ret_type : o
   "$indirect_" ++ arg_types' ++ "ret_" ++ ret_type'.
 
 Definition is_function_name (fenv : fname_env) (v : string) : bool :=
-  match fenv v with
+  match M_string.find v fenv with
   | Some _ => true
   | None => false
   end.
@@ -461,14 +460,14 @@ Definition create_local_variable_mapping (nenv : name_env) (fenv : fname_env) (l
     | [] => initial
     | v :: l' => let mapping := aux (1 + start_id) l' venv in
                  let v_str := translate_var_to_string nenv v in
-                 update mapping v_str start_id
+                 M_string.add v_str start_id mapping
     end in
   aux 0 locals initial.
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
                               (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
   let local_vars := collect_local_variables body in
-  let var_env := create_local_variable_mapping nenv fenv (args ++ local_vars) empty in
+  let var_env := create_local_variable_mapping nenv fenv (args ++ local_vars) (M_string.empty _) in
   body_res <- translate_exp nenv cenv var_env fenv body ;;
   let arg_types := map (fun _ => T_i32) args in
   let locals := map (fun _ => T_i32) local_vars in
@@ -522,12 +521,12 @@ Definition collect_function_signatures (nenv : name_env) (e : exp) : error (list
 Fixpoint add_to_fname_mapping (names : list string) (start_id : nat) (initial : fname_env) : fname_env :=
   match names with
   | [] => initial
-  | n :: names' => update (add_to_fname_mapping names' (1 + start_id) initial) n start_id
+  | n :: names' => M_string.add n start_id (add_to_fname_mapping names' (1 + start_id) initial)
   end.
 
 (* maps function names to ids (id=index in function list of module) *)
 Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [write_char_function_name; write_int_function_name] 0 empty, 2) in
+  let (fname_mapping, num_fns) := (add_to_fname_mapping [write_char_function_name; write_int_function_name] 0 (M_string.empty _), 2) in
 
   let fun_names :=
     match e with
@@ -589,7 +588,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   end ;;
 
   let main_vars := collect_local_variables main_expr in
-  let main_venv := create_local_variable_mapping nenv fname_mapping main_vars empty in
+  let main_venv := create_local_variable_mapping nenv fname_mapping main_vars (M_string.empty _) in
 
   main_instr <- translate_exp nenv cenv main_venv fname_mapping main_expr ;;
   main_function_var <- lookup_function_var main_function_name fname_mapping "main function";;
