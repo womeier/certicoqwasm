@@ -12,7 +12,7 @@ Require Import MSets.MSetAVL.
 Require Import FMapAVL.
 Require Import POrderedType.
 
-Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm CodegenWASM.my_map.
+Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.my_map.
 Import MonadNotation.
 
 (* Main file for compiler backend targeting WASM. *)
@@ -35,6 +35,15 @@ Definition fname_env := M.  (* maps function names to their id *)
 
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
+
+(* target type for generating functions, contains more fields than the Wasm module *)
+Record wasm_function :=
+  { var : immediate
+  ; export_name : string
+  ; type : function_type
+  ; locals : list value_type
+  ; body : list basic_instruction
+  }.
 
 (* generates list of n arguments *)
 Fixpoint arg_list (n : nat) : list (immediate * value_type) :=
@@ -161,11 +170,10 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (fenv : fname_env) (
   let fn_name := constr_alloc_function_name c in
   fn_var <- lookup_function_var fn_name fenv ("generate constr alloc: " ++ fn_name)%bs ;;
 
-  Ret {| name := fn_var
+  Ret {| var := fn_var
        ; export_name := fn_name
-       ; args := args
-       ; ret_type := Some T_i32
-       ; locals := [(return_var, T_i32)]
+       ; type := Tf (map snd args) [T_i32]
+       ; locals := [T_i32]
        ; body := body
        |}.
 
@@ -235,11 +243,10 @@ Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tag
   let _ := ")"  (* hack to fix syntax highlighting bug *)
 
   in
-  Ret {| name := self_fn_var
+  Ret {| var := self_fn_var
        ; export_name := constr_pp_function_name
-       ; args := [(constr_ptr, T_i32)]
-       ; ret_type := None
-       ; locals := [(tmp, T_i32)]
+       ; type := Tf [T_i32] []
+       ; locals := [T_i32]
        ; body := body
        |}.
 
@@ -296,10 +303,9 @@ Definition generate_indirection_function (fns : list func_signature) (fenv : fna
   let fn_name := indirection_function_name arg_types ret_type in
   fn_var <- lookup_function_var fn_name fenv "gen indirection function";;
 
-  Ret {| name := fn_var
+  Ret {| var := fn_var
        ; export_name := fn_name
-       ; args := args ++ [(id_var, T_i32)]
-       ; ret_type := ret_type
+       ; type := Tf (map snd args ++ [T_i32]) (match ret_type with None => [] | Some t => [t] end)
        ; locals := []
        ; body := body
        |}.
@@ -464,17 +470,16 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   let local_vars := collect_local_variables body in
   let var_env := create_local_variable_mapping nenv fenv (args ++ local_vars) empty in
   body_res <- translate_exp nenv cenv var_env fenv body ;;
-  args   <- sequence (map (fun p => v <- translate_var nenv var_env p "translate_function";; Ret (v, T_i32)) args);;
-  locals <- sequence (map (fun p => v <- translate_var nenv var_env p "translate_function";; Ret (v, T_i32)) local_vars);;
+  let arg_types := map (fun _ => T_i32) args in
+  let locals := map (fun _ => T_i32) local_vars in
 
   let fn_name := translate_var_to_string nenv name in
   fn_var <- lookup_function_var fn_name fenv "translate function" ;;
 
   Ret
-  {| name := fn_var
+  {| var := fn_var
    ; export_name := fn_name
-   ; args := args
-   ; ret_type := Some T_i32
+   ; type := Tf arg_types [T_i32]
    ; locals := locals
    ; body := body_res
    |}.
@@ -485,10 +490,9 @@ Definition get_memory_usage_function_name := "$get_memory_usage_in_bytes".
 
 Definition get_memory_usage_function (fenv : fname_env) : error wasm_function :=
   var <- lookup_function_var get_memory_usage_function_name fenv "mem usage fn" ;;
-  Ret {| name := var
+  Ret {| var := var
        ; export_name := get_memory_usage_function_name
-       ; args := []
-       ; ret_type := Some T_i32
+       ; type := Tf [] [T_i32]
        ; locals := []
        ; body := [ BI_get_global global_mem_ptr; BI_return ]
        |}.
@@ -554,7 +558,7 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
   Ret fname_mapping.
 
 
-Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error wasm_module :=
+Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error module :=
   fname_mapping <- create_fname_mapping nenv e ;;
 
   let constr_tags := collect_constr_tags e in
@@ -586,26 +590,57 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
 
   let main_vars := collect_local_variables main_expr in
   let main_venv := create_local_variable_mapping nenv fname_mapping main_vars empty in
-  locals <- sequence (map (fun p => v <- translate_var nenv main_venv p "main locals";; Ret (v, T_i32)) main_vars);;
 
   main_instr <- translate_exp nenv cenv main_venv fname_mapping main_expr ;;
   main_function_var <- lookup_function_var main_function_name fname_mapping "main function";;
 
   mem_usage_function <- get_memory_usage_function fname_mapping;;
 
-  let main_function := {| name := main_function_var
+  let main_function := {| var := main_function_var
                         ; export_name := main_function_name
-                        ; args := []
-                        ; ret_type := Some T_i32
-                        ; locals := locals
+                        ; type := Tf [] [T_i32]
+                        ; locals := map (fun _ => T_i32) main_vars
                         ; body := main_instr
-                        |} in
+                        |}
+  in
+  let functions := fns ++ constr_alloc_functions ++ [constr_pp_function] ++ indirection_functions ++ [mem_usage_function; main_function] in
+  let types := map (fun f => f.(type)) functions in
+  let exports := map (fun f => {| modexp_name := String.print f.(export_name)
+                                ; modexp_desc := MED_func (Mk_funcidx f.(var))
+                                |}) functions in
 
-  Ret {| memory := 100 * 100 (* KB, multiplication: hack to avoid extraction error *)
-       ; functions := fns ++ constr_alloc_functions ++ [constr_pp_function] ++ indirection_functions ++ [mem_usage_function; main_function]
-       ; global_vars := [(global_mem_ptr, T_i32, 0)]
-       ; function_imports := [ ("env", write_char_function_var, write_char_function_name, [T_i32])
-                             ; ("env", write_int_function_var, write_int_function_name, [T_i32])
-                             ]
-       ; comment := "constructors: " ++ (fold_left (fun _s p => _s ++ string_of_nat (Pos.to_nat p) ++ ", ")%bs (collect_constr_tags e) "")
+  let functions_final := map (fun f => {| modfunc_type := Mk_typeidx f.(var)
+                                        ; modfunc_locals := f.(locals)
+                                        ; modfunc_body := f.(body)
+                                        |}) functions
+  in
+  Ret {| mod_types := [ Tf [T_i32] []                                             (* type write_char *)
+                      ; Tf [T_i32] []                                             (* type write_int  *)
+                      ] ++ types
+
+       ; mod_funcs := functions_final
+       ; mod_tables := []
+
+       ; mod_mems := {| lim_min := N_of_nat (100 * 100)                           (* multiplication: hack to ensure proper extraction *)
+                      ; lim_max := None                                           (* TODO: request memory gradually during execution *)
+                      |} :: nil
+
+       ; mod_globals := {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* global_mem_ptr *)
+                         ; modglob_init := [BI_const (nat_to_i32 0)]
+                         |} :: nil
+
+       ; mod_elem := []
+       ; mod_data := []
+       ; mod_start := None
+
+       ; mod_imports := {| imp_module := String.print "env"
+                         ; imp_name := String.print write_char_function_name
+                         ; imp_desc := ID_func 0
+                         |} ::
+                        {| imp_module := String.print "env"
+                         ; imp_name := String.print write_int_function_name
+                         ; imp_desc := ID_func 1
+                         |} :: nil
+
+       ; mod_exports := exports
        |}.

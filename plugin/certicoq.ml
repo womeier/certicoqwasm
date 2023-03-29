@@ -15,7 +15,7 @@ open Plugin_utils
 let pr_string s = str (Caml_bytestring.caml_string_of_bytestring s)
 
 (* remove duplicates but preserve order, keep the leftmost element *)
-let nub (xs : 'a list) : 'a list = 
+let nub (xs : 'a list) : 'a list =
   List.fold_right (fun x xs -> if List.mem x xs then xs else x :: xs) xs []
 
 let rec coq_nat_of_int x =
@@ -31,7 +31,7 @@ let debug_msg (flag : bool) (s : string) =
 (* Separate registration of primitive extraction *)
 
 type prim = ((Kernames.kername * Kernames.ident) * bool)
-let global_registers = 
+let global_registers =
   Summary.ref (([], []) : prim list * string list) ~name:"CertiCoq Registration"
 
 let global_registers_name = "certicoq-registration"
@@ -39,9 +39,9 @@ let global_registers_name = "certicoq-registration"
 let cache_registers (prims, imports) =
   let (prims', imports') = !global_registers in
   global_registers := (prims @ prims', imports @ imports')
-let global_registers_input = 
-  let open Libobject in 
-  declare_object 
+let global_registers_input =
+  let open Libobject in
+  declare_object
     (global_object_nodischarge global_registers_name
     ~cache:(fun (_, r) -> cache_registers r)
     ~subst:None) (*(fun (msub, r) -> r)) *)
@@ -108,13 +108,13 @@ let default_options : options =
 
 let check_build_dir d =
   if d = "" then "." else
-  let isdir = 
+  let isdir =
     try Unix.((stat d).st_kind = S_DIR)
     with Unix.Unix_error (Unix.ENOENT, _, _) ->
-      CErrors.user_err ~hdr:"pipeline" 
+      CErrors.user_err ~hdr:"pipeline"
         Pp.(str "Could not compile: build directory " ++ str d ++ str " not found.")
   in
-  if not isdir then 
+  if not isdir then
     CErrors.user_err ~hdr:"pipeline"
       Pp.(str "Could not compile: " ++ str d ++ str " is not a directory.")
   else d
@@ -187,15 +187,15 @@ module type CompilerInterface = sig
   val compile : Pipeline_utils.coq_Options -> Ast0.Env.program -> ((name_env * Clight.program) * Clight.program) CompM.error * Bytestring.String.t
   val printProg : Clight.program -> name_env -> string -> string list -> unit
 
-  val generate_glue : Pipeline_utils.coq_Options -> Ast0.Env.global_declarations -> 
+  val generate_glue : Pipeline_utils.coq_Options -> Ast0.Env.global_declarations ->
     (((name_env * Clight.program) * Clight.program) * Bytestring.String.t list) CompM.error
-  
+
   val generate_ffi :
     Pipeline_utils.coq_Options -> Ast0.Env.program -> (((name_env * Clight.program) * Clight.program) * Bytestring.String.t list) CompM.error
-  
+
 end
 
-module MLCompiler : CompilerInterface with 
+module MLCompiler : CompilerInterface with
   type name_env = BasicAst.name Cps.M.t
   = struct
   type name_env = BasicAst.name Cps.M.t
@@ -286,42 +286,42 @@ module CompileFunctor (CI : CompilerInterface) = struct
   let generate_glue_only opts gr =
     let term = quote opts gr in
     generate_glue true opts (Ast0.Env.declarations (fst (Obj.magic term)))
-    
-  let compiler_executable debug = 
+
+  let compiler_executable debug =
     let whichcmd = Unix.open_process_in "which gcc || which clang" in
-    let result = 
-      try Stdlib.input_line whichcmd 
+    let result =
+      try Stdlib.input_line whichcmd
       with End_of_file -> ""
     in
     let status = Unix.close_process_in whichcmd in
     match status with
-    | Unix.WEXITED 0 -> 
+    | Unix.WEXITED 0 ->
       if debug then Feedback.msg_debug Pp.(str "Compiler is " ++ str result);
       result
     | _ -> failwith "Compiler not found"
 
-  type line = 
+  type line =
     | EOF
     | Info of string
     | Error of string
 
   let read_line stdout stderr =
     try Info (input_line stdout)
-    with End_of_file -> 
+    with End_of_file ->
       try Error (input_line stderr)
       with End_of_file -> EOF
-  
+
   let run_program debug prog =
     let (stdout, stdin, stderr) = Unix.open_process_full ("./" ^ prog) (Unix.environment ()) in
     let continue = ref true in
-    while !continue do 
+    while !continue do
       match read_line stdout stderr with
       | EOF -> debug_msg debug ("Program terminated"); continue := false
       | Info s -> Feedback.msg_notice Pp.(str prog ++ str": " ++ str s)
       | Error s -> Feedback.msg_warning Pp.(str prog ++ str": " ++ str s)
     done
 
-  let runtime_dir () = 
+  let runtime_dir () =
     let lib = Envars.coqlib () in
     Filename.concat (Filename.concat (Filename.concat (Filename.concat lib "user-contrib") "CertiCoq") "Plugin") "runtime"
 
@@ -338,23 +338,23 @@ module CompileFunctor (CI : CompilerInterface) = struct
     let compiler = compiler_executable debug in
     let rt_dir = runtime_dir () in
     let cmd =
-        Printf.sprintf "%s -Wno-everything -g -I %s -I %s -c -o %s %s" 
-          compiler opts.build_dir rt_dir (name ^ ".o") (name ^ ".c") 
+        Printf.sprintf "%s -Wno-everything -g -I %s -I %s -c -o %s %s"
+          compiler opts.build_dir rt_dir (name ^ ".o") (name ^ ".c")
     in
     let importso =
-      let oname s = 
+      let oname s =
         assert (CString.is_suffix ".h" s);
         String.sub s 0 (String.length s - 2) ^ ".o"
-      in 
+      in
       let l = make_rt_file "certicoq_run_main.o" :: List.map oname imports in
       String.concat " " l
     in
     let gc_stack_o = make_rt_file "gc_stack.o" in
     debug_msg debug (Printf.sprintf "Executing command: %s" cmd);
     match Unix.system cmd with
-    | Unix.WEXITED 0 -> 
+    | Unix.WEXITED 0 ->
       let linkcmd =
-        Printf.sprintf "%s -Wno-everything -g -L %s -L %s -o %s %s %s %s" 
+        Printf.sprintf "%s -Wno-everything -g -L %s -L %s -o %s %s %s %s"
           compiler opts.build_dir rt_dir name gc_stack_o (name ^ ".o") importso
       in
       debug_msg debug (Printf.sprintf "Executing command: %s" linkcmd);
@@ -366,7 +366,7 @@ module CompileFunctor (CI : CompilerInterface) = struct
       | Unix.WSIGNALED n | Unix.WSTOPPED n -> CErrors.user_err Pp.(str"Compiler was signaled with code " ++ int n))
     | Unix.WEXITED n -> CErrors.user_err Pp.(str"Compiler exited with code " ++ int n ++ str" while running " ++ str cmd)
     | Unix.WSIGNALED n | Unix.WSTOPPED n -> CErrors.user_err Pp.(str"Compiler was signaled with code " ++ int n  ++ str" while running " ++ str cmd)
-  
+
   let print_to_file (s : string) (file : string) =
     let f = open_out file in
     Printf.fprintf f "%s\n" s;
@@ -394,6 +394,11 @@ module CompileFunctor (CI : CompilerInterface) = struct
       debug_msg debug (string_of_bytestring dbg);
       CErrors.user_err ~hdr:"show-ir" (str "Could not compile: " ++ (pr_string s) ++ str "\n")
 
+  let print_to_file_no_nl (s : string) (file : string) =
+    let f = open_out file in
+    Printf.fprintf f "%s" s;
+    close_out f
+
   let compile_wasm opts gr =
     let term = quote opts gr in
     let debug = opts.debug in
@@ -405,8 +410,8 @@ module CompileFunctor (CI : CompilerInterface) = struct
       let time = Unix.gettimeofday() in
       let suff = opts.ext in
       let fname = opts.filename in
-      let file = fname ^ suff ^ ".wat" in
-      print_to_file (string_of_bytestring prg) file;
+      let file = fname ^ suff ^ ".wasm" in
+      print_to_file_no_nl (string_of_bytestring prg) file;
       let time = (Unix.gettimeofday() -. time) in
       debug_msg debug (Printf.sprintf "Printed to file %s in %f s.." file time);
       debug_msg debug "Pipeline debug:";
@@ -424,7 +429,7 @@ module CompileFunctor (CI : CompilerInterface) = struct
     let sigma = Evd.from_env env in
     let sigma, c = Evarutil.new_global sigma gr in
     let name = match gr with
-      | Names.GlobRef.IndRef i -> 
+      | Names.GlobRef.IndRef i ->
           let (mut, _) = i in
           Names.KerName.to_string (Names.MutInd.canonical mut)
       | _ -> CErrors.user_err ~hdr:"template-coq"
@@ -462,7 +467,7 @@ module CompileFunctor (CI : CompilerInterface) = struct
 
   let glue_command opts grs =
     let terms = grs |> List.rev
-                |> List.map (fun gr -> Metacoq_template_plugin.Ast0.Env.declarations (fst (quote opts gr))) 
+                |> List.map (fun gr -> Metacoq_template_plugin.Ast0.Env.declarations (fst (quote opts gr)))
                 |> List.concat |> nub in
     generate_glue true opts (Obj.magic terms)
 

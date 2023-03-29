@@ -1,5 +1,7 @@
 Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
 
+From Wasm Require Import binary_format_printer.
+
 Require Export LambdaBoxMut.toplevel LambdaBoxLocal.toplevel LambdaANF.toplevel Codegen.toplevel CodegenWASM.toplevel.
 Require Import compcert.lib.Maps.
 Require Import ZArith.
@@ -205,6 +207,6 @@ Definition show_IR (opts : Options) (p : Template.Ast.Env.program) : (error stri
 Definition compile_WASM (opts : Options) (p : Template.Ast.Env.program) : (error string * string) :=
 let (perr, log) := run_pipeline _ _ opts p pipeline_WASM in
   match perr with
-  | Ret p => (Ret (wasm.wasm_module_show p), log)
+  | Ret p => (Ret (String.parse (binary_of_module p)), log)
   | Err s => (Err s, log)
   end.

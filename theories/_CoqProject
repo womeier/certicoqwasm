@@ -128,7 +128,6 @@ Codegen/toplevel.v
 
 # CodegenWASM
 CodegenWASM/toplevel.v
-CodegenWASM/wasm.v
 CodegenWASM/LambdaANF_to_WASM.v
 CodegenWASM/my_map.v
 

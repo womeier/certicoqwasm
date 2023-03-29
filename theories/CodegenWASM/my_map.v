@@ -10,7 +10,7 @@ From Coq Require Import ZArith List.
 Require Import MSets.MSetAVL.
 Require Import POrderedType.
 
-Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm.
+Require Import LambdaANF.cps LambdaANF.cps_show.
 
 Import MonadNotation.
 
