@@ -29,8 +29,8 @@ Module M_string := FMapAVL.Make MyStringOT.
 
 
 (* TODO: map var/fn ids to new ids instead of string intermediate *)
-Definition var_env := M_string.t nat.    (* maps variable names to their id *)
-Definition fname_env := M_string.t nat.  (* maps function names to their id *)
+Definition var_env := M_string.t nat.    (* maps variable names to their id (id=index in list of vars) *)
+Definition fname_env := M_string.t nat.  (* maps function export names to their id (id=index in list of functions) *)
 
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
@@ -53,6 +53,9 @@ Fixpoint arg_list (n : nat) : list (immediate * value_type) :=
 
 Definition nat_to_i32 (n : nat) :=
   VAL_int32 (Wasm_int.Int32.repr (BinInt.Z.of_nat n)).
+
+Definition Z_to_i32 (z : Z) :=
+  VAL_int32 (Wasm_int.Int32.repr z).
 
 Definition translate_var_to_string (nenv : name_env) (v : cps.var) : string :=
   "$" ++ show_tree (show_var nenv v).
@@ -128,6 +131,30 @@ Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
 Definition collect_constr_tags (e : exp) : list ctor_tag :=
   S_pos.elements (collect_constr_tags' e).
 
+
+(* a page is 2^16 bytes *)
+Definition grow_memory_if_necessary (required_bytes : nat) : list basic_instruction :=
+  (* required number of total pages *)
+  [ BI_get_global global_mem_ptr
+  ; BI_const (nat_to_i32 required_bytes)
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_const (nat_to_i32 (2 ^ 16))
+  ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
+
+  (* current number of pages *)
+  ; BI_current_memory
+  ; BI_relop T_i32 (Relop_i (ROI_ge SX_S))
+  (* allocate one page if necessary *)
+  ; BI_if (Tf nil nil) [ BI_const (nat_to_i32 1)
+                       ; BI_grow_memory (* returns -1 on alloc failure *)
+                       ; BI_const (Z_to_i32 (-1))
+                       ; BI_relop T_i32 (Relop_i ROI_eq)
+                       ; BI_if (Tf nil nil) [ BI_unreachable ] (* we use an unbounded memory so this never happens *)
+                                            [ BI_nop ]
+                       ]
+                       [ BI_nop ]
+  ].
+
 (* generates function that takes the arguments of a constructor
   and allocates a record in the linear memory *)
 Definition generate_constr_alloc_function (cenv : ctor_env) (fenv : fname_env) (c : ctor_tag) : error wasm_function :=
@@ -139,6 +166,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (fenv : fname_env) (
   let return_var := (num_args : immediate) in (* 1st local var idx after args *)
   let args := arg_list num_args in
   let body :=
+         grow_memory_if_necessary (4 * (1 + num_args)) ++
          [ BI_get_global global_mem_ptr
          ; BI_set_local return_var
 
@@ -453,7 +481,7 @@ Fixpoint collect_local_variables (e : exp) {struct e} : list cps.var :=
   | Ehalt _ => []
   end.
 
-(* locals should be unique *)
+(* locals are expected to be unique *)
 Definition create_local_variable_mapping (nenv : name_env) (fenv : fname_env) (locals : list cps.var) (initial : var_env) : var_env :=
   let fix aux (start_id : nat) (locals : list cps.var) (venv : var_env) :=
     match locals with
@@ -613,15 +641,15 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                                         ; modfunc_body := f.(body)
                                         |}) functions
   in
-  Ret {| mod_types := [ Tf [T_i32] []                                             (* type write_char *)
-                      ; Tf [T_i32] []                                             (* type write_int  *)
+  Ret {| mod_types := [ Tf [T_i32] []                 (* type write_char *)
+                      ; Tf [T_i32] []                 (* type write_int  *)
                       ] ++ types
 
        ; mod_funcs := functions_final
        ; mod_tables := []
 
-       ; mod_mems := {| lim_min := N_of_nat (100 * 100)                           (* multiplication: hack to ensure proper extraction *)
-                      ; lim_max := None                                           (* TODO: request memory gradually during execution *)
+       ; mod_mems := {| lim_min := N_of_nat 100       (* initial memory size in pages (page = 2^16 bytes), is grown as needed *)
+                      ; lim_max := None               (* memory can grow infinitely *)
                       |} :: nil
 
        ; mod_globals := {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* global_mem_ptr *)
