@@ -27,17 +27,6 @@ cd submodules
 # make install
 # cd ..
 
-pwd -P
-cd coq-paco
-echo "Building coq-paco"
-pwd -P
-clean
-pwd -P
-cd src
-make
-make -f Makefile.coq install
-cd ../..
-
 cd strong-induction
 echo "Building Strong-Induction"
 make
@@ -46,13 +35,6 @@ cd ..
 
 cd parseque
 echo "Building parseque"
-clean
-make
-make install
-cd ..
-
-cd interactiontrees
-echo "Building interactiontrees"
 clean
 make
 make install

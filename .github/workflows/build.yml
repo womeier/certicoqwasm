@@ -16,7 +16,7 @@ jobs:
         opam_file:
           - 'coq-certicoq.opam'
         image:
-          - 'ghcr.io/womeier/certicoqwasm:2.0'
+          - 'ghcr.io/womeier/certicoqwasm:4.0'
       fail-fast: true
 
     steps:
@@ -36,10 +36,8 @@ jobs:
               git config --global --add safe.directory /github/workspace
               git config --global --add safe.directory /github/workspace/submodules/wasmcert
               git config --global --add safe.directory /github/workspace/submodules/strong-induction
-              git config --global --add safe.directory /github/workspace/submodules/coq-paco
               git config --global --add safe.directory /github/workspace/submodules/metacoq
               git config --global --add safe.directory /github/workspace/submodules/parseque
-              git config --global --add safe.directory /github/workspace/submodules/interactiontrees
               git submodule update --init
             endGroup
             startGroup "Install some more opam packages"
@@ -47,6 +45,8 @@ jobs:
               opam update
               opam pin -y coq-mathcomp-ssreflect 1.16.0
               opam install coq-mathcomp-ssreflect
+              opam pin -y coq-itree 5.1.1
+              opam install coq-itree
 
               cd ~/repo
               opam pin -n -y  submodules/metacoq # was pinned to the submodule at the same path in the dockerfile before -> is not rebuilt
@@ -56,13 +56,6 @@ jobs:
               cd ~/repo/submodules/
               git submodule update --init
 
-              cd coq-paco
-              echo "Building coq-paco"
-              cd src
-              make
-              make -f Makefile.coq install
-              cd ../..
-
               cd strong-induction
               echo "Building Strong-Induction"
               make
@@ -71,12 +64,6 @@ jobs:
 
               cd parseque
               echo "Building parseque"
-              make
-              make install
-              cd ..
-
-              cd interactiontrees
-              echo "Building interactiontrees"
               make
               make install
               cd ..
