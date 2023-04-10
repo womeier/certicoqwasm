@@ -35,7 +35,7 @@ Definition fname_env := M_string.t nat.  (* maps function export names to their 
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
 
-(* target type for generating functions, contains more fields than the Wasm module *)
+(* target type for generating functions, contains more fields than the one from Wasm *)
 Record wasm_function :=
   { var : immediate
   ; export_name : string
