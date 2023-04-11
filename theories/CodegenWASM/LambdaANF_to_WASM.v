@@ -1,6 +1,6 @@
 Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
 
-From Wasm Require Import datatypes prettyprint.
+From Wasm Require Import datatypes.
 
 From CertiCoq Require Import LambdaANF.toplevel.
 Require Import Common.Common Common.compM Common.Pipeline_utils.
@@ -288,8 +288,15 @@ Record func_signature :=
   }.
 
 Definition indirection_function_name (arg_types : list value_type) (ret_type : option value_type) : string :=
-  let arg_types' := fold_left (fun _s a => _s ++ pp_value_type a ++ "_")%bs arg_types "" in
-  let ret_type' := match ret_type with None => "nothing" | Some t => pp_value_type t end
+  let value_type2string vt :=
+   match vt with
+    | T_i32 => "i32"
+    | T_i64 => "i64"
+    | T_f32 => "f32"
+    | T_f64 => "f64"
+    end in
+  let arg_types' := fold_left (fun _s a => _s ++ value_type2string a ++ "_")%bs arg_types "" in
+  let ret_type' := match ret_type with None => "nothing" | Some t => value_type2string t end
   in
   "$indirect_" ++ arg_types' ++ "ret_" ++ ret_type'.
 

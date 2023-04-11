@@ -263,7 +263,6 @@ Leb128
 Datatypes0
 Datatypes_properties
 Binary_format_printer
-Prettyprint
 Wasm_map_util
 LambdaANF_to_WASM
 Toplevel3
