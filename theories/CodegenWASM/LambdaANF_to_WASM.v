@@ -648,7 +648,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
        ; mod_funcs := functions_final
        ; mod_tables := []
 
-       ; mod_mems := {| lim_min := N_of_nat 100       (* initial memory size in pages (page = 2^16 bytes), is grown as needed *)
+       ; mod_mems := {| lim_min := N_of_nat 1         (* initial memory size in pages (1 page = 2^16 bytes), is grown as needed *)
                       ; lim_max := None               (* memory can grow infinitely *)
                       |} :: nil
 
