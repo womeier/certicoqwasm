@@ -172,7 +172,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (fenv : fname_env) (
 
          ; BI_get_global global_mem_ptr
          ; BI_const (nat_to_i32 ctor_id)
-         ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+         ; BI_store T_i32 None (N_of_nat 4) (N_of_nat 0) (* 0: offset, 4: align, alignment irrelevant for semantics *)
          ; BI_get_global global_mem_ptr
          ; BI_const (nat_to_i32 4)
          ; BI_binop T_i32 (Binop_i BOI_add)
@@ -181,7 +181,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (fenv : fname_env) (
          (flat_map (fun arg =>
              [ BI_get_global global_mem_ptr
              ; BI_get_local (fst arg)
-             ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+             ; BI_store T_i32 None (N_of_nat 4) (N_of_nat 0) (* 0: offset, 4: align, alignment irrelevant for semantics *)
              ; BI_get_global global_mem_ptr
              ; BI_const (nat_to_i32 4)
              ; BI_binop T_i32 (Binop_i BOI_add)
@@ -232,7 +232,7 @@ Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tag
                   ; BI_binop T_i32 (Binop_i BOI_add)
                   ; BI_set_local tmp
                   ; BI_get_local tmp
-                  ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+                  ; BI_load T_i32 None (N_of_nat 4) (N_of_nat 0) (* 0: offset, 4: align, alignment irrelevant for semantics *)
                   ; BI_call self_fn_var
                   ] ++ (gen_rec_calls calls' arity)
     end in
@@ -248,7 +248,7 @@ Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tag
 
     Ret [ BI_const (nat_to_i32 ctor_id)
         ; BI_get_local constr_ptr
-        ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+        ; BI_load T_i32 None (N_of_nat 4) (N_of_nat 0) (* 0: offset, 4: align, alignment irrelevant for semantics *)
         ; BI_relop T_i32 (Relop_i ROI_eq)
         ; BI_if (Tf nil nil)
                 ((instr_write_string " ") ++ (if ctor_arity =? 0 then [ BI_nop ] else (instr_write_string "(")) ++ instr_write_string ctor_name ++
@@ -428,7 +428,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
        x_var <- translate_var nenv venv x "translate_exp case";;
 
        Ret [ BI_get_local x_var
-           ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+           ; BI_load T_i32 None (N_of_nat 4) (N_of_nat 0) (* 0: offset, 4: align, alignment irrelevant for semantics *)
            ; BI_const (nat_to_i32 ctor_id)
            ; BI_relop T_i32 (Relop_i ROI_eq)
            ; BI_if (Tf nil nil) then_instr [ BI_nop ]
@@ -446,7 +446,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
       Ret ([ BI_get_local y_var
            ; BI_const (nat_to_i32 (4 * ((N.to_nat n) + 1))) (* skip ctor_id and previous constr arguments *)
            ; BI_binop T_i32 (Binop_i BOI_add)
-           ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+           ; BI_load T_i32 None (N_of_nat 4) (N_of_nat 0) (* 0: offset, 4: align, alignment irrelevant for semantics *)
            ; BI_set_local x_var
            ] ++ following_instr)
 
