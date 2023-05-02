@@ -25,7 +25,7 @@ $(WASMFILES): tests
 convert2wat: $(WATFILES)
 
 runwasm: $(JSFILES)
-	./run_wasm_benchmarks.py
+	ulimit -s unlimited && ./run_wasm_benchmarks.py
 
 clean:
 	rm -f ./*.wat ./*.wasm ./*.tests.*.js *.ir
@@ -45,5 +45,4 @@ cleanlib:
 	$(MAKE) clean -C lib
 
 tests: tests.v
-	ulimit -s unlimited
-	coqc $(COQOPTS) tests.v
+	ulimit -s unlimited && coqc $(COQOPTS) tests.v

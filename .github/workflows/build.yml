@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - master
-      - migrate-wasm
+      - cps
   workflow_dispatch:
     inputs:
 

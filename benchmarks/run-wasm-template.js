@@ -30,7 +30,8 @@ let importObject = {
     );
 
     try {
-        let res = obj.instance.exports.$main_function();
+        obj.instance.exports.$main_function();
+        let res = obj.instance.exports.$get_result();
         process.stdout.write("\n====>");
         obj.instance.exports.$pretty_print_constructor(res); console.log(""); // newline
 

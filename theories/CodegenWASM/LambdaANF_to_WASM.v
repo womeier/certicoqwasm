@@ -35,6 +35,10 @@ Definition fname_env := M_string.t nat.  (* maps function export names to their 
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
 
+(* global vars *)
+Definition global_mem_ptr : immediate := 0.
+Definition result_var : immediate := 1. (* since CPS: only one final result *)
+
 (* target type for generating functions, contains more fields than the one from Wasm *)
 Record wasm_function :=
   { var : immediate
@@ -52,9 +56,12 @@ Fixpoint arg_list (n : nat) : list (immediate * value_type) :=
   end.
 
 Definition nat_to_i32 (n : nat) :=
-  VAL_int32 (Wasm_int.Int32.repr (BinInt.Z.of_nat n)).
+  Wasm_int.Int32.repr (BinInt.Z.of_nat n).
 
-Definition Z_to_i32 (z : Z) :=
+Definition nat_to_value (n : nat) :=
+  VAL_int32 (nat_to_i32 n).
+
+Definition Z_to_value (z : Z) :=
   VAL_int32 (Wasm_int.Int32.repr z).
 
 Definition translate_var_to_string (nenv : name_env) (v : cps.var) : string :=
@@ -89,8 +96,6 @@ Definition write_int_function_var : immediate := 1.
 
 
 (* ***** GENERATE ALLOCATOR FUNCTIONS FOR CONSTRUCTORS ****** *)
-
-Definition global_mem_ptr : immediate := 0.
 
 Definition constr_alloc_function_name (tg : ctor_tag) : string :=
   "$alloc_constr_" ++ string_of_nat (Pos.to_nat tg).
@@ -136,18 +141,18 @@ Definition collect_constr_tags (e : exp) : list ctor_tag :=
 Definition grow_memory_if_necessary (required_bytes : nat) : list basic_instruction :=
   (* required number of total pages *)
   [ BI_get_global global_mem_ptr
-  ; BI_const (nat_to_i32 required_bytes)
+  ; BI_const (nat_to_value required_bytes)
   ; BI_binop T_i32 (Binop_i BOI_add)
-  ; BI_const (nat_to_i32 (2 ^ 16))
+  ; BI_const (nat_to_value (2 ^ 16))
   ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
 
   (* current number of pages *)
   ; BI_current_memory
   ; BI_relop T_i32 (Relop_i (ROI_ge SX_S))
   (* allocate one page if necessary *)
-  ; BI_if (Tf nil nil) [ BI_const (nat_to_i32 1)
+  ; BI_if (Tf nil nil) [ BI_const (nat_to_value 1)
                        ; BI_grow_memory (* returns -1 on alloc failure *)
-                       ; BI_const (Z_to_i32 (-1))
+                       ; BI_const (Z_to_value (-1))
                        ; BI_relop T_i32 (Relop_i ROI_eq)
                        ; BI_if (Tf nil nil) [ BI_unreachable ] (* we use an unbounded memory so this never happens *)
                                             [ BI_nop ]
@@ -171,10 +176,10 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (fenv : fname_env) (
          ; BI_set_local return_var
 
          ; BI_get_global global_mem_ptr
-         ; BI_const (nat_to_i32 ctor_id)
+         ; BI_const (nat_to_value ctor_id)
          ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
          ; BI_get_global global_mem_ptr
-         ; BI_const (nat_to_i32 4)
+         ; BI_const (nat_to_value 4)
          ; BI_binop T_i32 (Binop_i BOI_add)
          ; BI_set_global global_mem_ptr
          ] ++ (* store argument pointers in memory *)
@@ -183,7 +188,7 @@ Definition generate_constr_alloc_function (cenv : ctor_env) (fenv : fname_env) (
              ; BI_get_local (fst arg)
              ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
              ; BI_get_global global_mem_ptr
-             ; BI_const (nat_to_i32 4)
+             ; BI_const (nat_to_value 4)
              ; BI_binop T_i32 (Binop_i BOI_add)
              ; BI_set_global global_mem_ptr
              ]
@@ -216,7 +221,7 @@ Definition instr_write_string (s : string) : list basic_instruction :=
     | String.EmptyString => []
     | String.String b s'' => Byte.to_nat b :: to_ascii_list s''
     end in
-  flat_map (fun c => [BI_const (nat_to_i32 c); BI_call write_char_function_var]) (to_ascii_list s).
+  flat_map (fun c => [BI_const (nat_to_value c); BI_call write_char_function_var]) (to_ascii_list s).
 
 (* prints constructors as S-expressions *)
 Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tags : list ctor_tag) : error wasm_function :=
@@ -228,7 +233,7 @@ Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tag
     match calls with
     | 0 => if arity =? 0 then [ BI_return ] else (instr_write_string ")") ++ [ BI_return ]
     | S calls' => [ BI_get_local tmp
-                  ; BI_const (nat_to_i32 4)
+                  ; BI_const (nat_to_value 4)
                   ; BI_binop T_i32 (Binop_i BOI_add)
                   ; BI_set_local tmp
                   ; BI_get_local tmp
@@ -246,7 +251,7 @@ Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tag
                   | _ => Err "found constructor without ctor_arity set"
                   end) ;;
 
-    Ret [ BI_const (nat_to_i32 ctor_id)
+    Ret [ BI_const (nat_to_value ctor_id)
         ; BI_get_local constr_ptr
         ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
         ; BI_relop T_i32 (Relop_i ROI_eq)
@@ -280,14 +285,20 @@ Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tag
 
 (* ***** GENERATE INDIRECTION FUNCTIONS FOR INDIRECT FUNCTION CALLS ****** *)
 
+
 Record func_signature :=
   { s_name : string
   ; s_tag : fun_tag           (* TODO: look up: for type? *)
   ; s_arg_types : list value_type
-  ; s_ret_type : option value_type
   }.
 
-Definition indirection_function_name (arg_types : list value_type) (ret_type : option value_type) : string :=
+(* the indirection function has type: [T_i32, T_i32] -> []
+NOT YET, TODO
+
+the first parameter is the function id, the second the pointer to the arguments
+*)
+
+Definition indirection_function_name (arg_types : list value_type) : string :=
   let value_type2string vt :=
    match vt with
     | T_i32 => "i32"
@@ -295,10 +306,9 @@ Definition indirection_function_name (arg_types : list value_type) (ret_type : o
     | T_f32 => "f32"
     | T_f64 => "f64"
     end in
-  let arg_types' := fold_left (fun _s a => _s ++ value_type2string a ++ "_")%bs arg_types "" in
-  let ret_type' := match ret_type with None => "nothing" | Some t => value_type2string t end
+  let arg_types' := fold_left (fun _s a => _s ++ "_" ++ value_type2string a)%bs arg_types ""
   in
-  "$indirect_" ++ arg_types' ++ "ret_" ++ ret_type'.
+  "$indirect" ++ arg_types'.
 
 Definition is_function_name (fenv : fname_env) (v : string) : bool :=
   match M_string.find v fenv with
@@ -311,7 +321,6 @@ Definition generate_indirection_function (fns : list func_signature) (fenv : fna
   sig_head <- match hd_error fns with Some x => Ret x | None => Err "gen ind function: got empty list" end ;;
 
   let arg_types := sig_head.(s_arg_types) in
-  let ret_type := sig_head.(s_ret_type) in
 
   let args := arg_list (length arg_types) in
   let id_var := length arg_types in
@@ -319,7 +328,7 @@ Definition generate_indirection_function (fns : list func_signature) (fenv : fna
   let check_id sig :=
     f_var <- lookup_function_var sig.(s_name) fenv "indirection call check_id" ;;
     Ret [ BI_get_local id_var
-        ; BI_const (nat_to_i32 f_var)
+        ; BI_const (nat_to_value f_var)
         ; BI_relop T_i32 (Relop_i ROI_eq)
         ; BI_if (Tf nil nil)
                 ((map (fun arg => BI_get_local (fst arg)) args) ++
@@ -334,12 +343,12 @@ Definition generate_indirection_function (fns : list func_signature) (fenv : fna
 
   let body := concat checks ++ [ BI_unreachable ] in
 
-  let fn_name := indirection_function_name arg_types ret_type in
+  let fn_name := indirection_function_name arg_types in
   fn_var <- lookup_function_var fn_name fenv "gen indirection function";;
 
   Ret {| var := fn_var
        ; export_name := fn_name
-       ; type := Tf (map snd args ++ [T_i32]) (match ret_type with None => [] | Some t => [t] end)
+       ; type := Tf (map snd args ++ [T_i32]) []
        ; locals := []
        ; body := body
        |}.
@@ -348,7 +357,7 @@ Definition unique_indirection_function_names (sigs : list func_signature) : list
   let fix aux (selected : S_string.t) (candidates : list func_signature) : S_string.t :=
           match candidates with
           | [] => selected
-          | s :: cand' => aux (S_string.add (indirection_function_name s.(s_arg_types) s.(s_ret_type)) selected) cand'
+          | s :: cand' => aux (S_string.add (indirection_function_name s.(s_arg_types)) selected) cand'
           end
     in (S_string.elements (aux S_string.empty sigs)).
 
@@ -357,7 +366,7 @@ Fixpoint select_sigs_by_type (sigs : list func_signature) (indirection_name : st
   match sigs with
   | [] => []
   | s :: sigs' =>
-      let ind_name := indirection_function_name s.(s_arg_types) (Some T_i32) in  (* Some T_i32, see comment in translate_call function *)
+      let ind_name := indirection_function_name s.(s_arg_types) in
                 if String.eqb ind_name indirection_name (* TODO: slow, compare types directly, tg *)
                   then s :: (select_sigs_by_type sigs' indirection_name)
                   else select_sigs_by_type sigs' indirection_name
@@ -371,21 +380,43 @@ Definition generate_indirection_functions (sigs : list func_signature) (fenv : f
   sequence ind_fns.
 
 (* TODO check usage, this should probably be used at more places than is currently the case *)
-Definition translate_local_var_read (nenv : name_env) (venv : var_env) (fenv : fname_env) (v : cps.var) : error (list basic_instruction) :=
+Definition translate_local_var_read (nenv : name_env) (venv : var_env) (fenv : fname_env) (v : cps.var) : error basic_instruction :=
   let var_name := translate_var_to_string nenv v in
   if is_function_name fenv var_name
     then var <- lookup_function_var var_name fenv "translate local var read: obtaining function id" ;;
-         Ret [ BI_const (nat_to_i32 var) ] (* passing id of function <var_name> *)
+         Ret (BI_const (nat_to_value var)) (* passing id of function <var_name> *)
 
     else var <- lookup_local_var var_name venv "translate_local_var_read: normal var";;
-         Ret [ BI_get_local var ].
+         Ret (BI_get_local var).
 
 
 (* ***** TRANSLATE FUNCTION CALLS ****** *)
 
+(* calling convention: (NOT YET IMPLEMENTED)
+
+every function has type: [T_i32] -> []
+
+where the parameter is a pointer to the linear memory:
+
+      ptr: --> +---+---+---+
+               |p_1|...|p_n|
+               +---+---+---+
+
+      n: #args
+      only tailcalls, no result
+*)
+
+Fixpoint pass_function_args (nenv : name_env) (venv: var_env) (fenv : fname_env) (args : list cps.var) : error (list basic_instruction) :=
+  match args with
+  | [] => Ret []
+  | a0 :: args' =>
+      a0' <- translate_local_var_read nenv venv fenv a0;;
+      args'' <- pass_function_args nenv venv fenv args';;
+      Ret (a0' :: args'')
+  end.
+
 Definition translate_call (nenv : name_env) (venv : var_env) (fenv : fname_env) (f : cps.var) (args : list cps.var) : error (list basic_instruction) :=
-  params <- sequence (map (fun p => translate_var nenv venv p "translate_call params") args);;
-  let instr_pass_params := map (fun par => BI_get_local par) params in
+  instr_pass_params <- pass_function_args nenv venv fenv args;;
   let arg_types := map (fun _ => T_i32) args in
   let f_var_string := translate_var_to_string nenv f
   in
@@ -393,8 +424,13 @@ Definition translate_call (nenv : name_env) (venv : var_env) (fenv : fname_env) 
     then f_var <- lookup_function_var f_var_string fenv "direct function call";;
          Ret (instr_pass_params ++ [ BI_call f_var ])
 
-    else f_var <- lookup_local_var f_var_string venv ("translate ind. call from var: " ++ f_var_string);;
-         ind_fn_var <- lookup_function_var (indirection_function_name arg_types (Some T_i32)) fenv "translate call, ind function" ;;
+    else f_var <- lookup_local_var f_var_string venv ("ind call from var: " ++ f_var_string);;
+         ind_fn_var <- lookup_function_var (indirection_function_name arg_types) fenv ("didn't find ind. function for: " ++ f_var_string) ;;
+                                                                                      (* this error may occur when the returned expression
+                                                                                         receives a function closure as parameter -> unknown at compile time
+                                                                                         and thus not included in the indirection function (if the arity didn't
+                                                                                         occur in some other place, if arity occured, this may lead to
+                                                                                         runtime failure ?) TODO investigate *)
          Ret ( instr_pass_params ++
                [ BI_get_local f_var (* function tag is last parameter *)
                ; BI_call ind_fn_var
@@ -402,41 +438,48 @@ Definition translate_call (nenv : name_env) (venv : var_env) (fenv : fname_env) 
 
 
 (* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
+Fixpoint create_case_nested_if_chain (v : immediate) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
+  match es with
+  | [] => [ BI_unreachable ]
+  | (t, instr) :: tl =>
+            [ BI_get_local v
+            ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+            ; BI_const (nat_to_value (Pos.to_nat t)) (* ctor id*)
+            ; BI_relop T_i32 (Relop_i ROI_eq)
+            ; BI_if (Tf nil nil) instr (create_case_nested_if_chain v tl)
+            ]
+  end.
 
+(* the result of every expression is written two the global var result_var,
+e.g. for let x := Eproj ... in (halt x)
+halt x expects the previous result in this var.
+*)
 Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv : fname_env) (e : exp) : error (list basic_instruction) :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' =>
       following_instr <- translate_exp nenv cenv venv fenv e' ;;
       x_var <- translate_var nenv venv x "translate_exp constr";;
-      instr_params_read <- sequence (map (translate_local_var_read nenv venv fenv) ys);;
+      constr_args_instr <- pass_function_args nenv venv fenv ys;;
       alloc_fn_var <- lookup_function_var (constr_alloc_function_name tg) fenv "translate exp: econstr" ;;
 
-      Ret ( concat instr_params_read ++
+      Ret ( constr_args_instr ++
             [ BI_call alloc_fn_var
             ; BI_set_local x_var
             ] ++ following_instr)
 
    | Ecase x arms =>
-     let if_blocks : list (error (list basic_instruction)) :=
-     (map (fun (arm : ctor_tag * exp) =>
-       let (a, e') := arm in
-       let ctor_id := Pos.to_nat a in
-       let ctor_name := show_tree (show_con cenv a) in
+      let fix translate_case_branch_expressions (arms : list (ctor_tag * exp)) : error (list (ctor_tag * list basic_instruction)) :=
+      match arms with
+      | [] => Ret []
+      | (t, e)::tl => e' <- translate_exp nenv cenv venv fenv e;;
+                      arms' <- translate_case_branch_expressions tl;;
+                      Ret ((t, e') :: arms')
+      end in
+      transl_branch_exprs <- translate_case_branch_expressions arms;;
 
-       then_instr <- translate_exp nenv cenv venv fenv e';;
-       x_var <- translate_var nenv venv x "translate_exp case";;
-
-       Ret [ BI_get_local x_var
-           ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-           ; BI_const (nat_to_i32 ctor_id)
-           ; BI_relop T_i32 (Relop_i ROI_eq)
-           ; BI_if (Tf nil nil) then_instr [ BI_nop ]
-           ]
-      ) arms) in
-
-      instructions <- sequence if_blocks ;;
-      Ret ((concat instructions) ++ [ BI_unreachable ])  (* result of match isn't bound, doesn't return *)
+      x_var <- translate_var nenv venv x "translate_exp case";;
+      Ret (create_case_nested_if_chain x_var transl_branch_exprs)
 
    | Eproj x tg n y e' =>
       following_instr <- translate_exp nenv cenv venv fenv e' ;;
@@ -444,31 +487,30 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
        x_var <- translate_var nenv venv x "translate_exp proj x";;
 
       Ret ([ BI_get_local y_var
-           ; BI_const (nat_to_i32 (4 * ((N.to_nat n) + 1))) (* skip ctor_id and previous constr arguments *)
+           ; BI_const (nat_to_value (4 * ((N.to_nat n) + 1))) (* skip ctor_id and previous constr arguments *)
            ; BI_binop T_i32 (Binop_i BOI_add)
            ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
            ; BI_set_local x_var
            ] ++ following_instr)
 
-   | Eletapp x f ft ys e' =>
+   | Eletapp x f ft ys e' => Err "got unexpected non-tailcall, did you forget the -cps flag?" (*
      following_instr <- (translate_exp nenv cenv venv fenv e' : error (list basic_instruction)) ;;
      x_var <- translate_var nenv venv x "translate_exp app";;
      instr_call <- translate_call nenv venv fenv f ys ;;
-
      Ret (instr_call ++
           [ BI_set_local x_var
-          ] ++ following_instr)
+          ] ++ following_instr) *)
 
    | Eapp f ft ys => (* wasm doesn't treat tail call in a special way at the time *)
      instr_call <- translate_call nenv venv fenv f ys ;;
 
-     Ret (instr_call ++ [ BI_return ]) (* tail calls are not supported yet in wasm. return result in ordinary way.  *)
+     Ret instr_call (* tail calls are not supported yet in wasm. normal function return.  *)
 
    | Eprim_val x p e' => Err "translating prim_val to WASM not supported yet"
    | Eprim x p ys e' => Err "translating prim to WASM not supported yet"
    | Ehalt x =>
      x_var <- translate_var nenv venv x "translate_exp halt";;
-     Ret [ BI_get_local x_var; BI_return ]
+     Ret [ BI_get_local x_var; BI_set_global result_var ]
    end.
 
 
@@ -513,7 +555,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   Ret
   {| var := fn_var
    ; export_name := fn_name
-   ; type := Tf arg_types [T_i32]
+   ; type := Tf arg_types []
    ; locals := locals
    ; body := body_res
    |}.
@@ -531,6 +573,17 @@ Definition get_memory_usage_function (fenv : fname_env) : error wasm_function :=
        ; body := [ BI_get_global global_mem_ptr; BI_return ]
        |}.
 
+(* ***** GENERATE FUNCTION THAT RETURNS THE RESULT ****** *)
+Definition get_result_function_name := "$get_result".
+
+Definition get_result_function (fenv : fname_env) : error wasm_function :=
+  var <- lookup_function_var get_result_function_name fenv "get result var" ;;
+  Ret {| var := var
+       ; export_name := get_result_function_name
+       ; type := Tf [] [T_i32]
+       ; locals := []
+       ; body := [ BI_get_global result_var ]
+       |}.
 
 (* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
 Definition main_function_name := "$main_function".
@@ -547,7 +600,6 @@ Definition collect_function_signatures (nenv : name_env) (e : exp) : error (list
             Ret ({| s_name := var_name
                   ; s_tag := tg
                   ; s_arg_types := map (fun _ => T_i32) xs
-                  ; s_ret_type := Some T_i32
                   |} :: following)
         end) fds
   | _ => Ret []
@@ -586,6 +638,8 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
   let (fname_mapping, num_fns) := (add_to_fname_mapping indirection_fn_names num_fns fname_mapping, num_fns + length indirection_fn_names) in
 
   let (fname_mapping, num_fns) := (add_to_fname_mapping [get_memory_usage_function_name] num_fns fname_mapping, num_fns + 1) in
+
+  let (fname_mapping, num_fns) := (add_to_fname_mapping [get_result_function_name] num_fns fname_mapping, num_fns + 1) in
 
   let (fname_mapping, num_fns) := (add_to_fname_mapping [main_function_name] num_fns fname_mapping, num_fns + 1) in
 
@@ -629,15 +683,16 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   main_function_var <- lookup_function_var main_function_name fname_mapping "main function";;
 
   mem_usage_function <- get_memory_usage_function fname_mapping;;
+  get_result_function <- get_result_function fname_mapping;;
 
   let main_function := {| var := main_function_var
                         ; export_name := main_function_name
-                        ; type := Tf [] [T_i32]
+                        ; type := Tf [] []
                         ; locals := map (fun _ => T_i32) main_vars
                         ; body := main_instr
                         |}
   in
-  let functions := fns ++ constr_alloc_functions ++ [constr_pp_function] ++ indirection_functions ++ [mem_usage_function; main_function] in
+  let functions := fns ++ constr_alloc_functions ++ [constr_pp_function] ++ indirection_functions ++ [mem_usage_function; get_result_function; main_function] in
   let types := map (fun f => f.(type)) functions in
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (Mk_funcidx f.(var))
@@ -660,7 +715,10 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                       |} :: nil
 
        ; mod_globals := {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* global_mem_ptr *)
-                         ; modglob_init := [BI_const (nat_to_i32 0)]
+                         ; modglob_init := [BI_const (nat_to_value 0)]
+                         |} ::
+                        {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* result_var *)
+                         ; modglob_init := [BI_const (nat_to_value 0)]
                          |} :: nil
 
        ; mod_elem := []
