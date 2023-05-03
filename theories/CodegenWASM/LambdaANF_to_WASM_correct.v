@@ -1160,8 +1160,8 @@ Definition stored_in_globals (v : wasm_value) (sr : store_record) :=
      global.(g_val) = VAL_int32 (wasm_value_to_i32 v).
 
 Definition stored_in_locals (x : cps.var) (v : wasm_value) (f : frame ) :=
-  exists i, forall err,
-  translate_var nenv venv x err = Ret i /\
+  exists i,
+  (forall err, translate_var nenv venv x err = Ret i) /\
   List.nth_error f.(f_locs) i = Some (VAL_int32 (wasm_value_to_i32 v)).
 
 Definition rel_mem_LambdaANF_Codegen (e : exp) (rho : LambdaANF.eval.env)
@@ -1231,6 +1231,9 @@ Variable host_instance : host.
 Let store_record := store_record host_function.
 (*Let administrative_instruction := administrative_instruction host_function.*)
 Let host_state := host_state host_instance.
+
+
+Let reduce_trans := @reduce_trans host_function host_instance.
 
 
 
@@ -1537,9 +1540,11 @@ Proof.
     injection H => instr'. subst. constructor. econstructor. eauto.
 Qed.
 
-
+(*
 Definition repr_expr_LambdaANF_Codegen_id := repr_expr_LambdaANF_Codegen. (* TODO: additionally: no duplicate names (id) *)
 Definition rel_mem_LambdaANF_Codegen_id := rel_mem_LambdaANF_Codegen. (* TODO additionally: no duplicates *)
+
+*)
 
 From Wasm Require Import opsem.
 (*
@@ -1583,188 +1588,6 @@ Import interpreter_sound binary_format_parser binary_format_printer host
 Import eqtype.
 Import Lia.
 Import Relations.Relation_Operators.
-Import ssreflect.
-
-Ltac simplify_hypothesis Hb :=
-  repeat rewrite length_is_size in Hb;
-  repeat match type of Hb with
-  | is_true (es_is_trap _) => move/es_is_trapP: Hb => Hb
-  | is_true (const_list (_ :: _)) => rewrite const_list_cons in Hb
-  | ?b = true => fold (is_true b) in Hb
-  | (_ == _) = false => move/eqP in Hb
-  | context C [size (rev _)] => rewrite size_rev in Hb
-  | context C [take _ (rev _)] => rewrite take_rev in Hb
-  | context C [rev (rev _)] => rewrite revK in Hb
-  | context C [true && _] => rewrite Bool.andb_true_l in Hb
-  | context C [_ && true] => rewrite Bool.andb_true_r in Hb
-  | context C [false || _] => rewrite Bool.orb_false_l in Hb
-  | context C [_ || false] => rewrite Bool.orb_false_r in Hb
-  | is_true true => clear Hb
-  | is_true false => exfalso; apply: notF; apply: Hb
-  | is_true (_ == _) => move/eqP in Hb
-  | ?x = ?x => clear Hb
-  | _ = _ => rewrite Hb in *
-  end.
-
-(** Apply [simplify_hypothesis] to all hypotheses. **)
-Ltac simplify_goal :=
-  repeat match goal with H: _ |- _ => progress simplify_hypothesis H end.
-
-(** A common pattern in the proof: using an hypothesis on the form [rev l = l'] to rewrite [l]. **)
-Ltac subst_rev_const_list :=
- repeat lazymatch goal with
- | HRevConst: rev ?lconst = ?h :: ?t |- _ =>
-   apply rev_move in HRevConst; rewrite HRevConst; rewrite <- cat1s; rewrite rev_cat;
-   rewrite -v_to_e_cat; rewrite <- catA
- end.
-
-(** Simplify the lists in the goal. **)
-Ltac simplify_lists :=
-  (** Common rewriting rules. **)
-  repeat first [
-      rewrite drop_rev
-    | rewrite take_rev
-    | rewrite revK
-    | rewrite length_is_size
-    | rewrite size_take
-    | rewrite size_drop
-    | rewrite size_rev
-    | rewrite v_to_e_size
-    | rewrite rev_cat
-    | rewrite rev_cons
-    | rewrite <- cats1
-    | rewrite -v_to_e_cat
-    | rewrite -v_to_e_rev
-    | rewrite -v_to_e_take
-    | rewrite -v_to_e_drop];
-  (** Putting all the lists into a normal form, as concatenations of as many things.
-    Because [cat1s] conflicts with [cats0], replacing any occurence of [[X]] to
-    [[X] ++ [::]], it has to be done separately.
-    Rewrite with the associated [math goal with] is avoid to deal with existential
-    vairables. **)
-  repeat match goal with
-  |- context C [?x :: ?l] =>
-     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-  end;
-  repeat lazymatch goal with
-  | |- context C [[::] ++ _] => rewrite cat0s
-  | |- context C [_ ++ [::]] => rewrite cats0
-  | |- context C [rcons _ _] => rewrite <- cats1
-  | |- context C [(_ ++ _) ++ _] => rewrite <- catA
-  | |- context C [rev [::]] => rewrite rev0
-  | |- context C [v_to_e_list [::]] => rewrite v_to_e_list0
-  | |- context C [v_to_e_list [:: _]] => rewrite v_to_e_list1
-  end;
-  try subst_rev_const_list.
-
-(** Explode a tuple into all its components. **)
-Ltac explode_value v :=
-  lazymatch type of v with
-  | (_ * _)%type =>
-    let v1 := fresh "v1" in
-    let v2 := fresh "v2" in
-    destruct v as [v1 v2];
-    explode_value v1;
-    explode_value v2
-  | _ => idtac
-  end.
-
-(** Try to find which variable to pattern match on, destruct it,
-  then simplify the destructing equality. **)
-Ltac explode_and_simplify :=
-  repeat lazymatch goal with
-  | |- ?T = _ -> _ =>
-    lazymatch T with
-    | context C [split_n ?l ?n] => rewrite (split_n_is_take_drop l n)
-    | context C [vs_to_es ?l] => rewrite/vs_to_es
-    | context C [match ?b with true => ?v1 | false => ?v2 end] =>
-      let Hb := fresh "if_expr" in
-      destruct b eqn:Hb;
-      simplify_hypothesis Hb;
-      try by [|apply: Hb]
-    | context C [match rev ?lconst with
-                 | _ :: _ => _
-                 | _ => _
-                 end] =>
-      let HRevConst := fresh "HRevConst" in
-      destruct (rev lconst) eqn:HRevConst;
-      simplify_hypothesis HRevConst;
-      try by [|apply: HRevConst]
-    | context C [match ?v with
-                 | VAL_int32 _ => _
-                 | _ => _
-                 end] =>
-      let Hb := fresh "Ev" in
-      destruct v eqn:Hb;
-      simplify_hypothesis Hb;
-      try by []
-    | context C [match ?v with
-                 | Some _ => _
-                 | _ => _
-                 end] =>
-      let Hv := fresh "option_expr" in
-      let v' := fresh "v" in
-      destruct v as [v'|] eqn:Hv; [ explode_value v' |];
-      simplify_hypothesis Hv;
-      try by [|apply: Hv]
-    | context C [match ?cl with
-                 | FC_func_native _ _ _ _ => _
-                 | FC_func_host _ _ => _
-                 end] =>
-      let Hcl := fresh "Hcl" in
-      destruct cl eqn:Hcl;
-      simplify_hypothesis Hcl;
-      try by []
-    | context C [match ?tf with
-                 | Tf _ _ => _
-                 end] =>
-      let Hcl := fresh "Htf" in
-      destruct tf eqn:Htf;
-      simplify_hypothesis Htf;
-      try by []
-    | context C [match ?v with
-                 | T_i32 => _
-                 | T_i64 => _
-                 | T_f32 => _
-                 | T_f64 => _
-                 end] =>
-      let Hv := fresh "Ev" in
-      destruct v eqn:Hv;
-      simplify_hypothesis Hv;
-      try by []
-    | context C [match ?v with
-                 | CVO_convert => _
-                 | CVO_reinterpret => _
-                 end] =>
-      let Hv := fresh "Ecvtop" in
-      destruct v eqn:Hv;
-      simplify_hypothesis Hv;
-      try by []
-    | context C [match ?v with
-                 | Tf _ _ => _
-                 end] =>
-      let vs1 := fresh "vs" in
-      let vs2 := fresh "vs" in
-      let Hv := fresh "Eft" in
-      destruct v as [vs1 vs2] eqn:Hv;
-      simplify_hypothesis Hv;
-      try by []
-    | context C [expect ?X ?f ?err] =>
-       let HExpect := fresh "HExpect" in
-       destruct X eqn:HExpect;
-       simplify_hypothesis HExpect;
-       simpl;
-       try by [|apply: HExpect]
-    | context C [match ?l with
-                 | _ :: _ => _
-                 | _ => _
-                 end] =>
-      destruct l;
-      try by []
-    end
-  end;
-  simplify_lists.
-
 Import ssreflect seq.
 
 Lemma set_global_var_updated: forall sr fr value s',
@@ -1810,9 +1633,46 @@ Proof.
   inv H.
 Qed.
 
-
+(* TODO: probably needs to be weaker *)
 Definition INV_result_var_writable := forall (s : store_record) val inst,
   exists s', supdate_glob s inst result_var val = Some s'.
+
+
+Definition INV_linear_memory_exists := forall sr fr,
+  smem_ind (host_function:=host_function) sr (f_inst fr) =
+Some 0.
+
+Import ssreflect.
+
+Ltac separate_instr :=
+  repeat match goal with
+  |- context C [?x :: ?l] =>
+     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+  end.
+
+(* applies r_elimr on the first const + following instr *)
+Ltac elimr_nary_instr n :=
+  let H := fresh "H" in
+  match n with
+  | 1 => lazymatch goal with
+         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++
+                            [::AI_basic ?instr] ++ ?l3) _ _ _ ?l4 =>
+            assert ([:: AI_basic (BI_const c1)] ++ [:: AI_basic instr] ++ l3
+                  = [:: AI_basic (BI_const c1);
+                        AI_basic instr] ++ l3) as H by reflexivity; rewrite H; apply r_elimr; clear H
+          end
+  | 2 => lazymatch goal with
+         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++
+                            [::AI_basic (BI_const ?c2)] ++
+                            [::AI_basic ?instr] ++ ?l3) _ _ _ ?l4 =>
+            assert ([:: AI_basic (BI_const c1)] ++ [:: AI_basic (BI_const c2)] ++ [:: AI_basic instr] ++ l3
+                  = [:: AI_basic (BI_const c1);
+                        AI_basic (BI_const c2);
+                        AI_basic instr] ++ l3) as H by reflexivity; rewrite H; apply r_elimr; clear H
+          end
+  end.
+
+
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Codegen_related:
@@ -1833,9 +1693,10 @@ Theorem repr_bs_LambdaANF_Codegen_related:
 
         (* invariants *)
         INV_result_var_writable ->
+        INV_linear_memory_exists ->
 
-        repr_expr_LambdaANF_Codegen_id fenv venv nenv e instructions -> (* translate_body e returns stm *)
-        rel_mem_LambdaANF_Codegen_id fenv venv nenv _ e rho sr f ->
+        repr_expr_LambdaANF_Codegen fenv venv nenv e instructions -> (* translate_body e returns stm *)
+        rel_mem_LambdaANF_Codegen fenv venv nenv _ e rho sr f ->
         (* " relates a LambdaANF evaluation environment [rho] to a Clight memory [m/lenv] up to the free variables in e " *)
         (* also says fundefs in e are correct in m *)
         (* NOTE: this is only place pertaining to outside of the body, and can likely incorporate free variables here *)
@@ -1847,11 +1708,33 @@ Theorem repr_bs_LambdaANF_Codegen_related:
           result_val_LambdaANF_Codegen v f.(f_inst) sr'. (* value v is related to memory m'/lenv' *)
 Proof.
   intros rho v e n Hev.
-  induction Hev; intros Hc_env fr state sr INVres Hrepr_e Hrel_m; inv Hrepr_e.
+  induction Hev; intros Hc_env fr state sr INVres INVlinmem Hrepr_e Hrel_m; inv Hrepr_e.
   - (* Econstr *) cbn. admit.
-  - (* Eproj *) admit.
-  - (* Ecase_nil *) admit.
-  - (* Ecase_cons *) admit.
+  - (* Eproj *)
+    exists sr. eexists. cbn. {
+    unfold rel_mem_LambdaANF_Codegen in Hrel_m.
+    destruct (Hrel_m y _ H) as [H1 [wasmval [H2 H3]]]. constructor.
+    inv H3. split.
+    destruct H2 as [i [Hiloc1 Hiloc2]].
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[s] ++ ?[t])).
+    { apply rt_step. separate_instr.
+     apply r_elimr. apply r_get_local.
+    destruct H9. assert (nenv0 = nenv) by admit. assert (venv0 = venv) by admit. subst.
+    rewrite Hiloc1 in e0. injection e0 => Hi. subst. clear e0.
+    eassumption. }
+
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[s] ++ ?[t])).
+    { apply rt_step. cbn.
+        separate_instr. elimr_nary_instr 2. constructor. apply rs_binop_success. cbn. reflexivity. }
+
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[s] ++ ?[t])).
+    { apply rt_step. cbn.  separate_instr. elimr_nary_instr 1.
+      eapply r_load_success; try eassumption. apply INVlinmem.
+
+      inv H13. unfold load_i32 in H10. admit. admit. } admit. admit. }
+  - (* Ecase_nil *) (* absurd *) admit.
+  - (* Ecase_cons *)
+    { admit. }
   - (* Eapp_direct *) admit.
   - (* Eapp_indirect *) admit.
   - (* Ehalt *)
@@ -1868,11 +1751,11 @@ Proof.
    assert (venv' = venv). { admit. } subst venv'.
 
 
-   destruct Hloc as [ilocal [H2 Hilocal]]. split. erewrite H1 in H2. injection H2 => H2'. subst. clear H2.
+   destruct Hloc as [ilocal [H2 Hilocal]]. split. erewrite H2 in H1. injection H1 => H1'. subst. clear H1.
 
     (* execute wasm instructions *)
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[s] ++ ?[t])).
-    { explode_and_simplify. apply rt_step. apply r_elimr. eapply r_get_local. eassumption. }
+    { separate_instr. apply rt_step. apply r_elimr. eapply r_get_local. eassumption. }
 
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f], [])).
     { apply rt_step. cbn. apply r_set_global. eassumption. }
@@ -1885,8 +1768,6 @@ Proof.
     eapply update_glob_keeps_memory_intact. eassumption.
     eapply update_glob_keeps_funcs_intact. eassumption.
 Admitted.
-
-
 
 
 (*
@@ -2004,9 +1885,61 @@ Admitted.
 *)
 
 
+Definition extract_const g := match g.(modglob_init) with (* guarantee non-divergence during instantiation *)
+| [:: BI_const c] => Ret c
+| _ => Err "only constants allowed during instantiation"%bs
+end : error value.
 
+Definition extract_i32 instr :=  match instr with
+   | [:: BI_const (VAL_int32 i)] => Ret i
+   | _ => Err "expected const i32"%bs
+end : error i32.
 
+(* error monad from certicoq *)
+Definition interp_instantiate (s : store_record) (m : module) (v_imps : list v_ext)
+  : error (store_record * instance * list module_export) :=
+  match module_type_checker m with
+  | None => Err "module_type_checker failed"%bs
+  | Some (t_imps, t_exps) =>
+    if seq.all2 (external_type_checker _ s) v_imps t_imps then
+      let inst_c := {|
+            inst_types := nil;
+            inst_funcs := nil;
+            inst_tab := nil;
+            inst_memory := nil;
+            inst_globs := List.map (fun '(Mk_globalidx i) => i) (ext_globs v_imps);
+          |} in
+      (* init global vars *)
+      g_inits <- sequence (List.map extract_const m.(mod_globals));;
 
+      let '(s', inst, v_exps) := interp_alloc_module _ s m v_imps g_inits in
+
+      e_offs <- sequence (List.map (fun e => extract_i32 e.(modelem_offset)) m.(mod_elem));;
+      d_offs <- sequence (List.map (fun d => extract_i32 d.(moddata_offset)) m.(mod_data));;
+
+      if check_bounds_elem _ inst s' m e_offs &&
+         check_bounds_data _ inst s' m d_offs then
+        match m.(mod_start) with
+        | Some _ => Err "start function not supported"%bs
+        | None =>
+          let s'' := init_tabs _ s' inst (List.map nat_of_int e_offs) m.(mod_elem) in
+          let s_end := init_mems _ s' inst (List.map N_of_int d_offs) m.(mod_data) in
+          Ret (s_end, inst, v_exps)
+        end
+      else Err "bounds check failed"%bs
+    else Err "external_type_checker failed"%bs
+  end.
+
+Definition empty_store_record : store_record := {|
+    s_funcs := nil;
+    s_tables := nil;
+    s_mems := nil;
+    s_globals := nil;
+  |}.
+
+Definition interp_instantiate_wrapper (m : module)
+  : error (store_record * instance * list module_export) :=
+  interp_instantiate empty_store_record m nil.
 
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
@@ -2014,7 +1947,7 @@ Admitted.
 Corollary LambdaANF_Codegen_related :
   forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat), (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
 
-  forall module,
+  forall module sr hs inst exports mainidx function,
 
   (* evaluation of LambdaANF expression *)
   bstep_e (M.empty _) cenv rho e v n ->
@@ -2022,14 +1955,22 @@ Corollary LambdaANF_Codegen_related :
   (* compilation function *)
   LambdaANF_to_WASM nenv cenv e = Ret module ->
 
-  (* TODO initial_mem in module *)
+  (* TODO, this could be a theorem? *)
+  interp_instantiate_wrapper module = Ret (sr, inst, exports) ->
 
-  (* TODO: call main on module: produces mem m',   return_var ~ v *)
- True.
+  List.nth_error sr.(s_funcs) mainidx = Some function ->
+  (* codegen relation with e = let fundefs in mainexpr *)
+
+    exists (sr' : store_record),
+       reduce_trans (hs, sr,  (Build_frame [] inst), [ AI_basic (BI_call mainidx) ])
+                    (hs, sr', (Build_frame [] inst), [])    /\
+
+       result_val_LambdaANF_Codegen v inst sr'.
 Proof.
+  intros. eexists. split.
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[t])).
+  apply rt_step. eapply r_call.
 Admitted.
-
-
 
 
 End THEOREM.
