@@ -1633,14 +1633,25 @@ Proof.
   inv H.
 Qed.
 
-(* TODO: probably needs to be weaker *)
+(* TODO: probably needs to be weeker *)
 Definition INV_result_var_writable := forall (s : store_record) val inst,
   exists s', supdate_glob s inst result_var val = Some s'.
 
 
 Definition INV_linear_memory_exists := forall sr fr,
   smem_ind (host_function:=host_function) sr (f_inst fr) =
-Some 0.
+Some 0 /\ exists m, nth_error (s_mems sr) 0 = Some m.
+
+
+Definition INV_local_ptr_in_linear_memory := forall y v' x fr Hm,
+  repr_var y v'
+  -> nth_error (f_locs fr) v' = Some (VAL_int32 x) ->
+  exists bytes, load Hm (Wasm_int.N_of_uint i32m x) 0%N (t_length T_i32) = Some bytes.
+
+Definition INV_local_vars_exist := forall x x' fr,
+  repr_var x x' -> exists val, nth_error (f_locs fr) x' = Some (VAL_int32 val).
+
+
 
 Import ssreflect.
 
@@ -1672,6 +1683,25 @@ Ltac elimr_nary_instr n :=
           end
   end.
 
+Ltac dostep :=
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])); first  apply rt_step.
+
+Lemma can_load_constr_args : forall vs v6 sr addr m n arg,
+  List.nth_error vs n = Some v6 ->
+  repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function vs sr addr ->
+  exists bytes, load m (N.of_nat (addr + 4* (n+1))) 0%N (t_length T_i32) = Some bytes
+  /\ wasm_deserialise bytes T_i32 = (nat_to_value arg)
+  /\ repr_val_LambdaANF_Codegen fenv venv nenv host_function v6 sr (Val_ptr arg)
+  .
+Proof.
+  induction vs; intros.
+  - destruct n; inv H.
+  - inv H0. unfold load_i32 in H4. cbn. eexists. repeat split; eauto. etransitivity.
+
+Admitted.
+
+(* Lemma datatype_has_constructor : forall  *)
+
 
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
@@ -1694,6 +1724,8 @@ Theorem repr_bs_LambdaANF_Codegen_related:
         (* invariants *)
         INV_result_var_writable ->
         INV_linear_memory_exists ->
+        INV_local_ptr_in_linear_memory ->
+        INV_local_vars_exist ->
 
         repr_expr_LambdaANF_Codegen fenv venv nenv e instructions -> (* translate_body e returns stm *)
         rel_mem_LambdaANF_Codegen fenv venv nenv _ e rho sr f ->
@@ -1708,10 +1740,13 @@ Theorem repr_bs_LambdaANF_Codegen_related:
           result_val_LambdaANF_Codegen v f.(f_inst) sr'. (* value v is related to memory m'/lenv' *)
 Proof.
   intros rho v e n Hev.
-  induction Hev; intros Hc_env fr state sr INVres INVlinmem Hrepr_e Hrel_m; inv Hrepr_e.
+  induction Hev; intros Hc_env fr state sr INVres INVlinmem INVptrInMem INVlocals Hrepr_e Hrel_m; inv Hrepr_e.
   - (* Econstr *) cbn. admit.
-  - (* Eproj *)
-    exists sr. eexists. cbn. {
+  - (* Eproj *) (* {
+    exists sr. eexists. cbn.
+
+    assert (N.to_nat n < length vs) as Hn. { apply nthN_is_Some_length in H0. lia. }
+
     unfold rel_mem_LambdaANF_Codegen in Hrel_m.
     destruct (Hrel_m y _ H) as [H1 [wasmval [H2 H3]]]. constructor.
     inv H3. split.
@@ -1727,14 +1762,60 @@ Proof.
     { apply rt_step. cbn.
         separate_instr. elimr_nary_instr 2. constructor. apply rs_binop_success. cbn. reflexivity. }
 
+       have H13' := H13.
+      eapply can_load_constr_args in H13. destruct H13 as [bs [Hb1 [Hb2 Hb3]]].
+
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[s] ++ ?[t])).
     { apply rt_step. cbn.  separate_instr. elimr_nary_instr 1.
       eapply r_load_success; try eassumption. apply INVlinmem.
 
-      inv H13. unfold load_i32 in H10. admit. admit. } admit. admit. }
-  - (* Ecase_nil *) (* absurd *) admit.
+      assert ((N.of_nat (addr + 4 * (N.to_nat n + 1))) =  (Wasm_int.N_of_uint i32m
+     (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
+        (nat_to_i32
+           (N.to_nat n + 1 +
+            (N.to_nat n + 1 +
+             (N.to_nat n + 1 + (N.to_nat n + 1 + 0)))))))) as Harith. { cbn. admit. }
+             rewrite <- Harith. apply Hb1. }
+
+     eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[s] ++ ?[t])).
+     { apply rt_step. cbn. separate_instr. elimr_nary_instr 1.
+       eapply r_set_local. admit. unfold INV_local_vars_exist in INVlocals.
+       have H' := INVlocals _ _ _ H8. specialize H' with fr.
+        apply /ssrnat.leP. lia.
+    admit. }
+
+    cbn.
+
+    have IH := IHHev s _ state sr INVres INVlinmem INVlocals H7. admit. admit. admit. }
+*) admit.
+  - (* Ecase_nil *) (* absurd *)
+    admit. (* unfold rel_mem_LambdaANF_Codegen in Hrel_m.
+    *)
   - (* Ecase_cons *)
-    { admit. }
+    { exists sr. exists fr. cbn. split.
+
+       have H' := INVlocals _ _ fr H4. destruct H' as [? H'].
+
+      dostep. separate_instr.
+      unfold rel_mem_LambdaANF_Codegen in Hrel_m.
+      eapply r_elimr. apply r_get_local. apply H'.
+
+      destruct (INVlinmem sr fr) as [Hm1 [m Hm2]].
+      (* ptr in mem *)
+      unfold INV_local_ptr_in_linear_memory in INVptrInMem.
+      have HMem := INVptrInMem _ _ _ _ m H4 H'. destruct HMem.
+
+      dostep. cbn. separate_instr. elimr_nary_instr 1.
+      eapply r_load_success; try eassumption.
+
+      dostep. cbn. separate_instr. elimr_nary_instr 2.
+      constructor. apply rs_relop.
+
+      dostep. cbn. separate_instr.
+
+      apply INVlinmem. eapply INVlinmem. unfold INV_linear_memory_exists in H2.
+      apply INVlinmem.
+    }
   - (* Eapp_direct *) admit.
   - (* Eapp_indirect *) admit.
   - (* Ehalt *)
@@ -1752,12 +1833,11 @@ Proof.
 
 
    destruct Hloc as [ilocal [H2 Hilocal]]. split. erewrite H2 in H1. injection H1 => H1'. subst. clear H1.
-
     (* execute wasm instructions *)
-    eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[s] ++ ?[t])).
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[ff], ?[s] ++ ?[t])).
     { separate_instr. apply rt_step. apply r_elimr. eapply r_get_local. eassumption. }
 
-    eapply rt_trans with (y := (?[hs], ?[sr], ?[f], [])).
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[ff], [])).
     { apply rt_step. cbn. apply r_set_global. eassumption. }
      apply rt_refl.
 
@@ -1768,6 +1848,8 @@ Proof.
     eapply update_glob_keeps_memory_intact. eassumption.
     eapply update_glob_keeps_funcs_intact. eassumption.
 Admitted.
+
+
 
 
 (*
