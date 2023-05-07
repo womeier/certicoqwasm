@@ -1166,21 +1166,24 @@ Definition stored_in_locals (x : cps.var) (v : wasm_value) (f : frame ) :=
 
 Definition rel_mem_LambdaANF_Codegen (e : exp) (rho : LambdaANF.eval.env)
                                      (sr : store_record) (fr : frame) :=
-    forall x v6,
-      M.get x rho = Some v6 ->
+    forall x,
         (* function def is related to function index *)
-        (forall rho' fds f, exists i,
-            subval_or_eq (Vfun rho' fds f) v6 ->
-            translate_function_var nenv fenv f = Ret i ->
+        (forall rho' fds f v, exists i,
+            M.get x rho = Some v ->
+             (* 1) arg is subval of constructor
+                2) v listed in fds -> subval *)
+            subval_or_eq (Vfun rho' fds f) v ->
+            (* i is index of function f *)
+            translate_function_var nenv fenv f = Ret i /\
             repr_val_LambdaANF_Codegen (Vfun rho' fds f) sr (Val_funidx i) /\
-            closed_val (Vfun rho' fds f))  (* /\ correct_fundef_id_info m fds f) /\ *)
+            closed_val (Vfun rho' fds f))
         /\
-        (* free variables are related to global/local var or memory pointer *)
+        (* free variables are related to local var containing a memory pointer or a function index *)
         (occurs_free e x ->
-            (exists val,
-                      stored_in_locals x val fr
-                   /\ repr_val_LambdaANF_Codegen v6 sr val)).
-
+            (exists v6 val,
+               M.get x rho = Some v6 /\
+               stored_in_locals x val fr /\
+               repr_val_LambdaANF_Codegen v6 sr val)).
 
 End RELATION.
 
@@ -1540,12 +1543,6 @@ Proof.
     injection H => instr'. subst. constructor. econstructor. eauto.
 Qed.
 
-(*
-Definition repr_expr_LambdaANF_Codegen_id := repr_expr_LambdaANF_Codegen. (* TODO: additionally: no duplicate names (id) *)
-Definition rel_mem_LambdaANF_Codegen_id := rel_mem_LambdaANF_Codegen. (* TODO additionally: no duplicates *)
-
-*)
-
 From Wasm Require Import opsem.
 (*
 Definition program_inv := fun (x : nat) => I.
@@ -1633,7 +1630,7 @@ Proof.
   inv H.
 Qed.
 
-(* TODO: probably needs to be weeker *)
+(* TODO: probably needs to be weaker *)
 Definition INV_result_var_writable := forall (s : store_record) val inst,
   exists s', supdate_glob s inst result_var val = Some s'.
 
@@ -1683,8 +1680,37 @@ Ltac elimr_nary_instr n :=
           end
   end.
 
+
+
+Lemma steps_inside_label : forall instructions state sr sr' fr fr',
+ clos_refl_trans
+  (host.host_state host_instance * datatypes.store_record host_function * frame *
+   seq administrative_instruction)
+ (reduce_tuple (host_instance:=host_instance))
+ (state, sr, fr, instructions)
+ (state, sr', fr', []) ->
+
+  clos_refl_trans
+  (host.host_state host_instance * datatypes.store_record host_function * frame *
+   seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
+  (state, sr, fr, [:: AI_label 0 [::] instructions])
+  (state, sr', fr', [::]).
+Proof.
+  induction instructions; intros.
+  - constructor. eapply r_label with (k:=0) (lh := LH_base [] []). admit.  cbn. cbn. unfold lfilled, lfill. cbn. unfold eqseq. cbn. eauto.
+Admitted.
+
+
 Ltac dostep :=
   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])); first  apply rt_step.
+
+(* only returns single list of instructions *)
+Ltac dostep' :=
+   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first  apply rt_step.
+
+Ltac dostep_label :=
+   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first apply steps_inside_label.
+
 
 Lemma can_load_constr_args : forall vs v6 sr addr m n arg,
   List.nth_error vs n = Some v6 ->
@@ -1700,8 +1726,25 @@ Proof.
 
 Admitted.
 
-(* Lemma datatype_has_constructor : forall  *)
+(*
+Example label_red : forall sr fr state c,
+  reduce_trans (state, sr, fr, [:: AI_label 0 [::] [:: AI_basic (BI_const c)]]) (state, sr, fr, [:: AI_basic (BI_const c)]).
+Proof.
+  intros. constructor. cbn. apply r_label with (k:= 1)(es:=[])(es' := [])(lh := LH_base [] []).
+  all: cbn.
+ *)
 
+Theorem caseConsistent_findtag_In_cenv:
+  forall cenv t e l,
+    caseConsistent cenv l t ->
+    findtag l t = Some e ->
+    exists (a aty:BasicAst.name) (ty:ind_tag) (n:N) (i:N), M.get t cenv = Some (Build_ctor_ty_info a aty ty n i).
+Proof.
+  destruct l; intros.
+  - inv H0.
+  - inv H. destruct info.
+    exists ctor_name, ctor_ind_name, ctor_ind_tag,ctor_arity,ctor_ordinal; auto.
+Qed.
 
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
@@ -1792,9 +1835,24 @@ Proof.
     admit. (* unfold rel_mem_LambdaANF_Codegen in Hrel_m.
     *)
   - (* Ecase_cons *)
-    { exists sr. exists fr. cbn. split.
+    have Hrel_m' := Hrel_m.
+    edestruct Hrel_m'. as [L [Hmem_p Hmem_rel]].
+    { have Hx := H1. unfold findtag in Hx.
+  cbn in Hx. destruct (M.elt_eq t0 t). injection Hx => Hx'. subst. clear Hx.
+
+
+      assert (Hw: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e rho sr fr). admit.
+
+      have IH := IHHev e' fr state sr INVres INVlinmem INVptrInMem INVlocals H7 Hw.
+      destruct IH as [sr' [f' [Hred Hres]]].
+
+      have Hconsist := caseConsistent_findtag_In_cenv _ _ _ _ H0 H1.
+      destruct Hconsist as [a [aty [ty [n [i Hconstr]]]]].
 
        have H' := INVlocals _ _ fr H4. destruct H' as [? H'].
+
+      (* execute wasm instructions *)
+      eexists. eexists. cbn. split.
 
       dostep. separate_instr.
       unfold rel_mem_LambdaANF_Codegen in Hrel_m.
@@ -1802,21 +1860,40 @@ Proof.
 
       destruct (INVlinmem sr fr) as [Hm1 [m Hm2]].
       (* ptr in mem *)
-      unfold INV_local_ptr_in_linear_memory in INVptrInMem.
+      (* unfold INV_local_ptr_in_linear_memory in INVptrInMem. *)
       have HMem := INVptrInMem _ _ _ _ m H4 H'. destruct HMem.
 
       dostep. cbn. separate_instr. elimr_nary_instr 1.
       eapply r_load_success; try eassumption.
 
+      destruct (Wasm_int.Int32.eq (Wasm_int.Int32.repr (decode_int x0))
+            (nat_to_i32 (Pos.to_nat t))) eqn:Hbool; cbn.
+
+      { (* ctag comparison true *)
       dostep. cbn. separate_instr. elimr_nary_instr 2.
       constructor. apply rs_relop.
 
-      dostep. cbn. separate_instr.
+      dostep'. cbn. constructor. eapply rs_if_true. by rewrite Hbool.
 
-      apply INVlinmem. eapply INVlinmem. unfold INV_linear_memory_exists in H2.
-      apply INVlinmem.
-    }
-  - (* Eapp_direct *) admit.
+      dostep'. cbn. constructor. eapply rs_block with (vs := []); cbn; auto.
+
+      cbn. unfold to_e_list.
+      dostep_label.
+      apply Hred.
+      apply rt_refl.
+      }
+      { (* ctag comparison false *)
+      dostep'. cbn. separate_instr. elimr_nary_instr 2.
+      constructor. apply rs_relop. cbn.
+
+      dostep'. cbn. constructor. eapply rs_if_false. by rewrite Hbool.
+
+      dostep'. cbn. constructor. eapply rs_block with (vs := []); cbn; auto.
+      cbn. unfold to_e_list.
+
+      dostep_label. 2: apply rt_refl.
+  admit. } admit. admit. }
+  - (* Eapp_direct *)
   - (* Eapp_indirect *) admit.
   - (* Ehalt *)
     cbn. edestruct Hrel_m. eapply H. destruct H2 as [value [Hloc Hrepr]]. constructor.
@@ -1828,23 +1905,17 @@ Proof.
     exists s'. eexists fr.
 
     destruct H1 as [nenv' venv' x].
-   assert (nenv' = nenv). { admit. } subst nenv'. (* TODO: include nenv, venv in relation *)
-   assert (venv' = venv). { admit. } subst venv'.
-
-
-   destruct Hloc as [ilocal [H2 Hilocal]]. split. erewrite H2 in H1. injection H1 => H1'. subst. clear H1.
+    assert (nenv' = nenv). { admit. } subst nenv'. (* TODO: include nenv, venv in relation *)
+    assert (venv' = venv). { admit. } subst venv'.
+    destruct Hloc as [ilocal [H2 Hilocal]]. split. erewrite H2 in H1. injection H1 => H1'. subst. clear H1.
     (* execute wasm instructions *)
-    eapply rt_trans with (y := (?[hs], ?[sr], ?[ff], ?[s] ++ ?[t])).
-    { separate_instr. apply rt_step. apply r_elimr. eapply r_get_local. eassumption. }
+    dostep. separate_instr. apply r_elimr. eapply r_get_local. eassumption.
+    dostep'. apply r_set_global. eassumption.
+    apply rt_refl.
 
-    eapply rt_trans with (y := (?[hs], ?[sr], ?[ff], [])).
-    { apply rt_step. cbn. apply r_set_global. eassumption. }
-     apply rt_refl.
-
-    unfold result_val_LambdaANF_Codegen.
     exists (wasm_value_to_i32 value). exists value.
     repeat split. eapply set_global_var_updated. eassumption.
-    apply val_relation_depends_only_on_mem_and_funcs with sr; auto.
+    apply val_relation_depends_only_on_mem_and_funcs with sr...
     eapply update_glob_keeps_memory_intact. eassumption.
     eapply update_glob_keeps_funcs_intact. eassumption.
 Admitted.
