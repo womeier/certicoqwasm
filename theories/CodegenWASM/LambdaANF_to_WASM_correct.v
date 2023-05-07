@@ -1166,9 +1166,8 @@ Definition stored_in_locals (x : cps.var) (v : wasm_value) (f : frame ) :=
 
 Definition rel_mem_LambdaANF_Codegen (e : exp) (rho : LambdaANF.eval.env)
                                      (sr : store_record) (fr : frame) :=
-    forall x,
         (* function def is related to function index *)
-        (forall rho' fds f v, exists i,
+        (forall x rho' fds f v, exists i,
             M.get x rho = Some v ->
              (* 1) arg is subval of constructor
                 2) v listed in fds -> subval *)
@@ -1179,7 +1178,8 @@ Definition rel_mem_LambdaANF_Codegen (e : exp) (rho : LambdaANF.eval.env)
             closed_val (Vfun rho' fds f))
         /\
         (* free variables are related to local var containing a memory pointer or a function index *)
-        (occurs_free e x ->
+        (forall x,
+            occurs_free e x ->
             (exists v6 val,
                M.get x rho = Some v6 /\
                stored_in_locals x val fr /\
@@ -1835,8 +1835,8 @@ Proof.
     admit. (* unfold rel_mem_LambdaANF_Codegen in Hrel_m.
     *)
   - (* Ecase_cons *)
-    have Hrel_m' := Hrel_m.
-    edestruct Hrel_m'. as [L [Hmem_p Hmem_rel]].
+    (* have Hrel_m' := Hrel_m.
+    destruct Hrel_m' as [Hrel_m_fn Hrel_m_ptr]. *)
     { have Hx := H1. unfold findtag in Hx.
   cbn in Hx. destruct (M.elt_eq t0 t). injection Hx => Hx'. subst. clear Hx.
 
@@ -1892,14 +1892,14 @@ Proof.
       cbn. unfold to_e_list.
 
       dostep_label. 2: apply rt_refl.
-  admit. } admit. admit. }
+  admit. } admit. admit. } admit.
   - (* Eapp_direct *)
   - (* Eapp_indirect *) admit.
   - (* Ehalt *)
-    cbn. edestruct Hrel_m. eapply H. destruct H2 as [value [Hloc Hrepr]]. constructor.
+    cbn. destruct Hrel_m. destruct (H2 x) as [v6 [wal [Henv [Hloc Hrepr]]]]. constructor.
 
     unfold INV_result_var_writable in INVres.
-    specialize INVres with sr (VAL_int32 (wasm_value_to_i32 value)) (f_inst fr).
+    specialize INVres with sr (VAL_int32 (wasm_value_to_i32 wal)) (f_inst fr).
     destruct INVres as [s' Hress'].
 
     exists s'. eexists fr.
@@ -1907,13 +1907,13 @@ Proof.
     destruct H1 as [nenv' venv' x].
     assert (nenv' = nenv). { admit. } subst nenv'. (* TODO: include nenv, venv in relation *)
     assert (venv' = venv). { admit. } subst venv'.
-    destruct Hloc as [ilocal [H2 Hilocal]]. split. erewrite H2 in H1. injection H1 => H1'. subst. clear H1.
+    destruct Hloc as [ilocal [H3 Hilocal]]. split. erewrite H3 in H1. injection H1 => H1'. subst. clear H1.
     (* execute wasm instructions *)
     dostep. separate_instr. apply r_elimr. eapply r_get_local. eassumption.
     dostep'. apply r_set_global. eassumption.
     apply rt_refl.
 
-    exists (wasm_value_to_i32 value). exists value.
+    exists (wasm_value_to_i32 wal). exists wal.
     repeat split. eapply set_global_var_updated. eassumption.
     apply val_relation_depends_only_on_mem_and_funcs with sr...
     eapply update_glob_keeps_memory_intact. eassumption.
