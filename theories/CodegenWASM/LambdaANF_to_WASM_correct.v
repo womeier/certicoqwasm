@@ -1812,15 +1812,26 @@ H6 : repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function vs sr
 Hvy : repr_var venv nenv y y'
 H : nth_error (f_locs fr) y' = Some (VAL_int32 (nat_to_i32 addr))*)
 
-Lemma extract_constr_arg : forall n vs v sr addr m,
+Lemma extract_constr_arg : forall n vs v wal sr addr m,
   nthN vs n = Some v ->
+  nth_error (s_mems sr) 0 = Some m ->
   repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function vs sr addr ->
-  exists bs, load m (N.of_nat addr + 4 * n) 0%N 4= Some bs.
+  exists bs, load m (N.of_nat addr + 4 * n) 0%N 4 = Some bs /\
+             VAL_int32 (wasm_value_to_i32 wal) = wasm_deserialise bs T_i32 /\
+             repr_val_LambdaANF_Codegen fenv venv nenv host_function v sr wal.
 Proof.
   intros. generalize dependent v. generalize dependent n.
-  induction H0; intros.
+  induction H1; intros.
   - inv H.
-  - cbn.
+  - cbn. destruct n.
+    + injection H4 => H4'. subst.
+      rewrite H0 in H. injection H => H'. subst m0. clear H.
+      unfold load_i32 in H1.
+      destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Heq.
+      exists b. split; intros.
+      assert (N.of_nat addr + 0 = N.of_nat addr)%N by lia. rewrite H. clear H.
+      assumption. split. f_equal.
+      injection H1 => H1'.
 Admitted.
 
 
@@ -1875,8 +1886,8 @@ Proof.
 
     inv Hlocal. destruct H.
 
-    have Hextr := extract_constr_arg n vs v _ _ m H0 H6.
-    destruct Hextr as [bs Hbsval].
+    have Hextr := extract_constr_arg n vs v _ _ _ m H0 H2 H6.
+    edestruct Hextr as [bs [Hload [Heq Hbsval]]].
 
      assert (Hrm: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e (map_util.M.set x v rho) sr
   {|
@@ -1892,7 +1903,13 @@ Proof.
   rewrite map_util.M.gsspec.
   apply peq_true.
   split. exists x'. split.
-  inv H8. unfold translate_var in H5. unfold translate_var. eapply lookup_local_var_generalize_err_string. eassumption. admit. }
+  inv H8. unfold translate_var in H5. unfold translate_var. eapply lookup_local_var_generalize_err_string. eassumption.
+  rewrite Heq. cbn. admit. (* nth_error set_nth correct *)
+  eassumption.
+
+  (* x <> x1 *)
+  (* follows from assumption *) admit.
+  }
 
 
    have IH := IHHev e' (Build_frame (set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32)) fr.(f_inst)) state sr INVres INVlinmem INVptrInMem INVlocals H7 Hrm. destruct IH as [sr' [f' [Hred Hval]]].
@@ -1930,7 +1947,7 @@ Proof.
     unfold wasm_value_to_i32, nat_to_i32, wasm_value_to_immediate.
     admit. }
 
-    rewrite <- Harith. apply Hbsval.
+    rewrite <- Harith. apply Hload.
 
     (* save result in x' *)
     have Hx := H8. inv H8.
