@@ -1908,7 +1908,14 @@ Proof.
   eassumption.
 
   (* x <> x1 *)
-  (* follows from assumption *) admit.
+  assert (occurs_free (Eproj x t n y e) x1). { constructor; assumption. }
+  apply Hvar in H5. destruct H5 as [v6 [wal [Henv [Hloc Hval]]]].
+  exists v6. exists wal. repeat split.
+  rewrite map_util.M.gsspec.
+  rewrite peq_false. assumption. intro. subst. contradiction.
+  cbn.
+  admit. (* different vars -> different wasm local vars *)
+  assumption.
   }
 
 
@@ -2065,7 +2072,7 @@ Proof.
     eexists. eexists. split. rewrite map_cat.
     Check r_eliml. cbn.
     dostep'. cbn. apply r_eliml. admit. (* args' const *)
-    apply r_call.
+    apply r_call. admit. admit. admit.
 
   - (* Eapp_indirect *) admit.
   - (* Ehalt *)
@@ -2078,8 +2085,6 @@ Proof.
     exists s'. eexists fr.
 
     destruct H1 as [nenv' venv' x].
-    assert (nenv' = nenv). { admit. } subst nenv'. (* TODO: include nenv, venv in relation *)
-    assert (venv' = venv). { admit. } subst venv'.
     destruct Hloc as [ilocal [H3 Hilocal]]. split. erewrite H3 in H1. injection H1 => H1'. subst. clear H1.
     (* execute wasm instructions *)
     dostep. separate_instr. apply r_elimr. eapply r_get_local. eassumption.
