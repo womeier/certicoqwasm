@@ -9,6 +9,9 @@
 
  *)
 Unset Universe Checking.
+
+From compcert Require Import Coqlib.
+
 Require Import LambdaANF.cps LambdaANF.eval LambdaANF.cps_util LambdaANF.List_util LambdaANF.Ensembles_util LambdaANF.identifiers LambdaANF.tactics LambdaANF.shrink_cps_corresp.
 
 
@@ -1388,6 +1391,12 @@ Proof.
  unfold lookup_function_var. intros. destruct (M_string.find (elt:=nat) name fenv). auto. inv H.
 Qed.
 
+Definition lookup_local_var_generalize_err_string (name : string) (err : string) i :
+  lookup_local_var name venv err = Ret i -> forall err', lookup_local_var name venv err' = Ret i.
+Proof.
+ unfold lookup_local_var. intros. destruct (M_string.find (elt:=nat) name venv). auto. inv H.
+Qed.
+
 
 Theorem pass_function_args_correct : forall l instr,
  pass_function_args nenv venv fenv l = Ret instr ->
@@ -1814,6 +1823,7 @@ Proof.
   - cbn.
 Admitted.
 
+
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Codegen_related:
 
@@ -1863,71 +1873,89 @@ Proof.
     rewrite Hrho in H. inv H.
     have Hrepr' := Hrepr. inv Hrepr'.
 
+    inv Hlocal. destruct H.
+
+    have Hextr := extract_constr_arg n vs v _ _ m H0 H6.
+    destruct Hextr as [bs Hbsval].
+
+     assert (Hrm: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e (map_util.M.set x v rho) sr
+  {|
+    f_locs := set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32);
+    f_inst := f_inst fr
+  |}). {
+  split; intros. admit. (* x not a fundef *)
+
+  destruct (var_dec x x1).
+  (* x = x1 *)
+  subst x1.
+  exists v. exists (Val_ptr ((4 + addr) + 4 * N.to_nat n)). split.
+  rewrite map_util.M.gsspec.
+  apply peq_true.
+  split. exists x'. split.
+  inv H8. unfold translate_var in H5. unfold translate_var. eapply lookup_local_var_generalize_err_string. eassumption. admit. }
+
+
+   have IH := IHHev e' (Build_frame (set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32)) fr.(f_inst)) state sr INVres INVlinmem INVptrInMem INVlocals H7 Hrm. destruct IH as [sr' [f' [Hred Hval]]].
+
     eexists. eexists. cbn. split.
     { (* take steps *)
-    have Hvy := H9.
+    have Hvy := H9. inv H9.
 
     unfold INV_local_vars_exist in INVlocals.
-    destruct (INVlocals _ _ fr H9).
+    destruct (INVlocals _ _ fr Hvy).
+    rewrite H in H4. injection H4 => H4'. subst. clear H4.
+    rewrite H1 in H5. injection H5 => H5'. subst. clear H5.
 
     (* get_local y' *)
     dostep. separate_instr. elimr_nary_instr 0.
-    apply r_get_local. apply H.
+    apply r_get_local. apply H1.
 
     (* add offset n *)
     dostep. separate_instr. elimr_nary_instr 2.
     constructor. apply rs_binop_success. cbn. reflexivity.
 
-   (* load constr arg *)
-    assert (x0 = nat_to_i32 addr). {
-    admit.
-    } subst.
-     assert (Harith: N.of_nat (4 + addr + 4 * N.to_nat n) = (Wasm_int.N_of_uint i32m
-     (Wasm_int.Int32.iadd (nat_to_i32 addr)
-        (nat_to_i32
-           (N.to_nat n + 1 +
-            (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + 0)))))))).
-            (*
-    destruct i32m. cbn.
-    unfold nat_to_i32.
-    unfold Wasm_int.Int32.iadd. unfold Wasm_int.Int32.add. cbn.
-    unfold Wasm_int.Int32.Z_mod_modulus. zify. Wasm_int.Int32.Z_mod_modulusunfold Wasm_int.Int32.Z_mod_modulus. ziffy. *)
-    admit.
-
-    have Hextr := extract_constr_arg n vs v _ _ m H0 H6.
-    destruct Hextr.
+    inv Hrepr.
 
     dostep. separate_instr. elimr_nary_instr 1.
     eapply r_load_success.
+
 
     unfold INV_linear_memory_exists in INVlinmem.
     specialize INVlinmem with sr fr. destruct INVlinmem as [Hmem1 [m' Hmem2]].
     eassumption. apply H2.
 
-    rewrite <- Harith.
-    clear Harith.
-    assert (N.of_nat (4 + addr + 4 * N.to_nat n) = (N.of_nat (4 + addr) + 4 * n)%N). { zify. lia. } rewrite H4. eassumption.
+    assert (Harith: (N.of_nat (4 + addr) + 4 * n)%N = (Wasm_int.N_of_uint i32m
+     (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
+        (nat_to_i32 (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + 0)))))))). {
+    unfold wasm_value_to_i32, nat_to_i32, wasm_value_to_immediate.
+    admit. }
+
+    rewrite <- Harith. apply Hbsval.
 
     (* save result in x' *)
     have Hx := H8. inv H8.
 
-   have IH := IHHev e' (Build_frame (set_nth (VAL_int32 (Wasm_int.Int32.repr (decode_int x0)))
-  (f_locs fr) x' (VAL_int32 (Wasm_int.Int32.repr (decode_int x0)))) fr.(f_inst)) state sr INVres INVlinmem INVptrInMem INVlocals H7. destruct IH as [sr' [f' [Hred Hval]]]. admit.
+    cbn.
+    (* dostep' with fr *)
+    eapply rt_trans with (y := (?[hs], ?[sr], {|
+           f_locs :=
+             set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32);
+           f_inst := f_inst fr
+         |}, ?[s])); first  apply rt_step.
 
-    cbn. dostep'. cbn. separate_instr. elimr_nary_instr 1.
-    apply r_set_local with (vd := (VAL_int32 (Wasm_int.Int32.repr (decode_int x0)))). shelve.
+    cbn. separate_instr. elimr_nary_instr 1.
+    apply r_set_local with (vd := (wasm_deserialise bs T_i32)). reflexivity.
 
     have Hloc := INVlocals x x' fr Hx. destruct Hloc.
     apply /ssrnat.leP.
     assert (x' < length (f_locs fr)). { apply nth_error_Some. congruence. } lia.
-    admit. (* from lemma above *)
-
-  apply Hred.
-
-
-    transitivity (f_locs (Build_frame (set_nth (VAL_int32 (Wasm_int.Int32.repr (decode_int x0)))
+    reflexivity.
+    cbn.
+    apply Hred.
+    }
+    apply Hval.
+(*     transitivity (f_locs (Build_frame (set_nth (VAL_int32 (Wasm_int.Int32.repr (decode_int x0)))
   (f_locs fr) x' (VAL_int32 (Wasm_int.Int32.repr (decode_int x0)))) fr.(f_inst))). reflexivity. reflexivity.
-
 
     cbn. _ _ _ _.  INVlocals INVres INVlinmem INVlocals.
 
@@ -1951,8 +1979,8 @@ Proof.
 
     cbn.
 
-    have IH := IHHev s _ state sr INVres INVlinmem INVlocals H7. admit. admit. admit. }
-*) admit.
+    have IH := IHHev s _ state sr INVres INVlinmem INVlocals H7. admit. admit. admit. } *)
+
   - (* Ecase_nil *) (* absurd *)
     admit. (* unfold rel_mem_LambdaANF_Codegen in Hrel_m.
     *)
