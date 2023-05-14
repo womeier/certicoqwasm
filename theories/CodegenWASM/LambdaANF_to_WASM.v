@@ -383,15 +383,18 @@ Definition grow_memory_if_necessary (required_bytes : nat) : list basic_instruct
   ].
 
 (* store argument pointers in memory *)
-Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_env) (args : list cps.var) : error (list basic_instruction) :=
+Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_env) (args : list cps.var) (current : nat) : error (list basic_instruction) :=
   match args with
   | [] => Ret []
   | y :: ys => read_y <- translate_local_var_read nenv venv fenv y;;
-               remaining <- set_constructor_args nenv venv fenv ys;;
+               remaining <- set_constructor_args nenv venv fenv ys (1 + current);;
 
-               Ret ([ BI_get_global global_mem_ptr
+               Ret ([ BI_get_global constr_alloc_ptr
+                    ; BI_const (nat_to_value (4 * current))
+                    ; BI_binop T_i32 (Binop_i BOI_add)
                     ; read_y
                     ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+
                     ; BI_get_global global_mem_ptr
                     ; BI_const (nat_to_value 4)
                     ; BI_binop T_i32 (Binop_i BOI_add)
@@ -406,7 +409,7 @@ Definition allocate_constructor (nenv : name_env) (cenv : ctor_env) (venv : var_
            | Some {| ctor_arity := n |} => Ret (N.to_nat n)
            | _ => Err "found constructor without ctor_arity set"
            end : error immediate) ;;
-  set_constr_args <- set_constructor_args nenv venv fenv ys;;
+  set_constr_args <- set_constructor_args nenv venv fenv ys 1;;
   Ret (grow_memory_if_necessary (4 * (1 + arity)) ++
        [ BI_get_global global_mem_ptr
        ; BI_set_global constr_alloc_ptr
