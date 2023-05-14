@@ -37,7 +37,8 @@ Definition fname_env := M_string.t nat.  (* maps function export names to their 
 
 (* global vars *)
 Definition global_mem_ptr : immediate := 0.
-Definition result_var : immediate := 1. (* since CPS: only one final result *)
+Definition constr_alloc_ptr : immediate := 1. (* ptr to beginning of constr alloc in linear mem *)
+Definition result_var : immediate := 2. (* since CPS: only one final result *)
 
 (* target type for generating functions, contains more fields than the one from Wasm *)
 Record wasm_function :=
@@ -95,24 +96,7 @@ Definition write_int_function_name := "$write_int".
 Definition write_int_function_var : immediate := 1.
 
 
-(* ***** GENERATE ALLOCATOR FUNCTIONS FOR CONSTRUCTORS ****** *)
-
-Definition constr_alloc_function_name (tg : ctor_tag) : string :=
-  "$alloc_constr_" ++ string_of_nat (Pos.to_nat tg).
-
-(* Example placement of constructors in the linear memory:
-     data Bintree := Leaf | Node Bintree Value Bintree
-
-     Leaf: --> +---+
-               |T_l|
-               +---+
-
-     Node: --> +---+---+---+---+
-               |T_n| L | V | R |
-               +---+---+---+---+
-    T_l, T_n unique constructor tags
-    L, V, R pointers to linear memory
-*)
+(* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)
 
 Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
   match e with
@@ -135,82 +119,6 @@ Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
 
 Definition collect_constr_tags (e : exp) : list ctor_tag :=
   S_pos.elements (collect_constr_tags' e).
-
-
-(* a page is 2^16 bytes *)
-Definition grow_memory_if_necessary (required_bytes : nat) : list basic_instruction :=
-  (* required number of total pages *)
-  [ BI_get_global global_mem_ptr
-  ; BI_const (nat_to_value required_bytes)
-  ; BI_binop T_i32 (Binop_i BOI_add)
-  ; BI_const (nat_to_value (2 ^ 16))
-  ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
-
-  (* current number of pages *)
-  ; BI_current_memory
-  ; BI_relop T_i32 (Relop_i (ROI_ge SX_S))
-  (* allocate one page if necessary *)
-  ; BI_if (Tf nil nil) [ BI_const (nat_to_value 1)
-                       ; BI_grow_memory (* returns -1 on alloc failure *)
-                       ; BI_const (Z_to_value (-1))
-                       ; BI_relop T_i32 (Relop_i ROI_eq)
-                       ; BI_if (Tf nil nil) [ BI_unreachable ] (* we use an unbounded memory so this never happens *)
-                                            [ BI_nop ]
-                       ]
-                       [ BI_nop ]
-  ].
-
-(* generates function that takes the arguments of a constructor
-  and allocates a record in the linear memory *)
-Definition generate_constr_alloc_function (cenv : ctor_env) (fenv : fname_env) (c : ctor_tag) : error wasm_function :=
-  let ctor_id := Pos.to_nat c in
-  num_args <- (match M.get c cenv with
-               | Some {| ctor_arity := n |} => Ret (N.to_nat n)
-               | _ => Err "found constructor without ctor_arity set"
-               end : error immediate) ;;
-  let return_var := (num_args : immediate) in (* 1st local var idx after args *)
-  let args := arg_list num_args in
-  let body :=
-         grow_memory_if_necessary (4 * (1 + num_args)) ++
-         [ BI_get_global global_mem_ptr
-         ; BI_set_local return_var
-
-         ; BI_get_global global_mem_ptr
-         ; BI_const (nat_to_value ctor_id)
-         ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-         ; BI_get_global global_mem_ptr
-         ; BI_const (nat_to_value 4)
-         ; BI_binop T_i32 (Binop_i BOI_add)
-         ; BI_set_global global_mem_ptr
-         ] ++ (* store argument pointers in memory *)
-         (flat_map (fun arg =>
-             [ BI_get_global global_mem_ptr
-             ; BI_get_local (fst arg)
-             ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-             ; BI_get_global global_mem_ptr
-             ; BI_const (nat_to_value 4)
-             ; BI_binop T_i32 (Binop_i BOI_add)
-             ; BI_set_global global_mem_ptr
-             ]
-           ) args)
-         ++
-         [ BI_get_local return_var  (* "ptr to beginning of memory segment" *)
-         ; BI_return
-         ]
-  in
-
-  let fn_name := constr_alloc_function_name c in
-  fn_var <- lookup_function_var fn_name fenv ("generate constr alloc: " ++ fn_name)%bs ;;
-
-  Ret {| var := fn_var
-       ; export_name := fn_name
-       ; type := Tf (map snd args) [T_i32]
-       ; locals := [T_i32]
-       ; body := body
-       |}.
-
-
-(* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)
 
 Definition constr_pp_function_name : string :=
   "$pretty_print_constructor".
@@ -437,7 +345,82 @@ Definition translate_call (nenv : name_env) (venv : var_env) (fenv : fname_env) 
                ]).
 
 
-(* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
+(* Example placement of constructors in the linear memory:
+     data Bintree := Leaf | Node Bintree Value Bintree
+
+     Leaf: --> +---+
+               |T_l|
+               +---+
+
+     Node: --> +---+---+---+---+
+               |T_n| L | V | R |
+               +---+---+---+---+
+    T_l, T_n unique constructor tags
+    L, V, R pointers to linear memory
+*)
+
+(* a page is 2^16 bytes *)
+Definition grow_memory_if_necessary (required_bytes : nat) : list basic_instruction :=
+  (* required number of total pages *)
+  [ BI_get_global global_mem_ptr
+  ; BI_const (nat_to_value required_bytes)
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_const (nat_to_value (2 ^ 16))
+  ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
+
+  (* current number of pages *)
+  ; BI_current_memory
+  ; BI_relop T_i32 (Relop_i (ROI_ge SX_S))
+  (* allocate one page if necessary *)
+  ; BI_if (Tf nil nil) [ BI_const (nat_to_value 1)
+                       ; BI_grow_memory (* returns -1 on alloc failure *)
+                       ; BI_const (Z_to_value (-1))
+                       ; BI_relop T_i32 (Relop_i ROI_eq)
+                       ; BI_if (Tf nil nil) [ BI_unreachable ] (* we use an unbounded memory so this never happens *)
+                                            [ BI_nop ]
+                       ]
+                       [ BI_nop ]
+  ].
+
+(* store argument pointers in memory *)
+Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_env) (args : list cps.var) : error (list basic_instruction) :=
+  match args with
+  | [] => Ret []
+  | y :: ys => read_y <- translate_local_var_read nenv venv fenv y;;
+               remaining <- set_constructor_args nenv venv fenv ys;;
+
+               Ret ([ BI_get_global global_mem_ptr
+                    ; read_y
+                    ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+                    ; BI_get_global global_mem_ptr
+                    ; BI_const (nat_to_value 4)
+                    ; BI_binop T_i32 (Binop_i BOI_add)
+                    ; BI_set_global global_mem_ptr
+                    ] ++ remaining)
+  end.
+
+
+Definition allocate_constructor (nenv : name_env) (cenv : ctor_env) (venv : var_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
+  let ctor_id := Pos.to_nat c in
+  arity <- (match M.get c cenv with (* TODO: use length ys instead *)
+           | Some {| ctor_arity := n |} => Ret (N.to_nat n)
+           | _ => Err "found constructor without ctor_arity set"
+           end : error immediate) ;;
+  set_constr_args <- set_constructor_args nenv venv fenv ys;;
+  Ret (grow_memory_if_necessary (4 * (1 + arity)) ++
+       [ BI_get_global global_mem_ptr
+       ; BI_set_global constr_alloc_ptr
+
+       (* set tag *)
+       ; BI_get_global global_mem_ptr
+       ; BI_const (nat_to_value ctor_id)
+       ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+       ; BI_get_global global_mem_ptr
+       ; BI_const (nat_to_value 4)
+       ; BI_binop T_i32 (Binop_i BOI_add)
+       ; BI_set_global global_mem_ptr
+       ] ++ set_constr_args).
+
 Fixpoint create_case_nested_if_chain (v : immediate) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
   match es with
   | [] => [ BI_unreachable ]
@@ -450,6 +433,8 @@ Fixpoint create_case_nested_if_chain (v : immediate) (es : list (ctor_tag * list
             ]
   end.
 
+(* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
+
 (* the result of every expression is written two the global var result_var,
 e.g. for let x := Eproj ... in (halt x)
 halt x expects the previous result in this var.
@@ -460,13 +445,12 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
    | Econstr x tg ys e' =>
       following_instr <- translate_exp nenv cenv venv fenv e' ;;
       x_var <- translate_var nenv venv x "translate_exp constr";;
-      constr_args_instr <- pass_function_args nenv venv fenv ys;;
-      alloc_fn_var <- lookup_function_var (constr_alloc_function_name tg) fenv "translate exp: econstr" ;;
+      alloc_constr <- allocate_constructor nenv cenv venv fenv tg ys;;
 
-      Ret ( constr_args_instr ++
-            [ BI_call alloc_fn_var
-            ; BI_set_local x_var
-            ] ++ following_instr)
+      Ret (alloc_constr ++
+          [ BI_get_global constr_alloc_ptr
+          ; BI_set_local x_var
+          ] ++ following_instr)
 
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp)) : error (list (ctor_tag * list basic_instruction)) :=
@@ -627,10 +611,6 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
   end in
   let (fname_mapping, num_fns) := (add_to_fname_mapping fun_names num_fns fname_mapping, num_fns + length fun_names) in
 
-  let constr_tags := collect_constr_tags e in
-  let constr_alloc_fnames := map constr_alloc_function_name constr_tags in
-  let (fname_mapping, num_fns) := (add_to_fname_mapping constr_alloc_fnames num_fns fname_mapping, num_fns + length constr_alloc_fnames) in
-
   let (fname_mapping, num_fns) := (add_to_fname_mapping [constr_pp_function_name] num_fns fname_mapping, num_fns + 1) in
 
   fsigs <- collect_function_signatures nenv e;;
@@ -650,9 +630,6 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   fname_mapping <- create_fname_mapping nenv e ;;
 
   let constr_tags := collect_constr_tags e in
-  constr_alloc_functions <-
-    sequence (map (generate_constr_alloc_function cenv fname_mapping) constr_tags) ;;
-
   constr_pp_function <- generate_constr_pp_function cenv fname_mapping constr_tags ;;
 
   fsigs <- collect_function_signatures nenv e ;;
@@ -692,7 +669,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                         ; body := main_instr
                         |}
   in
-  let functions := fns ++ constr_alloc_functions ++ [constr_pp_function] ++ indirection_functions ++ [mem_usage_function; get_result_function; main_function] in
+  let functions := fns ++ [constr_pp_function] ++ indirection_functions ++ [mem_usage_function; get_result_function; main_function] in
   let types := map (fun f => f.(type)) functions in
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (Mk_funcidx f.(var))
@@ -717,9 +694,13 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
        ; mod_globals := {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* global_mem_ptr *)
                          ; modglob_init := [BI_const (nat_to_value 0)]
                          |} ::
+                        {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* constr_alloc_ptr *)
+                         ; modglob_init := [BI_const (nat_to_value 0)]
+                         |} ::
                         {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* result_var *)
                          ; modglob_init := [BI_const (nat_to_value 0)]
                          |} :: nil
+
 
        ; mod_elem := []
        ; mod_data := []
