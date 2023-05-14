@@ -589,28 +589,28 @@ Definition boxed_header: N -> N -> Z -> Prop :=
                        (0 <= Z.of_N a <  Zpower.two_power_nat (Ptrofs.wordsize - 10))%Z. *)
 
 
-Inductive Forall_statements_in_seq' {A}: (BinNums.Z  -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> BinNums.Z -> Prop :=
-| Fsis_last: forall (R: (BinNums.Z  -> A -> list basic_instruction -> Prop)) n v s, R n v s -> Forall_statements_in_seq' R [v] s n
-| Fsis_cons: forall R v vs s s' n, Forall_statements_in_seq' R vs s' (Z.succ n) ->
+Inductive Forall_statements_in_seq' {A}: (nat  -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> nat -> Prop :=
+| Fsis_last: forall (R: (nat  -> A -> list basic_instruction -> Prop)) n v s, R n v s -> Forall_statements_in_seq' R [v] s n
+| Fsis_cons: forall R v vs s s' n, Forall_statements_in_seq' R vs s' (S n) ->
                                    R n v s ->  Forall_statements_in_seq' R (v::vs) (s ++ s') n.
 
 
 
-Inductive Forall_statements_in_seq_rev {A}: (BinNums.Z  -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> nat -> Prop :=
-| Fsir_last: forall (R: (BinNums.Z  -> A -> list basic_instruction -> Prop)) v s, R 0%Z v s -> Forall_statements_in_seq_rev R [v] s 0
+Inductive Forall_statements_in_seq_rev {A}: (nat -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> nat -> Prop :=
+| Fsir_last: forall (R: (nat  -> A -> list basic_instruction -> Prop)) v s, R 0 v s -> Forall_statements_in_seq_rev R [v] s 0
 | Fsir_cons: forall R v vs s s' n, Forall_statements_in_seq_rev R vs s' n ->
-                                   R (Z.of_nat (S n)) v s ->  Forall_statements_in_seq_rev R (v::vs) (s ++ s') (S n).
+                                   R (S n) v s ->  Forall_statements_in_seq_rev R (v::vs) (s ++ s') (S n).
 
 
 (* This is true for R, vs and S iff forall i, R i (nth vs) (nth s)
    > list cannot be empty (o.w. no statement)
    > nth on statement is taken as nth on a list of sequenced statement (;) *)
-Definition Forall_statements_in_seq {A}: (BinNums.Z  -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> Prop :=
-  fun P vs s =>  Forall_statements_in_seq' P vs s (0%Z).
+Definition Forall_statements_in_seq {A}: (nat  -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> Prop :=
+  fun P vs s =>  Forall_statements_in_seq' P vs s 0.
 
 (* like Forall_statements_in_seq, but starting from index 1 *)
-Definition Forall_statements_in_seq_from_1 {A}: (BinNums.Z  -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> Prop :=
-  fun P vs s =>  Forall_statements_in_seq' P vs s (1%Z).
+Definition Forall_statements_in_seq_from_1 {A}: (nat  -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> Prop :=
+  fun P vs s =>  Forall_statements_in_seq' P vs s 1.
 
 Inductive repr_var : positive -> immediate -> Prop :=
 | repr_var_V : forall s err_str i,
@@ -624,43 +624,60 @@ Inductive repr_funvar : positive -> immediate -> Prop :=
         translate_function_var nenv fenv s = Ret i ->
         repr_funvar s i.
 
-Inductive repr_var_or_funvar : positive -> immediate -> Prop :=
-| repr_var_or_funvar_V p i : repr_var p i -> repr_var_or_funvar p i
-| repr_var_or_funvar_FV p i : repr_funvar p i -> repr_var_or_funvar p i.
+Inductive repr_read_var_or_funvar : positive -> basic_instruction -> Prop :=
+| repr_var_or_funvar_V : forall p i,
+    repr_var p i -> repr_read_var_or_funvar p (BI_get_local i)
+| repr_var_or_funvar_FV : forall p i,
+    repr_funvar p i -> repr_read_var_or_funvar p (BI_const (nat_to_value i)).
+
+(* constr_alloc_ptr: pointer to linear_memory[p + 4 + 4*n] = value v *)
+Inductive is_nth_projection : nat -> var -> list basic_instruction -> Prop :=
+  Make_nth_proj: forall (v : var) n v',
+                        repr_read_var_or_funvar v v' ->
+                        is_nth_projection n v [ BI_get_global constr_alloc_ptr
+                                              ; BI_const (nat_to_value ((1 + n) * 4))
+                                              ; BI_binop T_i32 (Binop_i BOI_add)
+                                              ; v'
+                                              ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
+                                              ].
+
+(* Inductive repr_asgn_constr : list cps.var -> list basic_instruction -> Prop :=
+  | Rconstr_asgn_cons : forall vs vs' v v' s,
+        Forall_statements_in_seq is_nth_projection vs s ->
+        repr_asgn_constr vs ([BI_get_global constr_alloc_ptr;
+                               BI_const (nat_to_value 4);
+                               BI_binop T_i32 (Binop_i BOI_add);
+                               v';
+                               BI_store T_i32 None 2%N 0%N;
+                               BI_get_global global_mem_ptr;
+                               BI_const (nat_to_value 4);
+                               BI_binop T_i32 (Binop_i BOI_add);
+                               BI_set_global global_mem_ptr] ++ vs'). *)
 
 (*
-p pointer: linear_memory[p + 4*n] = value v *)
-Inductive is_nth_projection_of_x : immediate -> Z -> var -> list basic_instruction -> Prop :=
-  Make_nth_proj: forall (x : var) (p : immediate) n v v',
-                        (* var_or_funvar v e -> *)
-                        repr_var x p ->
-                        repr_var v v' ->
-                         is_nth_projection_of_x p n v [ BI_get_global p
-                                                      ; BI_const (Z_to_value (4 * n))
-                                                      ; BI_binop T_i32 (Binop_i BOI_add)
-                                                      ; BI_get_local v'
-                                                      ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
-                                                      ].
-(*
+    Forall_statements_in_seq (is_nth_projection_of_x x) vs s ->
+    repr_asgn_constr x t vs (x ::= [val] (allocPtr +' (c_int Z.one val));
+                                     allocIdent ::= allocPtr +'
+                                           (c_int (Z.of_N (a + 1)) val); Field(var x, -1) :::= c_int h val;  s). *)
+
 (* all constructors are boxed for simplicity *)
-Inductive repr_asgn_constr: immediate -> ctor_tag -> list var -> list basic_instruction -> Prop :=
-| Rconstr_asgn: forall x (t:ctor_tag) (cenv : ctor_env) (nenv : name_env) vs s a,
-    match M.get t cenv with
+Inductive repr_asgn_constr: ctor_tag -> list var -> list basic_instruction -> Prop :=
+| Rconstr_asgn: forall (t:ctor_tag) (cenv : ctor_env) (nenv : name_env) vs s,
+    (* match M.get t cenv with
     | Some {| ctor_arity := ar |} => Some ar
     | _ => None
     end = Some a ->
-    length vs = N.to_nat a ->
-    (* boxed_header n a h -> *)
-    Forall_statements_in_seq_from_1 (is_nth_projection_of_x x) vs s ->
-    repr_asgn_constr x t vs [ BI_get_global x
-                            ; BI_const (nat_to_i32 (Pos.to_nat t))
-                            ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
-                            ].
+    length vs = N.to_nat a -> *)
+    Forall_statements_in_seq_from_1 is_nth_projection vs s ->
+    repr_asgn_constr t vs ([ BI_get_global constr_alloc_ptr
+                           ; BI_const (nat_to_value (Pos.to_nat t))
+                           ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
+                           ] ++ s).
                              (*  (x ::= [val] (allocPtr +' (c_int Z.one val));
                              allocIdent ::= allocPtr +' (c_int (Z.of_N (a + 1)) val);
                              Field(var x, -1) :::= c_int h val;
                              s). *)
-                             *)
+
 (*
 Inductive repr_switch_LambdaANF_Codegen: positive -> labeled_statements -> labeled_statements -> statement -> Prop :=
 | Mk_switch: forall x ls ls',
@@ -704,23 +721,33 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
     repr_var v v' ->
       repr_expr_LambdaANF_Codegen (Eproj x t n v e)
            ([ BI_get_local v'
-           ; BI_const (nat_to_value (4 * ((N.to_nat n) + 1)))
+           ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4))
            ; BI_binop T_i32 (Binop_i BOI_add)
            ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0)
            ; BI_set_local x'
            ] ++ s)
 
 | Rconstr_e:
-    forall x x' t vs s  e e' alloc_fn_var,
+    forall x x' t vs sgrow sinit sstore sres e e',
     (* translated assigned var *)
     repr_var x x' ->
-    (* passed args correctly *)
-    repr_fun_args_Codegen vs s ->
-    (* called correct function *)
-    Ret alloc_fn_var = lookup_function_var (constr_alloc_function_name t) fenv "translate exp: econstr" ->
+    (* allocate memory *)
+    grow_memory_if_necessary ((length vs + 1) * 4) = sgrow ->
+    (* initialize pointers *)
+    sinit = [ BI_get_global global_mem_ptr
+            ; BI_set_global constr_alloc_ptr
+            ; BI_get_global global_mem_ptr
+            ; BI_const (nat_to_value ((length vs + 1) * 4))
+            ; BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr
+            ] ->
+    (* store tag + args *)
+    repr_asgn_constr t vs sstore ->
+    (* set result *)
+    sres = [BI_get_global constr_alloc_ptr; BI_set_local x'] ->
     (* following expression *)
-    repr_expr_LambdaANF_Codegen e  e' ->
-    repr_expr_LambdaANF_Codegen (Econstr x t vs e) (s ++ [ BI_call alloc_fn_var; BI_set_local x'] ++ e')
+    repr_expr_LambdaANF_Codegen e e' ->
+    repr_expr_LambdaANF_Codegen (Econstr x t vs e) (sgrow ++ sinit ++ sstore ++ sres ++ e')
+
 
 | Rcase_e_nil : forall v, repr_expr_LambdaANF_Codegen (Ecase v []) [BI_unreachable]
 
@@ -749,8 +776,7 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
                         "translate call, ind function" = Ret ind ->
     lookup_local_var (translate_var_to_string nenv v) venv
                         ("ind call from var: " ++ translate_var_to_string nenv v) = Ret i ->
-    repr_expr_LambdaANF_Codegen (Eapp v t args) ((args' ++ [BI_get_local i; BI_call ind]))
-.
+    repr_expr_LambdaANF_Codegen (Eapp v t args) ((args' ++ [BI_get_local i; BI_call ind])).
 
 
 (* Variable mem : memory. *) (* WASM memory, created e.g. at initialization *)
@@ -1400,7 +1426,7 @@ Proof.
 Qed.
 
 
-Theorem pass_function_args_correct : forall l instr,
+Lemma pass_function_args_correct : forall l instr,
  pass_function_args nenv venv fenv l = Ret instr ->
  repr_fun_args_Codegen fenv venv nenv l instr.
 Proof.
@@ -1420,21 +1446,14 @@ Proof.
             constructor.  econstructor. eassumption. apply IHl; auto.
 Qed.
 
+Lemma set_constructor_args_correct : forall l l2,
+  set_constructor_args nenv venv fenv l 1 = Ret l2 ->
+  Forall_statements_in_seq_from_1 (is_nth_projection fenv venv nenv) l l2.
+Proof. intros.
+Admitted.
 
-(*
-    let fix translate_case_branch_expressions (arms : list (ctor_tag * exp)) : error (list (ctor_tag * list basic_instruction)) :=
-      match arms with
-      | [] => Ret []
-      | (t, e)::tl => e' <- translate_exp nenv cenv venv fenv e;;
-                      arms' <- translate_case_branch_expressions tl;;
-                      Ret ((t, e') :: arms')
-      end in
-      transl_branch_exprs <- translate_case_branch_expressions arms;;
 
-      x_var <- translate_var nenv venv x "translate_exp case";;
-      Ret (create_case_if_chain x_var transl_branch_exprs)
-
- *)
+Import seq.
 
 Theorem translate_exp_correct:
     (* find_symbol_domain p map -> *)
@@ -1450,16 +1469,58 @@ Proof.
   - (* Econstr *)
     simpl in H.
     { destruct (translate_exp nenv cenv venv fenv e) eqn:H_eqTranslate; inv H.
-      destruct (translate_var nenv venv v "translate_exp constr") eqn:H_translate_var. inv H1.
-      destruct (pass_function_args nenv venv fenv l) eqn:prep_args. inv H1.
-      destruct (lookup_function_var (constr_alloc_function_name t) fenv
-         "translate exp: econstr") eqn:fn_var. inv H1. inv H1.
-       constructor.
-       - econstructor. eassumption.
-       - eapply pass_function_args_correct. eassumption.
-       - symmetry. assumption.
-       - apply IHe; auto. eapply Forall_constructors_subterm; eauto. do 2 constructor.
-       }
+      destruct (translate_var nenv venv v "translate_exp constr") eqn:H_translate_var. inv H1. rename i into v'.
+      destruct (allocate_constructor nenv cenv venv fenv t l) eqn:alloc_constr. inv H1. inv H1.
+
+      unfold allocate_constructor in alloc_constr.
+      destruct (set_constructor_args nenv venv fenv l 1) eqn:Hconstrargs. inv alloc_constr.
+         remember (grow_memory_if_necessary ((length l + 1) * 4 )) as grow.
+      inv alloc_constr.
+         remember (grow_memory_if_necessary ((length l + 1) * 4)) as grow.
+
+         replace ([:: BI_get_global constr_alloc_ptr, BI_set_local v' & l0]) with
+         ([:: BI_get_global constr_alloc_ptr; BI_set_local v'] ++ l0) by reflexivity.
+
+       replace ([:: BI_get_global global_mem_ptr, BI_set_global constr_alloc_ptr,
+        BI_get_global global_mem_ptr, BI_const (nat_to_value ((Datatypes.length l + 1) * 4)),
+        BI_binop T_i32 (Binop_i BOI_add), BI_set_global global_mem_ptr,
+        BI_get_global constr_alloc_ptr, BI_const (nat_to_value (Pos.to_nat t)),
+        BI_store T_i32 None 2%N 0%N
+      & l2]) with ([:: BI_get_global global_mem_ptr; BI_set_global constr_alloc_ptr;
+        BI_get_global global_mem_ptr; BI_const (nat_to_value ((Datatypes.length l + 1) * 4));
+        BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr] ++
+        [BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
+        BI_store T_i32 None 2%N 0%N] ++ l2) by reflexivity.
+
+         repeat rewrite <- app_assoc. Print Rconstr_e.
+        eapply Rconstr_e with (sgrow := grow) (sinit := [:: BI_get_global global_mem_ptr; BI_set_global constr_alloc_ptr;
+       BI_get_global global_mem_ptr;
+       BI_const (nat_to_value ((Datatypes.length l + 1) * 4));
+       BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr])
+       (sstore := [:: BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
+       BI_store T_i32 None 2%N 0%N] ++
+   l2) ; subst; eauto.
+        econstructor. eassumption. constructor; auto.
+
+        unfold Forall_statements_in_seq_from_1.
+        Print Forall_statements_in_seq'. apply set_constructor_args_correct. assumption.
+
+        apply IHe; auto.
+        assert (subterm_e e (Econstr v t l e) ). { constructor; constructor. }
+        eapply Forall_constructors_subterm. eassumption. assumption.
+        }
+    (*
+    constructor.
+    2: eapply IHe; eauto.
+    clear IHe H_eqTranslate.
+    apply Forall_constructors_in_constr in Hcenv.
+    destruct (M.get t cenv) eqn:Hccenv. destruct c.
+    subst.
+    eapply repr_asgn_constructorS; eauto.
+    inv Hcenv.
+    eapply Forall_constructors_subterm. apply Hcenv. constructor. constructor.
+        *)
+
   - (* Ecase nil *) simpl in H. destruct (translate_var nenv venv v "translate_exp case") eqn:Hvar. inv H. inv H.
      constructor.
   - (* Ecase const *) {
@@ -1543,11 +1604,8 @@ Proof.
    (* indirect call *)
    - { destruct (lookup_local_var (translate_var_to_string nenv v) venv
         ("ind call from var: " ++ translate_var_to_string nenv v)) eqn:Hlvar. inv H.
-         destruct (lookup_function_var
-        (indirection_function_name (map (fun _ : var => T_i32) l))
-        fenv
-        ("didn't find ind. function for: " ++
-         translate_var_to_string nenv v)) eqn:Hlvar2. inv H. injection H => Heq. subst. clear H. constructor; auto.
+         destruct (lookup_function_var (indirection_function_name (List.map (fun _ : var => T_i32) l))
+        fenv ("didn't find ind. function for: " ++ translate_var_to_string nenv v)) eqn:Hlvar2. inv H. injection H => Heq. subst. clear H. constructor; auto.
                  apply pass_function_args_correct. assumption. eapply lookup_function_var_generalize_err_string. eassumption. }
   - (* Eprim *)
     inv H. inv H.
@@ -1605,11 +1663,8 @@ Lemma set_global_var_updated: forall sr fr value s',
   sglob_val (host_function:=host_function) s' (f_inst fr) result_var = Some value.
 Proof.
   intros. unfold supdate_glob in H. cbn in H. unfold sglob_val, sglob; cbn. destruct (inst_globs (f_inst fr)) eqn:Hgl. inv H.
-  destruct l eqn:Hl. inv H. cbn in H. unfold g_val. subst. cbn in *. unfold supdate_glob_s in H.
-  destruct (nth_error (s_globals sr) g0) eqn:Hntherr. cbn in H. injection H => H'. subst. clear H. cbn.
-
-  rewrite -update_list_at_is_set_nth. Print nth_error.
-  erewrite nth_error_nth'.
+  destruct l eqn:Hl. inv H. unfold g_val. subst. cbn in *. unfold supdate_glob_s in H.
+  destruct (nth_error (s_globals sr) g0) eqn:Hntherr.
 Admitted.
 
 
@@ -1629,8 +1684,8 @@ Lemma update_glob_keeps_memory_intact : forall sr sr' fr value,
 Proof.
   intros.
   unfold supdate_glob, supdate_glob_s in H. cbn in H. destruct (inst_globs (f_inst fr)). inv H.
-  destruct l. inv H. cbn in H. destruct (nth_error (s_globals sr) g0). inv H. reflexivity.
-  inv H.
+  destruct l. inv H. destruct l. inv H. cbn in H.
+  destruct (nth_error (s_globals sr) g1). cbn in H. inv H. reflexivity. inv H.
 Qed.
 
 Lemma update_glob_keeps_funcs_intact : forall sr sr' fr value,
@@ -1639,7 +1694,7 @@ Lemma update_glob_keeps_funcs_intact : forall sr sr' fr value,
 Proof.
   intros.
   unfold supdate_glob, supdate_glob_s in H. cbn in H. destruct (inst_globs (f_inst fr)). inv H.
-  destruct l. inv H. cbn in H. destruct (nth_error (s_globals sr) g0). inv H. reflexivity.
+  destruct l. inv H. destruct l. inv H. cbn in H. destruct (nth_error (s_globals sr) g1). inv H.  reflexivity.
   inv H.
 Qed.
 
@@ -1887,18 +1942,14 @@ Proof.
 Admitted.
 
 (* TODO RENAME *)
-Lemma arith_addr_helper : forall n addr, (N.of_nat (4 + addr) + 4 * n)%N =
-Wasm_int.N_of_uint i32m
-  (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
-     (nat_to_i32
-        (N.to_nat n + 1 +
-         (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + 0)))))).
+Lemma arith_addr_helper : forall n addr, Wasm_int.N_of_uint i32m
+     (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
+        (nat_to_i32 ((N.to_nat n + 1) * 4))) = (N.of_nat (4 + addr) + 4 * n)%N .
 Proof.
   intros. unfold wasm_value_to_i32, wasm_value_to_immediate, nat_to_i32.
   assert ((Z.of_nat
            (N.to_nat n + 1 +
             (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + 0))))) = Z.of_nat (4 * (1 + N.to_nat n))) by lia.
-  rewrite H. clear H.
   unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
 admit. Admitted. (* TODO: wrong, assert that n < Int32.max *)
 
@@ -1983,7 +2034,8 @@ Proof.
   intros rho v e n Hev.
   induction Hev; intros Hc_env fr state sr INVres INVlinmem INVptrInMem INVlocals Hrepr_e Hrel_m; inv Hrepr_e.
   - (* Econstr *)
-    {
+    { remember (grow_memory_if_necessary ((Datatypes.length ys + 1) * 4)) as grow.
+      cbn. admit. }
   - (* rename v' into y'.
     { remember (Ecase y cl) as exp. generalize dependent Heqexp. generalize dependent e. generalize dependent t. induction Hrepr_e; intros; inv Heqexp; first inv H1.
     inv Hrepr_e.
@@ -2064,7 +2116,7 @@ Proof.
     specialize INVlinmem with sr fr. destruct INVlinmem as [Hmem1 [m' Hmem2]].
     eassumption. apply H2.
 
-    rewrite <- arith_addr_helper. apply Hload.
+    rewrite arith_addr_helper. apply Hload.
 
     (* save result in x' *)
     have Hx := H8. inv H8.
@@ -2118,7 +2170,7 @@ Proof.
   - (* Ecase_nil *)
     inv H1. (* absurd *)
   - (* Ecase_cons *) {
-
+    (*
     remember ([:: BI_get_local v'; BI_load T_i32 None (N.of_nat 2) (N.of_nat 0);
                 BI_const (nat_to_value (Pos.to_nat t0));
                 BI_relop T_i32 (Relop_i ROI_eq);

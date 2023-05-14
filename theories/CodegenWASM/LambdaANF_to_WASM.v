@@ -394,30 +394,26 @@ Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_e
                     ; BI_binop T_i32 (Binop_i BOI_add)
                     ; read_y
                     ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-
-                    ; BI_get_global global_mem_ptr
-                    ; BI_const (nat_to_value 4)
-                    ; BI_binop T_i32 (Binop_i BOI_add)
-                    ; BI_set_global global_mem_ptr
                     ] ++ remaining)
   end.
 
 
 Definition allocate_constructor (nenv : name_env) (cenv : ctor_env) (venv : var_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
   let ctor_id := Pos.to_nat c in
-  set_constr_args <- set_constructor_args nenv venv fenv ys 1;;
-  Ret (grow_memory_if_necessary (4 * (1 + (length ys))) ++
+  set_constr_args <- set_constructor_args nenv venv fenv ys 1;; (* 1: skip tag *)
+  Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++
        [ BI_get_global global_mem_ptr
        ; BI_set_global constr_alloc_ptr
 
-       (* set tag *)
        ; BI_get_global global_mem_ptr
-       ; BI_const (nat_to_value ctor_id)
-       ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-       ; BI_get_global global_mem_ptr
-       ; BI_const (nat_to_value 4)
+       ; BI_const (nat_to_value ((length ys + 1) * 4))
        ; BI_binop T_i32 (Binop_i BOI_add)
        ; BI_set_global global_mem_ptr
+
+       (* set tag *)
+       ; BI_get_global constr_alloc_ptr
+       ; BI_const (nat_to_value ctor_id)
+       ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
        ] ++ set_constr_args).
 
 Fixpoint create_case_nested_if_chain (v : immediate) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
@@ -470,7 +466,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
        x_var <- translate_var nenv venv x "translate_exp proj x";;
 
       Ret ([ BI_get_local y_var
-           ; BI_const (nat_to_value (4 * ((N.to_nat n) + 1))) (* skip ctor_id and previous constr arguments *)
+           ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4)) (* skip ctor_id and previous constr arguments *)
            ; BI_binop T_i32 (Binop_i BOI_add)
            ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
            ; BI_set_local x_var
