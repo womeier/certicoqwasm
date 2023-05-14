@@ -405,12 +405,8 @@ Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_e
 
 Definition allocate_constructor (nenv : name_env) (cenv : ctor_env) (venv : var_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
   let ctor_id := Pos.to_nat c in
-  arity <- (match M.get c cenv with (* TODO: use length ys instead *)
-           | Some {| ctor_arity := n |} => Ret (N.to_nat n)
-           | _ => Err "found constructor without ctor_arity set"
-           end : error immediate) ;;
   set_constr_args <- set_constructor_args nenv venv fenv ys 1;;
-  Ret (grow_memory_if_necessary (4 * (1 + arity)) ++
+  Ret (grow_memory_if_necessary (4 * (1 + (length ys))) ++
        [ BI_get_global global_mem_ptr
        ; BI_set_global constr_alloc_ptr
 
