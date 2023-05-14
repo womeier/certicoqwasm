@@ -770,6 +770,16 @@ Inductive wasm_value :=
   | Val_ptr : immediate -> wasm_value
   | Val_funidx : immediate -> wasm_value.
 
+
+Definition wasm_value_to_immediate (v : wasm_value) :=
+    match v with
+    | Val_ptr i => i
+    | Val_funidx i => i
+    end.
+
+Definition wasm_value_to_i32 (v : wasm_value) :=
+  Wasm_int.Int32.repr (BinInt.Z.of_nat (wasm_value_to_immediate v)).
+
 Variable host_function : Type.
 Let store_record := store_record host_function.
 
@@ -802,13 +812,13 @@ with repr_val_constr_args_LambdaANF_Codegen : (list LambdaANF.cps.val) -> store_
      | Rnil_l : forall sr addr,
         repr_val_constr_args_LambdaANF_Codegen nil sr addr
 
-     | Rcons_l: forall v vptr vs sr m addr,
+     | Rcons_l: forall v wal vs sr m addr,
         (* store_record contains memory *)
         List.nth_error sr.(s_mems) 0 = Some m ->
 
         (* constr arg is ptr related to value v *)
-        load_i32 m (N.of_nat addr) = Some (VAL_int32 (immediate_to_i32 vptr)) ->
-        repr_val_LambdaANF_Codegen v sr (Val_ptr vptr) ->
+        load_i32 m (N.of_nat addr) = Some (VAL_int32 (wasm_value_to_i32 wal)) ->
+        repr_val_LambdaANF_Codegen v sr wal ->
 
         (* following constr args are also related *)
         repr_val_constr_args_LambdaANF_Codegen vs sr (4 + addr) ->
@@ -1140,14 +1150,6 @@ TODO: second section needs that for any such f s.t. find_def f fl = Some (t, vs4
 may need rho' also has the Vfun
  *)
 
-Definition wasm_value_to_immediate (v : wasm_value) :=
-    match v with
-    | Val_ptr i => i
-    | Val_funidx i => i
-    end.
-
-Definition wasm_value_to_i32 (v : wasm_value) :=
-  Wasm_int.Int32.repr (BinInt.Z.of_nat (wasm_value_to_immediate v)).
 
 (* wasm values can be stored in memory, local or global variables *)
 Definition stored_in_mem (v : wasm_value) (sr : store_record) :=
@@ -1812,15 +1814,65 @@ H6 : repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function vs sr
 Hvy : repr_var venv nenv y y'
 H : nth_error (f_locs fr) y' = Some (VAL_int32 (nat_to_i32 addr))*)
 
-Lemma extract_constr_arg : forall n vs v wal sr addr m,
+Require Import Coq.Numbers.Natural.Peano.NPeano.
+Require Import Coq.ZArith.ZArith.
+Require Import Coq.Structures.OrderedTypeEx.
+
+Lemma extract_constr_arg : forall n vs v sr addr m,
   nthN vs n = Some v ->
   nth_error (s_mems sr) 0 = Some m ->
   repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function vs sr addr ->
-  exists bs, load m (N.of_nat addr + 4 * n) 0%N 4 = Some bs /\
+  exists bs wal, load m (N.of_nat addr + 4 * n) 0%N 4 = Some bs /\
              VAL_int32 (wasm_value_to_i32 wal) = wasm_deserialise bs T_i32 /\
              repr_val_LambdaANF_Codegen fenv venv nenv host_function v sr wal.
 Proof.
-  intros. generalize dependent v. generalize dependent n.
+  intros. generalize dependent v. generalize dependent n. generalize dependent m.
+  induction H1; intros.
+  - inv H.
+  - assert (n = N.of_nat (N.to_nat n)) by lia. rewrite H5 in H4. clear H5. generalize dependent v0.
+    induction (N.to_nat n); intros.
+    + inv H4. rewrite H in H3. inv H3. rename m0 into m. rewrite N.add_comm. cbn.
+      unfold load_i32 in H0. destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hl; try inv H0.
+       exists b. exists wal. repeat split.
+       destruct n; cbn; auto.
+        admit. admit. assumption. (* minus modulo *)
+    + simpl in H4. destruct (Pos.of_succ_nat n0). cbn in H4.
+      edestruct IHrepr_val_constr_args_LambdaANF_Codegen. eassumption.
+      eassumption. destruct H5 as [wal' [Hl [Heq Hval]]].
+      (*
+     inv H4. rewrite H in H3. inv H3. rename m0 into m. cbn. rewrite N.add_comm. cbn.
+        unfold load_i32 in H0. destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hl; try inv H0. exists b. exists wal. repeat split; auto. admit. (* same as above *)
+      *
+
+
+  induction n; intros.
+  - (* n=0 *)
+    destruct vs; inv H. inv H1.
+    unfold load_i32 in H4. destruct (load m0 (N.of_nat addr) (N.of_nat 0) 4) eqn:Hl; try by inv H4. rewrite H0 in H3. inv H3. rename m0 into m.
+    cbn in Hl. cbn. rewrite N.add_comm. exists b. exists wal.
+    repeat split; auto. f_equal.
+    unfold wasm_deserialise in H4. symmetry. injection H4 => H4'.
+    unfold wasm_value_to_i32.
+    unfold Wasm_int.Int32.repr. simpl. Check ({|
+  Wasm_int.Int32.intval := Wasm_int.Int32.Z_mod_modulus (decode_int b);
+  Wasm_int.Int32.intrange := Wasm_int.Int32.Z_mod_modulus_range' (decode_int b)
+|}). Print Wasm_int.Int32.int. unfold Wasm_int.Int32.repr. (* rewrite <- H1.
+     inv H4. unfold wasm_value_to_immediate in H1.
+     unfold wasm_value_to_i32, wasm_value_to_immediate, decode_int. f_equal. destruct wal. unfold rev_if_be.
+     unfold int_of_bytes. unfold int_ cbn. *) admit.
+  - (* IH *)
+
+  - inv H1. rewrite H0 in H4. inv H4.
+    destruct n.
+    + inv H.
+    +
+    have IH := IHvs n v wal.
+
+
+  intros. generalize dependent v. generalize dependent n. generalize dependent m. generalize dpen
+  induction vs; intros; inv H1.
+  - inv H.
+  -
   induction H1; intros.
   - inv H.
   - cbn. destruct n.
@@ -1831,8 +1883,66 @@ Proof.
       exists b. split; intros.
       assert (N.of_nat addr + 0 = N.of_nat addr)%N by lia. rewrite H. clear H.
       assumption. split. f_equal.
-      injection H1 => H1'.
+      injection H1 => H1'. *)
 Admitted.
+
+(* TODO RENAME *)
+Lemma arith_addr_helper : forall n addr, (N.of_nat (4 + addr) + 4 * n)%N =
+Wasm_int.N_of_uint i32m
+  (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
+     (nat_to_i32
+        (N.to_nat n + 1 +
+         (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + 0)))))).
+Proof.
+  intros. unfold wasm_value_to_i32, wasm_value_to_immediate, nat_to_i32.
+  assert ((Z.of_nat
+           (N.to_nat n + 1 +
+            (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + 0))))) = Z.of_nat (4 * (1 + N.to_nat n))) by lia.
+  rewrite H. clear H.
+  unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
+admit. Admitted. (* TODO: wrong, assert that n < Int32.max *)
+
+Lemma repr_bs_LambdaANF_Codegen_related_case : True. constructor. Qed.
+
+(*
+H : rho ! y = Some (Vconstr t vl)
+H1 : findtag ((t0, e0) :: cl0) t = Some e
+Hev : bstep_e (M.empty (seq cps.val -> option cps.val)) cenv rho e v c
+IHHev : forall (instructions : seq basic_instruction) (f : frame) (hs : host_state)
+          (sr : store_record),
+        INV_result_var_writable ->
+        INV_linear_memory_exists ->
+        INV_local_ptr_in_linear_memory ->
+        INV_local_vars_exist ->
+        repr_expr_LambdaANF_Codegen fenv venv nenv e instructions ->
+        rel_mem_LambdaANF_Codegen fenv venv nenv host_function e rho sr f ->
+        exists (sr' : store_record) (f' : frame),
+          reduce_trans (hs, sr, f, [seq AI_basic i | i <- instructions]) (hs, sr', f', [::]) /\
+          result_val_LambdaANF_Codegen v (f_inst f) sr'
+INVres : INV_result_var_writable
+INVlinmem : INV_linear_memory_exists
+INVptrInMem : INV_local_ptr_in_linear_memory
+INVlocals : INV_local_vars_exist
+Hrel_m : rel_mem_LambdaANF_Codegen fenv venv nenv host_function (Ecase y ((t0, e0) :: cl0)) rho
+           sr fr
+v' : immediate
+instrs_more, e' : seq basic_instruction
+H4 : repr_var venv nenv y v'
+H5 : repr_expr_LambdaANF_Codegen fenv venv nenv (Ecase y cl0) instrs_more
+H7 : repr_expr_LambdaANF_Codegen fenv venv nenv e0 e'
+______________________________________(1/1)
+exists (sr' : store_record) (f' : frame),
+  reduce_trans
+    (state, sr, fr,
+    [seq AI_basic i
+       | i <- [:: BI_get_local v'; BI_load T_i32 None (N.of_nat 2) (N.of_nat 0);
+                  BI_const (nat_to_value (Pos.to_nat t0)); BI_relop T_i32 (Relop_i ROI_eq);
+                  BI_if (Tf [::] [::]) e' instrs_more]]) (state, sr', f', [::]) /\
+  result_val_LambdaANF_Codegen v (f_inst fr) sr'
+
+
+*)
+
 
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
@@ -1872,7 +1982,13 @@ Theorem repr_bs_LambdaANF_Codegen_related:
 Proof.
   intros rho v e n Hev.
   induction Hev; intros Hc_env fr state sr INVres INVlinmem INVptrInMem INVlocals Hrepr_e Hrel_m; inv Hrepr_e.
-  - (* Econstr *) cbn. admit.
+  - (* Econstr *)
+    {
+  - (* rename v' into y'.
+    { remember (Ecase y cl) as exp. generalize dependent Heqexp. generalize dependent e. generalize dependent t. induction Hrepr_e; intros; inv Heqexp; first inv H1.
+    inv Hrepr_e.
+
+  induction Hrepr_e. *)
   - (* Eproj ctor_tag t, let x := proj_n y in e *)
     rename s into e'. rename v' into y'.
 
@@ -1886,8 +2002,8 @@ Proof.
 
     inv Hlocal. destruct H.
 
-    have Hextr := extract_constr_arg n vs v _ _ _ m H0 H2 H6.
-    edestruct Hextr as [bs [Hload [Heq Hbsval]]].
+    have Hextr := extract_constr_arg n vs v _ _ _ H0 H2 H6.
+    destruct Hextr as [bs [wal [Hload [Heq Hbsval]]]].
 
      assert (Hrm: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e (map_util.M.set x v rho) sr
   {|
@@ -1904,13 +2020,13 @@ Proof.
   apply peq_true.
   split. exists x'. split.
   inv H8. unfold translate_var in H5. unfold translate_var. eapply lookup_local_var_generalize_err_string. eassumption.
-  rewrite Heq. cbn. admit. (* nth_error set_nth correct *)
-  eassumption.
+  rewrite <- Heq. admit. (* nth_error set_nth correct *)
+  admit.
 
   (* x <> x1 *)
   assert (occurs_free (Eproj x t n y e) x1). { constructor; assumption. }
-  apply Hvar in H5. destruct H5 as [v6 [wal [Henv [Hloc Hval]]]].
-  exists v6. exists wal. repeat split.
+  apply Hvar in H5. destruct H5 as [v6 [wal' [Henv [Hloc Hval]]]].
+  exists v6. exists wal'. repeat split.
   rewrite map_util.M.gsspec.
   rewrite peq_false. assumption. intro. subst. contradiction.
   cbn.
@@ -1948,13 +2064,7 @@ Proof.
     specialize INVlinmem with sr fr. destruct INVlinmem as [Hmem1 [m' Hmem2]].
     eassumption. apply H2.
 
-    assert (Harith: (N.of_nat (4 + addr) + 4 * n)%N = (Wasm_int.N_of_uint i32m
-     (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
-        (nat_to_i32 (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + 0)))))))). {
-    unfold wasm_value_to_i32, nat_to_i32, wasm_value_to_immediate.
-    admit. }
-
-    rewrite <- Harith. apply Hload.
+    rewrite <- arith_addr_helper. apply Hload.
 
     (* save result in x' *)
     have Hx := H8. inv H8.
@@ -2005,10 +2115,24 @@ Proof.
 
     have IH := IHHev s _ state sr INVres INVlinmem INVlocals H7. admit. admit. admit. } *)
 
-  - (* Ecase_nil *) (* absurd *)
-    admit. (* unfold rel_mem_LambdaANF_Codegen in Hrel_m.
-    *)
+  - (* Ecase_nil *)
+    inv H1. (* absurd *)
   - (* Ecase_cons *) {
+
+    remember ([:: BI_get_local v'; BI_load T_i32 None (N.of_nat 2) (N.of_nat 0);
+                BI_const (nat_to_value (Pos.to_nat t0));
+                BI_relop T_i32 (Relop_i ROI_eq);
+                BI_if (Tf [::] [::]) e' instrs_more]) as code. induction Hrepr_e; inv Heqcode. *)
+
+    (* y is constr value with tag *)
+    assert (Hy : occurs_free (Ecase y ((t0, e0) :: cl0)) y) by constructor.
+    have Hrel_m' := Hrel_m.
+    destruct Hrel_m' as [Hfun Hvar].
+    apply Hvar in Hy. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
+    rewrite Hrho in H. inv H.
+    have Hrepr' := Hrepr. inv Hrepr'.
+    inv Hlocal. rename x into y'. destruct H.
+
     have Hx := H1. unfold findtag in Hx.
     cbn in Hx. destruct (M.elt_eq t0 t); first injection Hx => Hx'.
     (* t0 = t *)
@@ -2033,10 +2157,10 @@ Proof.
       unfold rel_mem_LambdaANF_Codegen in Hrel_m.
       eapply r_elimr. apply r_get_local. apply H'.
 
-      destruct (INVlinmem sr fr) as [Hm1 [m Hm2]].
+      destruct (INVlinmem sr fr) as [Hm1 [m' Hm2]].
       (* ptr in mem *)
       (* unfold INV_local_ptr_in_linear_memory in INVptrInMem. *)
-      have HMem := INVptrInMem _ _ _ _ m H4 H'. destruct HMem.
+      have HMem := INVptrInMem _ _ _ _ m' H4 H'. destruct HMem.
 
       dostep. cbn. separate_instr. elimr_nary_instr 1.
       eapply r_load_success; try eassumption.
@@ -2069,11 +2193,14 @@ Proof.
       dostep_label. 2: apply rt_refl.
   admit. } admit. } admit. }
   - (* Eapp_direct *)
-    eexists. eexists. split. rewrite map_cat.
+  (*   rewrite map_cat.
+    assert (occurs_free (Eapp f t ys) f) by constructor.
+
+    eexists. eexists. split. rewrite map_cat. cbn.
     Check r_eliml. cbn.
     dostep'. cbn. apply r_eliml. admit. (* args' const *)
-    apply r_call. admit. admit. admit.
-
+    apply r_call. admit. admit. admit. *)
+ admit.
   - (* Eapp_indirect *) admit.
   - (* Ehalt *)
     cbn. destruct Hrel_m. destruct (H2 x) as [v6 [wal [Henv [Hloc Hrepr]]]]. constructor.
