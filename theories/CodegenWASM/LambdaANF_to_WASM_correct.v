@@ -2058,8 +2058,9 @@ Theorem repr_bs_LambdaANF_Codegen_related:
           result_val_LambdaANF_Codegen v f.(f_inst) sr'. (* value v is related to memory m'/lenv' *)
 Proof.
   intros rho v e n Hev.
-  induction Hev; intros Hc_env fr state sr INVres INVgmp INVcap INVlinmem INVptrInMem INVglobalptrInMem INVlocals Hrepr_e Hrel_m; inv Hrepr_e.
+  induction Hev; intros instructions fr state sr INVres INVgmp INVcap INVlinmem INVptrInMem INVglobalptrInMem INVlocals Hrepr_e Hrel_m.
   - (* Econstr *)
+    inv Hrepr_e.
     { remember (grow_memory_if_necessary ((Datatypes.length ys + 1) * 4)) as grow.
       cbn. repeat rewrite map_cat. cbn. rewrite map_cat. cbn.
       subst. unfold grow_memory_if_necessary.
@@ -2082,13 +2083,14 @@ Proof.
       elimr_nary_instr 0. eapply r_current_memory.
 
 
-      admit. }
+      admit. admit. admit.  admit. admit. }
   - (* rename v' into y'.
     { remember (Ecase y cl) as exp. generalize dependent Heqexp. generalize dependent e. generalize dependent t. induction Hrepr_e; intros; inv Heqexp; first inv H1.
     inv Hrepr_e.
 
   induction Hrepr_e. *)
   - (* Eproj ctor_tag t, let x := proj_n y in e *)
+    inv Hrepr_e.
     rename s into e'. rename v' into y'.
 
     (* y is constr value with correct tag, arity *)
@@ -2187,38 +2189,124 @@ Proof.
     apply Hred.
     }
     apply Hval.
-(*     transitivity (f_locs (Build_frame (set_nth (VAL_int32 (Wasm_int.Int32.repr (decode_int x0)))
-  (f_locs fr) x' (VAL_int32 (Wasm_int.Int32.repr (decode_int x0)))) fr.(f_inst))). reflexivity. reflexivity.
 
-    cbn. _ _ _ _.  INVlocals INVres INVlinmem INVlocals.
+  - (* Ecase *)
+    { generalize dependent y. generalize dependent instructions. induction cl; intros; subst. inv H1. destruct a. rename c0 into t0.
 
-    (* constructor *)
-    eapply can_load_constr_args in H10. destruct H10 as [bs [Hb1 [Hb2 Hb3]]].
+      assert (caseConsistent cenv cl t). { inv H0. assumption. }
+      cbn in H1. destruct (M.elt_eq t0 t). subst.
 
+      (* t0 = t *)
+      { inv H1. clear IHcl.
+        inv Hrepr_e.
 
-    assert ((N.of_nat (addr + 4 * (N.to_nat n + 1))) =  (Wasm_int.N_of_uint i32m
-     (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
-        (nat_to_i32
-           (N.to_nat n + 1 +
-            (N.to_nat n + 1 +
-             (N.to_nat n + 1 + (N.to_nat n + 1 + 0)))))))) as Harith. { cbn. admit. }
-             rewrite <- Harith. apply Hb1.
+        assert (Hy : occurs_free (Ecase y ((t, e) :: cl)) y) by constructor.
+        have Hrel_m' := Hrel_m.
+        destruct Hrel_m' as [Hfun Hvar].
+        apply Hvar in Hy. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
+        rewrite Hrho in H. inv H.
+        have H' := INVlocals _ _ fr H7. destruct H'.
+        have H' := H7. inv H'. rename v' into y'.
+        have Hrepr' := Hrepr. inv Hrepr'.
+        inv Hlocal. destruct H3.
+        rewrite H3 in H1. inv H1. rewrite H4 in H. inv H.
 
+      assert (Hrel: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e rho sr fr).
+      { unfold rel_mem_LambdaANF_Codegen. split; intros.
+        apply Hrel_m. apply Hrel_m. constructor. assumption.
+      }
 
-    unfold INV_local_vars_exist in INVlocals.
-    have H' := INVlocals _ _ _ H8. specialize H' with fr.
-    apply /ssrnat.leP. lia.
-    admit. }
+      have IH := IHHev _ _ state _ INVres INVgmp INVcap INVlinmem INVptrInMem INVglobalptrInMem INVlocals H9  Hrel. destruct IH as [sr' [f' [Hstep Hval]]].
 
-    cbn.
+    eexists. eexists.
+    split. {
+    (* steps *)
+    dostep. separate_instr. elimr_nary_instr 0.
+    apply r_get_local. eassumption.
 
-    have IH := IHHev s _ state sr INVres INVlinmem INVlocals H7. admit. admit. admit. } *)
+    unfold load_i32 in H6.
+    destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hl.
 
-  - (* Ecase_nil *)
-    inv H1. (* absurd *)
-  - (* Ecase_cons *) {
-    (*
-    remember ([:: BI_get_local v'; BI_load T_i32 None (N.of_nat 2) (N.of_nat 0);
+    dostep. separate_instr. elimr_nary_instr 1.
+    eapply r_load_success. apply INVlinmem. eassumption.
+
+    assert (N.of_nat addr = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))). admit. (* arithmetic fact *)
+    rewrite <- H. apply Hl.
+
+    remember (VAL_int32 (tag_to_i32 t)) as tag. injection H6. subst. intros.
+    unfold wasm_deserialise. rewrite H.
+
+    dostep. separate_instr. elimr_nary_instr 2.
+    constructor. apply rs_relop. cbn.
+
+    dostep'. separate_instr. constructor. apply rs_if_true.
+    cbn. unfold nat_to_i32. unfold tag_to_i32.
+    unfold Wasm_int.Int32.eq.
+    destruct (zeq (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (Z.of_nat (Pos.to_nat t))))
+      (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (Z.of_nat (Pos.to_nat t))))) eqn:Heq. discriminate. contradiction.
+
+       dostep'. constructor. eapply rs_block with (vs := []); auto. unfold to_e_list. cbn.
+      eapply steps_inside_label.  apply Hstep. inv H6.
+      } assumption. }
+
+      (* t0 <> t *)
+
+      inv H0.
+      inv Hrepr_e.
+
+      assert (Hrel: rel_mem_LambdaANF_Codegen fenv venv nenv host_function (Ecase y cl) rho sr fr).
+      { unfold rel_mem_LambdaANF_Codegen. split; intros.
+        apply Hrel_m. apply Hrel_m. apply Free_Ecase3. assumption.
+      }
+
+      have IH := IHcl H10 H1 _ _ H H12 Hrel.
+      destruct IH as [sr' [f' [Hred Hval]]].
+
+      (* t <> t0 *)
+
+       assert (Hy : occurs_free (Ecase y ((t0, e0) :: cl)) y) by constructor.
+    have Hrel_m' := Hrel_m.
+    destruct Hrel_m' as [Hfun Hvar].
+    apply Hvar in Hy. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
+    rewrite Hrho in H. inv H.
+    have H' := INVlocals _ _ fr H11. destruct H'.
+    have H' := H11. inv H'. rename v' into y'.
+    have Hrepr' := Hrepr. inv Hrepr'.
+    inv Hlocal. destruct H3.
+    rewrite H3 in H0. inv H0. rewrite H4 in H. inv H.
+
+    eexists. eexists. cbn.
+    split.
+
+    (* execute instructions *)
+    dostep. separate_instr. elimr_nary_instr 0.
+    apply r_get_local. eassumption.
+
+     assert (Harith: (N.of_nat addr) = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))). admit. cbn.
+    rewrite Harith in H8.
+     unfold load_i32 in H8.
+    destruct (load m (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))
+         (N.of_nat 0) 4) eqn:Hload.
+     { dostep. separate_instr. elimr_nary_instr 1.
+       eapply r_load_success.
+       apply INVlinmem. eassumption.
+       apply Hload.
+       remember (wasm_deserialise b T_i32) as X. injection H8; intro; subst. rewrite H. clear H8.
+
+       dostep. separate_instr. elimr_nary_instr 2.
+       constructor. apply rs_relop.
+       assert ((wasm_bool
+                 (app_relop (Relop_i ROI_eq) (VAL_int32 (tag_to_i32 t))
+                    (nat_to_value (Pos.to_nat t0)))) = nat_to_i32 0). admit. (* by t <> t0 *)
+      rewrite H0.
+      dostep'. separate_instr. constructor. apply rs_if_false. reflexivity.
+
+      dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn.
+      eapply steps_inside_label. unfold to_e_list. apply Hred.
+     } inv H8. assumption. }
+
+(*
+    { (* remember ([:: BI_get_local v'; BI_load T_i32 None (N.of_nat 2) (N.of_nat 0);
                 BI_const (nat_to_value (Pos.to_nat t0));
                 BI_relop T_i32 (Relop_i ROI_eq);
                 BI_if (Tf [::] [::]) e' instrs_more]) as code. induction Hrepr_e; inv Heqcode. *)
@@ -2290,8 +2378,11 @@ Proof.
       cbn. unfold to_e_list.
 
       dostep_label. 2: apply rt_refl.
-  admit. } admit. } admit. }
-  - (* Eapp_direct *)
+  admit. } admit. } admit. } *)
+  - (* Eapp *)
+    inv Hrepr_e.
+    + (* direct call *) admit.
+    + (* indirect call *) admit.
   (*   rewrite map_cat.
     assert (occurs_free (Eapp f t ys) f) by constructor.
 
@@ -2299,10 +2390,13 @@ Proof.
     Check r_eliml. cbn.
     dostep'. cbn. apply r_eliml. admit. (* args' const *)
     apply r_call. admit. admit. admit. *)
- admit.
-  - (* Eapp_indirect *) admit.
+  - (* Eletapp *)
+    inv Hrepr_e. (* absurd, we require CPS *)
+  - (* Efun *) inv Hrepr_e. (* absurd, fn defs only on topmost level *)
+  - (* Eprim_val *) inv Hrepr_e. (* absurd, primitives not supported *)
+  - (* Eprim *) inv Hrepr_e. (* absurd, primitives not supported *)
   - (* Ehalt *)
-    cbn. destruct Hrel_m. destruct (H2 x) as [v6 [wal [Henv [Hloc Hrepr]]]]. constructor.
+    inv Hrepr_e. cbn. destruct Hrel_m. destruct (H2 x) as [v6 [wal [Henv [Hloc Hrepr]]]]. constructor.
     rewrite Henv in H. inv H.
 
     unfold INV_result_var_readwritable, global_var_writable in INVres.
@@ -2324,9 +2418,6 @@ Proof.
     eapply update_glob_keeps_memory_intact. eassumption.
     eapply update_glob_keeps_funcs_intact. eassumption. assumption.
 Admitted.
-
-
-
 
 (*
   - (* Econstr *)
