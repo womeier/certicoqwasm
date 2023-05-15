@@ -365,7 +365,7 @@ Definition grow_memory_if_necessary (required_bytes : nat) : list basic_instruct
   [ BI_get_global global_mem_ptr
   ; BI_const (nat_to_value required_bytes)
   ; BI_binop T_i32 (Binop_i BOI_add)
-  ; BI_const (nat_to_value (2 ^ 16))
+  ; BI_const (Z_to_value (Z.pow 2 16))
   ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
 
   (* current number of pages *)
