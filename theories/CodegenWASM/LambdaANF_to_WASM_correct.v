@@ -581,29 +581,14 @@ Notation ptr := (Evar isptrIdent isptrTy).
 
 
 
-(*
-Definition boxed_header: N -> N -> Z -> Prop :=
-  fun t => fun a =>  fun h =>
-                       (h =  (Z.shiftl (Z.of_N a) 10) + (Z.of_N t))%Z /\
-                       (0 <= Z.of_N t <  Zpower.two_power_pos 8)%Z /\
-                       (0 <= Z.of_N a <  Zpower.two_power_nat (Ptrofs.wordsize - 10))%Z. *)
-
-
+(* all boxed -> list can be empty *)
 Inductive Forall_statements_in_seq' {A}: (nat  -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> nat -> Prop :=
-| Fsis_last: forall (R: (nat  -> A -> list basic_instruction -> Prop)) n v s, R n v s -> Forall_statements_in_seq' R [v] s n
-| Fsis_cons: forall R v vs s s' n, Forall_statements_in_seq' R vs s' (S n) ->
+| Fsis_nil : forall (R: (nat  -> A -> list basic_instruction -> Prop)) n, Forall_statements_in_seq' R [] [] n
+| Fsis_cons : forall R v vs s s' n, Forall_statements_in_seq' R vs s' (S n) ->
                                    R n v s ->  Forall_statements_in_seq' R (v::vs) (s ++ s') n.
 
 
-
-Inductive Forall_statements_in_seq_rev {A}: (nat -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> nat -> Prop :=
-| Fsir_last: forall (R: (nat  -> A -> list basic_instruction -> Prop)) v s, R 0 v s -> Forall_statements_in_seq_rev R [v] s 0
-| Fsir_cons: forall R v vs s s' n, Forall_statements_in_seq_rev R vs s' n ->
-                                   R (S n) v s ->  Forall_statements_in_seq_rev R (v::vs) (s ++ s') (S n).
-
-
 (* This is true for R, vs and S iff forall i, R i (nth vs) (nth s)
-   > list cannot be empty (o.w. no statement)
    > nth on statement is taken as nth on a list of sequenced statement (;) *)
 Definition Forall_statements_in_seq {A}: (nat  -> A -> list basic_instruction -> Prop) ->  list A -> list basic_instruction -> Prop :=
   fun P vs s =>  Forall_statements_in_seq' P vs s 0.
@@ -660,24 +645,22 @@ Inductive is_nth_projection : nat -> var -> list basic_instruction -> Prop :=
                                      allocIdent ::= allocPtr +'
                                            (c_int (Z.of_N (a + 1)) val); Field(var x, -1) :::= c_int h val;  s). *)
 
+(*
 (* all constructors are boxed for simplicity *)
-Inductive repr_asgn_constr: ctor_tag -> list var -> list basic_instruction -> Prop :=
-| Rconstr_asgn: forall (t:ctor_tag) (cenv : ctor_env) (nenv : name_env) vs s,
+Inductive repr_asgn_constr_args : ctor_tag -> list var -> list basic_instruction -> Prop :=
+| Rconstr_asgn: forall (t:ctor_tag) (cenv : ctor_env) (nenv : name_env) vs s n,
     (* match M.get t cenv with
     | Some {| ctor_arity := ar |} => Some ar
     | _ => None
     end = Some a ->
     length vs = N.to_nat a -> *)
-    Forall_statements_in_seq_from_1 is_nth_projection vs s ->
-    repr_asgn_constr t vs ([ BI_get_global constr_alloc_ptr
-                           ; BI_const (nat_to_value (Pos.to_nat t))
-                           ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
-                           ] ++ s).
+    Forall_statements_in_seq' is_nth_projection vs s n->
+    repr_asgn_constr_args t vs s.
                              (*  (x ::= [val] (allocPtr +' (c_int Z.one val));
                              allocIdent ::= allocPtr +' (c_int (Z.of_N (a + 1)) val);
                              Field(var x, -1) :::= c_int h val;
                              s). *)
-
+ *)
 (*
 Inductive repr_switch_LambdaANF_Codegen: positive -> labeled_statements -> labeled_statements -> statement -> Prop :=
 | Mk_switch: forall x ls ls',
@@ -728,7 +711,7 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
            ] ++ s)
 
 | Rconstr_e:
-    forall x x' t vs sgrow sinit sstore sres e e',
+    forall x x' t vs sgrow sinit sargs sres e e',
     (* translated assigned var *)
     repr_var x x' ->
     (* allocate memory *)
@@ -740,13 +723,16 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
             ; BI_const (nat_to_value ((length vs + 1) * 4))
             ; BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr
             ] ->
-    (* store tag + args *)
-    repr_asgn_constr t vs sstore ->
+    (* store args *)
+    Forall_statements_in_seq is_nth_projection vs sargs ->
     (* set result *)
     sres = [BI_get_global constr_alloc_ptr; BI_set_local x'] ->
     (* following expression *)
     repr_expr_LambdaANF_Codegen e e' ->
-    repr_expr_LambdaANF_Codegen (Econstr x t vs e) (sgrow ++ sinit ++ sstore ++ sres ++ e')
+    repr_expr_LambdaANF_Codegen (Econstr x t vs e) (sgrow ++ sinit ++ ([ BI_get_global constr_alloc_ptr
+                                    ; BI_const (nat_to_value (Pos.to_nat t))
+                                    ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
+                                    ] ) ++ sargs ++ sres ++ e')
 
 
 | Rcase_e_nil : forall v, repr_expr_LambdaANF_Codegen (Ecase v []) [BI_unreachable]
@@ -1446,12 +1432,39 @@ Proof.
             constructor.  econstructor. eassumption. apply IHl; auto.
 Qed.
 
-Lemma set_constructor_args_correct : forall l l2,
-  set_constructor_args nenv venv fenv l 1 = Ret l2 ->
-  Forall_statements_in_seq_from_1 (is_nth_projection fenv venv nenv) l l2.
-Proof. intros.
-Admitted.
+Lemma nth_proj_assign : forall l instr n,
+  set_constructor_args nenv venv fenv l n = Ret instr ->
+  Forall_statements_in_seq' (is_nth_projection fenv venv nenv) l instr n.
+Proof.
+  induction l; intros.
+  - inv H. econstructor; auto.
+  - cbn in H. destruct (translate_local_var_read nenv venv fenv a) eqn:Hvar. inv H.
+  destruct (set_constructor_args nenv venv fenv l (S n)) eqn:Harg. inv H. inv H.
+  replace ((BI_get_global constr_alloc_ptr
+   :: BI_const
+        (nat_to_value (S (n + S (n + S (n + S (n + 0))))))
+      :: BI_binop T_i32 (Binop_i BOI_add)
+         :: b :: BI_store T_i32 None 2%N 0%N :: l0)) with
+      (([ BI_get_global constr_alloc_ptr
+        ; BI_const (nat_to_value (S (n + S (n + S (n + S (n + 0))))))
+        ; BI_binop T_i32 (Binop_i BOI_add)
+        ; b
+        ; BI_store T_i32 None 2%N 0%N] ++ l0)) by reflexivity.
+   constructor; auto.
 
+  replace ((nat_to_value (S (n + S (n + S (n + S (n + 0))))))) with ((nat_to_value ((1 + n) * 4))). constructor.
+  unfold translate_local_var_read in Hvar.
+  destruct (is_function_name fenv (translate_var_to_string nenv a)) eqn:Hfn.
+  destruct (lookup_function_var (translate_var_to_string nenv a) fenv
+         "translate local var read: obtaining function id") eqn:Hvar'. inv Hvar. inv Hvar.
+         constructor. constructor. unfold translate_function_var.
+  eapply lookup_function_var_generalize_err_string in Hvar'. rewrite Hvar'; auto.
+
+  destruct (lookup_local_var (translate_var_to_string nenv a) venv
+         "translate_local_var_read: normal var") eqn:Hloc. inv Hvar. inv Hvar.
+         constructor. econstructor. unfold translate_var. eassumption.
+    f_equal. lia.
+Qed.
 
 Import seq.
 
@@ -1473,7 +1486,7 @@ Proof.
       destruct (allocate_constructor nenv cenv venv fenv t l) eqn:alloc_constr. inv H1. inv H1.
 
       unfold allocate_constructor in alloc_constr.
-      destruct (set_constructor_args nenv venv fenv l 1) eqn:Hconstrargs. inv alloc_constr.
+      destruct (set_constructor_args nenv venv fenv l 0) eqn:Hconstrargs. inv alloc_constr.
          remember (grow_memory_if_necessary ((length l + 1) * 4 )) as grow.
       inv alloc_constr.
          remember (grow_memory_if_necessary ((length l + 1) * 4)) as grow.
@@ -1493,17 +1506,8 @@ Proof.
         BI_store T_i32 None 2%N 0%N] ++ l2) by reflexivity.
 
          repeat rewrite <- app_assoc. Print Rconstr_e.
-        eapply Rconstr_e with (sgrow := grow) (sinit := [:: BI_get_global global_mem_ptr; BI_set_global constr_alloc_ptr;
-       BI_get_global global_mem_ptr;
-       BI_const (nat_to_value ((Datatypes.length l + 1) * 4));
-       BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr])
-       (sstore := [:: BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
-       BI_store T_i32 None 2%N 0%N] ++
-   l2) ; subst; eauto.
-        econstructor. eassumption. constructor; auto.
-
-        unfold Forall_statements_in_seq_from_1.
-        Print Forall_statements_in_seq'. apply set_constructor_args_correct. assumption.
+        eapply Rconstr_e; eauto.
+        econstructor. eassumption. apply nth_proj_assign. assumption.
 
         apply IHe; auto.
         assert (subterm_e e (Econstr v t l e) ). { constructor; constructor. }
@@ -2111,6 +2115,7 @@ Proof with eauto.
       eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])).
       apply Hredgrow. clear Hredgrow.
 
+
       (* make space on linear memory *)
       edestruct INVgmp as [[?s WriteGmp] [?num ReadGmp]].
       dostep. elimr_nary_instr 0. apply r_get_global. apply ReadGmp.
@@ -2132,7 +2137,13 @@ Proof with eauto.
       (* write tag *)
       edestruct INVcap as [[?s WriteCap3] [?num' ReadCap3]]. clear WriteCap3.
       dostep. elimr_nary_instr 0. apply r_get_global. apply ReadCap3.
+
       dostep. elimr_nary_instr 2. eapply r_store_success; auto.
+
+
+
+
+
 
 (*
       apply r_elimr_trans with (es := [seq AI_basic i | i <- grow]) (les := [:: AI_basic (BI_get_global global_mem_ptr),
@@ -2490,12 +2501,16 @@ Proof with eauto.
     inv Hrepr_e.
     + (* direct call *)
       { unfold rel_mem_LambdaANF_Codegen in Hrel_m. destruct Hrel_m.
-        have H3' := H3 _ _ _ _ _ H. admit. }
-      (* { eexists. eexists. split.
-        dostep. rewrite map_cat. separate_instr.
-        eapply r_call.
+        edestruct H3 as [j [Hfvar [Hval Hclosed]]]. eassumption.
+         constructor. constructor. eapply find_def_name_in_fundefs. eassumption.
+        (* apply rt_refl. *) inv Hval.
+        rewrite H1 in H11. inv H11. rename e0 into e.
+        rewrite map_cat. cbn.
+
+        eexists. eexists. split. dostep. apply r_eliml. admit. apply r_call. assert (j = v') by admit. subst.  Check (s_funcs sr). Check (inst_funcs (f_inst fr)).  admit. admit. admit.
 
       }
+     (*
       assert (exists sr', exists f', exists args'',
         reduce_trans (state, sr, fr, [seq AI_basic i | i <- args'])%list
                      (state, sr', f', [seq AI_basic i | i <- args''])%list) /\ .  *) admit.
@@ -2535,6 +2550,8 @@ Proof with eauto.
     eapply update_glob_keeps_memory_intact. eassumption.
     eapply update_glob_keeps_funcs_intact. eassumption.
 Admitted.
+(*
+Lemma funargs_reduce_to_const : forall sr fr state, repr_fun_args_Codegen fenv venv nenv ys args' -> reduce_trans (state, sr, fr, [seq AI_basic i | i <- args']) (state, sr, fr, args) /\ vs_co *)
 
 (*
   - (* Econstr *)

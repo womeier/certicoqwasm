@@ -390,7 +390,7 @@ Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_e
                remaining <- set_constructor_args nenv venv fenv ys (1 + current);;
 
                Ret ([ BI_get_global constr_alloc_ptr
-                    ; BI_const (nat_to_value (4 * current))
+                    ; BI_const (nat_to_value (4 * (1 + current))) (* plus 1 : skip tag *)
                     ; BI_binop T_i32 (Binop_i BOI_add)
                     ; read_y
                     ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
@@ -400,7 +400,7 @@ Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_e
 
 Definition allocate_constructor (nenv : name_env) (cenv : ctor_env) (venv : var_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
   let ctor_id := Pos.to_nat c in
-  set_constr_args <- set_constructor_args nenv venv fenv ys 1;; (* 1: skip tag *)
+  set_constr_args <- set_constructor_args nenv venv fenv ys 0;;
   Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++
        [ BI_get_global global_mem_ptr
        ; BI_set_global constr_alloc_ptr
