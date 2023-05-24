@@ -1801,63 +1801,6 @@ Proof.
     exists ctor_name, ctor_ind_name, ctor_ind_tag,ctor_arity,ctor_ordinal; auto.
 Qed.
 
-(* H0 : nthN vs n = Some v
-Hev : bstep_e (M.empty (seq cps.val -> option cps.val)) cenv
-        (map_util.M.set x v rho) e ov c
-IHHev : forall (instructions : seq basic_instruction)
-          (f : frame) (hs : host_state) (sr : store_record),
-        INV_result_var_writable ->
-        INV_linear_memory_exists ->
-        INV_local_ptr_in_linear_memory ->
-        INV_local_vars_exist ->
-        repr_expr_LambdaANF_Codegen fenv venv nenv e instructions ->
-        rel_mem_LambdaANF_Codegen fenv venv nenv host_function e
-          (map_util.M.set x v rho) sr f ->
-        exists (sr' : store_record) (f' : frame),
-          reduce_trans (hs, sr, f, [seq AI_basic i | i <- instructions])
-            (hs, sr', f', [::]) /\ result_val_LambdaANF_Codegen ov (f_inst f) sr'
-fr : frame
-state : host_state
-sr : store_record
-INVres : INV_result_var_writable
-INVlinmem : INV_linear_memory_exists
-INVptrInMem : INV_local_ptr_in_linear_memory
-INVlocals : forall (x : positive) (x' : immediate) (fr : frame),
-            repr_var venv nenv x x' ->
-            exists val : i32, nth_error (f_locs fr) x' = Some (VAL_int32 val)
-x', y' : immediate
-e' : seq basic_instruction
-Hrel_m : rel_mem_LambdaANF_Codegen fenv venv nenv host_function
-           (Eproj x t n y e) rho sr fr
-H7 : repr_expr_LambdaANF_Codegen fenv venv nenv e e'
-H8 : repr_var venv nenv x x'
-H9 : repr_var venv nenv y y'
-Hrho : rho ! y = Some (Vconstr t vs)
-addr : nat
-Hrepr : repr_val_LambdaANF_Codegen fenv venv nenv host_function
-          (Vconstr t vs) sr (Val_ptr addr)
-Hlocal : stored_in_locals venv nenv y (Val_ptr addr) fr
-Hfun : forall (x : positive) (rho' : M.t cps.val) (fds : fundefs)
-         (f : var) (v : cps.val),
-       exists i : immediate,
-         rho ! x = Some v ->
-         subval_or_eq (Vfun rho' fds f) v ->
-         translate_function_var nenv fenv f = Ret i /\
-         repr_val_LambdaANF_Codegen fenv venv nenv host_function
-           (Vfun rho' fds f) sr (Val_funidx i) /\ closed_val (Vfun rho' fds f)
-Hvar : forall x0 : var,
-       occurs_free (Eproj x t n y e) x0 ->
-       exists (v6 : cps.val) (val : wasm_value),
-         rho ! x0 = Some v6 /\
-         stored_in_locals venv nenv x0 val fr /\
-         repr_val_LambdaANF_Codegen fenv venv nenv host_function v6 sr val
-m : memory
-H2 : nth_error (s_mems sr) 0 = Some m
-H3 : load_i32 m (N.of_nat addr) = Some (VAL_int32 (tag_to_i32 t))
-H6 : repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function vs sr
-       (4 + addr)
-Hvy : repr_var venv nenv y y'
-H : nth_error (f_locs fr) y' = Some (VAL_int32 (nat_to_i32 addr))*)
 
 Require Import Coq.Numbers.Natural.Peano.NPeano.
 Require Import Coq.ZArith.ZArith.
@@ -1866,9 +1809,12 @@ Require Import Coq.Structures.OrderedTypeEx.
 Lemma r_elimr_trans: forall s f es s' f' es' les hs hs',
     reduce_trans (hs, s, f, es) (hs', s', f', es') ->
     reduce_trans (hs, s, f, (es ++ les)) (hs', s', f', (es' ++ les)).
-Proof.
+Proof. (*
   intros. induction es.
-(*
+  - inv H. { admit. } cbn. apply rt_refl. destruct y. destruct p0. destruct p0.
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])).
+    cbn. inv H0. inv H. inv H0. inv H2.
+
   intros. remember ((hs, s, f, es)) as y1.  remember ((hs', s', f', es')) as y2.
   generalize dependent Heqy1. generalize dependent Heqy2. revert hs hs' s s' f f' es es'. induction H; intros; subst.
   - dostep'. apply r_elimr. eassumption. apply rt_refl.
@@ -2067,6 +2013,7 @@ Proof with eauto.
       assert (exists s' f', reduce_trans (state, sr, fr, [seq AI_basic i | i <- grow]) (state, s', f', [])). admit.
       destruct H0 as [s' [f' Hred]].
       have Hredgrow := r_elimr_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ _ Hred. cbn in Hredgrow.
+      assert (Hframe: f_inst fr = f_inst f' /\ length (f_locs fr) = length (f_locs f')).  admit. destruct Hframe as [Hfinst Hlocs].
 
     cbn. separate_instr.
     (* assert sr, fr after written tag to mem *)
@@ -2136,23 +2083,46 @@ Proof with eauto.
       induction H9.
 
       (* no constr args *)
-      { exists s2. rename num'0 into resptr.
-        exists {| f_locs := set_nth (VAL_int32 resptr) (f_locs fr) x' (VAL_int32 resptr)
-                ; f_inst := f_inst fr |}. split. cbn.
+      { rename num'0 into resptr. cbn.
+        remember ({| f_locs := set_nth (VAL_int32 resptr) (f_locs f') x' (VAL_int32 resptr)
+                ; f_inst := f_inst f' |}) as fr'.
+
+          (* IH *)
+        assert (Hrel: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e (map_util.M.set x (Vconstr t vs) rho) (upd_s_mem (host_function:=host_function) s2 (update_list_at (s_mems s2) n x0)) fr'). {
+         inv H.
+         have Hrel_m' := Hrel_m. destruct Hrel_m'.
+         unfold rel_mem_LambdaANF_Codegen; split; intros.
+         cbn in H.
+         destruct (var_dec x x1).
+
+         (* x = x1 *)
+         subst x1.
+         rewrite map_util.M.gsspec in H2. rewrite peq_true in H2. inv H2.
+
+         assert (occurs_free e split; intros.
+        }
+        have IH := IHHev e' _ state _ INVres INVgmp INVcap INVlinmem INVptrInMem INVcapInMem INVlocals H11 Hrel.
+
+        destruct IH as [srfinal [frfinal [Hredfinal Hvalfinal]]]. clear IHHev.
+
+        exists srfinal.
+        exists frfinal. split. cbn.
 
         dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
 
         dostep. elimr_nary_instr 1.
-        eapply r_set_local. (*  with (vd := (wasm_deserialise ((bits (nat_to_value (Pos.to_nat t)))) T_i32)).  admit. *) reflexivity.
-
-        have Hloc := INVlocals x x' fr H5. destruct Hloc.
+        eapply r_set_local.
+        assert (f_inst fr' = f_inst f') as Hfi. { rewrite Heqfr'. reflexivity. } apply Hfi.
+        have Hloc := INVlocals x x' fr' H5. destruct Hloc.
         apply /ssrnat.leP.
-        assert (x' < length (f_locs fr)). { apply nth_error_Some. congruence. } lia.
-        reflexivity.
+        assert (x' < length (f_locs fr')). { apply nth_error_Some. congruence. }
+        rewrite <- Hlocs. assert (length (f_locs fr') = length (f_locs fr)).
+         rewrite Heqfr'. cbn. admit. (* update var doesn't change #vars *) lia.
+        cbn. rewrite Heqfr'. reflexivity.
         cbn.
-        apply Hred.
+        apply Hredfinal.
+         assumption.
         }
-        apply rt_refl.
 
         exists (wasm_value_to_i32 wal). exists wal.
         repeat split. eapply set_global_var_updated. eassumption.
