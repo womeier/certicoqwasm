@@ -626,54 +626,6 @@ Inductive is_nth_projection : nat -> var -> list basic_instruction -> Prop :=
                                               ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
                                               ].
 
-(* Inductive repr_asgn_constr : list cps.var -> list basic_instruction -> Prop :=
-  | Rconstr_asgn_cons : forall vs vs' v v' s,
-        Forall_statements_in_seq is_nth_projection vs s ->
-        repr_asgn_constr vs ([BI_get_global constr_alloc_ptr;
-                               BI_const (nat_to_value 4);
-                               BI_binop T_i32 (Binop_i BOI_add);
-                               v';
-                               BI_store T_i32 None 2%N 0%N;
-                               BI_get_global global_mem_ptr;
-                               BI_const (nat_to_value 4);
-                               BI_binop T_i32 (Binop_i BOI_add);
-                               BI_set_global global_mem_ptr] ++ vs'). *)
-
-(*
-    Forall_statements_in_seq (is_nth_projection_of_x x) vs s ->
-    repr_asgn_constr x t vs (x ::= [val] (allocPtr +' (c_int Z.one val));
-                                     allocIdent ::= allocPtr +'
-                                           (c_int (Z.of_N (a + 1)) val); Field(var x, -1) :::= c_int h val;  s). *)
-
-(*
-(* all constructors are boxed for simplicity *)
-Inductive repr_asgn_constr_args : ctor_tag -> list var -> list basic_instruction -> Prop :=
-| Rconstr_asgn: forall (t:ctor_tag) (cenv : ctor_env) (nenv : name_env) vs s n,
-    (* match M.get t cenv with
-    | Some {| ctor_arity := ar |} => Some ar
-    | _ => None
-    end = Some a ->
-    length vs = N.to_nat a -> *)
-    Forall_statements_in_seq' is_nth_projection vs s n->
-    repr_asgn_constr_args t vs s.
-                             (*  (x ::= [val] (allocPtr +' (c_int Z.one val));
-                             allocIdent ::= allocPtr +' (c_int (Z.of_N (a + 1)) val);
-                             Field(var x, -1) :::= c_int h val;
-                             s). *)
- *)
-(*
-Inductive repr_switch_LambdaANF_Codegen: positive -> labeled_statements -> labeled_statements -> statement -> Prop :=
-| Mk_switch: forall x ls ls',
-    repr_switch_LambdaANF_Codegen x ls ls'
-                      (isPtr isptrIdent caseIdent x;
-                         Sifthenelse
-                           (bvar caseIdent)
-                           (Sswitch (Ebinop Oand (Field(var x, -1)) (make_cint 255 val) val) ls)
-                           (
-                             Sswitch (Ebinop Oshr (var x) (make_cint 1 val) val)
-                                     ls')).
-*)
-
 (* args are pushed on the stack before calling a function *)
 Inductive repr_fun_args_Codegen : list LambdaANF.cps.var -> list basic_instruction -> Prop :=
 (* base case: no args *)
@@ -768,9 +720,9 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
 (* Variable mem : memory. *) (* WASM memory, created e.g. at initialization *)
 
 Definition load_i32 m addr : option value := match load m addr (N.of_nat 0) 4 with (* offset: 0, 4 bytes *)
-                                               | None => None
-                                               | Some bs => Some (wasm_deserialise bs T_i32)
-                                               end.
+                                             | None => None
+                                             | Some bs => Some (wasm_deserialise bs T_i32)
+                                             end.
 
 Definition store_i32 mem addr (v : value) : option memory := store mem addr (N.of_nat 0) (bits v) 4.
 
@@ -1636,6 +1588,7 @@ Definition finfo_env_correct :=
 
 *)
 
+(* TODO add alternative: out of memory *)
 Definition result_val_LambdaANF_Codegen
  (val : LambdaANF.cps.val) (inst : instance) (sr : store_record) : Prop :=
     exists res_i32 wasmval,
@@ -1674,7 +1627,9 @@ Lemma val_relation_depends_only_on_mem_and_funcs : forall v sr sr' value,
     repr_val_LambdaANF_Codegen fenv venv nenv host_function v sr value ->
     repr_val_LambdaANF_Codegen fenv venv nenv host_function v sr' value.
 Proof.
-  intros. induction H1. (* need custom induction principle ? *)
+  intros. inv H1.
+  econstructor. rewrite <- H. eassumption. eassumption.
+  (* need custom induction principle ? *)
 Admitted.
 
 
@@ -1737,9 +1692,14 @@ Definition INV_local_ptr_in_linear_memory := forall y v' x fr Hm,
   -> nth_error (f_locs fr) v' = Some (VAL_int32 x) ->
   exists bytes, load Hm (Wasm_int.N_of_uint i32m x) 0%N (t_length T_i32) = Some bytes.
 
+(*
 Definition INV_global_mem_ptr_in_linear_memory := forall sr inst x,
   nth_error (inst_globs inst) global_mem_ptr = Some x ->
   exists r, nth_error (@s_globals host_function sr) x = Some r.
+ *)
+Definition INV_global_constr_alloc_ptr_in_linear_memory := forall s f addr t m,
+  sglob_val (host_function:=host_function) s (f_inst f) constr_alloc_ptr = Some (VAL_int32 addr)
+  -> exists m', store m (Wasm_int.N_of_uint i32m addr) 0%N (bits (nat_to_value (Pos.to_nat t))) (t_length T_i32) = Some m'.
 
 (*
 Definition INV_constr_alloc_fn_present := forall (t : ctor_tag) (e e1 : cps.exp) x vs sr i inst ty locals body err_str,
@@ -1747,6 +1707,7 @@ Definition INV_constr_alloc_fn_present := forall (t : ctor_tag) (e e1 : cps.exp)
   lookup_function_var (constr_alloc_function_name t) fenv err_str = Ret i ->
   List.nth_error (sr.(s_funcs) : list (function_closure host_function)) i = Some (FC_func_native inst ty locals body) /\
 *)
+Check load. Print load. Print read_bytes. Print those.
 
 
 Import ssreflect.
@@ -1923,7 +1884,7 @@ Proof.
  *)
 Admitted.
 
-Lemma extract_constr_arg : forall n vs v sr addr m,
+(* Lemma extract_constr_arg : forall n vs v sr addr m,
   nthN vs n = Some v ->
   nth_error (s_mems sr) 0 = Some m ->
   repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function vs sr addr ->
@@ -1989,7 +1950,7 @@ Proof.
       assert (N.of_nat addr + 0 = N.of_nat addr)%N by lia. rewrite H. clear H.
       assumption. split. f_equal.
       injection H1 => H1'. *)
-Admitted.
+Admitted. *)
 
 (* TODO RENAME *)
 Lemma arith_addr_helper : forall n addr, Wasm_int.N_of_uint i32m
@@ -2002,8 +1963,6 @@ Proof.
             (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + 0))))) = Z.of_nat (4 * (1 + N.to_nat n))) by lia.
   unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
 admit. Admitted. (* TODO: wrong, assert that n < Int32.max *)
-
-Lemma repr_bs_LambdaANF_Codegen_related_case : True. constructor. Qed.
 
 (*
 H : rho ! y = Some (Vconstr t vl)
@@ -2081,7 +2040,8 @@ Theorem repr_bs_LambdaANF_Codegen_related:
 
         INV_linear_memory_exists ->
         INV_local_ptr_in_linear_memory ->
-        INV_global_mem_ptr_in_linear_memory ->
+        (* INV_global_mem_ptr_in_linear_memory -> *)
+        INV_global_constr_alloc_ptr_in_linear_memory ->
         INV_local_vars_exist ->
 
         repr_expr_LambdaANF_Codegen fenv venv nenv e instructions -> (* translate_body e returns stm *)
@@ -2094,10 +2054,10 @@ Theorem repr_bs_LambdaANF_Codegen_related:
         exists (sr' : store_record) (f' : frame),
           reduce_trans (hs, sr, f, map AI_basic instructions) (hs, sr', f', []) /\
           (* memory m/lenv becomes m'/lenv' after executing stm *)
-          result_val_LambdaANF_Codegen v f.(f_inst) sr'. (* value v is related to memory m'/lenv' *)
+          result_val_LambdaANF_Codegen v f'.(f_inst) sr'. (* value v is related to memory m'/lenv' *)
 Proof with eauto.
   intros rho v e n Hev.
-  induction Hev; intros instructions fr state sr INVres INVgmp INVcap INVlinmem INVptrInMem INVglobalptrInMem INVlocals Hrepr_e Hrel_m.
+  induction Hev; intros instructions fr state sr INVres INVgmp INVcap INVlinmem INVptrInMem (* INVglobalptrInMem *) INVcapInMem INVlocals Hrepr_e Hrel_m.
   - (* Econstr *)
     inv Hrepr_e.
     { remember (grow_memory_if_necessary ((Datatypes.length ys + 1) * 4)) as grow.
@@ -2108,6 +2068,47 @@ Proof with eauto.
       destruct H0 as [s' [f' Hred]].
       have Hredgrow := r_elimr_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ _ Hred. cbn in Hredgrow.
 
+    cbn. separate_instr.
+    (* assert sr, fr after written tag to mem *)
+    assert (Hex: exists sr_tag, exists fr_tag, reduce_trans
+    (state, sr, fr,
+      [seq AI_basic i | i <- grow] ++
+      [:: AI_basic (BI_get_global global_mem_ptr)] ++
+      [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
+      [:: AI_basic (BI_get_global global_mem_ptr)] ++
+      [:: AI_basic (BI_const (nat_to_value ((Datatypes.length ys + 1) * 4)))] ++
+      [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
+      [:: AI_basic (BI_set_global global_mem_ptr)] ++
+      [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+      [:: AI_basic (BI_const (nat_to_value (Pos.to_nat t)))] ++
+      [:: AI_basic (BI_store T_i32 None 2%N 0%N)] ++
+      [seq AI_basic i | i <- sargs] ++
+      [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+      [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e'])
+
+    (state, sr_tag, fr_tag, [seq AI_basic i | i <- sargs] ++
+      [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+      [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e']) /\
+
+      (* remaining reduction: set args + IH *)
+      (exists sr_final, exists fr_final, reduce_trans
+        (state, sr_tag, fr_tag,
+          [seq AI_basic i | i <- sargs] ++
+          [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+          [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e'])
+        (state, sr_final, fr_final, [::]) /\ result_val_LambdaANF_Codegen v (f_inst fr_final) sr_final)).
+     {
+      (* intermediate sr after reading/writing to globals *)
+      edestruct INVgmp as [[?s WriteGmp] [?num ReadGmp]]. clear WriteGmp.
+      edestruct INVcap as [[?s WriteCap] [?num' ReadCap]].
+      edestruct INVgmp as [[?s WriteGmp2] [?num ReadGmp2]]. clear WriteGmp2.
+      edestruct INVgmp as [[?s WriteGmp3] [?num ReadGmp3]].
+      (* mem for write tag *)
+      edestruct INVcap as [[?s WriteCap3] [?num' ReadCap3]]. clear WriteCap3.
+
+      edestruct INVlinmem as [Hmem1 [m' [Hmem2 Hmem3]]].
+      edestruct INVcapInMem. eassumption.
+
       eexists. eexists. split. cbn.
       (* Lemma r_elimr_trans: forall s f es s' f' es' les hs hs',
          reduce_trans (hs, s, f, es) (hs', s', f', es') ->
@@ -2115,34 +2116,58 @@ Proof with eauto.
       eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])).
       apply Hredgrow. clear Hredgrow.
 
-
       (* make space on linear memory *)
-      edestruct INVgmp as [[?s WriteGmp] [?num ReadGmp]].
       dostep. elimr_nary_instr 0. apply r_get_global. apply ReadGmp.
-
-      edestruct INVcap as [[?s WriteCap] [?num' ReadCap]]. clear WriteGmp.
       dostep. elimr_nary_instr 1. apply r_set_global. apply WriteCap.
-
-      edestruct INVgmp as [[?s WriteGmp2] [?num ReadGmp2]]. clear WriteGmp2.
       dostep. elimr_nary_instr 0. apply r_get_global. apply ReadGmp2.
-
       dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-
-      edestruct INVgmp as [[?s WriteGmp3] [?num ReadGmp3]].
       dostep. elimr_nary_instr 1. apply r_set_global. apply WriteGmp3.
-
-      (* write constructor to linear memory *)
-      cbn. inv H9. cbn.
-
       (* write tag *)
-      edestruct INVcap as [[?s WriteCap3] [?num' ReadCap3]]. clear WriteCap3.
       dostep. elimr_nary_instr 0. apply r_get_global. apply ReadCap3.
+      dostep. elimr_nary_instr 2. eapply r_store_success; eauto.
+      cbn. separate_instr.
 
-      dostep. elimr_nary_instr 2. eapply r_store_success; auto.
+      unfold store in H0.
+      destruct ((Wasm_int.N_of_uint i32m num'0 + 0 + N.of_nat (t_length T_i32) <=? mem_length m')%N) eqn:Heqn. 2: inv H0.
 
+      apply rt_refl.
 
+      (* set args + finish *)
+      induction H9.
 
+      (* no constr args *)
+      { exists s2. rename num'0 into resptr.
+        exists {| f_locs := set_nth (VAL_int32 resptr) (f_locs fr) x' (VAL_int32 resptr)
+                ; f_inst := f_inst fr |}. split. cbn.
 
+        dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
+
+        dostep. elimr_nary_instr 1.
+        eapply r_set_local. (*  with (vd := (wasm_deserialise ((bits (nat_to_value (Pos.to_nat t)))) T_i32)).  admit. *) reflexivity.
+
+        have Hloc := INVlocals x x' fr H5. destruct Hloc.
+        apply /ssrnat.leP.
+        assert (x' < length (f_locs fr)). { apply nth_error_Some. congruence. } lia.
+        reflexivity.
+        cbn.
+        apply Hred.
+        }
+        apply rt_refl.
+
+        exists (wasm_value_to_i32 wal). exists wal.
+        repeat split. eapply set_global_var_updated. eassumption.
+        apply val_relation_depends_only_on_mem_and_funcs with sr...
+        eapply update_glob_keeps_memory_intact. eassumption.
+        eapply update_glob_keeps_funcs_intact. eassumption.
+        *)
+      }
+      {}
+      }
+      destruct Hex as [sr_tag [fr_tag [Htrans Hrest]]].
+      destruct Hrest as [sr_final [fr_final [Htransf Hresf]]].
+      eexists. eexists. split.
+      eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])). apply Htrans. apply Htransf.
+      assumption.
 
 
 (*
@@ -2205,7 +2230,7 @@ Proof with eauto.
      eapply rt_trans. apply Hred. admit.
      *)
 
-      admit. admit. admit.  admit. admit. }
+      }
   - (* Eproj ctor_tag t, let x := proj_n y in e *)
     inv Hrepr_e.
     rename s into e'. rename v' into y'.
