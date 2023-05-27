@@ -48,47 +48,9 @@ Require Import Libraries.maps_util.
 
 Open Scope list.
 
-
-
-Definition gc_size:Z := Z.shiftl 1%Z 16%Z.
-Definition loc:Type := block * ptrofs.
-
-
-Notation intTy := (Tint I32 Signed
-                        {| attr_volatile := false; attr_alignas := None |}).
-
-Notation uintTy := (Tint I32 Unsigned
-                         {| attr_volatile := false; attr_alignas := None |}).
-
-Notation longTy := (Tlong Signed
-                        {| attr_volatile := false; attr_alignas := None |}).
-
-Notation ulongTy := (Tlong Unsigned
-                           {| attr_volatile := false; attr_alignas := None |}).
-Notation boolTy := (Tint IBool Unsigned noattr).
-
-
-
-(* from CLight : TODO wasm *)
-Definition int_chunk := Mint32.
-Definition val := uintTy. (* NOTE: in Clight, SIZEOF_PTR == SIZEOF_INT *)
-Definition uval := uintTy.
-Definition sval := intTy.
-Definition val_typ := Tany32:typ.
-Definition Init_int x := Init_int32 (Int.repr x).
-Definition make_vint z := Vint (Int.repr z).
-Definition make_cint z t := Econst_int (Int.repr z) t.
-Transparent val.
-Transparent uval.
-Transparent val_typ.
-Transparent Init_int.
-Transparent make_vint.
-Transparent make_cint.
-
-
 Import ListNotations.
 
- Definition int_size := 32%Z.
+Definition int_size := 32%Z.
 Definition max_args := 1024%Z. (* limited by space in boxed header *)
 
 
@@ -528,57 +490,6 @@ Import Common.Common Common.compM Common.Pipeline_utils.
 
 Import ExtLib.Structures.Monad.
 Import MonadNotation.
-
-(*
-  Notation threadStructInf := (Tstruct threadInfIdent noattr).
-  Notation threadInf := (Tpointer threadStructInf noattr).
-
-  Notation funTy := (Tfunction (Tcons threadInf Tnil) Tvoid
-                            {|
-                              cc_vararg := false;
-                              cc_unproto := false;
-                              cc_structret := false |}).
-
-Notation pfunTy := (Tpointer funTy noattr).
-
-Notation gcTy := (Tfunction (Tcons (Tpointer (Tint I32 Unsigned noattr) noattr) (Tcons threadInf Tnil)) Tvoid
-                            {|
-                              cc_vararg := false;
-                              cc_unproto := false;
-                              cc_structret := false |}).
-
-Notation isptrTy := (Tfunction (Tcons (Tint I32 Unsigned noattr) Tnil) (Tint IBool Unsigned noattr)
-                               {|
-                                 cc_vararg := false;
-                                 cc_unproto := false;
-                                 cc_structret := false |}).
-
-
-
-
-
-
-
-Notation valPtr := (Tpointer val
-                            {| attr_volatile := false; attr_alignas := None |}).
-
-Notation boolTy := (Tint IBool Unsigned noattr).
-
-Notation "'var' x" := (Etempvar x val) (at level 20).
-Notation "'ptrVar' x" := (Etempvar x valPtr) (at level 20).
-
-Notation "'bvar' x" := (Etempvar x boolTy) (at level 20).
-Notation "'funVar' x" := (Evar x funTy) (at level 20).
-
-
-Notation allocPtr := (Etempvar allocIdent valPtr).
-Notation limitPtr := (Etempvar limitIdent valPtr).
-Notation args := (Etempvar argsIdent valPtr).
-Notation gc := (Evar gcIdent gcTy).
-Notation ptr := (Evar isptrIdent isptrTy).
-
-*)
-
 
 
 (* all boxed -> list can be empty *)
