@@ -31,12 +31,16 @@ let importObject = {
 
     try {
         obj.instance.exports.$main_function();
-        let res = obj.instance.exports.$get_result();
-        process.stdout.write("\n====>");
-        obj.instance.exports.$pretty_print_constructor(res); console.log(""); // newline
-
-        let bytes = obj.instance.exports.$get_memory_usage_in_bytes();
+        let bytes = obj.instance.exports.bytes_used.value;
         console.log(`====> used ${bytes} bytes of memory`);
+
+        if (obj.instance.exports.result_out_of_mem.value == 1) {
+            console.log("Ran out of memory.")
+        } else {
+            let res = obj.instance.exports.result.value;
+            process.stdout.write("\n====>");
+            obj.instance.exports.$pretty_print_constructor(res); console.log(""); // newline
+        }
     } catch (error) {
         console.log(error);
         process.exit(1);

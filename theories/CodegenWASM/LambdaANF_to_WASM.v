@@ -39,6 +39,7 @@ Definition fname_env := M_string.t nat.  (* maps function export names to their 
 Definition global_mem_ptr : immediate := 0.
 Definition constr_alloc_ptr : immediate := 1. (* ptr to beginning of constr alloc in linear mem *)
 Definition result_var : immediate := 2. (* since CPS: only one final result *)
+Definition result_out_of_mem : immediate := 3.
 
 (* target type for generating functions, contains more fields than the one from Wasm *)
 Record wasm_function :=
@@ -376,7 +377,7 @@ Definition grow_memory_if_necessary (required_bytes : nat) : list basic_instruct
                        ; BI_grow_memory (* returns -1 on alloc failure *)
                        ; BI_const (Z_to_value (-1))
                        ; BI_relop T_i32 (Relop_i ROI_eq)
-                       ; BI_if (Tf nil nil) [ BI_unreachable ] (* we use an unbounded memory so this never happens *)
+                       ; BI_if (Tf nil nil) [ BI_const (nat_to_value 1); BI_set_global result_out_of_mem ]
                                             [ BI_nop ]
                        ]
                        [ BI_nop ]
@@ -398,11 +399,10 @@ Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_e
   end.
 
 
-Definition allocate_constructor (nenv : name_env) (cenv : ctor_env) (venv : var_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
+Definition store_constructor (nenv : name_env) (cenv : ctor_env) (venv : var_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
   let ctor_id := Pos.to_nat c in
   set_constr_args <- set_constructor_args nenv venv fenv ys 0;;
-  Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++
-       [ BI_get_global global_mem_ptr
+  Ret ([ BI_get_global global_mem_ptr
        ; BI_set_global constr_alloc_ptr
 
        ; BI_get_global global_mem_ptr
@@ -440,12 +440,15 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
    | Econstr x tg ys e' =>
       following_instr <- translate_exp nenv cenv venv fenv e' ;;
       x_var <- translate_var nenv venv x "translate_exp constr";;
-      alloc_constr <- allocate_constructor nenv cenv venv fenv tg ys;;
+      store_constr <- store_constructor nenv cenv venv fenv tg ys;;
 
-      Ret (alloc_constr ++
-          [ BI_get_global constr_alloc_ptr
-          ; BI_set_local x_var
-          ] ++ following_instr)
+      Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++
+          [ BI_block (Tf [] [])
+              ([ BI_get_global result_out_of_mem; BI_br_if 0] ++ store_constr ++
+               [ BI_get_global constr_alloc_ptr
+               ; BI_set_local x_var
+               ] ++ following_instr)
+          ])
 
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp)) : error (list (ctor_tag * list basic_instruction)) :=
@@ -539,31 +542,6 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
    ; body := body_res
    |}.
 
-
-(* ***** GENERATE FUNCTION THAT RETURNS THE MEMORY USED SO FAR ****** *)
-Definition get_memory_usage_function_name := "$get_memory_usage_in_bytes".
-
-Definition get_memory_usage_function (fenv : fname_env) : error wasm_function :=
-  var <- lookup_function_var get_memory_usage_function_name fenv "mem usage fn" ;;
-  Ret {| var := var
-       ; export_name := get_memory_usage_function_name
-       ; type := Tf [] [T_i32]
-       ; locals := []
-       ; body := [ BI_get_global global_mem_ptr; BI_return ]
-       |}.
-
-(* ***** GENERATE FUNCTION THAT RETURNS THE RESULT ****** *)
-Definition get_result_function_name := "$get_result".
-
-Definition get_result_function (fenv : fname_env) : error wasm_function :=
-  var <- lookup_function_var get_result_function_name fenv "get result var" ;;
-  Ret {| var := var
-       ; export_name := get_result_function_name
-       ; type := Tf [] [T_i32]
-       ; locals := []
-       ; body := [ BI_get_global result_var ]
-       |}.
-
 (* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
 Definition main_function_name := "$main_function".
 
@@ -612,10 +590,6 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
   let indirection_fn_names := unique_indirection_function_names fsigs in
   let (fname_mapping, num_fns) := (add_to_fname_mapping indirection_fn_names num_fns fname_mapping, num_fns + length indirection_fn_names) in
 
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [get_memory_usage_function_name] num_fns fname_mapping, num_fns + 1) in
-
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [get_result_function_name] num_fns fname_mapping, num_fns + 1) in
-
   let (fname_mapping, num_fns) := (add_to_fname_mapping [main_function_name] num_fns fname_mapping, num_fns + 1) in
 
   Ret fname_mapping.
@@ -654,9 +628,6 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   main_instr <- translate_exp nenv cenv main_venv fname_mapping main_expr ;;
   main_function_var <- lookup_function_var main_function_name fname_mapping "main function";;
 
-  mem_usage_function <- get_memory_usage_function fname_mapping;;
-  get_result_function <- get_result_function fname_mapping;;
-
   let main_function := {| var := main_function_var
                         ; export_name := main_function_name
                         ; type := Tf [] []
@@ -664,11 +635,20 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                         ; body := main_instr
                         |}
   in
-  let functions := fns ++ [constr_pp_function] ++ indirection_functions ++ [mem_usage_function; get_result_function; main_function] in
+  let functions := fns ++ [constr_pp_function] ++ indirection_functions ++ [main_function] in
   let types := map (fun f => f.(type)) functions in
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (Mk_funcidx f.(var))
-                                |}) functions in
+                                |}) functions (* function exports for debug names *)
+                 ++ {| modexp_name := String.print "result_out_of_mem"
+                     ; modexp_desc := MED_global (Mk_globalidx result_out_of_mem)
+                     |} ::
+                    {| modexp_name := String.print "bytes_used"
+                     ; modexp_desc := MED_global (Mk_globalidx global_mem_ptr)
+                     |} ::
+                    {| modexp_name := String.print "result"
+                     ; modexp_desc := MED_global (Mk_globalidx result_var)
+                     |} :: nil in
 
   let functions_final := map (fun f => {| modfunc_type := Mk_typeidx f.(var)
                                         ; modfunc_locals := f.(locals)
@@ -682,8 +662,8 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
        ; mod_funcs := functions_final
        ; mod_tables := []
 
-       ; mod_mems := {| lim_min := N_of_nat 1         (* initial memory size in pages (1 page = 2^16 bytes), is grown as needed *)
-                      ; lim_max := None               (* memory can grow infinitely *)
+       ; mod_mems := {| lim_min := N_of_nat 1         (* initial memory size in pages (1 page = 2^16 = 64 KiB), is grown as needed *)
+                      ; lim_max := Some 10000%N
                       |} :: nil
 
        ; mod_globals := {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* global_mem_ptr *)
@@ -694,8 +674,10 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                          |} ::
                         {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* result_var *)
                          ; modglob_init := [BI_const (nat_to_value 0)]
+                         |} ::
+                        {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* out of memory indicator *)
+                         ; modglob_init := [BI_const (nat_to_value 0)]
                          |} :: nil
-
 
        ; mod_elem := []
        ; mod_data := []

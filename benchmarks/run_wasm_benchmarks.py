@@ -16,7 +16,7 @@ for f in files:
     assert os.path.isfile(name), f"didn't find js file {name}, did you run <make compilewasm>?"
 
     print(f"\nrunning: {name}")
-    r = subprocess.run(["nodejs", "--stack-size=10000000", name])
+    r = subprocess.run(["node", "--stack-size=10000000", name])
 
     if r.returncode != 0:
         ret_code = r.returncode
