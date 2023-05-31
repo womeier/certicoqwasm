@@ -19,8 +19,6 @@ Require Import Coq.ZArith.BinInt.
 Require Import Lia.
 Require Export Int31.
 
-(* Require Import RamifyCoq.CertiGC.GCGraph. *)
-
 
 
 Require Import Coq.Arith.Arith Coq.NArith.BinNat ExtLib.Data.String ExtLib.Data.List Coq.Program.Program  Coq.Sets.Ensembles Coq.Logic.Decidable Coq.Lists.ListDec Coq.Relations.Relations Relations.Relation_Operators.
@@ -40,7 +38,7 @@ Require Import (* CodegenWASM.tactics *)
                CodegenWASM.LambdaANF_to_WASM.
 
 From Wasm Require Import datatypes datatypes_properties operations host interpreter_sound
-                         binary_format_parser binary_format_printer check_toks instantiation
+                         binary_format_printer check_toks instantiation
                          opsem interpreter_func interpreter_func_sound properties common.
 
 
@@ -880,15 +878,12 @@ Qed.
 (* MEMORY RELATION *)
 
 (* relates a LambdaANF evaluation environment to a Clight memory up to the free variables in e *)
-(* If x is a free variable of e, then it might be in the generated code:
-   1) a function (may want to handle this separately as they won't get moved by the GC) in the global environment, evaluates to a location related to f by repr_val_ptr_LambdaANF_Codegen
-   2) a local variable in le related to (rho x) according to repr_val_LambdaANF_Codegen -- this happens when e.g. x := proj m, or after function initialization
 
-All the values are in a space L which is disjoint form protected space
+(* ORIGINAL pasted from C backend TODO update
 
-Note that parameters are heap allocated, and at function entry "free variables" are held in args and related according to repr_val_ptr_LambdaANF_Codegen
-
-Now also makes sure none of the protected portion are reachable by the v7
+If x is a free variable of e, then it might be in the generated code:
+   1) a function in the global environment, evaluates to a location related to f by repr_val_ptr_LambdaANF_Codegen
+   2) a local variable in le related to (rho x) according to repr_val_LambdaANF_Codegen
 
 TODO: second section needs that for any such f s.t. find_def f fl = Some (t, vs4, e),  e is closed by  var (FromList vsm4 :|: name_in_fundefs fl)
  may want something about functions in rho, i.e. that they don't need to be free to be repr_val_id, since they are the only thing that may appear free in other functions body (and not bound in the opening
@@ -1421,13 +1416,13 @@ Definition finfo_env_correct :=
 (* TODO add alternative: out of memory *)
 Definition result_val_LambdaANF_Codegen
  (val : LambdaANF.cps.val) (inst : instance) (sr : store_record) : Prop :=
-    exists res_i32 wasmval,
 
+   (exists res_i32 wasmval,
       (* global var *result_var* contains correct return value *)
       sglob_val sr inst result_var = Some (VAL_int32 res_i32) /\
       wasm_value_to_i32 wasmval = res_i32 /\
-      repr_val_LambdaANF_Codegen fenv venv nenv  _ val sr wasmval.
-
+      repr_val_LambdaANF_Codegen fenv venv nenv  _ val sr wasmval)
+    \/ (sglob_val sr inst result_out_of_mem = Some (nat_to_value 1)).
 
 Import ssrfun ssrbool eqtype seq.
 
@@ -1574,8 +1569,6 @@ Ltac elimr_nary_instr n :=
           end
   end.
 
-
-
 Lemma steps_inside_label : forall instructions state sr sr' fr fr',
  clos_refl_trans
   (host.host_state host_instance * datatypes.store_record host_function * frame *
@@ -1608,7 +1601,6 @@ Ltac dostep' :=
 Ltac dostep_label :=
    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first apply steps_inside_label.
 
-
 (*
 Example label_red : forall sr fr state c,
   reduce_trans (state, sr, fr, [:: AI_label 0 [::] [:: AI_basic (BI_const c)]]) (state, sr, fr, [:: AI_basic (BI_const c)]).
@@ -1639,8 +1631,17 @@ Require Import Coq.Structures.OrderedTypeEx.
 Lemma r_elimr_trans: forall s f es s' f' es' les hs hs',
     reduce_trans (hs, s, f, es) (hs', s', f', es') ->
     reduce_trans (hs, s, f, (es ++ les)) (hs', s', f', (es' ++ les)).
-Proof. (*
-  intros. induction es.
+Proof.
+  intros. apply clos_rt_rt1n in H.
+  induction es.
+  - { inv H. apply rt_refl. destruct y. destruct p0. destruct p0.
+      inv H0. admit. destruct (v_to_e_list vcs); inv H.
+      destruct (v_to_e_list vcs); inv H. destruct (v_to_e_list vcs); inv H. cbn.
+
+  remember (hs, s, f, es) as x. remember (hs', s', f', es') as y.
+  generalize dependent Heqy. generalize dependent Heqx.
+   induction H; intros; subst.
+   (*
   - inv H. { admit. } cbn. apply rt_refl. destruct y. destruct p0. destruct p0.
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])).
     cbn. inv H0. inv H. inv H0. inv H2.
@@ -1861,8 +1862,59 @@ Proof with eauto.
     { remember (grow_memory_if_necessary ((Datatypes.length ys + 1) * 4)) as grow.
       cbn. repeat rewrite map_cat. cbn.
 
-      (* assume grow memory works *)
-      assert (exists s' f', reduce_trans (state, sr, fr, [seq AI_basic i | i <- grow]) (state, s', f', [])). admit.
+     (*  (* grow memory if necessary *)
+      subst grow. unfold grow_memory_if_necessary.
+      have Hm := INVlinmem sr fr.  destruct Hm as [Hm1 [m [Hm2 [size Hm3]]]].
+
+      eexists. eexists. split.
+      have Hw := INVgmp. edestruct Hw as [[sr' H1] [num H2]].
+      unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
+      (* load global_mem_ptr *)
+      dostep. separate_instr. elimr_nary_instr 0.
+      apply r_get_global. eassumption.
+      (* add required bytes *)
+      dostep. separate_instr. elimr_nary_instr 2. constructor.
+      apply rs_binop_success. reflexivity.
+      dostep. separate_instr. elimr_nary_instr 2. constructor.
+      apply rs_binop_success. cbn. unfold is_left.
+      rewrite zeq_false. reflexivity.
+      intro. zify. admit. (* addition correct *)
+      dostep. apply r_eliml; auto.
+      elimr_nary_instr 0. eapply r_current_memory...
+
+      dostep. separate_instr. elimr_nary_instr 2.
+      constructor. apply rs_relop.
+
+      dostep. separate_instr. elimr_nary_instr 1.
+      constructor.
+      destruct ((~~
+                  Wasm_int.Int32.lt
+                    (Wasm_int.Int32.repr
+                       (Wasm_int.Int32.signed
+                          (Wasm_int.Int32.iadd num (nat_to_i32 ((Datatypes.length ys + 1) * 4)))
+                        ÷ 65536)) (Wasm_int.Int32.repr (Z.of_nat (ssrnat.nat_of_bin size))))) eqn:Heq.
+
+      (* do case analysis -> has to increase memory? *)
+      apply rs_if_true. intro. admit.
+      dostep. separate_instr. elimr_nary_instr 0.
+      constructor. eapply rs_block with (vs := [])... cbn.
+      dostep. separate_instr.
+
+      eexists. eexists. split.
+      eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], [:: AI_basic (BI_get_global global_mem_ptr)] ++
+    [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
+    [:: AI_basic (BI_get_global global_mem_ptr)] ++
+    [:: AI_basic (BI_const (nat_to_value ((Datatypes.length ys + 1) * 4)))] ++
+    [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
+    [:: AI_basic (BI_set_global global_mem_ptr)] ++
+    sstoreInstr ++
+    [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+    [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e'])).
+    cbn.
+     eapply rt_trans with (y := (?[hs'], ?[sr'], ?[fr'], ?[s])).
+     eapply rt_trans. apply Hred. admit.
+      *)
+      assert (exists s' f', reduce_trans (state, sr, fr, [seq AI_basic i | i <- grow]) (state, s', f', []) (* /\ enough memory*)). admit.
       destruct H0 as [s' [f' Hred]].
       have Hredgrow := r_elimr_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ _ Hred. cbn in Hredgrow.
       assert (Hframe: f_inst fr = f_inst f' /\ length (f_locs fr) = length (f_locs f')).  admit. destruct Hframe as [Hfinst Hlocs].
@@ -1987,8 +2039,7 @@ Proof with eauto.
          rewrite Heqfr'. cbn. admit. (* update var doesn't change #vars *) lia.
         cbn. rewrite Heqfr'. reflexivity.
         cbn.
-        apply Hredfinal.
-         assumption.
+        apply Hredfinal. (*assumption. *) admit.
         }
 
 (* exists (wasm_value_to_i32 wal). exists wal.
@@ -2018,52 +2069,6 @@ Proof with eauto.
           AI_basic (BI_set_local x')
         & [seq AI_basic i | i <- e']]]). *)
 
-    (*
-      unfold grow_memory_if_necessary.
-      (* increase memory if necessary *)
-      have Hm := INVlinmem sr fr.  destruct Hm as [Hm1 [m [Hm2 [size Hm3]]]].
-
-      eexists. eexists. split.
-      have Hw := INVgmp. edestruct Hw as [[sr' H1] [num H2]].
-      unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
-      (* load global_mem_ptr *)
-      dostep. separate_instr. elimr_nary_instr 0.
-      apply r_get_global. eassumption.
-      (* add required bytes *)
-      dostep. separate_instr. elimr_nary_instr 2. constructor.
-      apply rs_binop_success. reflexivity.
-      dostep. separate_instr. elimr_nary_instr 2. constructor.
-      apply rs_binop_success.
-      admit. (* addition correct *)
-      dostep. apply r_eliml; auto.
-      elimr_nary_instr 0. eapply r_current_memory...
-
-      dostep. separate_instr. elimr_nary_instr 2.
-      constructor. apply rs_relop.
-
-      dostep. separate_instr. elimr_nary_instr 1.
-      constructor.
-      (* do case analysis -> has to increase memory? *)
-      apply rs_if_true. intro. admit.
-      dostep. separate_instr. elimr_nary_instr 0.
-      constructor. eapply rs_block with (vs := [])... cbn.
-      dostep. separate_instr.
-
-
-      eexists. eexists. split.
-      eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], [:: AI_basic (BI_get_global global_mem_ptr)] ++
-    [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
-    [:: AI_basic (BI_get_global global_mem_ptr)] ++
-    [:: AI_basic (BI_const (nat_to_value ((Datatypes.length ys + 1) * 4)))] ++
-    [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
-    [:: AI_basic (BI_set_global global_mem_ptr)] ++
-    sstoreInstr ++
-    [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
-    [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e'])).
-    cbn.
-     eapply rt_trans with (y := (?[hs'], ?[sr'], ?[fr'], ?[s])).
-     eapply rt_trans. apply Hred. admit.
-   *)
        admit. } admit. }
   - (* Eproj ctor_tag t, let x := proj_n y in e *)
     inv Hrepr_e.
@@ -2402,7 +2407,7 @@ Proof with eauto.
     dostep. separate_instr. apply r_elimr. eapply r_get_local. eassumption.
     dostep'. apply r_set_global. eassumption.
     apply rt_refl.
-
+    unfold result_val_LambdaANF_Codegen. left. (* TODO *)
     exists (wasm_value_to_i32 wal). exists wal.
     repeat split. eapply set_global_var_updated. eassumption.
     apply val_relation_depends_only_on_mem_and_funcs with sr...
