@@ -1186,13 +1186,13 @@ Import seq.
 Theorem translate_exp_correct:
     (* find_symbol_domain p map -> *)
     (* finfo_env_correct fenv map -> *)
-    correct_crep_of_env cenv rep_env ->
+    (* correct_crep_of_env cenv rep_env -> *)
     forall e instructions,
       correct_cenv_of_exp cenv e ->
     translate_exp nenv cenv venv fenv e = Ret instructions ->
     repr_expr_LambdaANF_Codegen fenv venv nenv e instructions.
 Proof.
-  intros Hcrep e.
+  intros (* Hcrep *) e.
   induction e using exp_ind'; intros instr Hcenv; intros.
   - (* Econstr *)
     simpl in H.
@@ -2415,6 +2415,7 @@ Proof with eauto.
     eapply update_glob_keeps_funcs_intact. eassumption.
 Admitted.
 
+End THEOREM.
 (*
 Lemma funargs_reduce_to_const : forall sr fr state, repr_fun_args_Codegen fenv venv nenv ys args' -> reduce_trans (state, sr, fr, [seq AI_basic i | i <- args']) (state, sr, fr, args) /\ vs_co *)
 
@@ -2533,7 +2534,7 @@ Lemma funargs_reduce_to_const : forall sr fr state, repr_fun_args_Codegen fenv v
 *)
 
 
-Definition extract_const g := match g.(modglob_init) with (* guarantee non-divergence during instantiation *)
+(* Definition extract_const g := match g.(modglob_init) with (* guarantee non-divergence during instantiation *)
 | [:: BI_const c] => Ret c
 | _ => Err "only constants allowed during instantiation"%bs
 end : error value.
@@ -2578,6 +2579,41 @@ Definition interp_instantiate (s : store_record) (m : module) (v_imps : list v_e
     else Err "external_type_checker failed"%bs
   end.
 
+Definition interp_instantiate_wrapper (m : module)
+  : error (store_record * instance * list module_export) :=
+  interp_instantiate empty_store_record m nil.
+ *)
+
+Import host.
+Import eqtype.
+Import Lia.
+Import Relations.Relation_Operators.
+Import ssreflect seq.
+Variable cenv:LambdaANF.cps.ctor_env.
+Variable funenv:LambdaANF.cps.fun_env.
+Variable nenv : LambdaANF.cps_show.name_env.
+Variable finfo_env: LambdaANF_to_Clight.fun_info_env. (* map from a function name to its type info *)
+Variable p:program. (* TODO remove program relict from Codegen *)
+ (* This should be a definition rather than a parameter, computed once and for all from cenv *)
+Variable rep_env: M.t ctor_rep.
+
+Variable host_function : eqType.
+Let host := host host_function.
+
+Variable host_instance : host.
+
+Let store_record := store_record host_function.
+(*Let administrative_instruction := administrative_instruction host_function.*)
+Let host_state := host_state host_instance.
+
+Let reduce_trans := @reduce_trans host_function host_instance.
+
+Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm_map_util.
+Import Common.Common Common.compM Common.Pipeline_utils.
+
+Import ExtLib.Structures.Monad.
+Import MonadNotation.
+
 Definition empty_store_record : store_record := {|
     s_funcs := nil;
     s_tables := nil;
@@ -2585,26 +2621,26 @@ Definition empty_store_record : store_record := {|
     s_globals := nil;
   |}.
 
-Definition interp_instantiate_wrapper (m : module)
-  : error (store_record * instance * list module_export) :=
-  interp_instantiate empty_store_record m nil.
-
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 
 Corollary LambdaANF_Codegen_related :
   forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat), (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
 
-  forall module sr hs inst exports mainidx function,
+  forall (hs : host_state) module fenv venv exports mainidx function,
 
   (* evaluation of LambdaANF expression *)
   bstep_e (M.empty _) cenv rho e v n ->
 
   (* compilation function *)
-  LambdaANF_to_WASM nenv cenv e = Ret module ->
+  LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, venv) ->
 
-  (* TODO, this could be a theorem? *)
-  interp_instantiate_wrapper module = Ret (sr, inst, exports) ->
+  (* constructors welformed *)
+  correct_cenv_of_exp cenv e->
+
+  (* instantiation relation wasmcert, TODO: this should be a theorem *) (* TODO: imports *)
+  exists sr inst,
+  instantiate _ host_instance empty_store_record module [] ((sr, inst, exports), None) ->
 
   List.nth_error sr.(s_funcs) mainidx = Some function ->
   (* codegen relation with e = let fundefs in mainexpr *)
@@ -2613,12 +2649,87 @@ Corollary LambdaANF_Codegen_related :
        reduce_trans (hs, sr,  (Build_frame [] inst), [ AI_basic (BI_call mainidx) ])
                     (hs, sr', (Build_frame [] inst), [])    /\
 
-       result_val_LambdaANF_Codegen v inst sr'.
+       result_val_LambdaANF_Codegen fenv venv nenv _ v inst sr'.
 Proof.
-  intros. eexists. split.
-  eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[t])).
-  apply rt_step. eapply r_call.
+  intros. unfold LambdaANF_to_WASM in H0.
+  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv H0. simpl in H0. rename f into fname_mapping.
+  destruct (generate_constr_pp_function cenv fname_mapping
+       (collect_constr_tags e)) eqn:Hppconst. inv H0.
+  destruct (collect_function_signatures nenv e) eqn:Hfsigs. inv H0. rename l into sigs.
+  destruct (generate_indirection_functions sigs fname_mapping) eqn:Hind. inv H0. rename l into indfns.
+  destruct (match e with
+       | Efun fds _ =>
+           (fix iter (fds0 : fundefs) : error (seq.seq wasm_function) :=
+              match fds0 with
+              | Fcons x _ xs e0 fds' =>
+                  match
+                    translate_function nenv cenv fname_mapping
+                      (create_local_variable_mapping nenv fname_mapping e) x xs e0
+                  with
+                  | Err t => fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
+                  | Ret a => fun m2 : wasm_function -> error (seq.seq wasm_function) => m2 a
+                  end
+                    (fun fn : wasm_function =>
+                     match iter fds' with
+                     | Err t =>
+                         fun _ : seq.seq wasm_function -> error (seq.seq wasm_function) => Err t
+                     | Ret a =>
+                         fun m2 : seq.seq wasm_function -> error (seq.seq wasm_function) => m2 a
+                     end (fun following : seq.seq wasm_function => Ret (fn :: following)%SEQ))
+              | Fnil => Ret []
+              end) fds
+       | _ => Ret []
+       end) eqn:Hfuns. inv H0. rename l into fns.
+       destruct ( translate_exp nenv cenv (create_local_variable_mapping nenv fname_mapping e) fname_mapping
+       (match e with
+          | Efun _ exp => exp
+          | _ => e end)) eqn:Hexpr. inv H0. rename l into wasm_main_instr.
+  destruct (lookup_function_var main_function_name fname_mapping
+         "main function") eqn:Hfmain. inv H0. inv H0.
+       remember (match e with
+          | Efun _ exp => exp
+          | _ => e end) as mainexpr.
+
+  assert (Hdeceq : {exists fds e', e = Efun fds e'} + {~exists fds e', e = Efun fds e'}). {
+   destruct e; try (right; move => [fds' [e' Hcontra]]; inv Hcontra; done). left. eauto. }
+
+  destruct Hdeceq. destruct e0 as [fds' [e' He]]. subst.
+  (* top exp is Efun _ _ *)
+  exfalso. (* TODO *)
+  remember (Efun fds' e') as e.
+  remember (create_local_variable_mapping nenv fenv e) as venv.
+  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env _ rep_env _ host_instance rho _ _ _ H wasm_main_instr.
+
+  edestruct HMAIN.
+  (* program, relict, should be removed *) admit.
+  (* INV_result_var rw *) admit.
+  (* INV_global_mem_ptr rw *) admit.
+  (* INV_constr_alloc_ptr rw *) admit.
+  (* lin mem exists *) admit.
+  (* locla ptr in lin mem *) admit.
+  (* global mem ptr in lin mem *) admit.
+  (* global constr alloc ptr in lin mem *) admit.
+  (* inv local vars exist *) admit.
+  eapply translate_exp_correct. eassumption. admit. admit. admit.
+
+  (* top exp is not Efun _ _ *)
+  exfalso. assert (mainexpr = e). { destruct e; auto. exfalso. eauto. } subst mainexpr.
+  assert (fns = []). { destruct e; inv Hfuns; auto. exfalso. eauto. } subst.
+  unfold collect_function_signatures in Hfsigs.
+  assert (sigs = []). { destruct e; inv Hfsigs; auto. exfalso. eauto. } subst. inv Hind. clear Hfsigs Hfuns.
+  rewrite H0 in Hexpr.
+
+  remember (create_local_variable_mapping nenv fenv e) as venv.
+  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env _ rep_env _ host_instance rho _ _ _ H wasm_main_instr.
+  edestruct HMAIN.
+  (* program, relict, should be removed *) admit.
+  (* INV_result_var rw *) admit.
+  (* INV_global_mem_ptr rw *) admit.
+  (* INV_constr_alloc_ptr rw *) admit.
+  (* lin mem exists *) admit.
+  (* locla ptr in lin mem *) admit.
+  (* global mem ptr in lin mem *) admit.
+  (* global constr alloc ptr in lin mem *) admit.
+  (* inv local vars exist *) admit.
+  eapply translate_exp_correct. eassumption. assumption. split; intros.
 Admitted.
-
-
-End THEOREM.
