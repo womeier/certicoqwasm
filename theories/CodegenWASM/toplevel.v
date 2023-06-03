@@ -10,7 +10,10 @@ Import MonadNotation.
 
 Definition LambdaANF_to_WASM_Wrapper (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error module * string :=
   let '(_, pr_env, cenv, ctag, itag, nenv, fenv, _, prog) := t in
-  (LambdaANF_to_WASM nenv cenv prog, "").
+  match LambdaANF_to_WASM nenv cenv prog with
+  | Ret res => let '(module, _, _) := res in (Ret module, "")
+  | Err err => (Err err, "")
+  end.
 
 Definition compile_LambdaANF_to_WASM (prims : list (kername * string * bool * nat * positive)) : CertiCoqTrans toplevel.LambdaANF_FullTerm module :=
   fun s =>

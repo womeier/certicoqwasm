@@ -499,7 +499,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
 (* ***** TRANSLATE FUNCTIONS ****** *)
 
 (* unique, vars are only assign once *)
-Fixpoint collect_local_variables (e : exp) {struct e} : list cps.var :=
+Fixpoint collect_local_variables (e : exp) : list cps.var :=
   match e with
   | Efun _ e' => collect_local_variables e'
   | Econstr x _ _ e' => x :: collect_local_variables e'
@@ -512,24 +512,12 @@ Fixpoint collect_local_variables (e : exp) {struct e} : list cps.var :=
   | Ehalt _ => []
   end.
 
-(* locals are expected to be unique *)
-Definition create_local_variable_mapping (nenv : name_env) (fenv : fname_env) (locals : list cps.var) (initial : var_env) : var_env :=
-  let fix aux (start_id : nat) (locals : list cps.var) (venv : var_env) :=
-    match locals with
-    | [] => initial
-    | v :: l' => let mapping := aux (1 + start_id) l' venv in
-                 let v_str := translate_var_to_string nenv v in
-                 M_string.add v_str start_id mapping
-    end in
-  aux 0 locals initial.
 
-Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
+Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env) (venv : var_env)
                               (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
-  let local_vars := collect_local_variables body in
-  let var_env := create_local_variable_mapping nenv fenv (args ++ local_vars) (M_string.empty _) in
-  body_res <- translate_exp nenv cenv var_env fenv body ;;
+  body_res <- translate_exp nenv cenv venv fenv body ;;
   let arg_types := map (fun _ => T_i32) args in
-  let locals := map (fun _ => T_i32) local_vars in
+  let locals := map (fun _ => T_i32) (collect_local_variables body) in
 
   let fn_name := translate_var_to_string nenv name in
   fn_var <- lookup_function_var fn_name fenv "translate function" ;;
@@ -594,9 +582,36 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
 
   Ret fname_mapping.
 
+(* locals are expected to be unique (also wrt params) *)
+Definition add_vars_to_local_variable_mapping (nenv : name_env) (fenv : fname_env) (locals : list cps.var) (initial : var_env) : var_env :=
+  let fix aux (start_id : nat) (locals : list cps.var) (venv : var_env) :=
+    match locals with
+    | [] => initial
+    | v :: l' => let mapping := aux (1 + start_id) l' venv in
+                 let v_str := translate_var_to_string nenv v in
+                 M_string.add v_str start_id mapping
+    end in
+  aux 0 locals initial.
 
-Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error module :=
+(* start counting at 0 for every function *)
+Fixpoint create_local_variable_mapping' (nenv : name_env) (fenv: fname_env) (fds : fundefs) (initial : var_env) :=
+  match fds with
+  | Fnil => initial
+  | Fcons _ _ params e fds' => let locals := params ++ collect_local_variables e in
+                               let venv := add_vars_to_local_variable_mapping nenv fenv locals initial in
+                               create_local_variable_mapping' nenv fenv fds' venv
+  end.
+
+Definition create_local_variable_mapping (nenv : name_env) (fenv: fname_env) (e : exp) :=
+  let fds := match e with Efun fds _ => fds | _ => Fnil end in
+  let expr := match e with Efun _ e' => e' | _ => e end in
+  let expr_vars := collect_local_variables expr in
+  let venv := add_vars_to_local_variable_mapping nenv fenv expr_vars (M_string.empty _) in
+  create_local_variable_mapping' nenv fenv fds venv.
+
+Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * var_env) :=
   fname_mapping <- create_fname_mapping nenv e ;;
+  let venv := create_local_variable_mapping nenv fname_mapping e in
 
   let constr_tags := collect_constr_tags e in
   constr_pp_function <- generate_constr_pp_function cenv fname_mapping constr_tags ;;
@@ -615,7 +630,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
           match fds with
           | Fnil => Ret []
           | Fcons x tg xs e fds' =>
-             fn <- translate_function nenv cenv fname_mapping x xs e ;;
+             fn <- translate_function nenv cenv fname_mapping venv x xs e ;;
              following <- iter fds' ;;
              Ret (fn :: following)
           end) fds
@@ -623,9 +638,8 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   end ;;
 
   let main_vars := collect_local_variables main_expr in
-  let main_venv := create_local_variable_mapping nenv fname_mapping main_vars (M_string.empty _) in
 
-  main_instr <- translate_exp nenv cenv main_venv fname_mapping main_expr ;;
+  main_instr <- translate_exp nenv cenv venv fname_mapping main_expr ;;
   main_function_var <- lookup_function_var main_function_name fname_mapping "main function";;
 
   let main_function := {| var := main_function_var
@@ -653,9 +667,9 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   let functions_final := map (fun f => {| modfunc_type := Mk_typeidx f.(var)
                                         ; modfunc_locals := f.(locals)
                                         ; modfunc_body := f.(body)
-                                        |}) functions
-  in
-  Ret {| mod_types := [ Tf [T_i32] []                 (* type write_char *)
+                                        |}) functions in
+  let module :=
+      {| mod_types := [ Tf [T_i32] []                 (* type write_char *)
                       ; Tf [T_i32] []                 (* type write_int  *)
                       ] ++ types
 
@@ -693,4 +707,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                          |} :: nil
 
        ; mod_exports := exports
-       |}.
+       |}
+       in
+       (* also return mappings to access them in proof *)
+       Ret (module, fname_mapping, venv).
