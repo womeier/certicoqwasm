@@ -1478,16 +1478,54 @@ Proof.
   inv H.
 Qed.
 
-(* TODO: probably needs to be weaker *)
-Definition global_var_writable var := forall (s : store_record) val inst,
-  (exists s', supdate_glob s inst var val = Some s') /\
-  (exists g, sglob_val (host_function:=host_function) s inst var = Some (VAL_int32 g)).
+Definition global_var_w var (s : store_record) (inst : instance) :=
+  forall val, (exists s', @supdate_glob host_function s inst var val = Some s').
 
-Definition INV_result_var_readwritable := global_var_writable result_var.
+Definition global_var_r var (s : store_record) (inst : instance) :=
+   exists g, sglob_val (host_function:=host_function) s inst var = Some (VAL_int32 g).
 
-Definition INV_global_mem_ptr_readwritable := global_var_writable global_mem_ptr.
+Definition global_var_rw var (s : store_record) (inst : instance) :=
+  global_var_w var s inst /\ global_var_r var s inst.
 
-Definition INV_constr_alloc_ptr_readwritable := global_var_writable constr_alloc_ptr.
+Definition INV_result_var_readwritable := global_var_rw result_var.
+
+Definition INV_global_mem_ptr_readwritable := global_var_rw global_mem_ptr.
+
+Definition INV_constr_alloc_ptr_readwritable := global_var_rw constr_alloc_ptr.
+
+Lemma reduce_preserves_global_var_rw : forall i sr inst hs f instr sr' f' instr',
+  global_var_rw i sr inst ->
+  reduce_trans (hs, sr, f, instr) (hs, sr', f', instr') ->
+  global_var_rw i sr' inst.
+Proof.
+  intros.
+  apply clos_rt_rt1n in H0.
+  remember (hs, sr, f, instr) as x.
+  remember (hs, sr', f', instr') as x'.
+  revert Heqx' Heqx. induction H0; intros.
+Admitted.
+
+Lemma update_global_preserves_global_var_r : forall i sr sr' inst num,
+  global_var_r i sr inst ->
+  supdate_glob (host_function:=host_function) sr inst constr_alloc_ptr
+             (VAL_int32 num) = Some sr' ->
+  global_var_r i sr' inst.
+Proof.
+  intros.
+  unfold supdate_glob, sglob_ind, supdate_glob_s in H0.
+  destruct (nth_error (inst_globs inst)) eqn:Heqn. 2: inv H0. cbn in H0. unfold supdate_glob_s in H0.
+Admitted.
+
+Lemma update_global_preserves_global_var_w : forall i sr sr' inst num,
+  global_var_w i sr inst ->
+  supdate_glob (host_function:=host_function) sr inst constr_alloc_ptr
+             (VAL_int32 num) = Some sr' ->
+  global_var_w i sr' inst.
+Proof.
+  intros.
+  unfold supdate_glob, sglob_ind, supdate_glob_s in H0.
+  destruct (nth_error (inst_globs inst)) eqn:Heqn. 2: inv H0. cbn in H0. unfold supdate_glob_s in H0.
+Admitted.
 
 (*
 Lemma glob_writable_implies_readable : forall (s : store_record) inst var,
@@ -1628,15 +1666,22 @@ Require Import Coq.Numbers.Natural.Peano.NPeano.
 Require Import Coq.ZArith.ZArith.
 Require Import Coq.Structures.OrderedTypeEx.
 
-Lemma r_elimr_trans: forall s f es s' f' es' les hs hs',
+(* Lemma empty_cant_reduce : forall hs s f hs' s' f' l,
+  ~ reduce_tuple (host_instance:=host_instance) (hs, s, f, [::]) (hs', s', f', l).
+Proof.
+ intros. intro. inv H. { inv H0. *)
+
+(* ISSUE: induction can run into nested *)
+Lemma app_trans: forall s f es s' f' es' les hs hs',
     reduce_trans (hs, s, f, es) (hs', s', f', es') ->
     reduce_trans (hs, s, f, (es ++ les)) (hs', s', f', (es' ++ les)).
 Proof.
   intros. apply clos_rt_rt1n in H.
   induction es.
-  - { inv H. apply rt_refl. destruct y. destruct p0. destruct p0.
+  - { inv H. apply rt_refl. destruct y. destruct p0. destruct p0. cbn. cbn in H0. destruct l.
       inv H0. admit. destruct (v_to_e_list vcs); inv H.
       destruct (v_to_e_list vcs); inv H. destruct (v_to_e_list vcs); inv H. cbn.
+      inv H2.
 
   remember (hs, s, f, es) as x. remember (hs', s', f', es') as y.
   generalize dependent Heqy. generalize dependent Heqx.
@@ -1833,9 +1878,9 @@ Theorem repr_bs_LambdaANF_Codegen_related:
       forall (instructions : list basic_instruction) (f : frame) (hs : host_state) (sr : store_record) (*(k : cont) (max_alloc : Z) (fu : function) *),
 
         (* invariants *)
-        INV_result_var_readwritable ->
-        INV_global_mem_ptr_readwritable ->
-        INV_constr_alloc_ptr_readwritable ->
+        INV_result_var_readwritable sr (f_inst f) ->
+        INV_global_mem_ptr_readwritable sr (f_inst f) ->
+        INV_constr_alloc_ptr_readwritable sr (f_inst f) ->
 
         INV_linear_memory_exists ->
         INV_local_ptr_in_linear_memory ->
@@ -1916,7 +1961,7 @@ Proof with eauto.
       *)
       assert (exists s' f', reduce_trans (state, sr, fr, [seq AI_basic i | i <- grow]) (state, s', f', []) (* /\ enough memory*)). admit.
       destruct H0 as [s' [f' Hred]].
-      have Hredgrow := r_elimr_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ _ Hred. cbn in Hredgrow.
+      have Hredgrow := app_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ _ Hred. cbn in Hredgrow.
       assert (Hframe: f_inst fr = f_inst f' /\ length (f_locs fr) = length (f_locs f')).  admit. destruct Hframe as [Hfinst Hlocs].
 
     cbn. separate_instr.
@@ -1950,28 +1995,40 @@ Proof with eauto.
         (state, sr_final, fr_final, [::]) /\ result_val_LambdaANF_Codegen v (f_inst fr_final) sr_final)).
      {
       (* intermediate sr after reading/writing to globals *)
-      edestruct INVgmp as [[?s WriteGmp] [?num ReadGmp]]. clear WriteGmp.
-      edestruct INVcap as [[?s WriteCap] [?num' ReadCap]].
-      edestruct INVgmp as [[?s WriteGmp2] [?num ReadGmp2]]. clear WriteGmp2.
-      edestruct INVgmp as [[?s WriteGmp3] [?num ReadGmp3]].
+      have INVgmp' := reduce_preserves_global_var_rw _ _ _ _ _ _ _ _ _ INVgmp Hred.
+      have INVcap' := reduce_preserves_global_var_rw _ _ _ _ _ _ _ _ _ INVcap Hred.
+      edestruct INVgmp' as [[?s WriteGmp] [?num ReadGmp]]. clear WriteGmp.
+      edestruct INVcap' as [[?s WriteCap] [?num' ReadCap]]. clear ReadCap.
+      edestruct INVgmp' as [[?s WriteGmp2] [?num ReadGmp2]]. clear WriteGmp2.
+      edestruct INVgmp' as [[?s WriteGmp3] [?num ReadGmp3]].
       (* mem for write tag *)
-      edestruct INVcap as [[?s WriteCap3] [?num' ReadCap3]]. clear WriteCap3.
+      edestruct INVcap' as [[?s WriteCap3] [?num' ReadCap3]].
 
       edestruct INVlinmem as [Hmem1 [m' [Hmem2 Hmem3]]].
       edestruct INVcapInMem. eassumption.
 
       eexists. eexists. split. cbn.
-      (* Lemma r_elimr_trans: forall s f es s' f' es' les hs hs',
-         reduce_trans (hs, s, f, es) (hs', s', f', es') ->
-         reduce_trans (hs, s, f, (es ++ les)) (hs', s', f', (es' ++ les)). *)
       eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])).
       apply Hredgrow. clear Hredgrow.
 
-      (* make space on linear memory *)
-      dostep. elimr_nary_instr 0. apply r_get_global. apply ReadGmp.
-      dostep. elimr_nary_instr 1. apply r_set_global. apply WriteCap.
-      dostep. elimr_nary_instr 0. apply r_get_global. apply ReadGmp2.
+      (* increase ptrs to make space on linear memory *)
+      (* get global, increase, set global *)
+      dostep. elimr_nary_instr 0. apply r_get_global. rewrite <- Hfinst. apply ReadGmp.
+      dostep. elimr_nary_instr 1. apply r_set_global. rewrite <- Hfinst. apply WriteCap.
+
+      edestruct update_global_preserves_global_var_r with (sr := s') (sr' := s0). eexists. apply ReadGmp. eapply WriteCap. rename H0 into ReadAfterWriteGmp2.
+      dostep. elimr_nary_instr 0. apply r_get_global. rewrite <- Hfinst. eassumption.
       dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
+
+      assert (global_var_w global_mem_ptr s0 (f_inst f')). { admit.
+      }
+
+      edestruct H0 as [sr' H2].
+      dostep. elimr_nary_instr 1. apply r_set_global. apply H2.
+
+      assert (global_var_rw global_mem_ptr sr' (f_inst f')). admit.
+
+      dostep. elimr_nary_instr 0. apply r_get_global. rewrite <- Hfinst. eassumption.
       dostep. elimr_nary_instr 1. apply r_set_global. apply WriteGmp3.
       (* write tag *)
       dostep. elimr_nary_instr 0. apply r_get_global. apply ReadCap3.
@@ -2396,7 +2453,7 @@ Proof with eauto.
     rewrite Henv in H. inv H.
 
     unfold INV_result_var_readwritable, global_var_writable in INVres.
-    specialize INVres with sr (VAL_int32 (wasm_value_to_i32 wal)) (f_inst fr).
+    specialize INVres with (VAL_int32 (wasm_value_to_i32 wal)).
     destruct INVres as [[s' Hs] [g Hg]].
 
     exists s'. eexists fr.
@@ -2621,6 +2678,93 @@ Definition empty_store_record : store_record := {|
     s_globals := nil;
   |}.
 
+Lemma inductive_eq_dec : forall e, {exists fds e', e = Efun fds e'} + {~exists fds e', e = Efun fds e'}.
+Proof.
+   destruct e; try (right; move => [fds' [e' Hcontra]]; inv Hcontra; done). left. eauto.
+Qed.
+
+Lemma module_instantiatable : forall e module fenv venv,
+LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, venv) ->
+  exists sr inst exports, instantiate host_function host_instance empty_store_record module []
+       (sr, inst, exports, None)
+       /\ INV_result_var_readwritable _ sr inst.
+Proof.
+  intros. eexists. eexists. intros. unfold LambdaANF_to_WASM in H.
+  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv H. simpl in H. rename f into fname_mapping.
+  destruct (generate_constr_pp_function cenv fname_mapping
+       (collect_constr_tags e)) eqn:Hppconst. inv H.
+  destruct (collect_function_signatures nenv e) eqn:Hfsigs. inv H. rename l into sigs.
+  destruct (generate_indirection_functions sigs fname_mapping) eqn:Hind. inv H. rename l into indfns.
+  destruct (match e with
+       | Efun fds _ =>
+           (fix iter (fds0 : fundefs) : error (seq.seq wasm_function) :=
+              match fds0 with
+              | Fcons x _ xs e0 fds' =>
+                  match
+                    translate_function nenv cenv fname_mapping
+                      (create_local_variable_mapping nenv fname_mapping e) x xs e0
+                  with
+                  | Err t => fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
+                  | Ret a => fun m2 : wasm_function -> error (seq.seq wasm_function) => m2 a
+                  end
+                    (fun fn : wasm_function =>
+                     match iter fds' with
+                     | Err t =>
+                         fun _ : seq.seq wasm_function -> error (seq.seq wasm_function) => Err t
+                     | Ret a =>
+                         fun m2 : seq.seq wasm_function -> error (seq.seq wasm_function) => m2 a
+                     end (fun following : seq.seq wasm_function => Ret (fn :: following)%SEQ))
+              | Fnil => Ret []
+              end) fds
+       | _ => Ret []
+       end) eqn:Hfuns. inv H. rename l into fns.
+       destruct ( translate_exp nenv cenv (create_local_variable_mapping nenv fname_mapping e) fname_mapping
+       (match e with
+          | Efun _ exp => exp
+          | _ => e end)) eqn:Hexpr. inv H. rename l into wasm_main_instr.
+  destruct (lookup_function_var main_function_name fname_mapping
+         "main function") eqn:Hfmain. inv H. inv H.
+   eexists. repeat esplit; intros.
+   (* function types *) { cbn. repeat rewrite map_app; cbn.
+      apply Forall2_app. admit. admit. }
+   (* module glob typing *) {
+      apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
+      apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
+      apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
+      apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
+      apply Forall2_nil. }
+   (* module elem typing *) { apply Forall_nil. }
+   (* module data typing *) { apply Forall_nil. }
+   (* module import typing *) {
+      apply Forall2_cons. cbn. unfold is_true.
+      assert (match ET_func (Tf [T_i32] []) with
+              | ET_func tf => function_type_eqb tf (Tf [T_i32] [])
+              | _ => false
+              end = true) by reflexivity. eassumption.
+      apply Forall2_cons. cbn.
+      assert (match ET_func (Tf [T_i32] []) with
+              | ET_func tf => function_type_eqb tf (Tf [T_i32] [])
+              | _ => false
+              end = true) by reflexivity. eassumption.
+      apply Forall2_nil. }
+   (* module export typing *) {
+      apply Forall2_app. (* exporting functions *) admit.
+      apply Forall2_cons. cbn. unfold is_true. admit.
+      apply Forall2_cons. cbn. unfold is_true. admit.
+      apply Forall2_cons. cbn. unfold is_true. admit.
+      apply Forall2_nil. }
+   (* external typing *) { admit. }
+   (* alloc_module is true *) { admit. }
+   (* instantiate globals *) { admit. }
+   (* instantiate elem *) { admit. }
+   (* instantiate data *) { admit. }
+   (* check_bounds elem *) { admit. }
+   (* check_bounds data *) { admit. }
+   (* *) { admit. }
+   (* INV_result_var_readwritable I *) {
+   (* INV_result_var_readwritable II *) admit.
+Admitted.
+
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 
@@ -2636,22 +2780,24 @@ Corollary LambdaANF_Codegen_related :
   LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, venv) ->
 
   (* constructors welformed *)
-  correct_cenv_of_exp cenv e->
+  correct_cenv_of_exp cenv e ->
+
+  (* expression must be closed *)
+  (~ exists x, occurs_free e x) ->
 
   (* instantiation relation wasmcert, TODO: this should be a theorem *) (* TODO: imports *)
   exists sr inst,
-  instantiate _ host_instance empty_store_record module [] ((sr, inst, exports), None) ->
+  instantiate _ host_instance empty_store_record module [] ((sr, inst, exports), None) /\
+  List.nth_error sr.(s_funcs) mainidx = Some function /\
 
-  List.nth_error sr.(s_funcs) mainidx = Some function ->
-  (* codegen relation with e = let fundefs in mainexpr *)
-
-    exists (sr' : store_record),
+  (* *)
+  exists (sr' : store_record),
        reduce_trans (hs, sr,  (Build_frame [] inst), [ AI_basic (BI_call mainidx) ])
                     (hs, sr', (Build_frame [] inst), [])    /\
 
        result_val_LambdaANF_Codegen fenv venv nenv _ v inst sr'.
 Proof.
-  intros. unfold LambdaANF_to_WASM in H0.
+  intros. eexists. eexists. intros. have HL2WASM := H0. unfold LambdaANF_to_WASM in H0.
   destruct (create_fname_mapping nenv e) eqn:Hmapping. inv H0. simpl in H0. rename f into fname_mapping.
   destruct (generate_constr_pp_function cenv fname_mapping
        (collect_constr_tags e)) eqn:Hppconst. inv H0.
@@ -2690,16 +2836,18 @@ Proof.
           | Efun _ exp => exp
           | _ => e end) as mainexpr.
 
-  assert (Hdeceq : {exists fds e', e = Efun fds e'} + {~exists fds e', e = Efun fds e'}). {
-   destruct e; try (right; move => [fds' [e' Hcontra]]; inv Hcontra; done). left. eauto. }
+  remember (create_local_variable_mapping nenv fenv e) as venv.
+  have Hinstantiate := module_instantiatable _ _ _ _ HL2WASM.
+  destruct Hinstantiate as [sr [inst [exports' [Hinst HINV2]]]].
 
-  destruct Hdeceq. destruct e0 as [fds' [e' He]]. subst.
+  have Heqdec := inductive_eq_dec e. destruct Heqdec.
+  destruct e0 as [fds' [e' He]]. subst.
   (* top exp is Efun _ _ *)
-  exfalso. (* TODO *)
+  exfalso. inv H. (* TODO *)
   remember (Efun fds' e') as e.
   remember (create_local_variable_mapping nenv fenv e) as venv.
-  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env _ rep_env _ host_instance rho _ _ _ H wasm_main_instr.
 
+  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env _ rep_env _ host_instance _ _ _ _ H7 wasm_main_instr.
   edestruct HMAIN.
   (* program, relict, should be removed *) admit.
   (* INV_result_var rw *) admit.
@@ -2710,7 +2858,7 @@ Proof.
   (* global mem ptr in lin mem *) admit.
   (* global constr alloc ptr in lin mem *) admit.
   (* inv local vars exist *) admit.
-  eapply translate_exp_correct. eassumption. admit. admit. admit.
+  eapply translate_exp_correct. eapply Forall_constructors_subterm in H1. eassumption. subst. constructor. apply dsubterm_fds2. assumption. split; intros. admit. admit. admit.
 
   (* top exp is not Efun _ _ *)
   exfalso. assert (mainexpr = e). { destruct e; auto. exfalso. eauto. } subst mainexpr.
@@ -2723,13 +2871,15 @@ Proof.
   have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env _ rep_env _ host_instance rho _ _ _ H wasm_main_instr.
   edestruct HMAIN.
   (* program, relict, should be removed *) admit.
-  (* INV_result_var rw *) admit.
+  (* INV_result_var rw *) unfold INV_result_var_readwritable. unfold global_var_writable. intros; split; intros.
   (* INV_global_mem_ptr rw *) admit.
   (* INV_constr_alloc_ptr rw *) admit.
   (* lin mem exists *) admit.
   (* locla ptr in lin mem *) admit.
   (* global mem ptr in lin mem *) admit.
   (* global constr alloc ptr in lin mem *) admit.
-  (* inv local vars exist *) admit.
+  (* inv local vars exist *) admit. admit. admit.
   eapply translate_exp_correct. eassumption. assumption. split; intros.
+  (* absurd: no functions -> rho ! x = None *)
+  admit.
 Admitted.
