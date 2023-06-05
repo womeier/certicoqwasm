@@ -1478,25 +1478,23 @@ Proof.
   inv H.
 Qed.
 
+Definition globals_all_mut_i32 s := forall g g0, nth_error (@s_globals host_function s) g = Some g0 -> exists i, g0 = {| g_mut := MUT_mut; g_val := VAL_int32 i |}.
+
 Definition global_var_w var (s : store_record) (inst : instance) :=
-  forall val, (exists s', @supdate_glob host_function s inst var val = Some s').
+  forall val, (exists s', @supdate_glob host_function s inst var (VAL_int32 val) = Some s').
 
 Definition global_var_r var (s : store_record) (inst : instance) :=
-   exists g, sglob_val (host_function:=host_function) s inst var = Some (VAL_int32 g).
+   exists v, sglob_val (host_function:=host_function) s inst var = Some (VAL_int32 v).
 
-Definition global_var_rw var (s : store_record) (inst : instance) :=
-  global_var_w var s inst /\ global_var_r var s inst.
+Definition INV_result_var_writable := global_var_w result_var.
+Definition INV_global_mem_ptr_writable := global_var_w global_mem_ptr.
+Definition INV_constr_alloc_ptr_writable := global_var_w constr_alloc_ptr.
+Definition INV_globals_all_mut_i32 := globals_all_mut_i32.
 
-Definition INV_result_var_readwritable := global_var_rw result_var.
-
-Definition INV_global_mem_ptr_readwritable := global_var_rw global_mem_ptr.
-
-Definition INV_constr_alloc_ptr_readwritable := global_var_rw constr_alloc_ptr.
-
-Lemma reduce_preserves_global_var_rw : forall i sr inst hs f instr sr' f' instr',
-  global_var_rw i sr inst ->
+Lemma reduce_preserves_global_var_w : forall i sr inst hs f instr sr' f' instr',
+  global_var_w i sr inst ->
   reduce_trans (hs, sr, f, instr) (hs, sr', f', instr') ->
-  global_var_rw i sr' inst.
+  global_var_w i sr' inst.
 Proof.
   intros.
   apply clos_rt_rt1n in H0.
@@ -1505,15 +1503,24 @@ Proof.
   revert Heqx' Heqx. induction H0; intros.
 Admitted.
 
-Lemma update_global_preserves_global_var_r : forall i sr sr' inst num,
-  global_var_r i sr inst ->
-  supdate_glob (host_function:=host_function) sr inst constr_alloc_ptr
-             (VAL_int32 num) = Some sr' ->
-  global_var_r i sr' inst.
+Lemma reduce_preserves_globals_all_mut_i32 : forall sr hs f instr sr' f' instr',
+  globals_all_mut_i32 sr  ->
+  reduce_trans (hs, sr, f, instr) (hs, sr', f', instr') ->
+  globals_all_mut_i32 sr' .
 Proof.
   intros.
-  unfold supdate_glob, sglob_ind, supdate_glob_s in H0.
-  destruct (nth_error (inst_globs inst)) eqn:Heqn. 2: inv H0. cbn in H0. unfold supdate_glob_s in H0.
+  apply clos_rt_rt1n in H0.
+  remember (hs, sr, f, instr) as x.
+  remember (hs, sr', f', instr') as x'.
+  revert Heqx' Heqx. induction H0; intros.
+Admitted.
+
+Lemma update_global_preserves_globals_all_mut_i32 : forall sr sr' inst num,
+  globals_all_mut_i32 sr ->
+  supdate_glob (host_function:=host_function) sr inst constr_alloc_ptr
+             (VAL_int32 num) = Some sr' ->
+  globals_all_mut_i32 sr'.
+Proof.
 Admitted.
 
 Lemma update_global_preserves_global_var_w : forall i sr sr' inst num,
@@ -1527,19 +1534,42 @@ Proof.
   destruct (nth_error (inst_globs inst)) eqn:Heqn. 2: inv H0. cbn in H0. unfold supdate_glob_s in H0.
 Admitted.
 
-(*
-Lemma glob_writable_implies_readable : forall (s : store_record) inst var,
-  global_var_writable var -> exists g, nth_error (inst_globs inst) var = Some g.
+(* writable implies readable *)
+Lemma global_var_w_implies_global_var_r : forall (s : store_record) inst var,
+  globals_all_mut_i32 s -> global_var_w var s inst -> global_var_r var s inst.
 Proof.
-  intros. unfold global_var_writable in H. edestruct H.
-  unfold sglob_val. unfold sglob. unfold supdate_glob in H.
-  unfold sglob_ind in *.
-  destruct ( (nth_error (inst_globs inst) var)) eqn:Hglob; eauto.
-  unfold supdate_glob in H0. unfold sglob_ind in H0. erewrite Hglob in H0.
-  cbn in H0. inv H0. Unshelve. eauto. constructor. exists 0%Z. unfold Wasm_int.Int32.modulus.
-  unfold two_power_nat. lia.
+  intros s inst i Hmut32 GVW.
+  assert (exists (v : i32), v = nat_to_i32 1) by eauto. destruct H. clear H.
+  unfold global_var_w in GVW. edestruct GVW. unfold supdate_glob, sglob_ind in H.
+  unfold global_var_r, sglob_val, sglob, sglob_ind.
+  destruct ((nth_error (inst_globs inst) i)) eqn:Hv. 2: inv H.
+  cbn in H. cbn. unfold supdate_glob_s in H.
+  destruct (nth_error (s_globals s) g) eqn:Hg. 2: inv H. cbn.
+  apply Hmut32 in Hg. destruct Hg. inv H0. eexists. reflexivity. Unshelve. assumption.
 Qed.
- *)
+
+Lemma same_globals_preserves_global_var_w : forall i s inst s',
+   global_var_w i s inst ->
+   (s_globals s = s_globals s') ->
+   global_var_w i s' inst.
+Proof.
+  intros. subst.
+  unfold global_var_w, supdate_glob, supdate_glob_s, sglob_ind in *. rewrite <- H0.
+  edestruct H. intro; cbn. eexists.
+  destruct (nth_error (inst_globs inst) i) eqn:Heq. 2: inv H1. cbn in *.
+  destruct ((nth_error (s_globals s) g)) eqn:Heq'. 2: inv H1. cbn. cbn in H1.
+Admitted.
+
+Lemma update_mem_preserves_global_var_w : forall i s inst s' m,
+   global_var_w i s inst ->
+   upd_s_mem (host_function:=host_function) s
+                (update_list_at (s_mems s) 0 m) = s' ->
+   global_var_w i s' inst.
+Proof.
+ intros. unfold upd_s_mem in H0. eapply same_globals_preserves_global_var_w. eassumption.
+ subst. reflexivity.
+Qed.
+
 
 Definition INV_local_vars_exist := forall x x' fr,
   repr_var venv nenv x x' -> exists val, nth_error (f_locs fr) x' = Some (VAL_int32 val).
@@ -1860,189 +1890,13 @@ Proof.
 Admitted.
 
 
-(* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
-Theorem repr_bs_LambdaANF_Codegen_related:
-
-  (*
-  forall (p : program) (rep_env : M.t ctor_rep) (cenv : ctor_env)
-         (finfo_env : M.t (positive * fun_tag)) (ienv : n_ind_env), *)
-  (*  program_inv p -> (* isPtr function is defined/correct /\ thread info is correct /\ gc invariant *)
-    find_symbol_domain p finfo_env -> (* finfo_env [LambdaANF] contains precisely the same things as global env [Clight] *)
-    finfo_env_correct fenv finfo_env -> (* everything in finfo_env is in the function environment *) *)
-    forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat), (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
-      bstep_e (M.empty _) cenv rho e v n ->  (* e n-steps to v *) (* for linking: environment won't be empty *)
-      (* correct_envs cenv ienv rep_env rho e -> (* inductive type/constructor environments are correct/pertain to e*) *)
-      (* protected_id_not_bound_id rho e ->
-      unique_bindings_env rho e -> *)
-      (* functions_not_bound p rho e -> (* function names in p/rho not bound in e *) *)
-      forall (instructions : list basic_instruction) (f : frame) (hs : host_state) (sr : store_record) (*(k : cont) (max_alloc : Z) (fu : function) *),
-
-        (* invariants *)
-        INV_result_var_readwritable sr (f_inst f) ->
-        INV_global_mem_ptr_readwritable sr (f_inst f) ->
-        INV_constr_alloc_ptr_readwritable sr (f_inst f) ->
-
-        INV_linear_memory_exists ->
-        INV_local_ptr_in_linear_memory ->
-        INV_global_mem_ptr_in_linear_memory ->
-        INV_global_constr_alloc_ptr_in_linear_memory ->
-        INV_local_vars_exist ->
-
-        repr_expr_LambdaANF_Codegen fenv venv nenv e instructions -> (* translate_body e returns stm *)
-        rel_mem_LambdaANF_Codegen fenv venv nenv _ e rho sr f ->
-        (* " relates a LambdaANF evaluation environment [rho] to a Clight memory [m/lenv] up to the free variables in e " *)
-        (* also says fundefs in e are correct in m *)
-        (* NOTE: this is only place pertaining to outside of the body, and can likely incorporate free variables here *)
-       (* correct_alloc e max_alloc ->  (* max_alloc correct *)
-        correct_tinfo p max_alloc lenv m -> (* thread_info correct *) *)
-        exists (sr' : store_record) (f' : frame),
-          reduce_trans (hs, sr, f, map AI_basic instructions) (hs, sr', f', []) /\
-          (* memory m/lenv becomes m'/lenv' after executing stm *)
-          result_val_LambdaANF_Codegen v f'.(f_inst) sr'. (* value v is related to memory m'/lenv' *)
-Proof with eauto.
-  intros rho v e n Hev.
-  induction Hev; intros instructions fr state sr INVres INVgmp INVcap INVlinmem INVptrInMem INVglobalptrInMem INVcapInMem INVlocals Hrepr_e Hrel_m.
-  - (* Econstr *)
-    inv Hrepr_e.
-    { remember (grow_memory_if_necessary ((Datatypes.length ys + 1) * 4)) as grow.
-      cbn. repeat rewrite map_cat. cbn.
-
-     (*  (* grow memory if necessary *)
-      subst grow. unfold grow_memory_if_necessary.
-      have Hm := INVlinmem sr fr.  destruct Hm as [Hm1 [m [Hm2 [size Hm3]]]].
-
-      eexists. eexists. split.
-      have Hw := INVgmp. edestruct Hw as [[sr' H1] [num H2]].
-      unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
-      (* load global_mem_ptr *)
-      dostep. separate_instr. elimr_nary_instr 0.
-      apply r_get_global. eassumption.
-      (* add required bytes *)
-      dostep. separate_instr. elimr_nary_instr 2. constructor.
-      apply rs_binop_success. reflexivity.
-      dostep. separate_instr. elimr_nary_instr 2. constructor.
-      apply rs_binop_success. cbn. unfold is_left.
-      rewrite zeq_false. reflexivity.
-      intro. zify. admit. (* addition correct *)
-      dostep. apply r_eliml; auto.
-      elimr_nary_instr 0. eapply r_current_memory...
-
-      dostep. separate_instr. elimr_nary_instr 2.
-      constructor. apply rs_relop.
-
-      dostep. separate_instr. elimr_nary_instr 1.
-      constructor.
-      destruct ((~~
-                  Wasm_int.Int32.lt
-                    (Wasm_int.Int32.repr
-                       (Wasm_int.Int32.signed
-                          (Wasm_int.Int32.iadd num (nat_to_i32 ((Datatypes.length ys + 1) * 4)))
-                        ÷ 65536)) (Wasm_int.Int32.repr (Z.of_nat (ssrnat.nat_of_bin size))))) eqn:Heq.
-
-      (* do case analysis -> has to increase memory? *)
-      apply rs_if_true. intro. admit.
-      dostep. separate_instr. elimr_nary_instr 0.
-      constructor. eapply rs_block with (vs := [])... cbn.
-      dostep. separate_instr.
-
-      eexists. eexists. split.
-      eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], [:: AI_basic (BI_get_global global_mem_ptr)] ++
-    [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
-    [:: AI_basic (BI_get_global global_mem_ptr)] ++
-    [:: AI_basic (BI_const (nat_to_value ((Datatypes.length ys + 1) * 4)))] ++
-    [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
-    [:: AI_basic (BI_set_global global_mem_ptr)] ++
-    sstoreInstr ++
-    [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
-    [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e'])).
-    cbn.
-     eapply rt_trans with (y := (?[hs'], ?[sr'], ?[fr'], ?[s])).
-     eapply rt_trans. apply Hred. admit.
-      *)
-      assert (exists s' f', reduce_trans (state, sr, fr, [seq AI_basic i | i <- grow]) (state, s', f', []) (* /\ enough memory*)). admit.
-      destruct H0 as [s' [f' Hred]].
-      have Hredgrow := app_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ _ Hred. cbn in Hredgrow.
-      assert (Hframe: f_inst fr = f_inst f' /\ length (f_locs fr) = length (f_locs f')).  admit. destruct Hframe as [Hfinst Hlocs].
-
-    cbn. separate_instr.
-    (* assert sr, fr after written tag to mem *)
-    assert (Hex: exists sr_tag, exists fr_tag, reduce_trans
-    (state, sr, fr,
-      [seq AI_basic i | i <- grow] ++
-      [:: AI_basic (BI_get_global global_mem_ptr)] ++
-      [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
-      [:: AI_basic (BI_get_global global_mem_ptr)] ++
-      [:: AI_basic (BI_const (nat_to_value ((Datatypes.length ys + 1) * 4)))] ++
-      [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
-      [:: AI_basic (BI_set_global global_mem_ptr)] ++
-      [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
-      [:: AI_basic (BI_const (nat_to_value (Pos.to_nat t)))] ++
-      [:: AI_basic (BI_store T_i32 None 2%N 0%N)] ++
-      [seq AI_basic i | i <- sargs] ++
-      [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
-      [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e'])
-
-    (state, sr_tag, fr_tag, [seq AI_basic i | i <- sargs] ++
-      [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
-      [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e']) /\
-
-      (* remaining reduction: set args + IH *)
-      (exists sr_final, exists fr_final, reduce_trans
-        (state, sr_tag, fr_tag,
-          [seq AI_basic i | i <- sargs] ++
-          [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
-          [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e'])
-        (state, sr_final, fr_final, [::]) /\ result_val_LambdaANF_Codegen v (f_inst fr_final) sr_final)).
-     {
-      (* intermediate sr after reading/writing to globals *)
-      have INVgmp' := reduce_preserves_global_var_rw _ _ _ _ _ _ _ _ _ INVgmp Hred.
-      have INVcap' := reduce_preserves_global_var_rw _ _ _ _ _ _ _ _ _ INVcap Hred.
-      edestruct INVgmp' as [[?s WriteGmp] [?num ReadGmp]]. clear WriteGmp.
-      edestruct INVcap' as [[?s WriteCap] [?num' ReadCap]]. clear ReadCap.
-      edestruct INVgmp' as [[?s WriteGmp2] [?num ReadGmp2]]. clear WriteGmp2.
-      edestruct INVgmp' as [[?s WriteGmp3] [?num ReadGmp3]].
-      (* mem for write tag *)
-      edestruct INVcap' as [[?s WriteCap3] [?num' ReadCap3]].
-
-      edestruct INVlinmem as [Hmem1 [m' [Hmem2 Hmem3]]].
-      edestruct INVcapInMem. eassumption.
-
-      eexists. eexists. split. cbn.
-      eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])).
-      apply Hredgrow. clear Hredgrow.
-
-      (* increase ptrs to make space on linear memory *)
-      (* get global, increase, set global *)
-      dostep. elimr_nary_instr 0. apply r_get_global. rewrite <- Hfinst. apply ReadGmp.
-      dostep. elimr_nary_instr 1. apply r_set_global. rewrite <- Hfinst. apply WriteCap.
-
-      edestruct update_global_preserves_global_var_r with (sr := s') (sr' := s0). eexists. apply ReadGmp. eapply WriteCap. rename H0 into ReadAfterWriteGmp2.
-      dostep. elimr_nary_instr 0. apply r_get_global. rewrite <- Hfinst. eassumption.
-      dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-
-      assert (global_var_w global_mem_ptr s0 (f_inst f')). { admit.
-      }
-
-      edestruct H0 as [sr' H2].
-      dostep. elimr_nary_instr 1. apply r_set_global. apply H2.
-
-      assert (global_var_rw global_mem_ptr sr' (f_inst f')). admit.
-
-      dostep. elimr_nary_instr 0. apply r_get_global. rewrite <- Hfinst. eassumption.
-      dostep. elimr_nary_instr 1. apply r_set_global. apply WriteGmp3.
-      (* write tag *)
-      dostep. elimr_nary_instr 0. apply r_get_global. apply ReadCap3.
-      dostep. elimr_nary_instr 2. eapply r_store_success; eauto.
-      cbn. separate_instr.
-
-      unfold store in H0.
-      destruct ((Wasm_int.N_of_uint i32m num'0 + 0 + N.of_nat (t_length T_i32) <=? mem_length m')%N) eqn:Heqn. 2: inv H0.
-
-      apply rt_refl.
-
-      rename x0 into m_tag.
-      unfold result_val_LambdaANF_Codegen.
-
+Lemma store_constr_args_reduce : forall fenv venv nenv ys sargs state s f,
+  Forall_statements_in_seq (is_nth_projection fenv venv nenv) ys sargs ->
+  exists s' f', reduce_trans
+  (state, s, f, [seq AI_basic i | i <- sargs])
+  (state, s', f', []) (* /\ TODO: now enough memory available *).
+Proof.
+(*
       (* set args + finish *)
       induction H9.
 
@@ -2050,7 +1904,6 @@ Proof with eauto.
       { rename num'0 into resptr. cbn.
         remember ({| f_locs := set_nth (VAL_int32 resptr) (f_locs f') x' (VAL_int32 resptr)
                 ; f_inst := f_inst f' |}) as fr'.
-
 
           (* IH *)
         assert (Hrel: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e (map_util.M.set x (Vconstr t vs) rho) (upd_s_mem (host_function:=host_function) s2 (update_list_at (s_mems s2) n m_tag)) fr'). {
@@ -2126,7 +1979,255 @@ Proof with eauto.
           AI_basic (BI_set_local x')
         & [seq AI_basic i | i <- e']]]). *)
 
-       admit. } admit. }
+       admit. } admit. } *)
+
+Admitted.
+
+Lemma memory_grow_reduce : forall  (ys : list cps.var)  grow state s f,
+  grow = grow_memory_if_necessary ((Datatypes.length ys + 1) * 4) ->
+  exists s' f', reduce_trans
+   (state, s, f, [seq AI_basic i | i <- grow])
+   (state, s', f', []) (* /\ enough memory*).
+Proof.
+     (*  (* grow memory if necessary *)
+      subst grow. unfold grow_memory_if_necessary.
+      have Hm := INVlinmem sr fr.  destruct Hm as [Hm1 [m [Hm2 [size Hm3]]]].
+
+      eexists. eexists. split.
+      have Hw := INVgmp. edestruct Hw as [[sr' H1] [num H2]].
+      unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
+      (* load global_mem_ptr *)
+      dostep. separate_instr. elimr_nary_instr 0.
+      apply r_get_global. eassumption.
+      (* add required bytes *)
+      dostep. separate_instr. elimr_nary_instr 2. constructor.
+      apply rs_binop_success. reflexivity.
+      dostep. separate_instr. elimr_nary_instr 2. constructor.
+      apply rs_binop_success. cbn. unfold is_left.
+      rewrite zeq_false. reflexivity.
+      intro. zify. admit. (* addition correct *)
+      dostep. apply r_eliml; auto.
+      elimr_nary_instr 0. eapply r_current_memory...
+
+      dostep. separate_instr. elimr_nary_instr 2.
+      constructor. apply rs_relop.
+
+      dostep. separate_instr. elimr_nary_instr 1.
+      constructor.
+      destruct ((~~
+                  Wasm_int.Int32.lt
+                    (Wasm_int.Int32.repr
+                       (Wasm_int.Int32.signed
+                          (Wasm_int.Int32.iadd num (nat_to_i32 ((Datatypes.length ys + 1) * 4)))
+                        ÷ 65536)) (Wasm_int.Int32.repr (Z.of_nat (ssrnat.nat_of_bin size))))) eqn:Heq.
+
+      (* do case analysis -> has to increase memory? *)
+      apply rs_if_true. intro. admit.
+      dostep. separate_instr. elimr_nary_instr 0.
+      constructor. eapply rs_block with (vs := [])... cbn.
+      dostep. separate_instr.
+
+      eexists. eexists. split.
+      eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], [:: AI_basic (BI_get_global global_mem_ptr)] ++
+    [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
+    [:: AI_basic (BI_get_global global_mem_ptr)] ++
+    [:: AI_basic (BI_const (nat_to_value ((Datatypes.length ys + 1) * 4)))] ++
+    [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
+    [:: AI_basic (BI_set_global global_mem_ptr)] ++
+    sstoreInstr ++
+    [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+    [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e'])).
+    cbn.
+     eapply rt_trans with (y := (?[hs'], ?[sr'], ?[fr'], ?[s])).
+     eapply rt_trans. apply Hred. admit.
+      *)
+Admitted.
+
+(* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
+Theorem repr_bs_LambdaANF_Codegen_related:
+
+  (*
+  forall (p : program) (rep_env : M.t ctor_rep) (cenv : ctor_env)
+         (finfo_env : M.t (positive * fun_tag)) (ienv : n_ind_env), *)
+  (*  program_inv p -> (* isPtr function is defined/correct /\ thread info is correct /\ gc invariant *)
+    find_symbol_domain p finfo_env -> (* finfo_env [LambdaANF] contains precisely the same things as global env [Clight] *)
+    finfo_env_correct fenv finfo_env -> (* everything in finfo_env is in the function environment *) *)
+    forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat), (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
+      bstep_e (M.empty _) cenv rho e v n ->  (* e n-steps to v *) (* for linking: environment won't be empty *)
+      (* correct_envs cenv ienv rep_env rho e -> (* inductive type/constructor environments are correct/pertain to e*) *)
+      (* protected_id_not_bound_id rho e ->
+      unique_bindings_env rho e -> *)
+      (* functions_not_bound p rho e -> (* function names in p/rho not bound in e *) *)
+      forall (instructions : list basic_instruction) (f : frame) (hs : host_state) (sr : store_record) (*(k : cont) (max_alloc : Z) (fu : function) *),
+
+        (* invariants *)
+        INV_result_var_writable sr (f_inst f) ->
+        INV_global_mem_ptr_writable sr (f_inst f) ->
+        INV_constr_alloc_ptr_writable sr (f_inst f) ->
+        INV_globals_all_mut_i32 sr ->
+
+        INV_linear_memory_exists ->
+        INV_local_ptr_in_linear_memory ->
+        INV_global_mem_ptr_in_linear_memory ->
+        INV_global_constr_alloc_ptr_in_linear_memory ->
+        INV_local_vars_exist ->
+
+        repr_expr_LambdaANF_Codegen fenv venv nenv e instructions -> (* translate_body e returns stm *)
+        rel_mem_LambdaANF_Codegen fenv venv nenv _ e rho sr f ->
+        (* " relates a LambdaANF evaluation environment [rho] to a Clight memory [m/lenv] up to the free variables in e " *)
+        (* also says fundefs in e are correct in m *)
+        (* NOTE: this is only place pertaining to outside of the body, and can likely incorporate free variables here *)
+       (* correct_alloc e max_alloc ->  (* max_alloc correct *)
+        correct_tinfo p max_alloc lenv m -> (* thread_info correct *) *)
+        exists (sr' : store_record) (f' : frame),
+          reduce_trans (hs, sr, f, map AI_basic instructions) (hs, sr', f', []) /\
+          (* memory m/lenv becomes m'/lenv' after executing stm *)
+          result_val_LambdaANF_Codegen v f'.(f_inst) sr'. (* value v is related to memory m'/lenv' *)
+Proof with eauto.
+  intros rho v e n Hev.
+  induction Hev; intros instructions fr state sr INVres INVgmp INVcap INVmuti32 INVlinmem INVptrInMem INVglobalptrInMem INVcapInMem INVlocals Hrepr_e Hrel_m.
+  - (* Econstr *)
+    inv Hrepr_e. rename H5 into Hx. rename H11 into Hexp.
+    { remember (grow_memory_if_necessary ((Datatypes.length ys + 1) * 4)) as grow.
+      cbn. repeat rewrite map_cat. cbn.
+      have Hgrowmem := memory_grow_reduce _ _ state sr fr Heqgrow.
+      destruct Hgrowmem as [s' [f' Hred]].
+      have Hredgrow := app_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ _ Hred. cbn in Hredgrow.
+      assert (Hframe: f_inst fr = f_inst f' /\ length (f_locs fr) = length (f_locs f')).  admit. destruct Hframe as [Hfinst Hlocs].
+
+    cbn. separate_instr.
+    (* assert sr, fr after written tag to mem *)
+    assert (Hex: exists sr_tag, exists fr_tag, reduce_trans
+    (state, sr, fr,
+      [seq AI_basic i | i <- grow] ++
+      [:: AI_basic (BI_get_global global_mem_ptr)] ++
+      [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
+      [:: AI_basic (BI_get_global global_mem_ptr)] ++
+      [:: AI_basic (BI_const (nat_to_value ((Datatypes.length ys + 1) * 4)))] ++
+      [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
+      [:: AI_basic (BI_set_global global_mem_ptr)] ++
+      [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+      [:: AI_basic (BI_const (nat_to_value (Pos.to_nat t)))] ++
+      [:: AI_basic (BI_store T_i32 None 2%N 0%N)] ++
+      [seq AI_basic i | i <- sargs] ++
+      [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+      [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e'])
+
+    (state, sr_tag, fr_tag, [seq AI_basic i | i <- sargs] ++
+      [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+      [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e']) /\
+
+      (* remaining reduction: set args + IH *)
+      (exists sr_final, exists fr_final, reduce_trans
+        (state, sr_tag, fr_tag,
+          [seq AI_basic i | i <- sargs] ++
+          [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+          [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e'])
+        (state, sr_final, fr_final, [::]) /\ result_val_LambdaANF_Codegen v (f_inst fr_final) sr_final)).
+     {
+      (* invariants after Hred *)
+      have INVmuti32' := reduce_preserves_globals_all_mut_i32 _ _ _ _ _ _ _ INVmuti32 Hred.
+      have INVgmp_w' := reduce_preserves_global_var_w _ _ _ _ _ _ _ _ _ INVgmp Hred.
+      have INVgmp_r' := global_var_w_implies_global_var_r _ _ _ INVmuti32' INVgmp_w'.
+      have INVcap_w' := reduce_preserves_global_var_w _ _ _ _ _ _ _ _ _ INVcap Hred.
+
+      destruct INVgmp_r'.
+      (* invariants after set_global cap *)
+      edestruct INVcap_w'. rename x1 into s''.
+      assert (INVgmp_w'': INV_global_mem_ptr_writable s'' (f_inst fr)). admit.
+      assert (INVcap_w'': INV_constr_alloc_ptr_writable s'' (f_inst fr)). admit.
+      assert (INVmuti32'' : INV_globals_all_mut_i32 s''). admit.
+      have INVgmp_r'' := global_var_w_implies_global_var_r _ _ _ INVmuti32'' INVgmp_w''.
+      destruct INVgmp_r''.
+
+      edestruct INVgmp_w''. rename x2 into s'''.
+
+      (* invariants after set_global gmp *)
+      assert (INVgmp_w''': INV_global_mem_ptr_writable s''' (f_inst fr)). admit.
+      assert (INVcap_w''': INV_constr_alloc_ptr_writable s''' (f_inst fr)). admit.
+      assert (INVmuti32''' : INV_globals_all_mut_i32 s'''). admit.
+      have INVcap_r''' := global_var_w_implies_global_var_r _ _ _ INVmuti32''' INVcap_w'''. cbn.
+
+      destruct INVcap_r'''.
+
+      (* invariants mem *)
+      edestruct INVlinmem as [Hmem1 [m' [Hmem2 Hmem3]]].
+      edestruct INVcapInMem. eassumption. rename x3 into m''.
+
+      eexists. eexists. split. cbn.
+      eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])).
+      apply Hredgrow. clear Hredgrow.
+
+      (* increase ptrs to make space on linear memory *)
+      (* get global, increase, set global *)
+      dostep. elimr_nary_instr 0. apply r_get_global. rewrite <- Hfinst. eassumption.
+      dostep. elimr_nary_instr 1. apply r_set_global. rewrite <- Hfinst. eassumption.
+      dostep. elimr_nary_instr 0. apply r_get_global. rewrite <- Hfinst. eassumption.
+      dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. cbn. reflexivity.
+      dostep. elimr_nary_instr 1. apply r_set_global. rewrite <- Hfinst. eassumption.
+
+      (* write tag *)
+      dostep. elimr_nary_instr 0. apply r_get_global. rewrite <- Hfinst. eassumption.
+      dostep. elimr_nary_instr 2. eapply r_store_success; eauto.
+      cbn. separate_instr. apply rt_refl.
+
+      (* store constructor args *)
+      have Hredargs := store_constr_args_reduce _ _ _ _ _ state (upd_s_mem (host_function:=host_function) s''' (update_list_at (s_mems s''') 0 m'')) f' H9.
+      destruct Hredargs as [s_args [f_args Hred_args]].
+
+     (* invariants after stepping through Hred_args *)
+     assert (INVmuti32_s_args : INV_globals_all_mut_i32 s_args). admit.
+     assert (INVgmp_w_s_args : INV_global_mem_ptr_writable s_args (f_inst f_args)). admit.
+     assert (INVcap_w_s_args : INV_constr_alloc_ptr_writable s_args (f_inst f_args)). admit.
+     have INVcap_r_s_args := global_var_w_implies_global_var_r _ _ _ INVmuti32_s_args INVcap_w_s_args.
+
+   (*  assert (Hfinsteq: f_inst f_args = f_inst fr). admit. *)
+
+     eexists. eexists. split.
+
+      (* reduce store constr args *)
+     eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[s])).
+     apply app_trans. apply Hred_args. cbn.
+
+    edestruct INVcap_r_s_args.
+    dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption. rename x3 into wal.
+
+    eapply rt_trans with (y := (?[hs], ?[sr], {|
+           f_locs :=
+             set_nth (VAL_int32 wal) (f_locs f_args) x' (VAL_int32 wal);
+           f_inst := f_inst f_args |}, ?[s])); first  apply rt_step.
+
+    separate_instr. elimr_nary_instr 1. eapply r_set_local; auto.
+
+    have Hloc := INVlocals x x' fr Hx. destruct Hloc.
+    apply /ssrnat.leP.
+    assert (x' < length (f_locs fr)). { apply nth_error_Some. congruence. }
+    assert (length (f_locs f_args) = length (f_locs fr)). admit. rewrite H8. lia.
+    cbn. reflexivity. cbn.
+
+    remember ({|
+    f_locs := set_nth (VAL_int32 wal) (f_locs f_args) x' (VAL_int32 wal);
+    f_inst := f_inst f_args
+  |}) as f_before_IH.
+
+    assert (f_inst f_args = f_inst f_before_IH) as HFinst. admit. rewrite HFinst in INVgmp_w_s_args. rewrite HFinst in INVcap_w_s_args.
+    assert (INV_result_var_writable s_args (f_inst f_before_IH)) as INVres_w. admit.
+
+    (* TODO make depend on store_record *)
+    (* assert (INV_linear_memory_exists
+    INV_local_ptr_in_linear_memory
+    INV_global_mem_ptr_in_linear_memory
+    INV_global_constr_alloc_ptr_in_linear_memory
+    INV_local_vars_exist *)
+
+    (* step through IH *)
+    have IH := IHHev _ f_before_IH state s_args INVres_w INVgmp_w_s_args INVcap_w_s_args INVmuti32_s_args INVlinmem INVptrInMem INVglobalptrInMem INVcapInMem INVlocals Hexp.
+
+    edestruct IH as [sr_final [f_final [Hred_final Hrel_final]]]. admit. (* Hrel_m *)
+
+    admit. admit. }
+    destruct Hex as [?s [?f [?H [?s [?f ?H]]]]].
+    admit. }
   - (* Eproj ctor_tag t, let x := proj_n y in e *)
     inv Hrepr_e.
     rename s into e'. rename v' into y'.
@@ -2176,7 +2277,7 @@ Proof with eauto.
   }
 
 
-   have IH := IHHev e' (Build_frame (set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32)) fr.(f_inst)) state sr INVres INVgmp INVcap INVlinmem INVptrInMem INVglobalptrInMem INVcapInMem INVlocals H7 Hrm. destruct IH as [sr' [f' [Hred Hval]]].
+   have IH := IHHev e' (Build_frame (set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32)) fr.(f_inst)) state sr INVres INVgmp INVcap INVmuti32 INVlinmem INVptrInMem INVglobalptrInMem INVcapInMem INVlocals H7 Hrm. destruct IH as [sr' [f' [Hred Hval]]].
 
     eexists. eexists. cbn. split.
     { (* take steps *)
@@ -2254,7 +2355,7 @@ Proof with eauto.
       assert (Hrel: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e rho sr fr).
       { unfold rel_mem_LambdaANF_Codegen. split; intros... }
 
-      have IH := IHHev _ _ state _ INVres INVgmp INVcap INVlinmem INVptrInMem INVglobalptrInMem INVcapInMem INVlocals H9  Hrel. destruct IH as [sr' [f' [Hstep Hval]]].
+      have IH := IHHev _ _ state _ INVres INVgmp INVcap INVmuti32 INVlinmem INVptrInMem INVglobalptrInMem INVcapInMem INVlocals H9  Hrel. destruct IH as [sr' [f' [Hstep Hval]]].
 
     eexists. eexists.
     split. {
@@ -2452,9 +2553,9 @@ Proof with eauto.
     cbn. destruct Hrel_m. destruct (H2 x) as [v6 [wal [Henv [Hloc Hrepr]]]]. constructor.
     rewrite Henv in H. inv H.
 
-    unfold INV_result_var_readwritable, global_var_writable in INVres.
-    specialize INVres with (VAL_int32 (wasm_value_to_i32 wal)).
-    destruct INVres as [[s' Hs] [g Hg]].
+    unfold INV_result_var_writable, global_var_w in INVres.
+    specialize INVres with (wasm_value_to_i32 wal).
+    destruct INVres as [s' Hs].
 
     exists s'. eexists fr.
 
@@ -2687,7 +2788,7 @@ Lemma module_instantiatable : forall e module fenv venv,
 LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, venv) ->
   exists sr inst exports, instantiate host_function host_instance empty_store_record module []
        (sr, inst, exports, None)
-       /\ INV_result_var_readwritable _ sr inst.
+       /\ INV_result_var_writable _ sr inst.
 Proof.
   intros. eexists. eexists. intros. unfold LambdaANF_to_WASM in H.
   destruct (create_fname_mapping nenv e) eqn:Hmapping. inv H. simpl in H. rename f into fname_mapping.
@@ -2853,6 +2954,7 @@ Proof.
   (* INV_result_var rw *) admit.
   (* INV_global_mem_ptr rw *) admit.
   (* INV_constr_alloc_ptr rw *) admit.
+  (* INV_globals_all_mut_i32 *) admit.
   (* lin mem exists *) admit.
   (* locla ptr in lin mem *) admit.
   (* global mem ptr in lin mem *) admit.
@@ -2871,15 +2973,16 @@ Proof.
   have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env _ rep_env _ host_instance rho _ _ _ H wasm_main_instr.
   edestruct HMAIN.
   (* program, relict, should be removed *) admit.
-  (* INV_result_var rw *) unfold INV_result_var_readwritable. unfold global_var_writable. intros; split; intros.
+  (* INV_result_var rw *) unfold INV_result_var_writable, global_var_w. intros.
   (* INV_global_mem_ptr rw *) admit.
   (* INV_constr_alloc_ptr rw *) admit.
+  (* INV_globals_all_mut_i32 *) admit.
   (* lin mem exists *) admit.
   (* locla ptr in lin mem *) admit.
   (* global mem ptr in lin mem *) admit.
   (* global constr alloc ptr in lin mem *) admit.
-  (* inv local vars exist *) admit. admit. admit.
+  (* inv local vars exist *) admit. admit.
   eapply translate_exp_correct. eassumption. assumption. split; intros.
   (* absurd: no functions -> rho ! x = None *)
-  admit.
+  admit. admit. admit.
 Admitted.
