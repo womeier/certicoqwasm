@@ -201,10 +201,12 @@ Record func_signature :=
   ; s_arg_types : list value_type
   }.
 
-(* the indirection function has type: [T_i32, T_i32] -> []
-NOT YET, TODO
+(*
+currently: one indirection function per number of arguments,
 
+TODO: probably easier for the proof: only single indirection function with type: [T_i32, T_i32] -> []
 the first parameter is the function id, the second the pointer to the arguments
+performance?
 *)
 
 Definition indirection_function_name (arg_types : list value_type) : string :=
@@ -301,19 +303,7 @@ Definition translate_local_var_read (nenv : name_env) (venv : var_env) (fenv : f
 
 (* ***** TRANSLATE FUNCTION CALLS ****** *)
 
-(* calling convention: (NOT YET IMPLEMENTED)
-
-every function has type: [T_i32] -> []
-
-where the parameter is a pointer to the linear memory:
-
-      ptr: --> +---+---+---+
-               |p_1|...|p_n|
-               +---+---+---+
-
-      n: #args
-      only tailcalls, no result
-*)
+(* every function has type: T_i32^{#args} -> [] *)
 
 Fixpoint pass_function_args (nenv : name_env) (venv: var_env) (fenv : fname_env) (args : list cps.var) : error (list basic_instruction) :=
   match args with
