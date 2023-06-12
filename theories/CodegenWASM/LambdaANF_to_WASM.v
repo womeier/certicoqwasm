@@ -3,7 +3,7 @@ Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/i
 From Wasm Require Import datatypes.
 
 From CertiCoq Require Import LambdaANF.toplevel.
-Require Import Common.Common Common.compM Common.Pipeline_utils.
+From CertiCoq Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import ExtLib.Structures.Monad.
 From MetaCoq.Template Require Import bytestring MCString.
 From Coq Require Import ZArith List.

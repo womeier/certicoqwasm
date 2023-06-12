@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - cps
   workflow_dispatch:
     inputs:
 
@@ -18,6 +17,16 @@ jobs:
         image:
           - 'ghcr.io/womeier/certicoqwasm:4.0'
       fail-fast: true
+
+    # for gh pages
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - uses: actions/checkout@v2
@@ -51,7 +60,12 @@ jobs:
               cd ~/repo
               opam pin -n -y  submodules/metacoq # was pinned to the submodule at the same path in the dockerfile before -> is not rebuilt
             endGroup
-
+            startGroup 'Install Alectryon'
+              sudo apt-get update -y -q
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+                python3-pip
+              python3 -m pip install --user --upgrade alectryon
+            endGroup
             startGroup "Make submodules"
               cd ~/repo/submodules/
               git submodule update --init
@@ -85,6 +99,21 @@ jobs:
               ulimit -s unlimited
               make -C ~/repo/benchmarks all
             endGroup
+            startGroup "Build docs"
+              make -C ~/repo install
+              make -C ~/repo docs
+            endGroup
             startGroup "Test bootstrapped plugins"
               make -C ~/repo/bootstrap test
             endGroup
+
+      # deploy to gh pages
+      - name: Setup Pages
+        uses: actions/configure-pages@v3
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: '~/repo/docs'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2

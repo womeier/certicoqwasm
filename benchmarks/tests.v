@@ -73,9 +73,7 @@ Definition color := Color.main.
 (* Definition lazy_factorial := coq_msg_info (string_of_Z (coind.lfact 150)). *)
 
 (* Sha *)
-
-(* From the Coq website *)
-Definition test := "Coq is a formal proof management system. It provides a formal language to write mathematical definitions, executable algorithms and theorems together with an environment for semi-interactive development of machine-checked proofs. Typical applications include the certification of properties of programming languages (e.g. the CompCert compiler certification project, the Verified Software Toolchain for verification of C programs, or the Iris framework for concurrent separation logic), the formalization of mathematics (e.g. the full formalization of the Feit-Thompson theorem, or homotopy type theory), and teaching."%string.
+Definition test := "Hallo Welt."%string.
 
 Definition sha := sha256.SHA_256 (sha256.str_to_bytes test).
 
