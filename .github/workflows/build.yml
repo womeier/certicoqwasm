@@ -102,6 +102,9 @@ jobs:
             startGroup "Build docs"
               make -C ~/repo install
               make -C ~/repo docs
+              sudo mkdir /github/workspace/docs
+              sudo chmod 777 /github/workspace/docs
+              sudo mv ~/repo/docs/* /github/workspace/docs
             endGroup
             startGroup "Test bootstrapped plugins"
               make -C ~/repo/bootstrap test
@@ -113,7 +116,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v1
         with:
-          path: '~/repo/docs'
+          path: '/github/workspace/docs'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v2
