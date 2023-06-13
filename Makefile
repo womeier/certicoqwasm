@@ -50,7 +50,7 @@ docs/compilation.html: theories/CodegenWASM/LambdaANF_to_WASM.v
 	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWASM/LambdaANF_to_WASM.v -o ../docs/compilation.html
 
 docs/proof.html: theories/CodegenWASM/LambdaANF_to_WASM_correct.v
-	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWASM/LambdaANF_to_WASM.v -o ../docs/proof.html
+	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWASM/LambdaANF_to_WASM_correct.v -o ../docs/proof.html
 
 install: plugin cplugin bootstrap
 	$(MAKE) -C libraries install
