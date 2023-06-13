@@ -319,6 +319,7 @@ repeat (match goal with
 (**** Representation relation for LambdaANF values, expressions and functions ****)
 Section RELATION.
 
+  (* TODO: cleanup, identifiers not required in Wasm development *)
   (* same as LambdaANF_to_Clight *)
   Variable (argsIdent : ident).
   Variable (allocIdent : ident).
@@ -343,6 +344,7 @@ Section RELATION.
   Variable venv : CodegenWASM.LambdaANF_to_WASM.var_env.
   Variable nenv : LambdaANF.cps_show.name_env.
   Variable finfo_env: LambdaANF_to_Clight.fun_info_env. (* map from a function name to its type info *)
+  (* TODO: cleanup, program not required *)
   Variable p:program.
 
   (* This should be a definition rather than a parameter, computed once and for all from cenv *)
