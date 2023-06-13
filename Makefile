@@ -44,13 +44,13 @@ ALECTRYON_FLAGS := --backend webpage $(COQPROJECT_Q_ARGS) \
 	--cache-directory $(ALECTRYON_CACHE) --cache-compression
 
 docs: docs/compilation.html docs/proof.html
-	echo "<html> <body> <h1> Alectryon files for CertiCoq Wasm backend </h1> - <a href='compilation.html'> Compilation </a> <br> <br> - <a href='proof.html'> Correctness proof </a> (This file is big) </body </html>" > docs/index.html
+	echo "<html> <body> <h1> Alectryon files for CertiCoq Wasm backend (June 13th 2023)</h1> - <a href='compilation.html'> Compilation </a> <br> <br> - <a href='proof.html'> Correctness proof </a> (This file is big) </body </html>" > docs/index.html
 
 docs/compilation.html: theories/CodegenWASM/LambdaANF_to_WASM.v
 	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWASM/LambdaANF_to_WASM.v -o ../docs/compilation.html
 
 docs/proof.html: theories/CodegenWASM/LambdaANF_to_WASM_correct.v
-	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWASM/LambdaANF_to_WASM.v -o ../docs/proof.html
+	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWASM/LambdaANF_to_WASM_correct.v -o ../docs/proof.html
 
 install: plugin cplugin bootstrap
 	$(MAKE) -C libraries install

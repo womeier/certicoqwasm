@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html class="alectryon-standalone"><head><title>LambdaANF_to_WASM.v</title><meta charset="utf-8"><meta content="Alectryon" name="generator"><meta name="viewport" content="width=device-width, initial-scale=1"><link href="alectryon.css" rel="stylesheet"><link href="pygments.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/IBM-type/0.5.4/css/ibm-type.min.css" integrity="sha512-sky5cf9Ts6FY1kstGOBHSybfKqdHR41M0Ldb0BjNiv3ifltoQIsg0zIaQ+wwdwgQ0w9vKFW7Js50lxH9vqNSSw==" crossorigin="anonymous" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/firacode/5.2.0/fira_code.min.css" integrity="sha512-MbysAYimH1hH2xYzkkMHB6MqxBqfP0megxsCLknbYqHVwXTCg9IqHbk+ZP/vnhO8UEW6PaXAkKe2vQ+SWACxxA==" crossorigin="anonymous" /><script src="alectryon.js"></script></head><body><article class="alectryon-root alectryon-centered"><div class="alectryon-banner">Built with <a href="https://github.com/cpitclaudel/alectryon/">Alectryon</a>, running Coq+SerAPI v8.14.0+0.14.0. Bubbles (<span class="alectryon-bubble"></span>) indicate interactive fragments: hover for details, tap to reveal contents. Use <kbd>Ctrl+↑</kbd> <kbd>Ctrl+↓</kbd> to navigate, <kbd>Ctrl+🖱️</kbd> to focus. On Mac, use <kbd>⌘</kbd> instead of <kbd>Ctrl</kbd>.</div><pre class="alectryon-io highlight"><!-- Generator: Alectryon --><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Unset</span> <span class="kn">Universe</span> <span class="nf">Checking</span>. <span class="c">(* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)</span></span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">From</span> Wasm <span class="kn">Require Import</span> datatypes.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">From</span> CertiCoq <span class="kn">Require Import</span> LambdaANF.toplevel.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">From</span> CertiCoq <span class="kn">Require Import</span> Common.Common Common.compM Common.Pipeline_utils.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Require Import</span> ExtLib.Structures.Monad.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">From</span> MetaCoq.Template <span class="kn">Require Import</span> bytestring MCString.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">From</span> Coq <span class="kn">Require Import</span> ZArith List.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Require Import</span> MSets.MSetAVL.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">From</span> Coq <span class="kn">Require Import</span> FMapAVL.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Require Import</span> POrderedType.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Require Import</span> LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm_map_util.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Import</span> MonadNotation.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+<span class="c">(* Main file for compiler backend targeting WASM. *)</span>
+
+<span class="c">(* Currently: all variables/parameters are of type i32, no types available anymore in lambdaANF, only arity TODO check *)</span>
+
+
+<span class="c">(* ***** MAPPINGS ****** *)</span>
+
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Module</span> <span class="nf">S_pos</span> := MSetAVL.Make Positive_as_OT.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Module</span> <span class="nf">S_string</span> := MSetAVL.Make StringOT.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Module</span> <span class="nf">M_string</span> := FMapAVL.Make MyStringOT.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+<span class="c">(* TODO: map var/fn ids to new ids instead of string intermediate *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">var_env</span> := M_string.t nat.    <span class="c">(* maps variable names to their id (id=index in list of vars) *)</span></span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">fname_env</span> := M_string.t nat.  <span class="c">(* maps function export names to their id (id=index in list of functions) *)</span></span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+<span class="c">(* ***** UTILS and BASIC TRANSLATIONS ****** *)</span>
+
+<span class="c">(* global vars *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">global_mem_ptr</span> : immediate := <span class="mi">0</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">constr_alloc_ptr</span> : immediate := <span class="mi">1</span>. <span class="c">(* ptr to beginning of constr alloc in linear mem *)</span></span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">result_var</span> : immediate := <span class="mi">2</span>. <span class="c">(* since CPS: only one final result *)</span></span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">result_out_of_mem</span> : immediate := <span class="mi">3</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* target type for generating functions, contains more fields than the one from Wasm *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Record</span> <span class="nf">wasm_function</span> :=
+  { var : immediate
+  ; export_name : string
+  ; type : function_type
+  ; locals : list value_type
+  ; body : list basic_instruction
+  }.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* generates list of n arguments *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Fixpoint</span> <span class="nf">arg_list</span> (<span class="nv">n</span> : nat) : list (immediate * value_type) :=
+  <span class="kr">match</span> n <span class="kr">with</span>
+  | <span class="mi">0</span> =&gt; []
+  | S n&#39; =&gt; arg_list n&#39; ++ [(n&#39;, T_i32)]
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">nat_to_i32</span> (<span class="nv">n</span> : nat) :=
+  Wasm_int.Int32.repr (BinInt.Z.of_nat n).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">nat_to_value</span> (<span class="nv">n</span> : nat) :=
+  VAL_int32 (nat_to_i32 n).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">Z_to_value</span> (<span class="nv">z</span> : Z) :=
+  VAL_int32 (Wasm_int.Int32.repr z).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">translate_var_to_string</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">v</span> : cps.var) : string :=
+  <span class="s2">&quot;$&quot;</span> ++ show_tree (show_var nenv v).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">lookup_local_var</span> (<span class="nv">name</span> : string) (<span class="nv">venv</span> : var_env) (<span class="nv">err</span> : string) : error immediate :=
+  <span class="kr">match</span> M_string.find name venv <span class="kr">with</span>
+  | Some n =&gt; Ret n
+  | None =&gt; Err (<span class="s2">&quot;expected to find id for variable &quot;</span> ++ name ++ <span class="s2">&quot; in var mapping: &quot;</span> ++ err)
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">translate_var</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">venv</span> : var_env) (<span class="nv">v</span> : cps.var) (<span class="nv">err_location</span> : string): error immediate :=
+  <span class="kr">let</span> <span class="nv">name</span> := translate_var_to_string nenv v <span class="kr">in</span>
+  lookup_local_var name venv err_location.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">lookup_function_var</span> (<span class="nv">name</span> : string) (<span class="nv">fenv</span> : fname_env) (<span class="nv">err</span> : string): error immediate :=
+  <span class="kr">match</span> M_string.find name fenv <span class="kr">with</span>
+  | Some n =&gt; Ret n
+  | None =&gt; Err err
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">translate_function_var</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">v</span> : cps.var) : error immediate :=
+  <span class="kr">let</span> <span class="nv">x</span> := translate_var_to_string nenv v <span class="kr">in</span>
+  lookup_function_var x fenv (<span class="s2">&quot;expected to find id for variable &quot;</span> ++ x ++ <span class="s2">&quot; in function mapping&quot;</span>).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+<span class="c">(* ***** IMPORTED FUNCTIONS ****** *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">write_char_function_name</span> := <span class="s2">&quot;$write_char&quot;</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">write_char_function_var</span> : immediate := <span class="mi">0</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">write_int_function_name</span> := <span class="s2">&quot;$write_int&quot;</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">write_int_function_var</span> : immediate := <span class="mi">1</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+<span class="c">(* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)</span>
+
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Fixpoint</span> <span class="nf">collect_constr_tags&#39;</span> (<span class="nv">e</span> : exp) {<span class="nv">struct</span> <span class="nv">e</span>} : S_pos.t :=
+  <span class="kr">match</span> e <span class="kr">with</span>
+  | Efun fds e&#39; =&gt; S_pos.union (collect_constr_tags&#39; e&#39;)
+          ((<span class="kr">fix</span> iter (fds : fundefs) : S_pos.t :=
+            <span class="kr">match</span> fds <span class="kr">with</span>
+            | Fnil =&gt; S_pos.empty
+            | Fcons _ _ _ e&#39;&#39; fds&#39; =&gt;
+                S_pos.union (collect_constr_tags&#39; e&#39;&#39;) (iter fds&#39;)
+            <span class="kr">end</span>) fds)
+  | Econstr _ tg _ e&#39; =&gt; S_pos.add tg (collect_constr_tags&#39; e&#39;)
+  | Ecase _ arms =&gt; fold_left (<span class="kr">fun</span> <span class="nv">_s</span> <span class="nv">a</span> =&gt; S_pos.union _s (S_pos.add (fst a) (collect_constr_tags&#39; (snd a)))) arms S_pos.empty
+  | Eproj _ _ _ _ e&#39; =&gt; collect_constr_tags&#39; e&#39;
+  | Eletapp _ _ _ _ e&#39; =&gt; collect_constr_tags&#39; e&#39;
+  | Eprim _ _ _ e&#39; =&gt; collect_constr_tags&#39; e&#39;
+  | Eprim_val _ _ e&#39; =&gt; collect_constr_tags&#39; e&#39;
+  | Eapp _ _ _ =&gt; S_pos.empty
+  | Ehalt _ =&gt; S_pos.empty
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">collect_constr_tags</span> (<span class="nv">e</span> : exp) : list ctor_tag :=
+  S_pos.elements (collect_constr_tags&#39; e).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">constr_pp_function_name</span> : string :=
+  <span class="s2">&quot;$pretty_print_constructor&quot;</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">instr_write_string</span> (<span class="nv">s</span> : string) : list basic_instruction :=
+  <span class="kr">let fix</span> <span class="nv">to_ascii_list</span> <span class="nv">s&#39;</span> :=
+    <span class="kr">match</span> s&#39; <span class="kr">with</span>
+    | String.EmptyString =&gt; []
+    | String.String b s&#39;&#39; =&gt; Byte.to_nat b :: to_ascii_list s&#39;&#39;
+    <span class="kr">end</span> <span class="kr">in</span>
+  flat_map (<span class="kr">fun</span> <span class="nv">c</span> =&gt; [BI_const (nat_to_value c); BI_call write_char_function_var]) (to_ascii_list s).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* prints constructors as S-expressions *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">generate_constr_pp_function</span> (<span class="nv">cenv</span> : ctor_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">tags</span> : list ctor_tag) : error wasm_function :=
+  <span class="kr">let</span> <span class="nv">constr_ptr</span> := <span class="mi">0</span> <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">tmp</span> := <span class="mi">1</span> <span class="kr">in</span>
+  self_fn_var &lt;- lookup_function_var constr_pp_function_name fenv <span class="s2">&quot;generate constr pp fn&quot;</span> ;;
+
+  <span class="kr">let fix</span> <span class="nv">gen_rec_calls</span> (<span class="nv">calls</span> : nat) (<span class="nv">arity</span> : nat) : list basic_instruction :=
+    <span class="kr">match</span> calls <span class="kr">with</span>
+    | <span class="mi">0</span> =&gt; <span class="kr">if</span> arity =? <span class="mi">0</span> <span class="kr">then</span> [ BI_return ] <span class="kr">else</span> (instr_write_string <span class="s2">&quot;)&quot;</span>) ++ [ BI_return ]
+    | S calls&#39; =&gt; [ BI_get_local tmp
+                  ; BI_const (nat_to_value <span class="mi">4</span>)
+                  ; BI_binop T_i32 (Binop_i BOI_add)
+                  ; BI_set_local tmp
+                  ; BI_get_local tmp
+                  ; BI_load T_i32 None (N_of_nat <span class="mi">2</span>) (N_of_nat <span class="mi">0</span>) <span class="c">(* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)</span>
+                  ; BI_call self_fn_var
+                  ] ++ (gen_rec_calls calls&#39; arity)
+    <span class="kr">end</span> <span class="kr">in</span>
+
+  <span class="kr">let</span> <span class="nv">gen_print_constr_block</span> (<span class="nv">c</span> : ctor_tag) : error (list basic_instruction) :=
+    <span class="kr">let</span> <span class="nv">ctor_id</span> := Pos.to_nat c <span class="kr">in</span>
+    <span class="kr">let</span> <span class="nv">ctor_name</span> := show_tree (show_con cenv c) <span class="kr">in</span>
+
+    ctor_arity &lt;- (<span class="kr">match</span> M.get c cenv <span class="kr">with</span>
+                  | Some {| ctor_arity := n |} =&gt; Ret (N.to_nat n)
+                  | _ =&gt; Err <span class="s2">&quot;found constructor without ctor_arity set&quot;</span>
+                  <span class="kr">end</span>) ;;
+
+    Ret [ BI_const (nat_to_value ctor_id)
+        ; BI_get_local constr_ptr
+        ; BI_load T_i32 None (N_of_nat <span class="mi">2</span>) (N_of_nat <span class="mi">0</span>) <span class="c">(* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)</span>
+        ; BI_relop T_i32 (Relop_i ROI_eq)
+        ; BI_if (Tf nil nil)
+                ((instr_write_string <span class="s2">&quot; &quot;</span>) ++ (<span class="kr">if</span> ctor_arity =? <span class="mi">0</span> <span class="kr">then</span> [ BI_nop ] <span class="kr">else</span> (instr_write_string <span class="s2">&quot;(&quot;</span>)) ++ instr_write_string ctor_name ++
+                 [ BI_get_local constr_ptr
+                 ; BI_set_local tmp
+                 ] ++ gen_rec_calls ctor_arity ctor_arity)
+
+                [ BI_nop ]
+        ]
+  <span class="kr">in</span>
+  blocks &lt;- sequence (map gen_print_constr_block <span class="nb">tags</span>) ;;
+
+  <span class="kr">let</span> <span class="nv">body</span> := (concat blocks) ++
+              (instr_write_string <span class="s2">&quot; &lt;can&#39;t print constr: &quot;</span>) ++ <span class="c">(* e.g. could be fn-pointer or env-pointer *)</span>
+              [ BI_get_local constr_ptr
+              ; BI_call write_int_function_var
+              ] ++ instr_write_string <span class="s2">&quot;&gt;&quot;</span> <span class="kr">in</span>
+
+  <span class="kr">let</span> <span class="nv">_</span> := <span class="s2">&quot;)&quot;</span>  <span class="c">(* hack to fix syntax highlighting bug *)</span>
+
+  <span class="kr">in</span>
+  Ret {| var := self_fn_var
+       ; export_name := constr_pp_function_name
+       ; type := Tf [T_i32] []
+       ; locals := [T_i32]
+       ; body := body
+       |}.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+<span class="c">(* ***** GENERATE INDIRECTION FUNCTIONS FOR INDIRECT FUNCTION CALLS ****** *)</span>
+
+
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Record</span> <span class="nf">func_signature</span> :=
+  { s_name : string
+  ; s_tag : fun_tag           <span class="c">(* TODO: look up: for type? *)</span>
+  ; s_arg_types : list value_type
+  }.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(*</span>
+<span class="c">currently: one indirection function per number of arguments,</span>
+
+<span class="c">TODO: probably easier for the proof: only single indirection function with type: [T_i32, T_i32] -&gt; []</span>
+<span class="c">the first parameter is the function id, the second the pointer to the arguments</span>
+<span class="c">performance?</span>
+<span class="c">*)</span>
+
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">indirection_function_name</span> (<span class="nv">arg_types</span> : list value_type) : string :=
+  <span class="kr">let</span> <span class="nv">value_type2string</span> <span class="nv">vt</span> :=
+   <span class="kr">match</span> vt <span class="kr">with</span>
+    | T_i32 =&gt; <span class="s2">&quot;i32&quot;</span>
+    | T_i64 =&gt; <span class="s2">&quot;i64&quot;</span>
+    | T_f32 =&gt; <span class="s2">&quot;f32&quot;</span>
+    | T_f64 =&gt; <span class="s2">&quot;f64&quot;</span>
+    <span class="kr">end</span> <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">arg_types&#39;</span> := fold_left (<span class="kr">fun</span> <span class="nv">_s</span> <span class="nv">a</span> =&gt; _s ++ <span class="s2">&quot;_&quot;</span> ++ value_type2string a)%bs arg_types <span class="s2">&quot;&quot;</span>
+  <span class="kr">in</span>
+  <span class="s2">&quot;$indirect&quot;</span> ++ arg_types&#39;.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">is_function_name</span> (<span class="nv">fenv</span> : fname_env) (<span class="nv">v</span> : string) : bool :=
+  <span class="kr">match</span> M_string.find v fenv <span class="kr">with</span>
+  | Some _ =&gt; true
+  | None =&gt; false
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* it is expected that all fns should have the same type *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">generate_indirection_function</span> (<span class="nv">fns</span> : list func_signature) (<span class="nv">fenv</span> : fname_env) : error wasm_function :=
+  sig_head &lt;- <span class="kr">match</span> hd_error fns <span class="kr">with</span> Some x =&gt; Ret x | None =&gt; Err <span class="s2">&quot;gen ind function: got empty list&quot;</span> <span class="kr">end</span> ;;
+
+  <span class="kr">let</span> <span class="nv">arg_types</span> := sig_head.(s_arg_types) <span class="kr">in</span>
+
+  <span class="kr">let</span> <span class="nv">args</span> := arg_list (length arg_types) <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">id_var</span> := length arg_types <span class="kr">in</span>
+
+  <span class="kr">let</span> <span class="nv">check_id</span> <span class="nv">sig</span> :=
+    f_var &lt;- lookup_function_var sig.(s_name) fenv <span class="s2">&quot;indirection call check_id&quot;</span> ;;
+    Ret [ BI_get_local id_var
+        ; BI_const (nat_to_value f_var)
+        ; BI_relop T_i32 (Relop_i ROI_eq)
+        ; BI_if (Tf nil nil)
+                ((map (<span class="kr">fun</span> <span class="nv">arg</span> =&gt; BI_get_local (fst arg)) args) ++
+                 [ BI_call f_var
+                 ; BI_return
+                 ])
+                [ BI_nop ]
+        ]
+  <span class="kr">in</span>
+
+  checks &lt;- sequence (map check_id fns) ;;
+
+  <span class="kr">let</span> <span class="nv">body</span> := concat checks ++ [ BI_unreachable ] <span class="kr">in</span>
+
+  <span class="kr">let</span> <span class="nv">fn_name</span> := indirection_function_name arg_types <span class="kr">in</span>
+  fn_var &lt;- lookup_function_var fn_name fenv <span class="s2">&quot;gen indirection function&quot;</span>;;
+
+  Ret {| var := fn_var
+       ; export_name := fn_name
+       ; type := Tf (map snd args ++ [T_i32]) []
+       ; locals := []
+       ; body := body
+       |}.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">unique_indirection_function_names</span> (<span class="nv">sigs</span> : list func_signature) : list string :=
+  <span class="kr">let fix</span> <span class="nv">aux</span> (<span class="nv">selected</span> : S_string.t) (<span class="nv">candidates</span> : list func_signature) : S_string.t :=
+          <span class="kr">match</span> candidates <span class="kr">with</span>
+          | [] =&gt; selected
+          | s :: cand&#39; =&gt; aux (S_string.add (indirection_function_name s.(s_arg_types)) selected) cand&#39;
+          <span class="kr">end</span>
+    <span class="kr">in</span> (S_string.elements (aux S_string.empty sigs)).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* TODO: rename *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Fixpoint</span> <span class="nf">select_sigs_by_type</span> (<span class="nv">sigs</span> : list func_signature) (<span class="nv">indirection_name</span> : string) : list func_signature :=
+  <span class="kr">match</span> sigs <span class="kr">with</span>
+  | [] =&gt; []
+  | s :: sigs&#39; =&gt;
+      <span class="kr">let</span> <span class="nv">ind_name</span> := indirection_function_name s.(s_arg_types) <span class="kr">in</span>
+                <span class="kr">if</span> String.eqb ind_name indirection_name <span class="c">(* TODO: slow, compare types directly, tg *)</span>
+                  <span class="kr">then</span> s :: (select_sigs_by_type sigs&#39; indirection_name)
+                  <span class="kr">else</span> select_sigs_by_type sigs&#39; indirection_name
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">generate_indirection_functions</span> (<span class="nv">sigs</span> : list func_signature) (<span class="nv">fenv</span> : fname_env) : error (list wasm_function) :=
+  <span class="kr">let</span> <span class="nv">indirection_fn_names</span> := unique_indirection_function_names sigs <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">sigs_one_type</span> := map (select_sigs_by_type sigs) indirection_fn_names <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">ind_fns</span> := map (<span class="kr">fun</span> <span class="nv">fns</span> =&gt; generate_indirection_function fns fenv) sigs_one_type <span class="kr">in</span> <span class="c">(* list (error function) *)</span>
+  sequence ind_fns.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* TODO check usage, this should probably be used at more places than is currently the case *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">translate_local_var_read</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">venv</span> : var_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">v</span> : cps.var) : error basic_instruction :=
+  <span class="kr">let</span> <span class="nv">var_name</span> := translate_var_to_string nenv v <span class="kr">in</span>
+  <span class="kr">if</span> is_function_name fenv var_name
+    <span class="kr">then</span> var &lt;- lookup_function_var var_name fenv <span class="s2">&quot;translate local var read: obtaining function id&quot;</span> ;;
+         Ret (BI_const (nat_to_value var)) <span class="c">(* passing id of function &lt;var_name&gt; *)</span>
+
+    <span class="kr">else</span> var &lt;- lookup_local_var var_name venv <span class="s2">&quot;translate_local_var_read: normal var&quot;</span>;;
+         Ret (BI_get_local var).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+<span class="c">(* ***** TRANSLATE FUNCTION CALLS ****** *)</span>
+
+<span class="c">(* every function has type: T_i32^{#args} -&gt; [] *)</span>
+
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Fixpoint</span> <span class="nf">pass_function_args</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">venv</span>: var_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">args</span> : list cps.var) : error (list basic_instruction) :=
+  <span class="kr">match</span> args <span class="kr">with</span>
+  | [] =&gt; Ret []
+  | a0 :: args&#39; =&gt;
+      a0&#39; &lt;- translate_local_var_read nenv venv fenv a0;;
+      args&#39;&#39; &lt;- pass_function_args nenv venv fenv args&#39;;;
+      Ret (a0&#39; :: args&#39;&#39;)
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">translate_call</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">venv</span> : var_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">f</span> : cps.var) (<span class="nv">args</span> : list cps.var) : error (list basic_instruction) :=
+  instr_pass_params &lt;- pass_function_args nenv venv fenv args;;
+  <span class="kr">let</span> <span class="nv">arg_types</span> := map (<span class="kr">fun</span> <span class="nv">_</span> =&gt; T_i32) args <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">f_var_string</span> := translate_var_to_string nenv f
+  <span class="kr">in</span>
+  <span class="kr">if</span> is_function_name fenv f_var_string
+    <span class="kr">then</span> f_var &lt;- lookup_function_var f_var_string fenv <span class="s2">&quot;direct function call&quot;</span>;;
+         Ret (instr_pass_params ++ [ BI_call f_var ])
+
+    <span class="kr">else</span> f_var &lt;- lookup_local_var f_var_string venv (<span class="s2">&quot;ind call from var: &quot;</span> ++ f_var_string);;
+         ind_fn_var &lt;- lookup_function_var (indirection_function_name arg_types) fenv (<span class="s2">&quot;didn&#39;t find ind. function for: &quot;</span> ++ f_var_string) ;;
+                                                                                      <span class="c">(* this error may occur when the returned expression</span>
+<span class="c">                                                                                         receives a function closure as parameter -&gt; unknown at compile time</span>
+<span class="c">                                                                                         and thus not included in the indirection function (if the arity didn&#39;t</span>
+<span class="c">                                                                                         occur in some other place, if arity occured, this may lead to</span>
+<span class="c">                                                                                         runtime failure ?) TODO investigate *)</span>
+         Ret ( instr_pass_params ++
+               [ BI_get_local f_var <span class="c">(* function tag is last parameter *)</span>
+               ; BI_call ind_fn_var
+               ]).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+<span class="c">(* Example placement of constructors in the linear memory:</span>
+<span class="c">     data Bintree := Leaf | Node Bintree Value Bintree</span>
+
+<span class="c">     Leaf: --&gt; +---+</span>
+<span class="c">               |T_l|</span>
+<span class="c">               +---+</span>
+
+<span class="c">     Node: --&gt; +---+---+---+---+</span>
+<span class="c">               |T_n| L | V | R |</span>
+<span class="c">               +---+---+---+---+</span>
+<span class="c">    T_l, T_n unique constructor tags</span>
+<span class="c">    L, V, R pointers to linear memory</span>
+<span class="c">*)</span>
+
+<span class="c">(* a page is 2^16 bytes *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">grow_memory_if_necessary</span> (<span class="nv">required_bytes</span> : nat) : list basic_instruction :=
+  <span class="c">(* required number of total pages *)</span>
+  [ BI_get_global global_mem_ptr
+  ; BI_const (nat_to_value required_bytes)
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_const (Z_to_value (Z.pow <span class="mi">2</span> <span class="mi">16</span>))
+  ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
+
+  <span class="c">(* current number of pages *)</span>
+  ; BI_current_memory
+  ; BI_relop T_i32 (Relop_i (ROI_ge SX_S))
+  <span class="c">(* allocate one page if necessary *)</span>
+  ; BI_if (Tf nil nil) [ BI_const (nat_to_value <span class="mi">1</span>)
+                       ; BI_grow_memory <span class="c">(* returns -1 on alloc failure *)</span>
+                       ; BI_const (Z_to_value (-<span class="mi">1</span>))
+                       ; BI_relop T_i32 (Relop_i ROI_eq)
+                       ; BI_if (Tf nil nil) [ BI_const (nat_to_value <span class="mi">1</span>); BI_set_global result_out_of_mem ]
+                                            [ BI_nop ]
+                       ]
+                       [ BI_nop ]
+  ].</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* store argument pointers in memory *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Fixpoint</span> <span class="nf">set_constructor_args</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">venv</span> : var_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">args</span> : list cps.var) (<span class="nv">current</span> : nat) : error (list basic_instruction) :=
+  <span class="kr">match</span> args <span class="kr">with</span>
+  | [] =&gt; Ret []
+  | y :: ys =&gt; read_y &lt;- translate_local_var_read nenv venv fenv y;;
+               remaining &lt;- set_constructor_args nenv venv fenv ys (<span class="mi">1</span> + current);;
+
+               Ret ([ BI_get_global constr_alloc_ptr
+                    ; BI_const (nat_to_value (<span class="mi">4</span> * (<span class="mi">1</span> + current))) <span class="c">(* plus 1 : skip tag *)</span>
+                    ; BI_binop T_i32 (Binop_i BOI_add)
+                    ; read_y
+                    ; BI_store T_i32 None (N_of_nat <span class="mi">2</span>) (N_of_nat <span class="mi">0</span>) <span class="c">(* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)</span>
+                    ] ++ remaining)
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">store_constructor</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">cenv</span> : ctor_env) (<span class="nv">venv</span> : var_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">c</span> : ctor_tag) (<span class="nv">ys</span> : list cps.var) : error (list basic_instruction) :=
+  <span class="kr">let</span> <span class="nv">ctor_id</span> := Pos.to_nat c <span class="kr">in</span>
+  set_constr_args &lt;- set_constructor_args nenv venv fenv ys <span class="mi">0</span>;;
+  Ret ([ BI_get_global global_mem_ptr
+       ; BI_set_global constr_alloc_ptr
+
+       ; BI_get_global global_mem_ptr
+       ; BI_const (nat_to_value ((length ys + <span class="mi">1</span>) * <span class="mi">4</span>))
+       ; BI_binop T_i32 (Binop_i BOI_add)
+       ; BI_set_global global_mem_ptr
+
+       <span class="c">(* set tag *)</span>
+       ; BI_get_global constr_alloc_ptr
+       ; BI_const (nat_to_value ctor_id)
+       ; BI_store T_i32 None (N_of_nat <span class="mi">2</span>) (N_of_nat <span class="mi">0</span>) <span class="c">(* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)</span>
+       ] ++ set_constr_args).</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Fixpoint</span> <span class="nf">create_case_nested_if_chain</span> (<span class="nv">v</span> : immediate) (<span class="nv">es</span> : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
+  <span class="kr">match</span> es <span class="kr">with</span>
+  | [] =&gt; [ BI_unreachable ]
+  | (t, instr) :: tl =&gt;
+            [ BI_get_local v
+            ; BI_load T_i32 None (N_of_nat <span class="mi">2</span>) (N_of_nat <span class="mi">0</span>) <span class="c">(* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)</span>
+            ; BI_const (nat_to_value (Pos.to_nat t)) <span class="c">(* ctor id*)</span>
+            ; BI_relop T_i32 (Relop_i ROI_eq)
+            ; BI_if (Tf nil nil) instr (create_case_nested_if_chain v tl)
+            ]
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)</span>
+
+<span class="c">(* the result of every expression is written two the global var result_var,</span>
+<span class="c">e.g. for let x := Eproj ... in (halt x)</span>
+<span class="c">halt x expects the previous result in this var.</span>
+<span class="c">*)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Fixpoint</span> <span class="nf">translate_exp</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">cenv</span> : ctor_env) (<span class="nv">venv</span>: var_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">e</span> : exp) : error (list basic_instruction) :=
+   <span class="kr">match</span> e <span class="kr">with</span>
+   | Efun fundefs e&#39; =&gt; Err <span class="s2">&quot;unexpected nested function definition&quot;</span>
+   | Econstr x tg ys e&#39; =&gt;
+      following_instr &lt;- translate_exp nenv cenv venv fenv e&#39; ;;
+      x_var &lt;- translate_var nenv venv x <span class="s2">&quot;translate_exp constr&quot;</span>;;
+      store_constr &lt;- store_constructor nenv cenv venv fenv tg ys;;
+
+      Ret (grow_memory_if_necessary ((length ys + <span class="mi">1</span>) * <span class="mi">4</span>) ++
+          [ BI_block (Tf [] [])
+              ([ BI_get_global result_out_of_mem; BI_br_if <span class="mi">0</span>] ++ store_constr ++
+               [ BI_get_global constr_alloc_ptr
+               ; BI_set_local x_var
+               ] ++ following_instr)
+          ])
+
+   | Ecase x arms =&gt;
+      <span class="kr">let fix</span> <span class="nv">translate_case_branch_expressions</span> (<span class="nv">arms</span> : list (ctor_tag * exp)) : error (list (ctor_tag * list basic_instruction)) :=
+      <span class="kr">match</span> arms <span class="kr">with</span>
+      | [] =&gt; Ret []
+      | (t, e)::tl =&gt; e&#39; &lt;- translate_exp nenv cenv venv fenv e;;
+                      arms&#39; &lt;- translate_case_branch_expressions tl;;
+                      Ret ((t, e&#39;) :: arms&#39;)
+      <span class="kr">end</span> <span class="kr">in</span>
+      transl_branch_exprs &lt;- translate_case_branch_expressions arms;;
+
+      x_var &lt;- translate_var nenv venv x <span class="s2">&quot;translate_exp case&quot;</span>;;
+      Ret (create_case_nested_if_chain x_var transl_branch_exprs)
+
+   | Eproj x tg n y e&#39; =&gt;
+      following_instr &lt;- translate_exp nenv cenv venv fenv e&#39; ;;
+       y_var &lt;- translate_var nenv venv y <span class="s2">&quot;translate_exp proj y&quot;</span>;;
+       x_var &lt;- translate_var nenv venv x <span class="s2">&quot;translate_exp proj x&quot;</span>;;
+
+      Ret ([ BI_get_local y_var
+           ; BI_const (nat_to_value (((N.to_nat n) + <span class="mi">1</span>) * <span class="mi">4</span>)) <span class="c">(* skip ctor_id and previous constr arguments *)</span>
+           ; BI_binop T_i32 (Binop_i BOI_add)
+           ; BI_load T_i32 None (N_of_nat <span class="mi">2</span>) (N_of_nat <span class="mi">0</span>) <span class="c">(* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)</span>
+           ; BI_set_local x_var
+           ] ++ following_instr)
+
+   | Eletapp x f ft ys e&#39; =&gt; Err <span class="s2">&quot;got unexpected non-tailcall, did you forget the -cps flag?&quot;</span> <span class="c">(*</span>
+<span class="c">     following_instr &lt;- (translate_exp nenv cenv venv fenv e&#39; : error (list basic_instruction)) ;;</span>
+<span class="c">     x_var &lt;- translate_var nenv venv x &quot;translate_exp app&quot;;;</span>
+<span class="c">     instr_call &lt;- translate_call nenv venv fenv f ys ;;</span>
+<span class="c">     Ret (instr_call ++</span>
+<span class="c">          [ BI_set_local x_var</span>
+<span class="c">          ] ++ following_instr) *)</span>
+
+   | Eapp f ft ys =&gt; <span class="c">(* wasm doesn&#39;t treat tail call in a special way at the time *)</span>
+     instr_call &lt;- translate_call nenv venv fenv f ys ;;
+
+     Ret instr_call <span class="c">(* tail calls are not supported yet in wasm. normal function return.  *)</span>
+
+   | Eprim_val x p e&#39; =&gt; Err <span class="s2">&quot;translating prim_val to WASM not supported yet&quot;</span>
+   | Eprim x p ys e&#39; =&gt; Err <span class="s2">&quot;translating prim to WASM not supported yet&quot;</span>
+   | Ehalt x =&gt;
+     x_var &lt;- translate_var nenv venv x <span class="s2">&quot;translate_exp halt&quot;</span>;;
+     Ret [ BI_get_local x_var; BI_set_global result_var ]
+   <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+<span class="c">(* ***** TRANSLATE FUNCTIONS ****** *)</span>
+
+<span class="c">(* unique, vars are only assign once *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Fixpoint</span> <span class="nf">collect_local_variables</span> (<span class="nv">e</span> : exp) : list cps.var :=
+  <span class="kr">match</span> e <span class="kr">with</span>
+  | Efun _ e&#39; =&gt; collect_local_variables e&#39;
+  | Econstr x _ _ e&#39; =&gt; x :: collect_local_variables e&#39;
+  | Ecase _ arms =&gt; flat_map (<span class="kr">fun</span> <span class="nv">a</span> =&gt; collect_local_variables (snd a)) arms
+  | Eproj x _ _ _ e&#39; =&gt; x :: collect_local_variables e&#39;
+  | Eletapp x _ _ _ e&#39; =&gt; x :: collect_local_variables e&#39;
+  | Eprim x _ _ e&#39; =&gt; x :: collect_local_variables e&#39;
+  | Eprim_val x _ e&#39; =&gt; x :: collect_local_variables e&#39;
+  | Eapp _ _ _ =&gt; []
+  | Ehalt _ =&gt; []
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">translate_function</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">cenv</span> : ctor_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">venv</span> : var_env)
+                              (<span class="nv">name</span> : cps.var) (<span class="nv">args</span> : list cps.var) (<span class="nv">body</span> : exp) : error wasm_function :=
+  body_res &lt;- translate_exp nenv cenv venv fenv body ;;
+  <span class="kr">let</span> <span class="nv">arg_types</span> := map (<span class="kr">fun</span> <span class="nv">_</span> =&gt; T_i32) args <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">locals</span> := map (<span class="kr">fun</span> <span class="nv">_</span> =&gt; T_i32) (collect_local_variables body) <span class="kr">in</span>
+
+  <span class="kr">let</span> <span class="nv">fn_name</span> := translate_var_to_string nenv name <span class="kr">in</span>
+  fn_var &lt;- lookup_function_var fn_name fenv <span class="s2">&quot;translate function&quot;</span> ;;
+
+  Ret
+  {| var := fn_var
+   ; export_name := fn_name
+   ; type := Tf arg_types []
+   ; locals := locals
+   ; body := body_res
+   |}.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">main_function_name</span> := <span class="s2">&quot;$main_function&quot;</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">collect_function_signatures</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">e</span> : exp) : error (list func_signature) :=
+  <span class="kr">match</span> e <span class="kr">with</span>
+  | Efun fds exp =&gt; <span class="c">(* fundefs only allowed here (uppermost level) *)</span>
+    (<span class="kr">fix</span> iter (fds : fundefs) : error (list func_signature) :=
+        <span class="kr">match</span> fds <span class="kr">with</span>
+        | Fnil =&gt; Ret []
+        | Fcons x tg xs e fds&#39; =&gt;
+            <span class="kr">let</span> <span class="nv">var_name</span> := translate_var_to_string nenv x <span class="kr">in</span>
+            following &lt;- iter fds&#39; ;;
+            Ret ({| s_name := var_name
+                  ; s_tag := tg
+                  ; s_arg_types := map (<span class="kr">fun</span> <span class="nv">_</span> =&gt; T_i32) xs
+                  |} :: following)
+        <span class="kr">end</span>) fds
+  | _ =&gt; Ret []
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Fixpoint</span> <span class="nf">add_to_fname_mapping</span> (<span class="nv">names</span> : list string) (<span class="nv">start_id</span> : nat) (<span class="nv">initial</span> : fname_env) : fname_env :=
+  <span class="kr">match</span> names <span class="kr">with</span>
+  | [] =&gt; initial
+  | n :: names&#39; =&gt; M_string.add n start_id (add_to_fname_mapping names&#39; (<span class="mi">1</span> + start_id) initial)
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* maps function names to ids (id=index in function list of module) *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">create_fname_mapping</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">e</span> : exp) : error fname_env :=
+  <span class="kr">let</span> (<span class="nv">fname_mapping</span>, num_fns) := (add_to_fname_mapping [write_char_function_name; write_int_function_name] <span class="mi">0</span> (M_string.empty _), <span class="mi">2</span>) <span class="kr">in</span>
+
+  <span class="kr">let</span> <span class="nv">fun_names</span> :=
+    <span class="kr">match</span> e <span class="kr">with</span>
+    | Efun fds exp =&gt; <span class="c">(* fundefs only allowed here (uppermost level) *)</span>
+      (<span class="kr">fix</span> iter (fds : fundefs) : list string :=
+          <span class="kr">match</span> fds <span class="kr">with</span>
+          | Fnil =&gt; []
+          | Fcons x _ _ _ fds&#39; =&gt; (translate_var_to_string nenv x) :: (iter fds&#39;)
+          <span class="kr">end</span>) fds
+    | _ =&gt; []
+  <span class="kr">end</span> <span class="kr">in</span>
+  <span class="kr">let</span> (<span class="nv">fname_mapping</span>, num_fns) := (add_to_fname_mapping fun_names num_fns fname_mapping, num_fns + length fun_names) <span class="kr">in</span>
+
+  <span class="kr">let</span> (<span class="nv">fname_mapping</span>, num_fns) := (add_to_fname_mapping [constr_pp_function_name] num_fns fname_mapping, num_fns + <span class="mi">1</span>) <span class="kr">in</span>
+
+  fsigs &lt;- collect_function_signatures nenv e;;
+  <span class="kr">let</span> <span class="nv">indirection_fn_names</span> := unique_indirection_function_names fsigs <span class="kr">in</span>
+  <span class="kr">let</span> (<span class="nv">fname_mapping</span>, num_fns) := (add_to_fname_mapping indirection_fn_names num_fns fname_mapping, num_fns + length indirection_fn_names) <span class="kr">in</span>
+
+  <span class="kr">let</span> (<span class="nv">fname_mapping</span>, num_fns) := (add_to_fname_mapping [main_function_name] num_fns fname_mapping, num_fns + <span class="mi">1</span>) <span class="kr">in</span>
+
+  Ret fname_mapping.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* locals are expected to be unique (also wrt params) *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">add_vars_to_local_variable_mapping</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">locals</span> : list cps.var) (<span class="nv">initial</span> : var_env) : var_env :=
+  <span class="kr">let fix</span> <span class="nv">aux</span> (<span class="nv">start_id</span> : nat) (<span class="nv">locals</span> : list cps.var) (<span class="nv">venv</span> : var_env) :=
+    <span class="kr">match</span> locals <span class="kr">with</span>
+    | [] =&gt; initial
+    | v :: l&#39; =&gt; <span class="kr">let</span> <span class="nv">mapping</span> := aux (<span class="mi">1</span> + start_id) l&#39; venv <span class="kr">in</span>
+                 <span class="kr">let</span> <span class="nv">v_str</span> := translate_var_to_string nenv v <span class="kr">in</span>
+                 M_string.add v_str start_id mapping
+    <span class="kr">end</span> <span class="kr">in</span>
+  aux <span class="mi">0</span> locals initial.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+<span class="c">(* start counting at 0 for every function *)</span>
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Fixpoint</span> <span class="nf">create_local_variable_mapping&#39;</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">fenv</span>: fname_env) (<span class="nv">fds</span> : fundefs) (<span class="nv">initial</span> : var_env) :=
+  <span class="kr">match</span> fds <span class="kr">with</span>
+  | Fnil =&gt; initial
+  | Fcons _ _ params e fds&#39; =&gt; <span class="kr">let</span> <span class="nv">locals</span> := params ++ collect_local_variables e <span class="kr">in</span>
+                               <span class="kr">let</span> <span class="nv">venv</span> := add_vars_to_local_variable_mapping nenv fenv locals initial <span class="kr">in</span>
+                               create_local_variable_mapping&#39; nenv fenv fds&#39; venv
+  <span class="kr">end</span>.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">create_local_variable_mapping</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">fenv</span>: fname_env) (<span class="nv">e</span> : exp) :=
+  <span class="kr">let</span> <span class="nv">fds</span> := <span class="kr">match</span> e <span class="kr">with</span> Efun fds _ =&gt; fds | _ =&gt; Fnil <span class="kr">end</span> <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">expr</span> := <span class="kr">match</span> e <span class="kr">with</span> Efun _ e&#39; =&gt; e&#39; | _ =&gt; e <span class="kr">end</span> <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">expr_vars</span> := collect_local_variables expr <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">venv</span> := add_vars_to_local_variable_mapping nenv fenv expr_vars (M_string.empty _) <span class="kr">in</span>
+  create_local_variable_mapping&#39; nenv fenv fds venv.</span><span class="alectryon-wsp">
+</span></span><span class="alectryon-wsp">
+</span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">LambdaANF_to_WASM</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">cenv</span> : ctor_env) (<span class="nv">e</span> : exp) : error (module * fname_env * var_env) :=
+  fname_mapping &lt;- create_fname_mapping nenv e ;;
+  <span class="kr">let</span> <span class="nv">venv</span> := create_local_variable_mapping nenv fname_mapping e <span class="kr">in</span>
+
+  <span class="kr">let</span> <span class="nv">constr_tags</span> := collect_constr_tags e <span class="kr">in</span>
+  constr_pp_function &lt;- generate_constr_pp_function cenv fname_mapping constr_tags ;;
+
+  fsigs &lt;- collect_function_signatures nenv e ;;
+  indirection_functions &lt;- generate_indirection_functions fsigs fname_mapping;;
+
+  <span class="kr">let</span> <span class="nv">main_expr</span> := <span class="kr">match</span> e <span class="kr">with</span>
+                   | Efun _ exp =&gt; exp
+                   | _ =&gt; e
+                   <span class="kr">end</span> <span class="kr">in</span>
+  fns &lt;-
+    <span class="kr">match</span> e <span class="kr">with</span>
+    | Efun fds exp =&gt; <span class="c">(* fundefs only allowed here (uppermost level) *)</span>
+      (<span class="kr">fix</span> iter (fds : fundefs) : error (list wasm_function) :=
+          <span class="kr">match</span> fds <span class="kr">with</span>
+          | Fnil =&gt; Ret []
+          | Fcons x tg xs e fds&#39; =&gt;
+             fn &lt;- translate_function nenv cenv fname_mapping venv x xs e ;;
+             following &lt;- iter fds&#39; ;;
+             Ret (fn :: following)
+          <span class="kr">end</span>) fds
+    | _ =&gt; Ret []
+  <span class="kr">end</span> ;;
+
+  <span class="kr">let</span> <span class="nv">main_vars</span> := collect_local_variables main_expr <span class="kr">in</span>
+
+  main_instr &lt;- translate_exp nenv cenv venv fname_mapping main_expr ;;
+  main_function_var &lt;- lookup_function_var main_function_name fname_mapping <span class="s2">&quot;main function&quot;</span>;;
+
+  <span class="kr">let</span> <span class="nv">main_function</span> := {| var := main_function_var
+                        ; export_name := main_function_name
+                        ; type := Tf [] []
+                        ; locals := map (<span class="kr">fun</span> <span class="nv">_</span> =&gt; T_i32) main_vars
+                        ; body := main_instr
+                        |}
+  <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">functions</span> := fns ++ [constr_pp_function] ++ indirection_functions ++ [main_function] <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">types</span> := map (<span class="kr">fun</span> <span class="nv">f</span> =&gt; f.(type)) functions <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">exports</span> := map (<span class="kr">fun</span> <span class="nv">f</span> =&gt; {| modexp_name := String.print f.(export_name)
+                                ; modexp_desc := MED_func (Mk_funcidx f.(var))
+                                |}) functions <span class="c">(* function exports for debug names *)</span>
+                 ++ {| modexp_name := String.print <span class="s2">&quot;result_out_of_mem&quot;</span>
+                     ; modexp_desc := MED_global (Mk_globalidx result_out_of_mem)
+                     |} ::
+                    {| modexp_name := String.print <span class="s2">&quot;bytes_used&quot;</span>
+                     ; modexp_desc := MED_global (Mk_globalidx global_mem_ptr)
+                     |} ::
+                    {| modexp_name := String.print <span class="s2">&quot;result&quot;</span>
+                     ; modexp_desc := MED_global (Mk_globalidx result_var)
+                     |} :: nil <span class="kr">in</span>
+
+  <span class="kr">let</span> <span class="nv">functions_final</span> := map (<span class="kr">fun</span> <span class="nv">f</span> =&gt; {| modfunc_type := Mk_typeidx f.(var)
+                                        ; modfunc_locals := f.(locals)
+                                        ; modfunc_body := f.(body)
+                                        |}) functions <span class="kr">in</span>
+  <span class="kr">let</span> <span class="nv">module</span> :=
+      {| mod_types := [ Tf [T_i32] []                 <span class="c">(* type write_char *)</span>
+                      ; Tf [T_i32] []                 <span class="c">(* type write_int  *)</span>
+                      ] ++ types
+
+       ; mod_funcs := functions_final
+       ; mod_tables := []
+
+       ; mod_mems := {| lim_min := N_of_nat <span class="mi">1</span>         <span class="c">(* initial memory size in pages (1 page = 2^16 = 64 KiB), is grown as needed *)</span>
+                      ; lim_max := Some <span class="mi">10000</span>%N
+                      |} :: nil
+
+       ; mod_globals := {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  <span class="c">(* global_mem_ptr *)</span>
+                         ; modglob_init := [BI_const (nat_to_value <span class="mi">0</span>)]
+                         |} ::
+                        {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  <span class="c">(* constr_alloc_ptr *)</span>
+                         ; modglob_init := [BI_const (nat_to_value <span class="mi">0</span>)]
+                         |} ::
+                        {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  <span class="c">(* result_var *)</span>
+                         ; modglob_init := [BI_const (nat_to_value <span class="mi">0</span>)]
+                         |} ::
+                        {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  <span class="c">(* out of memory indicator *)</span>
+                         ; modglob_init := [BI_const (nat_to_value <span class="mi">0</span>)]
+                         |} :: nil
+
+       ; mod_elem := []
+       ; mod_data := []
+       ; mod_start := None
+
+       ; mod_imports := {| imp_module := String.print <span class="s2">&quot;env&quot;</span>
+                         ; imp_name := String.print write_char_function_name
+                         ; imp_desc := ID_func <span class="mi">0</span>
+                         |} ::
+                        {| imp_module := String.print <span class="s2">&quot;env&quot;</span>
+                         ; imp_name := String.print write_int_function_name
+                         ; imp_desc := ID_func <span class="mi">1</span>
+                         |} :: nil
+
+       ; mod_exports := exports
+       |}
+       <span class="kr">in</span>
+       <span class="c">(* also return mappings to access them in proof *)</span>
+       Ret (module, fname_mapping, venv).</span><span class="alectryon-wsp">
+</span></span></pre></article></body></html>
