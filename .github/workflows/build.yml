@@ -60,12 +60,12 @@ jobs:
               cd ~/repo
               opam pin -n -y  submodules/metacoq # was pinned to the submodule at the same path in the dockerfile before -> is not rebuilt
             endGroup
-            startGroup 'Install Alectryon'
-              sudo apt-get update -y -q
-              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
-                python3-pip
-              python3 -m pip install --user --upgrade alectryon
-            endGroup
+            #      startGroup 'Install Alectryon'
+            #  sudo apt-get update -y -q
+            #  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+            #    python3-pip
+            #  python3 -m pip install --user --upgrade alectryon
+            #endGroup
             startGroup "Make submodules"
               cd ~/repo/submodules/
               git submodule update --init
@@ -99,24 +99,24 @@ jobs:
               ulimit -s unlimited
               make -C ~/repo/benchmarks all
             endGroup
-            startGroup "Build docs"
-              make -C ~/repo install
-              make -C ~/repo docs
-              sudo mkdir /github/workspace/docs
-              sudo chmod 777 /github/workspace/docs
-              sudo mv ~/repo/docs/* /github/workspace/docs
-            endGroup
+            #            startGroup "Build docs"
+            #  make -C ~/repo install
+            #  make -C ~/repo docs
+            #  sudo mkdir /github/workspace/docs
+            #  sudo chmod 777 /github/workspace/docs
+            #  sudo mv ~/repo/docs/* /github/workspace/docs
+            #endGroup
             startGroup "Test bootstrapped plugins"
               make -C ~/repo/bootstrap test
             endGroup
 
       # deploy to gh pages
-      - name: Setup Pages
-        uses: actions/configure-pages@v3
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v1
-        with:
-          path: '/github/workspace/docs'
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v2
+      #      - name: Setup Pages
+      #  uses: actions/configure-pages@v3
+      #- name: Upload artifact
+      #  uses: actions/upload-pages-artifact@v1
+      #  with:
+      #    path: '/github/workspace/docs'
+      #- name: Deploy to GitHub Pages
+      #  id: deployment
+      #  uses: actions/deploy-pages@v2
