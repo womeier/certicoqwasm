@@ -18,7 +18,7 @@ Import MonadNotation.
 
 (* Main file for compiler backend targeting WASM. *)
 
-(* Currently: all variables/parameters are of type i32, no types available anymore in lambdaANF, only arity TODO check *)
+(* Currently: all variables/parameters are of type i32, lambdaANF is untyped, only arity *)
 
 
 (* ***** MAPPINGS ****** *)
@@ -38,7 +38,7 @@ Definition fname_env := M_string.t nat.  (* maps function export names to their 
 (* global vars *)
 Definition global_mem_ptr : immediate := 0.
 Definition constr_alloc_ptr : immediate := 1. (* ptr to beginning of constr alloc in linear mem *)
-Definition result_var : immediate := 2. (* since CPS: only one final result *)
+Definition result_var : immediate := 2. (* final result *)
 Definition result_out_of_mem : immediate := 3.
 
 (* target type for generating functions, contains more fields than the one from Wasm *)
@@ -203,7 +203,7 @@ Record func_signature :=
 
 (*
 currently: one indirection function per number of arguments,
-
+TODO: only use arity
 TODO: probably easier for the proof: only single indirection function with type: [T_i32, T_i32] -> []
 the first parameter is the function id, the second the pointer to the arguments
 performance?
@@ -547,6 +547,7 @@ Fixpoint add_to_fname_mapping (names : list string) (start_id : nat) (initial : 
   end.
 
 (* maps function names to ids (id=index in function list of module) *)
+(* TODO: use reserved function ids for write_char / write_int / main / pp_constr..., don't include in mapping *)
 Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
   let (fname_mapping, num_fns) := (add_to_fname_mapping [write_char_function_name; write_int_function_name] 0 (M_string.empty _), 2) in
 
@@ -572,7 +573,7 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
 
   Ret fname_mapping.
 
-(* locals are expected to be unique (also wrt params) *)
+(* locals U params are expected to be globally unique *)
 Definition add_vars_to_local_variable_mapping (nenv : name_env) (fenv : fname_env) (locals : list cps.var) (initial : var_env) : var_env :=
   let fix aux (start_id : nat) (locals : list cps.var) (venv : var_env) :=
     match locals with
@@ -667,7 +668,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
        ; mod_tables := []
 
        ; mod_mems := {| lim_min := N_of_nat 1         (* initial memory size in pages (1 page = 2^16 = 64 KiB), is grown as needed *)
-                      ; lim_max := Some 10000%N
+                      ; lim_max := Some 10000%N       (* set to ensure, i32 ptr doesn't overflow, but memory grow fails instead *)
                       |} :: nil
 
        ; mod_globals := {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* global_mem_ptr *)
