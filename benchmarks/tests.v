@@ -73,7 +73,7 @@ Definition color := Color.main.
 (* Definition lazy_factorial := coq_msg_info (string_of_Z (coind.lfact 150)). *)
 
 (* Sha *)
-Definition test := "Coq is a formal proof management system. It provides a formal language to write mathematical definitions, executable algorithms and theorems together with an environment for semi-interactive development of machine-checked proofs. Typical applications include the certification of properties of programming languages (e.g. the CompCert compiler certification project, the Verified Software Toolchain for verification of C programs, or the Iris framework for concurrent separation logic), the formalization of mathematics (e.g. the full formalization of the Feit-Thompson theorem, or homotopy type theory), and teaching."%string.
+Definition test := "Hallo Welt."%string.
 
 Definition sha := sha256.SHA_256 (sha256.str_to_bytes test).
 
@@ -108,20 +108,20 @@ CertiCoq Generate WASM -cps -debug list_sum.
 
 Eval compute in "Compiling vs_easy".
 
-CertiCoq Generate WASM -cps -time -debug vs_easy.
+CertiCoq Generate WASM -cps -debug vs_easy.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" -time_anf vs_easy. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" vs_easy. *)
 
 Eval compute in "Compiling vs_hard".
 
-CertiCoq Generate WASM -cps -time -debug vs_hard.
+CertiCoq Generate WASM -cps -debug vs_hard.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" vs_hard. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" vs_hard. *)
 
 
 Eval compute in "Compiling binom".
 
-CertiCoq Generate WASM -cps -time -debug binom.
+CertiCoq Generate WASM -cps -debug binom.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" binom. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" binom. *)
 
@@ -136,7 +136,7 @@ CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
 
 (* Eval compute in "Compiling color". *)
 
-(* CertiCoq Generate WASM -cps -time -debug color. *)
+(* CertiCoq Generate WASM -debug color. *)
 (* CertiCoq Compile -O 0 -time -cps -ext "_cps" color. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" color. *)
 
@@ -150,6 +150,6 @@ CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
 
 Eval compute in "Compiling sha_fast".
 
-CertiCoq Generate WASM -cps -time -debug sha_fast.
+CertiCoq Generate WASM -cps -debug sha_fast.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" sha_fast. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
