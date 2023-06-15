@@ -1,12 +1,11 @@
 (*
   Proof of correctness of the WASM code generation phase of CertiCoq
-  (based on the proof for Clight code generation)
+  (this file is based on the proof for Clight code generation, it still contains some relicts that have not beed removed yet.)
 
-  > Relates values to location in memory (syntactic)
-  > Relates expression to statements (syntactic)
-  > Relates Codegen values (header, payload) to Codegen values after GC (syntactic, up to non-function pointer location)
-  > Relates LambdaANF states to Codegen states according to execution semantics
-
+  > Relates expressions to Wasm instructions (codegen relation, syntactic)
+  > Relates LambdaANF values to Wasm values (value relation)
+  > Relates values to location in memory (memory relation, syntactic)
+  > Relates LambdaANF states to Wasm states according to execution semantics
  *)
 Unset Universe Checking.
 
@@ -2888,7 +2887,7 @@ Corollary LambdaANF_Codegen_related :
   (* expression must be closed *)
   (~ exists x, occurs_free e x) ->
 
-  (* instantiation relation wasmcert, TODO: this should be a theorem *) (* TODO: imports *)
+  (* TODO: imports *)
   exists sr inst,
   instantiate _ host_instance empty_store_record module [] ((sr, inst, exports), None) /\
   List.nth_error sr.(s_funcs) mainidx = Some function /\
