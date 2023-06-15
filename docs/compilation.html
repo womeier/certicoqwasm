@@ -21,7 +21,7 @@
 
 <span class="c">(* Main file for compiler backend targeting WASM. *)</span>
 
-<span class="c">(* Currently: all variables/parameters are of type i32, no types available anymore in lambdaANF, only arity TODO check *)</span>
+<span class="c">(* Currently: all variables/parameters are of type i32, lambdaANF is untyped, only arity *)</span>
 
 
 <span class="c">(* ***** MAPPINGS ****** *)</span>
@@ -41,7 +41,7 @@
 <span class="c">(* global vars *)</span>
 </span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">global_mem_ptr</span> : immediate := <span class="mi">0</span>.</span><span class="alectryon-wsp">
 </span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">constr_alloc_ptr</span> : immediate := <span class="mi">1</span>. <span class="c">(* ptr to beginning of constr alloc in linear mem *)</span></span><span class="alectryon-wsp">
-</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">result_var</span> : immediate := <span class="mi">2</span>. <span class="c">(* since CPS: only one final result *)</span></span><span class="alectryon-wsp">
+</span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">result_var</span> : immediate := <span class="mi">2</span>. <span class="c">(* final result *)</span></span><span class="alectryon-wsp">
 </span></span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">result_out_of_mem</span> : immediate := <span class="mi">3</span>.</span><span class="alectryon-wsp">
 </span></span><span class="alectryon-wsp">
 <span class="c">(* target type for generating functions, contains more fields than the one from Wasm *)</span>
@@ -206,7 +206,7 @@
 </span></span><span class="alectryon-wsp">
 <span class="c">(*</span>
 <span class="c">currently: one indirection function per number of arguments,</span>
-
+<span class="c">TODO: only use arity</span>
 <span class="c">TODO: probably easier for the proof: only single indirection function with type: [T_i32, T_i32] -&gt; []</span>
 <span class="c">the first parameter is the function id, the second the pointer to the arguments</span>
 <span class="c">performance?</span>
@@ -550,6 +550,7 @@
   <span class="kr">end</span>.</span><span class="alectryon-wsp">
 </span></span><span class="alectryon-wsp">
 <span class="c">(* maps function names to ids (id=index in function list of module) *)</span>
+<span class="c">(* TODO: use reserved function ids for write_char / write_int / main / pp_constr..., don&#39;t include in mapping *)</span>
 </span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">create_fname_mapping</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">e</span> : exp) : error fname_env :=
   <span class="kr">let</span> (<span class="nv">fname_mapping</span>, num_fns) := (add_to_fname_mapping [write_char_function_name; write_int_function_name] <span class="mi">0</span> (M_string.empty _), <span class="mi">2</span>) <span class="kr">in</span>
 
@@ -575,7 +576,7 @@
 
   Ret fname_mapping.</span><span class="alectryon-wsp">
 </span></span><span class="alectryon-wsp">
-<span class="c">(* locals are expected to be unique (also wrt params) *)</span>
+<span class="c">(* locals U params are expected to be globally unique *)</span>
 </span><span class="alectryon-sentence"><span class="alectryon-input"><span class="kn">Definition</span> <span class="nf">add_vars_to_local_variable_mapping</span> (<span class="nv">nenv</span> : name_env) (<span class="nv">fenv</span> : fname_env) (<span class="nv">locals</span> : list cps.var) (<span class="nv">initial</span> : var_env) : var_env :=
   <span class="kr">let fix</span> <span class="nv">aux</span> (<span class="nv">start_id</span> : nat) (<span class="nv">locals</span> : list cps.var) (<span class="nv">venv</span> : var_env) :=
     <span class="kr">match</span> locals <span class="kr">with</span>
@@ -670,7 +671,7 @@
        ; mod_tables := []
 
        ; mod_mems := {| lim_min := N_of_nat <span class="mi">1</span>         <span class="c">(* initial memory size in pages (1 page = 2^16 = 64 KiB), is grown as needed *)</span>
-                      ; lim_max := Some <span class="mi">10000</span>%N
+                      ; lim_max := Some <span class="mi">10000</span>%N       <span class="c">(* set to ensure, i32 ptr doesn&#39;t overflow, but memory grow fails instead *)</span>
                       |} :: nil
 
        ; mod_globals := {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  <span class="c">(* global_mem_ptr *)</span>
