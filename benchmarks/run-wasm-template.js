@@ -30,7 +30,10 @@ let importObject = {
     );
 
     try {
+        const start = Date.now();
         obj.instance.exports.$main_function();
+        const stop = Date.now();
+
         let bytes = obj.instance.exports.bytes_used.value;
         console.log(`====> used ${bytes} bytes of memory`);
 
@@ -41,6 +44,8 @@ let importObject = {
             process.stdout.write("\n====>");
             obj.instance.exports.$pretty_print_constructor(res); console.log(""); // newline
         }
+
+        console.log("Benchmark {{file}} took " + (stop - start) + "ms.");
     } catch (error) {
         console.log(error);
         process.exit(1);
