@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+# see repo certicoqwasm-testing for a standalone version of this
+
 import os
 import subprocess
 

@@ -24,6 +24,7 @@ $(WASMFILES): tests
 
 convert2wat: $(WATFILES)
 
+# currently: certicoqwasm generates normal calls -> replace them with tailcalls until this is added to wasmcert-coq
 tailcallify: $(WATFILES) convert2wat
 	./insert_tailcalls.py
 
