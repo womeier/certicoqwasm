@@ -24,7 +24,7 @@ $(WASMFILES): tests
 
 convert2wat: $(WATFILES)
 
-tailcallify: $(WATFILES)
+tailcallify: $(WATFILES) convert2wat
 	./insert_tailcalls.py
 
 runwasm: $(JSFILES)
