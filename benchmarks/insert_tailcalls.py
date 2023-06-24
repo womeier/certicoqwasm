@@ -40,6 +40,7 @@ def replace_calls(path_in, path_out):
 
             f.write(f"{line}\n")
 
+    print(f"replacing calls with tailcalls {path_in} done success.\n")
 
 if __name__ == '__main__':
     files = open("TESTS").read().strip().split("\n")

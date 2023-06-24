@@ -7,7 +7,7 @@ TESTS=$(shell cat TESTS)
 WATFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wat, $(TESTS))
 WASMFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wasm, $(TESTS))
 JSFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.js, $(TESTS))
-WASM2WAT=wasm2wat
+WASM2WAT=wasm2wat --enable-tail-call
 
 all: lib tests convert2wat tailcallify runwasm
 
