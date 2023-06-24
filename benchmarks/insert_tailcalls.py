@@ -48,5 +48,7 @@ if __name__ == '__main__':
         path_in = f"CertiCoq.Benchmarks.tests.{f}.wat"
         path_out = f"CertiCoq.Benchmarks.tests.{f}-tailcalls.wat"
         path_out_wasm = f"CertiCoq.Benchmarks.tests.{f}.wasm" # overwrite original wasm file
+        if os.path.exists(os.path.join(CWD, path_out_wasm)):
+            os.remove(path_out_wasm)
         subprocess.run(["wat2wasm", "--enable-tail-call", path_out, "-o", path_out_wasm])
         replace_calls(path_in, path_out)
