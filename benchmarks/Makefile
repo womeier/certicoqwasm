@@ -9,7 +9,7 @@ WASMFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wasm, $(TESTS))
 JSFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.js, $(TESTS))
 WASM2WAT=wasm2wat
 
-all: lib tests runwasm convert2wat
+all: lib tests convert2wat tailcallify runwasm
 
 .PHONY: all default clean lib cleanlib tests $(TESTS)
 
@@ -23,6 +23,9 @@ $(WASMFILES): tests
 	$(WASM2WAT) $< > $@
 
 convert2wat: $(WATFILES)
+
+tailcallify: $(WATFILES)
+	./insert_tailcalls.py
 
 runwasm: $(JSFILES)
 	ulimit -s unlimited && ./run_wasm_benchmarks.py
