@@ -18,7 +18,7 @@ Import MonadNotation.
 
 (* Main file for compiler backend targeting WASM. *)
 
-(* Currently: all variables/parameters are of type i32, lambdaANF is untyped, only arity *)
+(* Currently: all variables/parameters are of type i32, lambdaANF is untyped, arity enough to generate function calls *)
 
 
 (* ***** MAPPINGS ****** *)
@@ -420,7 +420,7 @@ Fixpoint create_case_nested_if_chain (v : immediate) (es : list (ctor_tag * list
 
 (* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
 
-(* the result of every expression is written two the global var result_var,
+(* the result of every expression is written to the global var result_var,
 e.g. for let x := Eproj ... in (halt x)
 halt x expects the previous result in this var.
 *)
