@@ -95,7 +95,7 @@ jobs:
               opam list
             endGroup
             startGroup "Run benchmarks"
-              sudo apt-get install --yes wabt nodejs
+              sudo apt-get install --yes wabt nodejs python3-tqdm
               ulimit -s unlimited
               make -C ~/repo/benchmarks all
             endGroup
