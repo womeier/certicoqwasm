@@ -46,7 +46,6 @@ jobs:
               git config --global --add safe.directory /github/workspace/submodules/wasmcert
               git config --global --add safe.directory /github/workspace/submodules/strong-induction
               git config --global --add safe.directory /github/workspace/submodules/metacoq
-              git config --global --add safe.directory /github/workspace/submodules/parseque
               git submodule update --init
             endGroup
             startGroup "Install some more opam packages"
@@ -56,6 +55,7 @@ jobs:
               opam install coq-mathcomp-ssreflect
               opam pin -y coq-itree 5.1.1
               opam install coq-itree
+              opam install coq-parseque
 
               cd ~/repo
               opam pin -n -y  submodules/metacoq # was pinned to the submodule at the same path in the dockerfile before -> is not rebuilt
@@ -72,12 +72,6 @@ jobs:
 
               cd strong-induction
               echo "Building Strong-Induction"
-              make
-              make install
-              cd ..
-
-              cd parseque
-              echo "Building parseque"
               make
               make install
               cd ..
