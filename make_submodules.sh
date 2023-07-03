@@ -33,13 +33,6 @@ make
 make install
 cd ..
 
-cd parseque
-echo "Building parseque"
-clean
-make
-make install
-cd ..
-
 cd wasmcert
 echo "Building wasmcert"
 clean
