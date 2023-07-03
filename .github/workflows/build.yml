@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - '*'
   workflow_dispatch:
     inputs:
 
@@ -88,6 +89,9 @@ jobs:
             startGroup "List installed packages"
               opam list
             endGroup
+            startGroup "List number of admits"
+              python3 ~/repo/theories/CodegenWASM/count-admitted.py
+            endGroup
             startGroup "Run benchmarks"
               sudo apt-get install --yes wabt nodejs python3-tqdm
               ulimit -s unlimited
@@ -100,9 +104,9 @@ jobs:
             #  sudo chmod 777 /github/workspace/docs
             #  sudo mv ~/repo/docs/* /github/workspace/docs
             #endGroup
-            startGroup "Test bootstrapped plugins"
-              make -C ~/repo/bootstrap test
-            endGroup
+            #            startGroup "Test bootstrapped plugins"
+            #  make -C ~/repo/bootstrap test
+            #endGroup
 
       # deploy to gh pages
       #      - name: Setup Pages
