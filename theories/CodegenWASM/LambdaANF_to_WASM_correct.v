@@ -1373,6 +1373,7 @@ Definition global_var_r var (s : store_record) (f : frame) :=
    exists v, sglob_val (host_function:=host_function) s (f_inst f) var = Some (VAL_int32 v).
 
 Definition INV_result_var_writable := global_var_w result_var.
+Definition INV_result_var_out_of_mem_writable := global_var_w result_out_of_mem.
 Definition INV_global_mem_ptr_writable := global_var_w global_mem_ptr.
 Definition INV_constr_alloc_ptr_writable := global_var_w constr_alloc_ptr.
 Definition INV_globals_all_mut_i32 := globals_all_mut_i32.
@@ -1401,6 +1402,7 @@ Definition INV_global_constr_alloc_ptr_in_linear_memory s f := forall addr t m,
 (* invariants that need to hold throughout the execution of the Wasm program *)
 Definition INV (s : store_record) (f : frame) :=
     INV_result_var_writable s f
+ /\ INV_result_var_out_of_mem_writable s f
  /\ INV_global_mem_ptr_writable s f
  /\ INV_constr_alloc_ptr_writable s f
  /\ INV_globals_all_mut_i32 s
@@ -1551,6 +1553,7 @@ Proof with eauto.
   split. eapply update_global_preserves_global_var_w...
   split. eapply update_global_preserves_global_var_w...
   split. eapply update_global_preserves_global_var_w...
+  split. eapply update_global_preserves_global_var_w...
   split. eapply update_global_preserves_globals_all_mut_i32...
   split. eapply update_global_preserves_linear_memory_exists...
   split. assumption.
@@ -1685,6 +1688,7 @@ Corollary update_mem_preserves_INV : forall s s' f m,
   INV s' f.
 Proof with eauto.
  intros. unfold INV. repeat destruct H as [?H H].
+ split. eapply update_mem_preserves_global_var_w...
  split. eapply update_mem_preserves_global_var_w...
  split. eapply update_mem_preserves_global_var_w...
  split. eapply update_mem_preserves_global_var_w...
@@ -2048,7 +2052,7 @@ Lemma memory_grow_reduce : forall  (ys : list cps.var)  grow state s f,
 Proof with eauto.
   (* grow memory if necessary *)
   intros ys grow state sr fr H Hinv. subst. unfold grow_memory_if_necessary. cbn.
-  have I := Hinv.  destruct I as [? [INVgmp_w [INVcap_w [INVmuti32 [INVlinmem [? [? [INVglobalptrInMem INVcapInMem]]]]]]]].
+  have I := Hinv.  destruct I as [? [_ [INVgmp_w [INVcap_w [INVmuti32 [INVlinmem [? [? [INVglobalptrInMem INVcapInMem]]]]]]]]].
   destruct INVlinmem as [Hm1 [m [Hm2 [size Hm3]]]].
 
   assert (global_var_r global_mem_ptr sr fr) as H2. { apply global_var_w_implies_global_var_r; auto. } destruct H2.
@@ -2207,14 +2211,14 @@ Proof with eauto.
         (state, sr_final, fr_final, [::]) /\ result_val_LambdaANF_Codegen v (f_inst fr_final) sr_final)).
      {
       (* invariants after Hred *)
-      have I' := Hinv'. destruct I' as [_ [INVgmp_w' [INVcap_w' [INVmuti32' ?]]]].
+      have I' := Hinv'. destruct I' as [_ [_ [INVgmp_w' [INVcap_w' [INVmuti32' ?]]]]].
       have INVgmp_r' := global_var_w_implies_global_var_r _ _ _ INVmuti32' INVgmp_w'.
 
       destruct INVgmp_r'.
       (* invariants after set_global cap *)
       edestruct INVcap_w'. rename x1 into s''.
       assert (INV s'' f') as Hinv''. { eapply update_global_preserves_INV; eassumption. }
-      have I'' := Hinv''. destruct I'' as [_ [INVgmp_w'' [INVcap_w'' [INVmuti32'' ?]]]].
+      have I'' := Hinv''. destruct I'' as [_ [_ [INVgmp_w'' [INVcap_w'' [INVmuti32'' ?]]]]].
       have INVgmp_r'' := global_var_w_implies_global_var_r _ _ _ INVmuti32'' INVgmp_w''.
       destruct INVgmp_r''.
 
@@ -2222,7 +2226,7 @@ Proof with eauto.
 
       (* invariants after set_global gmp *)
       assert (INV s''' f') as Hinv'''. { eapply update_global_preserves_INV; eassumption. }
-      have I''' := Hinv'''. destruct I''' as [_ [INVgmp_w''' [INVcap_w''' [INVmuti32''' [INVlinmem [? [? [? INVcapInMem]]]]]]]].
+      have I''' := Hinv'''. destruct I''' as [_ [_ [INVgmp_w''' [INVcap_w''' [INVmuti32''' [INVlinmem [? [? [? INVcapInMem]]]]]]]]].
       have INVcap_r''' := global_var_w_implies_global_var_r _ _ _ INVmuti32''' INVcap_w'''. cbn.
 
       destruct INVcap_r'''.
@@ -2255,7 +2259,7 @@ Proof with eauto.
       destruct Hredargs as [s_args [f_args [Hred_args Hinv_s_args]]].
 
      (* invariants after stepping through Hred_args *)
-     have I'''' := Hinv_s_args. destruct I'''' as [_ [INVgmp_w_s_args [INVcap_w_s_args [INVmuti32_s_args [_ [INVlocals_s_args [? [? INVcapInMem_s_args]]]]]]]].
+     have I'''' := Hinv_s_args. destruct I'''' as [_ [_ [INVgmp_w_s_args [INVcap_w_s_args [INVmuti32_s_args [_ [INVlocals_s_args [? [? INVcapInMem_s_args]]]]]]]]].
 
      have INVcap_r_s_args := global_var_w_implies_global_var_r _ _ _ INVmuti32_s_args INVcap_w_s_args.
 
@@ -2325,7 +2329,7 @@ Proof with eauto.
   inv H8. unfold translate_var in H5. unfold translate_var. eapply lookup_local_var_generalize_err_string. eassumption.
   assert ((wasm_deserialise bs T_i32) = (VAL_int32 (wasm_value_to_i32 (Val_ptr (addr + 4 + (4 * N.to_nat n)))))). admit. rewrite H5.
 
-  have I := Hinv. destruct I as [_ [_ [_ [_ [Hlinmem [Hl [_ [_ _]]]]]]]].
+  have I := Hinv. destruct I as [_ [_ [_ [_ [_ [Hlinmem [Hl [_ [_ _]]]]]]]]].
   destruct (Hl x x'). assumption.
   eapply set_nth_nth_error_same. eassumption. admit.
 
@@ -2346,7 +2350,7 @@ Proof with eauto.
                (f_locs fr) x' (wasm_deserialise bs T_i32);
            f_inst := f_inst fr
          |}) as Hinv'. { cbn. eapply update_local_preserves_INV...
-         have I := Hinv. destruct I as [_ [_ [_ [_ [_ [Hl [_ [_ _]]]]]]]].
+         have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hl [_ [_ _]]]]]]]]].
          destruct (Hl _ _ H8). apply nth_error_Some. intro. congruence. }
 
    have IH := IHHev e' (Build_frame (set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32)) (f_inst fr)) state sr Hinv' H7 Hrm. destruct IH as [sr' [f' [Hred Hval]]].
@@ -2355,7 +2359,7 @@ Proof with eauto.
     { (* take steps *)
     have Hvy := H9. inv H9.
 
-    have I := Hinv'. destruct I as [_ [_ [_ [_ [Hlinmem [Hl [_ [_ _]]]]]]]].
+    have I := Hinv'. destruct I as [_ [_ [_ [_ [_ [Hlinmem [Hl [_ [_ _]]]]]]]]].
     destruct (Hl _ _ Hvy).
     rewrite H in H4. injection H4 => H4'. subst. clear H4. cbn in H5.
 
@@ -2398,7 +2402,7 @@ Proof with eauto.
     have Hloc := Hl x x' Hx. destruct Hloc. clear Hl.
     apply /ssrnat.leP.
     assert (x' < length (f_locs fr)). { apply nth_error_Some. intro.
-    have I := Hinv. destruct I as [_ [_ [_ [_ [_ [Hl _]]]]]]. edestruct Hl; eauto. congruence. } lia.
+    have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hl _]]]]]]]. edestruct Hl; eauto. congruence. } lia.
     reflexivity.
     cbn.
     apply Hred.
@@ -2411,7 +2415,7 @@ Proof with eauto.
       assert (caseConsistent cenv cl t). { inv H0. assumption. }
       cbn in H1. destruct (M.elt_eq t0 t). subst.
 
-      have I := Hinv. destruct I as [_ [_ [_ [_ [Hlinmem [Hl _]]]]]].
+      have I := Hinv. destruct I as [_ [_ [_ [_ [_ [Hlinmem [Hl _]]]]]]].
 
       (* t0 = t *)
       { inv H1. clear IHcl.
@@ -2487,7 +2491,7 @@ Proof with eauto.
     apply Hvar in Hy. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
     rewrite Hrho in H. inv H.
 
-    have I := Hinv. destruct I as [_ [_ [_ [_ [Hlinmem [Hl _]]]]]].
+    have I := Hinv. destruct I as [_ [_ [_ [_ [_ [Hlinmem [Hl _]]]]]]].
     destruct (Hl _ _ H11) as [x H]. clear Hl.
     have Htmp := H11. inv Htmp. rename v' into y'.
     have Hrepr' := Hrepr. inv Hrepr'.
