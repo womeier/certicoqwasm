@@ -1774,19 +1774,7 @@ Ltac dostep :=
 Ltac dostep' :=
    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first  apply rt_step.
 
-Ltac dostep_label :=
-   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first apply steps_inside_label.
-
-(*
-Example label_red : forall sr fr state c,
-  reduce_trans (state, sr, fr, [:: AI_label 0 [::] [:: AI_basic (BI_const c)]]) (state, sr, fr, [:: AI_basic (BI_const c)]).
-Proof.
-  intros. constructor. cbn. apply r_label with (k:= 1)(es:=[])(es' := [])(lh := LH_base [] []).
-  all: cbn.
- *)
-
-Print caseConsistent.
-
+(* Print caseConsistent. *)
 Theorem caseConsistent_findtag_In_cenv:
   forall cenv t e l,
     caseConsistent cenv l t ->
@@ -1798,16 +1786,6 @@ Proof.
   - inv H. destruct info.
     exists ctor_name, ctor_ind_name, ctor_ind_tag,ctor_arity,ctor_ordinal; auto.
 Qed.
-
-
-Require Import Coq.Numbers.Natural.Peano.NPeano.
-Require Import Coq.ZArith.ZArith.
-Require Import Coq.Structures.OrderedTypeEx.
-
-(* Lemma empty_cant_reduce : forall hs s f hs' s' f' l,
-  ~ reduce_tuple (host_instance:=host_instance) (hs, s, f, [::]) (hs', s', f', l).
-Proof.
- intros. intro. inv H. { inv H0. *)
 
 (* ISSUE: induction can run into nested *)
 Lemma app_trans: forall s f es s' f' es' les hs hs',
@@ -1859,57 +1837,10 @@ Proof.
     induction (N.to_nat n); intros.
     + inv H4. rewrite H in H3. inv H3. rename m0 into m. rewrite N.add_comm. cbn.
       unfold load_i32 in H0. destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hl; try inv H0.
-       exists b. exists wal. repeat split.
-       destruct n; cbn; auto.
-        admit. admit. assumption. (* minus modulo *)
+       exists b. exists wal. repeat split. admit. admit. assumption. (* minus modulo *)
     + simpl in H4. destruct (Pos.of_succ_nat n0). cbn in H4.
       edestruct IHrepr_val_constr_args_LambdaANF_Codegen. eassumption.
       eassumption. destruct H5 as [wal' [Hl [Heq Hval]]].
-      (*
-     inv H4. rewrite H in H3. inv H3. rename m0 into m. cbn. rewrite N.add_comm. cbn.
-        unfold load_i32 in H0. destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hl; try inv H0. exists b. exists wal. repeat split; auto. admit. (* same as above *)
-      *
-
-
-  induction n; intros.
-  - (* n=0 *)
-    destruct vs; inv H. inv H1.
-    unfold load_i32 in H4. destruct (load m0 (N.of_nat addr) (N.of_nat 0) 4) eqn:Hl; try by inv H4. rewrite H0 in H3. inv H3. rename m0 into m.
-    cbn in Hl. cbn. rewrite N.add_comm. exists b. exists wal.
-    repeat split; auto. f_equal.
-    unfold wasm_deserialise in H4. symmetry. injection H4 => H4'.
-    unfold wasm_value_to_i32.
-    unfold Wasm_int.Int32.repr. simpl. Check ({|
-  Wasm_int.Int32.intval := Wasm_int.Int32.Z_mod_modulus (decode_int b);
-  Wasm_int.Int32.intrange := Wasm_int.Int32.Z_mod_modulus_range' (decode_int b)
-|}). Print Wasm_int.Int32.int. unfold Wasm_int.Int32.repr. (* rewrite <- H1.
-     inv H4. unfold wasm_value_to_immediate in H1.
-     unfold wasm_value_to_i32, wasm_value_to_immediate, decode_int. f_equal. destruct wal. unfold rev_if_be.
-     unfold int_of_bytes. unfold int_ cbn. *) admit.
-  - (* IH *)
-
-  - inv H1. rewrite H0 in H4. inv H4.
-    destruct n.
-    + inv H.
-    +
-    have IH := IHvs n v wal.
-
-
-  intros. generalize dependent v. generalize dependent n. generalize dependent m. generalize dpen
-  induction vs; intros; inv H1.
-  - inv H.
-  -
-  induction H1; intros.
-  - inv H.
-  - cbn. destruct n.
-    + injection H4 => H4'. subst.
-      rewrite H0 in H. injection H => H'. subst m0. clear H.
-      unfold load_i32 in H1.
-      destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Heq.
-      exists b. split; intros.
-      assert (N.of_nat addr + 0 = N.of_nat addr)%N by lia. rewrite H. clear H.
-      assumption. split. f_equal.
-      injection H1 => H1'. *)
 Admitted.
 
 (* TODO RENAME *)
@@ -1944,7 +1875,6 @@ Proof.
         unfold memory_list.mem_lookup in Ht1. rewrite N.add_0_r in Ht1.
   *)
 Admitted.
-
 
 Lemma store_constr_args_reduce : forall fenv venv nenv ys sargs state s f,
   INV s f ->
