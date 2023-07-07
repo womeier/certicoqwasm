@@ -1973,6 +1973,50 @@ Admitted.
 Lemma administrative_instruction_eqb_refl : forall x, administrative_instruction_eqb x x = true.
 Proof. Admitted.
 
+(* TODO: require size m < limit *)
+Lemma memory_grow_success : forall m,
+  (mem_size m + 1 <=? page_limit)%N ->
+  exists m', mem_grow m 1 = Some m'.
+Proof.
+  intro m. eexists. unfold mem_grow. cbn. rewrite H.
+  destruct m. cbn.
+Admitted.
+
+Lemma N_div_ge0 : forall a b, (b > 0)%N -> (a >= 0)%N -> (a / b >= 0)%N.
+Proof.
+  intros. assert (Z.of_N a / Z.of_N b >= 0)%Z. apply Z_div_ge0; lia. lia.
+Qed.
+
+Import Nnat Znat.
+Import numerics.
+
+
+Lemma N_nat_bin n:
+  n = N.of_nat (ssrnat.nat_of_bin n).
+Proof.
+  clear p.
+  destruct n => //=.
+  replace (ssrnat.nat_of_pos p) with (Pos.to_nat p); first by rewrite positive_nat_N.
+  induction p => //=.
+  - rewrite Pos2Nat.inj_xI.
+    f_equal.
+    rewrite IHp0.
+    rewrite ssrnat.NatTrec.doubleE.
+    rewrite - ssrnat.mul2n.
+    by lias.
+  - rewrite Pos2Nat.inj_xO.
+    rewrite IHp0.
+    rewrite ssrnat.NatTrec.doubleE.
+    rewrite - ssrnat.mul2n.
+    by lias.
+Qed.
+
+Lemma Z_nat_bin : forall x, Z.of_nat (ssrnat.nat_of_bin x) = Z.of_N x.
+Proof.
+  intros.
+  have H := N_nat_bin x. lia.
+Qed.
+
 Lemma memory_grow_reduce : forall  (ys : list cps.var)  grow state s f,
   grow = grow_memory_if_necessary ((Datatypes.length ys + 1) * 4) ->
   INV s f ->
@@ -1993,6 +2037,10 @@ Proof with eauto.
                       (Wasm_int.Int32.iadd x (nat_to_i32 ((Datatypes.length ys + 1) * 4)))
                     ÷ 65536)) (Wasm_int.Int32.repr (Z.of_nat (ssrnat.nat_of_bin size))))) eqn:Hcond.
   (* grow memory *)
+  {
+  destruct (N.leb_spec (size + 1) page_limit).
+  (* grow memory success *)
+  edestruct memory_grow_success. { subst. apply N.leb_le. eassumption. }
   { eexists. eexists. split.
     edestruct INVgmp_w as [sr' Hgmp].
     unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
@@ -2013,24 +2061,27 @@ Proof with eauto.
 
     dostep'. separate_instr.
     constructor.
-    rewrite Hcond. apply rs_if_true. intro H3. inv H3.
+    rewrite Hcond. apply rs_if_true. intro H3'. inv H3'.
 
     dostep'. separate_instr. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
     cbn.
-    dostep'. eapply r_label with (es:=[AI_basic (BI_const (nat_to_value 1));
-           AI_basic BI_grow_memory]) (k:=1) (lh:= (LH_rec [] 0 [] (LH_base [] []) []) ).
-    eapply r_grow_memory_success; eauto. admit. admit. cbn.
-    assert (eqseq [:: AI_label 0 [::]
-        [:: AI_basic
-              (BI_const
-                 (VAL_int32
-                    (Wasm_int.Int32.repr
-                       (Z.of_nat (ssrnat.nat_of_bin size)))))]][:: AI_label 0 [::]
-        [:: AI_basic
-              (BI_const
-                 (VAL_int32
-                    (Wasm_int.Int32.repr
-                       (Z.of_nat (ssrnat.nat_of_bin size)))))]]). admit. eassumption. admit. admit. }
+    apply steps_inside_label.
+    dostep'. separate_instr. elimr_nary_instr 1. eapply r_grow_memory_success; eauto.
+    dostep'. separate_instr. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
+    dostep'. constructor. apply rs_if_false.
+
+    assert (size >= 0)%N. { subst. cbn. auto. lia. }
+    { unfold Wasm_int.Int32.eq. cbn. rewrite zeq_false. reflexivity. intro.
+      subst. cbn in *. unfold page_limit in *.
+      rewrite Z_nat_bin in H6.
+      rewrite Wasm_int.Int32.Z_mod_modulus_id in H6. lia.
+       unfold Wasm_int.Int32.modulus, Wasm_int.Int32.wordsize, Wordsize_32.wordsize, two_power_nat. cbn. lia. }
+    dostep'. separate_instr. constructor. apply rs_block with (vs:= [])(n:=0); eauto.
+    apply steps_inside_label. cbn. dostep'. constructor. apply rs_nop. apply rt_refl.
+    eapply update_mem_preserves_INV; eauto. }
+    { (* growing memory fails *)
+      admit.
+    } }
 
     (* enough space *)
     {

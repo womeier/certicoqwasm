@@ -18,6 +18,9 @@ Import MonadNotation.
 
 (* Main file for compiler backend targeting WASM. *)
 
+(* memory can grow to at most 64KB * max_mem_pages *)
+Definition max_mem_pages := 10000%N.
+
 (* Currently: all variables/parameters are of type i32, lambdaANF is untyped, arity enough to generate function calls *)
 
 
@@ -668,7 +671,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
        ; mod_tables := []
 
        ; mod_mems := {| lim_min := N_of_nat 1         (* initial memory size in pages (1 page = 2^16 = 64 KiB), is grown as needed *)
-                      ; lim_max := Some 10000%N       (* set to ensure, i32 ptr doesn't overflow, but memory grow fails instead *)
+                      ; lim_max := Some max_mem_pages (* set to ensure, i32 ptr doesn't overflow, but memory grow fails instead *)
                       |} :: nil
 
        ; mod_globals := {| modglob_type := {| tg_mut := MUT_mut; tg_t := T_i32 |}  (* global_mem_ptr *)
