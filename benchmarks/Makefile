@@ -7,9 +7,9 @@ TESTS=$(shell cat TESTS)
 WATFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wat, $(TESTS))
 WASMFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wasm, $(TESTS))
 JSFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.js, $(TESTS))
-WASM2WAT=wasm2wat
+WASM2WAT=wasm2wat --enable-tail-call
 
-all: lib tests runwasm convert2wat
+all: lib tests convert2wat tailcallify runwasm
 
 .PHONY: all default clean lib cleanlib tests $(TESTS)
 
@@ -23,6 +23,10 @@ $(WASMFILES): tests
 	$(WASM2WAT) $< > $@
 
 convert2wat: $(WATFILES)
+
+# currently: certicoqwasm generates normal calls -> replace them with tailcalls until this is added to wasmcert-coq
+tailcallify: $(WATFILES) convert2wat
+	./insert_tailcalls.py
 
 runwasm: $(JSFILES)
 	ulimit -s unlimited && ./run_wasm_benchmarks.py

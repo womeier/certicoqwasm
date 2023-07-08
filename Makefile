@@ -52,12 +52,13 @@ docs/compilation.html: theories/CodegenWASM/LambdaANF_to_WASM.v
 docs/proof.html: theories/CodegenWASM/LambdaANF_to_WASM_correct.v
 	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWASM/LambdaANF_to_WASM_correct.v -o ../docs/proof.html
 
-install: plugin cplugin bootstrap
+#install: plugin cplugin bootstrap
+install: plugin
 	$(MAKE) -C libraries install
 	$(MAKE) -C theories install
 	$(MAKE) -C plugin install
-	$(MAKE) -C cplugin install
-	$(MAKE) -C bootstrap install
+#	$(MAKE) -C cplugin install
+#	$(MAKE) -C bootstrap install
 
 clean:
 	$(MAKE) -C libraries clean
