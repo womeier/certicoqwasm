@@ -44,7 +44,8 @@ ALECTRYON_FLAGS := --backend webpage $(COQPROJECT_Q_ARGS) \
 	--cache-directory $(ALECTRYON_CACHE) --cache-compression
 
 docs: docs/compilation.html docs/proof.html
-	echo "<html> <body> <h1> Alectryon files for CertiCoq Wasm backend </h1> - <a href='compilation.html'> Compilation </a> <br> <br> - <a href='proof.html'> Correctness proof </a> (This file is big) </body </html>" > docs/index.html
+	echo "<html> <body> <h1> Alectryon files for CertiCoq Wasm backend (`git rev-parse --short HEAD`, `date +'%d %B %Y'`)</h1> - \
+		<a href='compilation.html'> Compilation </a> <br> <br> - <a href='proof.html'> Correctness proof </a> (This file is big) </body </html>" > docs/index.html
 
 docs/compilation.html: theories/CodegenWASM/LambdaANF_to_WASM.v
 	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWASM/LambdaANF_to_WASM.v -o ../docs/compilation.html
