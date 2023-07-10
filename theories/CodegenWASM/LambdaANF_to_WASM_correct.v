@@ -1381,7 +1381,8 @@ Definition INV_linear_memory sr fr :=
       smem_ind (host_function:=host_function) sr (f_inst fr) = Some 0
    /\ exists m, nth_error (s_mems sr) 0 = Some m
    /\ exists size, mem_size m = size
-   /\ mem_max_opt m = Some max_mem_pages.
+   /\ mem_max_opt m = Some max_mem_pages
+   /\ (size <= max_mem_pages)%N.
 
 Definition INV_local_ptr_in_linear_memory (sr : store_record) fr := forall y y' x m,
   repr_var venv nenv y y'
@@ -1665,17 +1666,18 @@ Proof.
   rewrite Hglob in H. apply H in H1. destruct H1 as [i Hi]. eauto.
 Qed.
 
-(* TODO: m should have same size as (s_mems s 0) *)
 Lemma update_mem_preserves_linear_memory : forall s s' f m,
    INV_linear_memory s f  ->
    mem_max_opt m = Some max_mem_pages ->
+   (exists size, mem_size m = size /\ size <= max_mem_pages)%N ->
    upd_s_mem (host_function:=host_function) s
                 (update_list_at (s_mems s) 0 m) = s' ->
    INV_linear_memory s' f.
 Proof.
-  unfold INV_linear_memory. intros s s' f m [H [m' [H1 H2]]] H'.
+  unfold INV_linear_memory. intros s s' f m [H [m' [H1 [size [H2 [H3 H4]]]]]] H' [size' [H6 H7]].
   split. assumption. exists m. split. subst.
-  cbn. unfold update_list_at. cbn. by rewrite take0. destruct H2 as [size [Hs1 Hs2]]. unfold take in H'. cbn. subst. eauto.
+  cbn. unfold update_list_at. cbn. by rewrite take0.
+   exists size'. repeat split; auto.
 Qed.
 
 Lemma update_mem_preserves_local_ptr_in_linear_memory : forall s s' f m,
@@ -1711,6 +1713,7 @@ Qed.
 Corollary update_mem_preserves_INV : forall s s' f m,
   INV s f ->
   mem_max_opt m = Some max_mem_pages ->
+  (exists size, mem_size m = size /\ size <= max_mem_pages)%N ->
   upd_s_mem (host_function:=host_function) s
                 (update_list_at (s_mems s) 0 m) = s' ->
   INV s' f.
@@ -2048,15 +2051,18 @@ Admitted.
 Lemma administrative_instruction_eqb_refl : forall x, administrative_instruction_eqb x x = true.
 Proof. Admitted.
 
-Lemma memory_grow_success : forall m,
+Lemma memory_grow_success : forall m sr fr,
+  INV_linear_memory sr fr ->
+  nth_error (s_mems sr) 0 = Some m ->
   (mem_size m + 1 <=? max_mem_pages)%N ->
   exists m', mem_grow m 1 = Some m'.
 Proof.
-  intro m. eexists. unfold mem_grow.
-  assert ((mem_size m + 1 <=? page_limit)%N) as H'. { unfold max_mem_pages in H. unfold page_limit. apply N.leb_le. apply N.leb_le in H. lia. }
+  intros m sr fr Hinv H Hsize. eexists. unfold mem_grow.
+  assert ((mem_size m + 1 <=? page_limit)%N) as H'. { unfold max_mem_pages in H. unfold page_limit. apply N.leb_le. apply N.leb_le in Hsize. unfold max_mem_pages in Hsize. lia. }
   rewrite H'. clear H'.
-  destruct m. cbn.
-Admitted.
+  unfold INV_linear_memory in Hinv. destruct Hinv as [H1 [m' [H2 [H3 [H4 [H5 H6]]]]]].
+  rewrite H2 in H. inv H. rewrite H5. cbn. rewrite Hsize. reflexivity.
+Qed.
 
 Lemma N_div_ge0 : forall a b, (b > 0)%N -> (a >= 0)%N -> (a / b >= 0)%N.
 Proof.
@@ -2224,8 +2230,8 @@ Proof with eauto.
   (* grow memory if necessary *)
   intros ys grow state sr fr H Hinv. subst.
   unfold grow_memory_if_necessary. cbn.
-  have I := Hinv.  destruct I as [? [_ [INVgmp_w [INVcap_w [INVmuti32 [INVlinmem [? [? [INVglobalptrInMem INVcapInMem]]]]]]]]].
-  destruct INVlinmem as [Hm1 [m [Hm2 [size [Hm3 Hm4]]]]].
+  have I := Hinv.  destruct I as [? [_ [INVgmp_w [INVcap_w [INVmuti32 [INVlinmem [? [? [INVglobalptrInMem [INVcapInMem _]]]]]]]]]].
+  have I := INVlinmem. destruct I as [Hm1 [m [Hm2 [size [Hm3 [Hm4 Hm5]]]]]].
 
   assert (global_var_r global_mem_ptr sr fr) as H2. { apply global_var_w_implies_global_var_r; auto. } destruct H2. cbn.
   destruct ((~~ Wasm_int.Int32.lt
@@ -2239,7 +2245,11 @@ Proof with eauto.
   destruct (N.leb_spec (size + 1) max_mem_pages); unfold max_mem_pages in *.
   (* grow memory success *)
   assert (mem_size m + 1 <= page_limit)%N. { unfold max_mem_pages in H3. unfold page_limit. lia. }
-  edestruct memory_grow_success. { subst. apply N.leb_le. eassumption. } clear H4.
+  assert (Hsize: (mem_size m + 1 <=? max_mem_pages)%N). { subst. apply N.leb_le. now unfold max_mem_pages. }
+
+
+  have Hgrow := memory_grow_success _ _ _ INVlinmem Hm2 Hsize .
+  destruct Hgrow. clear H4.
   { eexists. eexists. split.
     edestruct INVgmp_w as [sr' Hgmp].
     unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
@@ -2277,8 +2287,9 @@ Proof with eauto.
        unfold Wasm_int.Int32.modulus, Wasm_int.Int32.wordsize, Wordsize_32.wordsize, two_power_nat. cbn. lia. }
     dostep'. separate_instr. constructor. apply rs_block with (vs:= [])(n:=0); eauto.
     apply steps_inside_label. cbn. dostep'. constructor. apply rs_nop. apply rt_refl.
-    eapply update_mem_preserves_INV. 3: reflexivity. assumption.
-    eapply mem_grow_preserves_max_pages... }
+    eapply update_mem_preserves_INV. 4: reflexivity. assumption.
+    eapply mem_grow_preserves_max_pages... exists (mem_size m + 1)%N. split.
+    eapply mem_grow_increases_size in H5; auto. rewrite N.add_comm. apply H5. now apply N.leb_le. }
     { (* growing memory fails *) admit. }
     }
 
@@ -2412,7 +2423,7 @@ Proof with eauto.
       destruct INVcap_r'''.
 
       (* invariants mem *)
-      edestruct INVlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 Hmem4]]]]].
+      edestruct INVlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
       edestruct INVcapInMem. eassumption. rename x3 into m''.
 
       eexists. eexists. split. cbn.
@@ -2434,7 +2445,8 @@ Proof with eauto.
 
       (* store constructor args *)
       assert (Hinv'''': INV (upd_s_mem (host_function:=host_function) s'''
-       (update_list_at (s_mems s''') 0 m'')) f'). { eapply update_mem_preserves_INV. 3: reflexivity. eauto. erewrite <- mem_store_preserves_max_pages... }
+       (update_list_at (s_mems s''') 0 m'')) f'). { eapply update_mem_preserves_INV. 4: reflexivity. eauto. erewrite <- mem_store_preserves_max_pages...
+       apply mem_store_preserves_length in H12. exists size. subst. unfold mem_size, mem_length, memory_list.mem_length. rewrite <- H12. split; auto. }
       have Hredargs := store_constr_args_reduce _ _ _ _ _ state (upd_s_mem (host_function:=host_function) s''' (update_list_at (s_mems s''') 0 m'')) f' Hinv'''' H9.
       destruct Hredargs as [s_args [f_args [Hred_args Hinv_s_args]]].
 

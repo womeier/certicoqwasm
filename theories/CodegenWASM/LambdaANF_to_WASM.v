@@ -19,7 +19,7 @@ Import MonadNotation.
 (* Main file for compiler backend targeting WASM. *)
 
 (* memory can grow to at most 64KB * max_mem_pages *)
-Definition max_mem_pages := 10000%N.
+Definition max_mem_pages := 5000%N.
 
 (* Currently: all variables/parameters are of type i32, lambdaANF is untyped, arity enough to generate function calls *)
 
