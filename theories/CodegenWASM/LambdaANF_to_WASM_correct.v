@@ -47,8 +47,6 @@ Open Scope list.
 
 Import ListNotations.
 
-Definition max_args := 1024%Z. (* limited by space in boxed header *)
-
 
  (* TODO: move to identifiers *)
 Inductive bound_var_val: LambdaANF.cps.val -> Ensemble cps.var :=
@@ -511,13 +509,14 @@ Let store_record := store_record host_function.
 (* VALUE RELATION *)
 (* immediate is pointer to linear memory or function id *)
 Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> store_record -> wasm_value -> Prop :=
-| Rconstr_v : forall t vs sr m addr,
+| Rconstr_v : forall v t vs sr m addr,
     (* addr in bounds of linear memory *)
     (0 <= Z.of_nat addr < Wasm_int.Int32.modulus)%Z ->
     (* store_record contains memory *)
     List.nth_error sr.(s_mems) 0 = Some m ->
     (* constructor tag is set properly, see LambdaANF_to_WASM, constr alloc structure*)
-    load_i32 m (N.of_nat addr) = Some (VAL_int32 (tag_to_i32 t)) ->
+    v = tag_to_i32 t ->
+    load_i32 m (N.of_nat addr) = Some (VAL_int32 v) ->
     (* arguments are set properly *)
     repr_val_constr_args_LambdaANF_Codegen vs sr (4 + addr) ->
     repr_val_LambdaANF_Codegen (LambdaANF.cps.Vconstr t vs) sr (Val_ptr addr)
@@ -548,7 +547,7 @@ with repr_val_constr_args_LambdaANF_Codegen : (list LambdaANF.cps.val) -> store_
         repr_val_constr_args_LambdaANF_Codegen vs sr (4 + addr) ->
         repr_val_constr_args_LambdaANF_Codegen (v::vs) sr addr.
 
-
+Check repr_val_LambdaANF_Codegen_sind.
 
 Inductive Forall_fundefs: (LambdaANF.cps.var -> fun_tag -> list LambdaANF.cps.var -> exp -> Prop) -> fundefs -> Prop :=
 | Ff_cons : forall (P:(LambdaANF.cps.var -> fun_tag -> list LambdaANF.cps.var -> exp -> Prop)) f t vs e fds,
@@ -1338,6 +1337,41 @@ Lemma val_relation_depends_only_on_mem_and_funcs : forall v sr sr' value,
     repr_val_LambdaANF_Codegen fenv venv nenv host_function v sr value ->
     repr_val_LambdaANF_Codegen fenv venv nenv host_function v sr' value.
 Proof.
+  intros. inv H1. admit.
+  (* constructor *)
+  (* { econstructor; eauto. congruence.
+    inv H6. 1: constructor.
+    assert (m0 = m) by congruence. subst m0. remember (4 + (4 + addr)) as a.
+    induction H8 using repr_val_constr_args_LambdaANF_Codegen_rect.
+    { econstructor; eauto. congruence.
+    econstructor.
+     subst m0. rewrite H in H1. subst. rename addr0 into addr.
+    econstructor; eauto.  (* missing IH *) admit.
+    eapply IHrepr_val_constr_args_LambdaANF_Codegen. 4: reflexivity.
+    eauto. eauto. admit. (* arithmetic fact *) eassumption. admit. } *)
+  (*
+  econstructor; eauto; try congruence.
+  generalize dependent H6. generalize dependent m. generalize dependent addr. revert t.
+  induction vs; intros.
+  - constructor.
+  - inv H6. assert (m0 = m) by congruence. subst m0. rewrite H in H7. econstructor; eauto. admit. (* IH required *) eapply IHvs; eauto. unfold load_i32, load in H8.
+  destruct (N.of_nat (4 + addr) + (N.of_nat 0 + N.of_nat 4) <=? mem_length m)%N eqn:Heqn. { apply N.leb_le in Heqn.
+  assert (mem_length m < 10000)%N. admit.
+   unfold mem_length in *. unfold Wasm_int.Int32.modulus, two_power_nat. cbn. lia. lia. cbn in Heqn. inv H12. unfold l admit.   lia. } eassumption. eassumption. admit.
+  assumption.
+  generalize dependent t. generalize dependent m. remember (4 + addr) as a. generalize dependent addr.
+  Check repr_val_constr_args_LambdaANF_Codegen_rect.
+  induction H6 using repr_val_constr_args_LambdaANF_Codegen_rect; intros.
+  { econstructor; eauto. }
+  { subst. rename addr0 into addr.
+    econstructor. rewrite H1 in H5. inv H5. rename m0 into m.
+    have IH := IHrepr_val_constr_args_LambdaANF_Codegen H H0 _ H4.
+   clear IHrepr_val_constr_args_LambdaANF_Codegen. econstructor; eauto.  rewrite H3 in H1. inv H1. rewrite -H. assumption.
+    econstructor.
+    econstructor; eauto.
+  admit. admit. *)
+  (* function *)
+  econstructor; eauto. rewrite -H0. eassumption.
 Admitted.
 
 Lemma update_glob_keeps_memory_intact : forall sr sr' fr value,
@@ -2501,7 +2535,7 @@ Proof with eauto.
     inv Hlocal. destruct H.
 
     have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hinv_bound]]]]]]]]]].
-    have Hextr := extract_constr_arg n vs v _ _ _ Hinv_bound H0 H3 H10.
+    have Hextr := extract_constr_arg n vs v _ _ _ Hinv_bound H0 H3 H11.
     destruct Hextr as [bs [wal [Hload [Heq Hbsval]]]].
 
      assert (Hrm: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e (map_util.M.set x v rho) sr
@@ -2554,7 +2588,7 @@ Proof with eauto.
 
     have I := Hinv'. destruct I as [_ [_ [_ [_ [_ [Hlinmem [Hl ]]]]]]].
     destruct (Hl _ _ Hvy).
-    rewrite H in H5. injection H5 => H5'. subst. clear H5.
+    rewrite H in H4. injection H4 => H4'. subst. clear H4.
 
     rewrite set_nth_nth_error_other in H9. 2: admit. 2: admit. cbn.
     rewrite H1 in H9. injection H9 => H9'. subst. clear H9.
@@ -2655,13 +2689,13 @@ Proof with eauto.
     dostep'. constructor. apply rs_if_true.
     cbn. unfold nat_to_i32. unfold tag_to_i32.
     unfold Wasm_int.Int32.eq.
-    cbn in Hload. unfold load_i32 in H10.
-    rewrite Hload in H10. subst. injection H10 => H10'.
+    cbn in Hload. unfold load_i32 in H11.
+    rewrite Hload in H11. subst. injection H11 => H11'.
     destruct (zeq (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (decode_int b)))
       (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (Z.of_nat (Pos.to_nat t))))) eqn:Heq. discriminate. contradiction.
 
        dostep'. constructor. eapply rs_block with (vs := []); auto. unfold to_e_list. cbn.
-      eapply steps_inside_label. apply Hstep. unfold load_i32 in H10. rewrite Hload in H10. inv H10. }
+      eapply steps_inside_label. apply Hstep. unfold load_i32 in H11. rewrite Hload in H11. inv H11. }
        assumption. }
 
       (* t0 <> t *)
@@ -2700,15 +2734,15 @@ Proof with eauto.
     apply r_get_local. eassumption.
 
      assert (Harith: (N.of_nat addr) = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))). admit. cbn.
-    rewrite Harith in H14.
+    rewrite Harith in H15.
      unfold load_i32 in H8.
     destruct (load m (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))
          (N.of_nat 0) 4) eqn:Hload.
      { dostep. elimr_nary_instr 1.
        eapply r_load_success.
        apply Hlinmem. eassumption.
-       apply Hload. unfold load_i32 in H14. rewrite Hload in H14.
-       assert (wasm_deserialise b T_i32 = VAL_int32 (tag_to_i32 t)). {  inv H14. unfold wasm_deserialise. f_equal. unfold tag_to_i32. admit. } rewrite H.
+       apply Hload. unfold load_i32 in H15. rewrite Hload in H15.
+       assert (wasm_deserialise b T_i32 = VAL_int32 (tag_to_i32 t)). {  inv H15. unfold wasm_deserialise. f_equal. unfold tag_to_i32. admit. } rewrite H.
 
        dostep. elimr_nary_instr 2.
        constructor. apply rs_relop.
@@ -2721,7 +2755,7 @@ Proof with eauto.
 
       dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn.
       eapply steps_inside_label. unfold to_e_list. apply Hred.
-     } unfold load_i32 in H14. rewrite Hload in H14. inv H14. assumption. }
+     } unfold load_i32 in H15. rewrite Hload in H15. inv H15. assumption. }
 
 (*
     { (* remember ([:: BI_get_local v'; BI_load T_i32 None (N.of_nat 2) (N.of_nat 0);
