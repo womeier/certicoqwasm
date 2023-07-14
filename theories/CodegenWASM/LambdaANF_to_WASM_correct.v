@@ -549,6 +549,13 @@ with repr_val_constr_args_LambdaANF_Codegen : (list LambdaANF.cps.val) -> store_
 
 Check repr_val_LambdaANF_Codegen_sind.
 
+Scheme repr_val_LambdaANF_Codegen_mut := Induction for repr_val_LambdaANF_Codegen Sort Prop
+  with repr_val_constr_args_LambdaANF_Codegen_mut := Induction for repr_val_constr_args_LambdaANF_Codegen Sort Prop.
+
+(*
+Check repr_val_LambdaANF_Codegen_ind.
+Check repr_val_LambdaANF_Codegen_mut. *)
+
 Inductive Forall_fundefs: (LambdaANF.cps.var -> fun_tag -> list LambdaANF.cps.var -> exp -> Prop) -> fundefs -> Prop :=
 | Ff_cons : forall (P:(LambdaANF.cps.var -> fun_tag -> list LambdaANF.cps.var -> exp -> Prop)) f t vs e fds,
          P f t vs e ->
@@ -1337,42 +1344,28 @@ Lemma val_relation_depends_only_on_mem_and_funcs : forall v sr sr' value,
     repr_val_LambdaANF_Codegen fenv venv nenv host_function v sr value ->
     repr_val_LambdaANF_Codegen fenv venv nenv host_function v sr' value.
 Proof.
-  intros. inv H1. admit.
-  (* constructor *)
-  (* { econstructor; eauto. congruence.
-    inv H6. 1: constructor.
-    assert (m0 = m) by congruence. subst m0. remember (4 + (4 + addr)) as a.
-    induction H8 using repr_val_constr_args_LambdaANF_Codegen_rect.
-    { econstructor; eauto. congruence.
-    econstructor.
-     subst m0. rewrite H in H1. subst. rename addr0 into addr.
-    econstructor; eauto.  (* missing IH *) admit.
-    eapply IHrepr_val_constr_args_LambdaANF_Codegen. 4: reflexivity.
-    eauto. eauto. admit. (* arithmetic fact *) eassumption. admit. } *)
-  (*
-  econstructor; eauto; try congruence.
-  generalize dependent H6. generalize dependent m. generalize dependent addr. revert t.
-  induction vs; intros.
-  - constructor.
-  - inv H6. assert (m0 = m) by congruence. subst m0. rewrite H in H7. econstructor; eauto. admit. (* IH required *) eapply IHvs; eauto. unfold load_i32, load in H8.
-  destruct (N.of_nat (4 + addr) + (N.of_nat 0 + N.of_nat 4) <=? mem_length m)%N eqn:Heqn. { apply N.leb_le in Heqn.
-  assert (mem_length m < 10000)%N. admit.
-   unfold mem_length in *. unfold Wasm_int.Int32.modulus, two_power_nat. cbn. lia. lia. cbn in Heqn. inv H12. unfold l admit.   lia. } eassumption. eassumption. admit.
-  assumption.
-  generalize dependent t. generalize dependent m. remember (4 + addr) as a. generalize dependent addr.
-  Check repr_val_constr_args_LambdaANF_Codegen_rect.
-  induction H6 using repr_val_constr_args_LambdaANF_Codegen_rect; intros.
-  { econstructor; eauto. }
-  { subst. rename addr0 into addr.
-    econstructor. rewrite H1 in H5. inv H5. rename m0 into m.
-    have IH := IHrepr_val_constr_args_LambdaANF_Codegen H H0 _ H4.
-   clear IHrepr_val_constr_args_LambdaANF_Codegen. econstructor; eauto.  rewrite H3 in H1. inv H1. rewrite -H. assumption.
-    econstructor.
-    econstructor; eauto.
-  admit. admit. *)
+  intros. inv H1.
+  (* constructor value *)
+  { remember (4 + addr) as a.  generalize dependent addr.
+    have indPrinciple := repr_val_constr_args_LambdaANF_Codegen_mut fenv venv nenv _
+      (fun (v : cps.val) (s : datatypes.store_record host_function) (w : wasm_value)
+           (H : repr_val_LambdaANF_Codegen fenv venv nenv host_function v s w) => forall s',
+                s_mems s = s_mems s' -> s_funcs s = s_funcs s' ->
+                   repr_val_LambdaANF_Codegen fenv venv nenv host_function v s' w)
+      (fun (l : seq cps.val) (s : datatypes.store_record host_function) (i : immediate)
+           (H: repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function l s i) => forall s',
+               s_mems s = s_mems s' -> s_funcs s = s_funcs s' ->
+                   repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function l s' i).
+    eapply indPrinciple in H6; clear indPrinciple; intros; eauto.
+    { econstructor; eauto. congruence. subst. eassumption. }
+    { econstructor; eauto. congruence. }
+    { econstructor; eauto. rewrite <- H2. eassumption. }
+    { econstructor. }
+    { econstructor; eauto. congruence. }
+  }
   (* function *)
-  econstructor; eauto. rewrite -H0. eassumption.
-Admitted.
+  { econstructor; eauto. rewrite -H0. eassumption. }
+Qed.
 
 Lemma update_glob_keeps_memory_intact : forall sr sr' fr value,
   supdate_glob (host_function:=host_function) sr (f_inst fr) result_var
