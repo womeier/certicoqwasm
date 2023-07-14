@@ -1079,14 +1079,14 @@ Proof.
   - (* Econstr *)
     simpl in H.
     { destruct (translate_exp nenv cenv venv fenv e) eqn:H_eqTranslate; inv H.
-      destruct (translate_var nenv venv v "translate_exp constr") eqn:H_translate_var.
-      inv H1. rename i into v'.
-      destruct (store_constructor nenv cenv venv fenv t l) eqn:store_constr. inv H1. inv H1.
+      destruct (translate_var nenv venv v "translate_exp constr") eqn:H_translate_var. inv H1.
+      destruct (store_constructor nenv cenv venv fenv t l) eqn:store_constr.
+      inv H1. inv H1.
   repeat match goal with
   |- context C [?x :: ?l] =>
      lazymatch l with [::] => fail | _ => rewrite <-(cat1s x l) end
   end.
-
+  rename i into v'.
   replace (([:: BI_get_global global_mem_ptr] ++
    [:: BI_const (nat_to_value ((Datatypes.length l + 1) * 4))] ++
    [:: BI_binop T_i32 (Binop_i BOI_add)] ++
@@ -1163,7 +1163,7 @@ Proof.
         replace ([:: BI_get_global constr_alloc_ptr] ++ [:: BI_set_local v'] ++ l0) with
                 ([BI_get_global constr_alloc_ptr; BI_set_local v'] ++ l0) by reflexivity.
 
-        repeat rewrite <- app_assoc. Print Rconstr_e.
+        repeat rewrite <- app_assoc.
 
         eapply Rconstr_e; eauto.
         econstructor. eassumption. apply nth_proj_assign. assumption.
@@ -1853,12 +1853,17 @@ Proof.
     exists ctor_name, ctor_ind_name, ctor_ind_tag,ctor_arity,ctor_ordinal; auto.
 Qed.
 
-(* ISSUE: induction can run into nested *)
-Lemma app_trans: forall s f es s' f' es' les hs hs',
-    reduce_trans (hs, s, f, es) (hs', s', f', es') ->
-    reduce_trans (hs, s, f, (es ++ les)) (hs', s', f', (es' ++ les)) /\ (f_inst f = f_inst f').
+Lemma app_trans: forall s f es s' f' es' les hs,
+    reduce_trans (hs, s, f, es) (hs, s', f', es') ->
+    reduce_trans (hs, s, f, (es ++ les)) (hs, s', f', (es' ++ les)) /\ (f_inst f = f_inst f').
 Proof.
-  intros. apply clos_rt_rt1n in H.
+  intros. apply clos_rt_rt1n in H. remember (hs, s, f, es) as x. remember (hs, s', f', es') as x'.
+  generalize dependent hs. revert s s' f f' es es'.
+  induction H; intros; subst.
+  - inv Heqx'. split. apply rt_refl. reflexivity.
+  - destruct y as [[[hs0 s0] f0] es0].
+    have H' := IHclos_refl_trans_1n s0 s' f0 f' es0 es  hs0.
+  (*
   induction es.
   - { split. inv H. apply rt_refl. destruct y. destruct p0. destruct p0. cbn. cbn in H0. destruct l.
       inv H0. admit. destruct (v_to_e_list vcs); inv H.
@@ -1867,7 +1872,7 @@ Proof.
 
   remember (hs, s, f, es) as x. remember (hs', s', f', es') as y.
   generalize dependent Heqy. generalize dependent Heqx.
-   induction H; intros; subst.
+   induction H; intros; subst. *)
    (*
   - inv H. { admit. } cbn. apply rt_refl. destruct y. destruct p0. destruct p0.
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])).
@@ -1988,14 +1993,36 @@ Proof.
   *)
 Admitted.
 
-Lemma store_constr_args_reduce : forall fenv venv nenv ys sargs state s f,
+Lemma store_constr_args_reduce : forall ys sargs state s f,
   INV s f ->
   Forall_statements_in_seq (is_nth_projection fenv venv nenv) ys sargs ->
   exists s' f', reduce_trans
   (state, s, f, [seq AI_basic i | i <- sargs])
-  (state, s', f', []) /\ INV s' f' (* /\ TODO: now enough memory available *).
+  (state, s', f', []) /\ INV s' f' (* /\ (s_mem s') as args set*).
 Proof.
-(*
+  unfold Forall_statements_in_seq. intros. remember (is_nth_projection fenv venv nenv) as R.
+  generalize dependent HeqR. generalize dependent s. generalize dependent f.
+  induction H0; intros.
+  { exists s. exists f. split. apply rt_refl. assumption. }
+  { subst. rename s into instr. rename s' into instr'. rename s0 into s.
+    edestruct IHForall_statements_in_seq' as [sr [fr [Hred Hinv]]]; eauto.  rewrite map_cat.
+    inv H. cbn. inv H2; rename i into v'.
+    { (* store var *)
+
+      (* invariants *)
+      have I := H1. destruct I as [_ [_ [_ [Hinv_cap [Hinv_muti32 [Hinv_linmem [Hinv_locals _]]]]]]].
+      eapply global_var_w_implies_global_var_r in Hinv_cap. destruct Hinv_cap.
+      destruct (Hinv_locals _ _ H).
+      destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
+      eexists. eexists. split.
+      (* reduce *)
+      separate_instr. dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
+      separate_instr. dostep. elimr_nary_instr 2. constructor. constructor. reflexivity.
+      separate_instr. dostep. apply r_eliml. auto. elimr_nary_instr 0. apply r_get_local. eassumption.
+      separate_instr. dostep. elimr_nary_instr 2. eapply r_store_success; eauto. (* store successful *) admit. admit. eassumption. assumption. }
+    { (* store fn index *) admit. }
+
+    (*
       (* set args + finish *)
       induction H9.
 
@@ -2083,7 +2110,10 @@ Proof.
 Admitted.
 
 Lemma administrative_instruction_eqb_refl : forall x, administrative_instruction_eqb x x = true.
-Proof. Admitted.
+Proof.
+  intros. unfold administrative_instruction_eqb.
+  destruct administrative_instruction_eq_dec. reflexivity. contradiction.
+Qed.
 
 Lemma memory_grow_success : forall m sr fr,
   INV_linear_memory sr fr ->
@@ -2403,7 +2433,7 @@ Proof with eauto.
       cbn. repeat rewrite map_cat. cbn.
       have Hgrowmem := memory_grow_reduce _ _ state sr fr Heqgrow Hinv.
       destruct Hgrowmem as [s' [f' [Hred Hinv']]].
-      have Hredgrow := app_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ _ Hred. cbn in Hredgrow.
+      have Hredgrow := app_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ Hred. cbn in Hredgrow.
 
     cbn. separate_instr.
     (* assert sr, fr after written tag to mem *)
@@ -2481,7 +2511,7 @@ Proof with eauto.
       assert (Hinv'''': INV (upd_s_mem (host_function:=host_function) s'''
        (update_list_at (s_mems s''') 0 m'')) f'). { eapply update_mem_preserves_INV. 4: reflexivity. eauto. erewrite <- mem_store_preserves_max_pages...
        apply mem_store_preserves_length in H12. exists size. subst. unfold mem_size, mem_length, memory_list.mem_length. rewrite <- H12. split; auto. }
-      have Hredargs := store_constr_args_reduce _ _ _ _ _ state (upd_s_mem (host_function:=host_function) s''' (update_list_at (s_mems s''') 0 m'')) f' Hinv'''' H9.
+      have Hredargs := store_constr_args_reduce _ _ state (upd_s_mem (host_function:=host_function) s''' (update_list_at (s_mems s''') 0 m'')) f' Hinv'''' H9.
       destruct Hredargs as [s_args [f_args [Hred_args Hinv_s_args]]].
 
      (* invariants after stepping through Hred_args *)

@@ -20,6 +20,8 @@ Import MonadNotation.
 
 (* memory can grow to at most 64KB * max_mem_pages *)
 Definition max_mem_pages := 5000%N.
+Definition max_constr_args := 1024%Z.   (* TODO, should be possible to vary without breaking much *)
+Definition max_function_args := 1024%Z. (* TODO, should be possible to vary without breaking much *)
 
 (* Currently: all variables/parameters are of type i32, lambdaANF is untyped, arity enough to generate function calls *)
 
@@ -431,6 +433,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' =>
+       (*      if Z.gtb (Z.of_nat (length ys)) max_constr_args then Err "found constructor with too many args" else *)
       following_instr <- translate_exp nenv cenv venv fenv e' ;;
       x_var <- translate_var nenv venv x "translate_exp constr";;
       store_constr <- store_constructor nenv cenv venv fenv tg ys;;
