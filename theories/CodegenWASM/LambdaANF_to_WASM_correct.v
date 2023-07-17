@@ -1792,35 +1792,67 @@ Ltac elimr_nary_instr n :=
           end
   end.
 
-Lemma steps_inside_label : forall instructions state sr sr' fr fr',
+Lemma administrative_instruction_eqb_refl : forall x, administrative_instruction_eqb x x = true.
+Proof.
+  intros. unfold administrative_instruction_eqb.
+  destruct administrative_instruction_eq_dec. reflexivity. contradiction.
+Qed.
+
+Lemma reduce_trans_label : forall instructions hs hs' sr sr' fr fr',
  clos_refl_trans
   (host.host_state host_instance * datatypes.store_record host_function * frame *
    seq administrative_instruction)
  (reduce_tuple (host_instance:=host_instance))
- (state, sr, fr, instructions)
- (state, sr', fr', []) ->
+ (hs,  sr, fr, instructions)
+ (hs', sr', fr', []) ->
 
   clos_refl_trans
   (host.host_state host_instance * datatypes.store_record host_function * frame *
    seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
-  (state, sr, fr, [:: AI_label 0 [::] instructions])
-  (state, sr', fr', [::]).
+  (hs,  sr, fr, [:: AI_label 0 [::] instructions])
+  (hs', sr', fr', [::]).
 Proof.
   intros.
   apply clos_rt_rt1n in H.
-  remember (state, sr, fr, instructions) as x. remember (state, sr', fr', [::]) as x'.
-  generalize dependent state. generalize dependent sr. generalize dependent fr. generalize dependent fr'. generalize dependent sr'. generalize dependent instructions.
+  remember (hs, sr, fr, instructions) as x. remember (hs', sr', fr', [::]) as x'.
+  generalize dependent state. generalize dependent sr. generalize dependent fr. generalize dependent fr'. generalize dependent sr'. revert instructions hs hs'.
   induction H; intros; subst.
-  - inv Heqx'. constructor. constructor. apply rs_label_const; auto.
+  - inv Heqx. constructor. constructor. now apply rs_label_const.
   - destruct y as [[[? ?] ?] ?].
     assert ((s, s0, f, l) = (s, s0, f, l)) as H' by reflexivity.
-    assert ((s, sr', fr', ([::] : list administrative_instruction)) = (s, sr', fr', [::])) as H'' by reflexivity. assert (state = s). { clear IHclos_refl_trans_1n H' H''. inv H0; auto. (* TODO: don't allow calling host_method *) admit. } subst.
-    have IH := IHclos_refl_trans_1n l sr' fr' f s0 s H' H''. clear H' H''.
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])). eapply rt_step.
+    eapply r_label with (es:=instructions) (k:=1) (lh:= (LH_rec [] 0 [] (LH_base [] []) []) ). apply H.
+    cbn. rewrite app_nil_r. now rewrite administrative_instruction_eqb_refl.
+    cbn. rewrite app_nil_r. assert (eqseq [:: AI_label 0 [::] l] [:: AI_label 0 [::] l]). {
+       cbn. now rewrite administrative_instruction_eqb_refl. } eassumption.
+    eapply IHclos_refl_trans_1n; eauto.
+Qed.
 
-    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])).
-    eapply rt_step. apply r_label with (es:=instructions)(es':=l)(k:=0)(lh:=LH_base [] []). apply H. admit. admit. (* lfilled stuff *) eassumption.
-Admitted.
+Lemma reduce_trans_local : forall instructions hs hs' sr sr' fr fr' f0,
+ clos_refl_trans
+  (host.host_state host_instance * datatypes.store_record host_function * frame *
+   seq administrative_instruction)
+ (reduce_tuple (host_instance:=host_instance))
+ (hs,  sr, fr, instructions)
+ (hs', sr', fr', []) ->
 
+  clos_refl_trans
+  (host.host_state host_instance * datatypes.store_record host_function * frame *
+   seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
+  (hs,  sr, f0, [:: AI_local 0 fr instructions])
+  (hs', sr', f0, [::]).
+Proof.
+  intros.
+  apply clos_rt_rt1n in H.
+  remember (hs, sr, fr, instructions) as x. remember (hs', sr', fr', [::]) as x'.
+  generalize dependent state. generalize dependent sr. generalize dependent fr.
+  generalize dependent fr'. generalize dependent sr'. revert instructions hs hs'.
+  induction H; intros; subst.
+  - inv Heqx. constructor. constructor. now apply rs_local_const.
+  - destruct y as [[[? ?] ?] ?].
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])). eapply rt_step. eapply r_local. apply H.
+    now eapply IHclos_refl_trans_1n.
+Qed.
 
 Ltac dostep_no_separate :=
   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])); first apply rt_step.
@@ -1845,45 +1877,42 @@ Proof.
     exists ctor_name, ctor_ind_name, ctor_ind_tag,ctor_arity,ctor_ordinal; auto.
 Qed.
 
-Lemma app_trans: forall s f es s' f' es' les hs,
-    reduce_trans (hs, s, f, es) (hs, s', f', es') ->
-    reduce_trans (hs, s, f, (es ++ les)) (hs, s', f', (es' ++ les)) /\ (f_inst f = f_inst f').
+Lemma reduce_preserves_finst : forall hs hs' s s' f f' es es',
+  reduce (host_instance:=host_instance) hs  s  f  es
+                                        hs' s' f' es' -> f_inst f = f_inst f'.
 Proof.
-  intros. apply clos_rt_rt1n in H. remember (hs, s, f, es) as x. remember (hs, s', f', es') as x'.
-  generalize dependent hs. revert s s' f f' es es'.
+  intros. induction H; auto.
+Qed.
+
+Lemma reduce_trans_preserves_finst : forall s f es s' f' es' hs hs',
+    reduce_trans (hs, s, f, es) (hs', s', f', es') -> f_inst f = f_inst f'.
+Proof.
+  intros. apply clos_rt_rt1n in H. remember (hs, s, f, es) as x. remember (hs', s', f', es') as x'.
+  generalize dependent hs'. generalize dependent hs. revert s s' f f' es es'.
   induction H; intros; subst.
-  - inv Heqx'. split. apply rt_refl. reflexivity.
+  - congruence.
   - destruct y as [[[hs0 s0] f0] es0].
-    have H' := IHclos_refl_trans_1n s0 s' f0 f' es0 es  hs0.
-  (*
-  induction es.
-  - { split. inv H. apply rt_refl. destruct y. destruct p0. destruct p0. cbn. cbn in H0. destruct l.
-      inv H0. admit. destruct (v_to_e_list vcs); inv H.
-      destruct (v_to_e_list vcs); inv H. destruct (v_to_e_list vcs); inv H. cbn.
-      inv H2.
+    apply reduce_preserves_finst in H. rewrite H.
+    now eapply IHclos_refl_trans_1n.
+Qed.
 
-  remember (hs, s, f, es) as x. remember (hs', s', f', es') as y.
-  generalize dependent Heqy. generalize dependent Heqx.
-   induction H; intros; subst. *)
-   (*
-  - inv H. { admit. } cbn. apply rt_refl. destruct y. destruct p0. destruct p0.
-    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])).
-    cbn. inv H0. inv H. inv H0. inv H2.
-
-  intros. remember ((hs, s, f, es)) as y1.  remember ((hs', s', f', es')) as y2.
-  generalize dependent Heqy1. generalize dependent Heqy2. revert hs hs' s s' f f' es es'. induction H; intros; subst.
-  - dostep'. apply r_elimr. eassumption. apply rt_refl.
-  - inv Heqy1. apply rt_refl.
-  - destruct y. destruct p0. destruct p0.
-    assert (reduce_trans (hs, s, f, es ++ les) (s0, s1, f0, l ++ les)). apply IHclos_refl_trans1; auto.
-
-
-    have IH := IHclos_refl_trans1 hs hs' s s1 f f0 es l.
-  - { inv H. }
-  - admit. inv H. inv H0. inv H. all: try (destruct vs; inv H0). inv H1.
-  Admitted.
- *)
-Admitted.
+(* TODO: consider having the f_inst separate *)
+Lemma app_trans: forall s f es s' f' es' les hs hs',
+    reduce_trans (hs, s, f, es) (hs', s', f', es') ->
+    reduce_trans (hs, s, f, (es ++ les)) (hs', s', f', (es' ++ les)) /\ (f_inst f = f_inst f').
+Proof.
+  intros. apply clos_rt_rt1n in H. remember (hs, s, f, es) as x. remember (hs', s', f', es') as x'.
+  generalize dependent hs. generalize dependent hs'. revert s s' f f' es es'.
+  induction H; intros; subst.
+  - inv Heqx. split. apply rt_refl. reflexivity.
+  - destruct y as [[[hs0 s0] f0] es0].
+    split. eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])). apply rt_step.
+    eapply r_label with (k:=0) (lh:=LH_base [] les). apply H. cbn. now apply /eqseqP.
+    cbn. now apply /eqseqP.
+    apply IHclos_refl_trans_1n; auto.
+    apply clos_rt1n_rt in H0.
+    eapply reduce_trans_preserves_finst in H0. apply reduce_preserves_finst in H. congruence.
+Qed.
 
 Lemma decode_int_bounds : forall b m addr,
   load m (N.of_nat addr) (N.of_nat 0) 4 = Some b ->
@@ -1964,26 +1993,6 @@ Proof.
   unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
 admit. Admitted. (* TODO: wrong, assert that n < Int32.max *)
 
-Lemma load_store : forall m m' addr v,
-store m (Wasm_int.N_of_uint i32m addr) 0%N v 4 = Some m' ->
-load_i32 m' (Wasm_int.N_of_uint i32m addr) = Some (wasm_deserialise v T_i32).
-Proof.
-  intros. unfold store in H.
-  destruct ((Wasm_int.N_of_uint i32m addr + 0 + N.of_nat 4 <=? mem_length m)%N) eqn:Heq. 2: inv H.
-  unfold load_i32. unfold load. cbn. cbn in Heq. rewrite N.add_0_r in Heq.
-  assert (mem_length m = mem_length m'). { remember (bytes_takefill #00 4 v) as bss. cbn in H. rewrite N.add_0_r in H. admit. }
-  rewrite <- H0. rewrite Heq. rewrite N.add_0_r.
-  unfold read_bytes. cbn. unfold those. cbn.
-  destruct (memory_list.mem_lookup (Z.to_N (Wasm_int.Int32.unsigned addr) + 0)%N
-        (mem_data m')) eqn:Hl0. admit.
-  unfold memory_list.mem_lookup in Hl0. apply nth_error_None in Hl0. zify. destruct H2.
-  destruct H1. subst.
-  (*
-  destruct (memory_list.mem_lookup (Z.to_N (Wasm_int.Int32.unsigned addr) + 0)%N
-        (mem_data m')) eqn:Ht1. admit.
-        unfold memory_list.mem_lookup in Ht1. rewrite N.add_0_r in Ht1.
-  *)
-Admitted.
 
 Lemma store_constr_args_reduce : forall ys sargs state s f,
   INV s f ->
@@ -2100,12 +2109,6 @@ Proof.
        admit. } admit. } *)
 
 Admitted.
-
-Lemma administrative_instruction_eqb_refl : forall x, administrative_instruction_eqb x x = true.
-Proof.
-  intros. unfold administrative_instruction_eqb.
-  destruct administrative_instruction_eq_dec. reflexivity. contradiction.
-Qed.
 
 Lemma memory_grow_success : forall m sr fr,
   INV_linear_memory sr fr ->
@@ -2293,6 +2296,46 @@ Proof.
   destruct ((mem_size m + 1 <=? n)%N). 2: inv H. inv H. reflexivity.
 Qed.
 
+
+Lemma load_store : forall m m' addr v,
+length v = 4 ->
+store m (Wasm_int.N_of_uint i32m addr) 0%N v 4 = Some m' ->
+load_i32 m' (Wasm_int.N_of_uint i32m addr) = Some (wasm_deserialise v T_i32).
+Proof.
+  intros. assert (mem_length m = mem_length m'). { rewrite <- H in H0. apply mem_store_preserves_length in H0. unfold mem_length, memory_list.mem_length. f_equal. assumption. }
+   unfold store in H.
+  destruct ((Wasm_int.N_of_uint i32m addr + 0 + N.of_nat 4 <=? mem_length m)%N) eqn:Heq. 2: inv H.
+  unfold load_i32. unfold load. cbn. cbn in Heq. unfold store in H0. rewrite Heq in H0.
+  assert (Hbytes: exists b1 b2 b3 b4, v = [b1; b2; b3; b4]). {
+    destruct v. inv H. destruct v. inv H.
+    destruct v. inv H. destruct v. inv H. destruct v.
+    exists b, b0, b1, b2. reflexivity. inv H. }
+  destruct Hbytes as [b1 [b2 [b3 [b4 Hb]]]]. subst v. rewrite N.add_0_r. rewrite N.add_0_r in Heq, H0.
+  unfold write_bytes in H0. cbn in H0. rewrite N.add_0_r in H0.
+  destruct (mem_update (Z.to_N (Wasm_int.Int32.unsigned addr))%N b1
+               (mem_data m)) eqn:Hupd1. 2: inv H0.
+  destruct (mem_update (Z.to_N (Wasm_int.Int32.unsigned addr) + 1)%N b2 m0) eqn:Hupd2. 2: inv H0.
+  destruct (mem_update (Z.to_N (Wasm_int.Int32.unsigned addr) + 2)%N b3 m1) eqn:Hupd3. 2: inv H0.
+  destruct (mem_update (Z.to_N (Wasm_int.Int32.unsigned addr) + 3)%N b4 m2) eqn:Hupd4. 2: inv H0.
+  inv H0. cbn. unfold mem_length, memory_list.mem_length. cbn.
+  have Hu1 := mem_update_length _ _ _ _ Hupd1.
+  have Hu2 := mem_update_length _ _ _ _ Hupd2.
+  have Hu3 := mem_update_length _ _ _ _ Hupd3.
+  have Hu4 := mem_update_length _ _ _ _ Hupd4. rewrite -Hu4 -Hu3 -Hu2 -Hu1.
+  cbn. rewrite Heq. clear Hu1 Hu2 Hu3 Hu4.
+  unfold mem_update in Hupd4.
+    destruct ((Z.to_N (Wasm_int.Int32.unsigned addr) + 3 <?
+           N.of_nat (Datatypes.length (ml_data m2)))%N) eqn:lt4. 2: inv Hupd4. inv Hupd4.
+(*   unfold read_bytes, those, mem_lookup. cbn.
+   admit. (* need IH *) *)
+  (*
+  destruct (memory_list.mem_lookup (Z.to_N (Wasm_int.Int32.unsigned addr) + 0)%N
+        (mem_data m')) eqn:Ht1. admit.
+        unfold memory_list.mem_lookup in Ht1. rewrite N.add_0_r in Ht1.
+  *)
+Admitted.
+
+
 Definition max_constr_alloc_size := (max_constr_args + 4)%Z. (* in bytes *)
 
 Lemma memory_grow_reduce : forall  (ys : list cps.var)  grow state s f v_gmp,
@@ -2354,7 +2397,7 @@ Proof with eauto.
 
     dostep'. separate_instr. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
     cbn.
-    apply steps_inside_label.
+    apply reduce_trans_label.
     dostep'. separate_instr. elimr_nary_instr 1. eapply r_grow_memory_success; eauto.
     dostep'. separate_instr. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
     dostep'. constructor. apply rs_if_false.
@@ -2366,7 +2409,7 @@ Proof with eauto.
       rewrite Wasm_int.Int32.Z_mod_modulus_id in H6. lia.
        unfold Wasm_int.Int32.modulus, Wasm_int.Int32.wordsize, Wordsize_32.wordsize, two_power_nat. cbn. lia. }
     dostep'. separate_instr. constructor. apply rs_block with (vs:= [])(n:=0); eauto.
-    apply steps_inside_label. cbn. dostep'. constructor. apply rs_nop. apply rt_refl.
+    apply reduce_trans_label. cbn. dostep'. constructor. apply rs_nop. apply rt_refl.
     split.
     { (* invariant *) eapply update_mem_preserves_INV. 4: reflexivity. assumption.
     eapply mem_grow_preserves_max_pages... exists (mem_size m + 1)%N. split.
@@ -2419,7 +2462,7 @@ Proof with eauto.
     constructor. subst.
     rewrite HneedMoreMem. apply rs_if_true. discriminate.
     dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto. cbn.
-    apply steps_inside_label. cbn.
+    apply reduce_trans_label. cbn.
     separate_instr. admit. admit.
     }
     (* enough space already *)
@@ -2507,7 +2550,7 @@ Proof with eauto.
       have I := Hinv'. destruct I as [_ [_ [Hgmp [_ [Hmuti32 _]]]]].
       apply global_var_w_implies_global_var_r in Hgmp; auto. destruct Hgmp as [val Hgmp].
       have HenoughM := Henoughmem _ Hmem2'.
-      have Hredgrow := app_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ Hred. cbn in Hredgrow.
+      have Hredgrow := app_trans sr fr [seq AI_basic i | i <- grow] s' f' _ _ _ _ Hred. cbn in Hredgrow.
 
     cbn. separate_instr.
     (* assert sr, fr after written tag to mem *)
@@ -2799,7 +2842,7 @@ Proof with eauto.
       (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (Z.of_nat (Pos.to_nat t))))) eqn:Heq. discriminate. contradiction.
 
        dostep'. constructor. eapply rs_block with (vs := []); auto. unfold to_e_list. cbn.
-      eapply steps_inside_label. apply Hstep. unfold load_i32 in H11. rewrite Hload in H11. inv H11. }
+      eapply reduce_trans_label. apply Hstep. unfold load_i32 in H11. rewrite Hload in H11. inv H11. }
        assumption. }
 
       (* t0 <> t *)
@@ -2858,7 +2901,7 @@ Proof with eauto.
       dostep'. separate_instr. constructor. apply rs_if_false. reflexivity.
 
       dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn.
-      eapply steps_inside_label. unfold to_e_list. apply Hred.
+      eapply reduce_trans_label. unfold to_e_list. apply Hred.
      } unfold load_i32 in H15. rewrite Hload in H15. inv H15. assumption. }
 
 (*
