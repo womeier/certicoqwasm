@@ -2240,7 +2240,7 @@ Proof.
                   (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 1)) b2)
                (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 2)) b3)))%N) as Ha.
    { repeat rewrite size_set_nth maxn_nat_max. apply N.ltb_lt.
-     repeat (rewrite Nat2N.inj_max; rewrite N.max_lt_iff; right). rewrite -length_is_size. lia. }  rewrite Ha. eauto.
+     repeat (rewrite Nat2N.inj_max; rewrite N.max_lt_iff; right). rewrite -length_is_size. lia. } rewrite Ha. eauto.
 Qed.
 
 Lemma store_load : forall m m' addr v,
@@ -2270,8 +2270,6 @@ Proof.
   have Hu4 := mem_update_length _ _ _ _ Hupd4. rewrite -Hu4 -Hu3 -Hu2 -Hu1.
   cbn. rewrite Heq.
   apply N.leb_le in Heq.
-
-  (* unfold read_bytes, those. cbn. unfold mem_lookup. cbn. *)
   unfold mem_update in Hupd1, Hupd2, Hupd3, Hupd4.
   destruct ((Z.to_N (Wasm_int.Int32.unsigned addr) <?
            N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hl1. 2: inv Hupd1.
@@ -2283,12 +2281,41 @@ Proof.
            N.of_nat (Datatypes.length (ml_data m2)))%N) eqn:Hl4. 2: inv Hupd4.
   unfold read_bytes, those, mem_lookup. cbn.
   apply N.ltb_lt in Hl1, Hl2, Hl3, Hl4. cbn in Hl1, Hl2, Hl3, Hl4.
-  inv Hupd4. cbn.
-  cbn in *. rewrite -> take_drop_is_set_nth in *; try lia.
-  erewrite set_nth_nth_error_same. 2: { admit. } cbn.
-  inv Hupd3. cbn. Search "set_nth". Check set_set_nth. (* rewrite set_set_nth. *)
-  inv Hupd1. inv Hupd2.
-Admitted.
+  rewrite take_drop_is_set_nth in Hupd1. 2: lia.
+  rewrite take_drop_is_set_nth in Hupd2. 2: lia.
+  rewrite take_drop_is_set_nth in Hupd3. 2: lia.
+  rewrite take_drop_is_set_nth in Hupd4. 2: lia.
+  inv Hupd1. inv Hupd2. inv Hupd3. inv Hupd4.
+  cbn in *. repeat rewrite -> take_drop_is_set_nth; try lia.
+  repeat (rewrite set_nth_nth_error_other; [ | lia | try lia]).
+  rewrite N.add_0_r.
+  assert (He: exists e, nth_error (ml_data (mem_data m)) (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr))) = Some e). { apply notNone_Some. intro Hcontra.
+  apply nth_error_Some in Hcontra; lia. } destruct He.
+  erewrite set_nth_nth_error_same. 2: eassumption. cbn.
+  repeat (rewrite set_nth_nth_error_other; [ | lia | try lia]).
+  assert (He: exists e, nth_error
+  (set_nth b1 (ml_data (mem_data m)) (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr))) b1)
+  (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 1)) = Some e). { apply notNone_Some.
+   intro Hcontra. apply nth_error_Some in Hcontra; lia. } destruct He.
+  erewrite set_nth_nth_error_same. 2: eassumption. cbn.
+  repeat (rewrite set_nth_nth_error_other; [ | lia | try lia]).
+  assert (He: exists e, nth_error
+  (set_nth b2
+     (set_nth b1 (ml_data (mem_data m)) (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr))) b1)
+     (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 1)) b2)
+  (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 2)) = Some e). {
+    apply notNone_Some. intro Hcontra. apply nth_error_Some in Hcontra; lia. } destruct He.
+  erewrite set_nth_nth_error_same. 2: eassumption. cbn.
+  repeat (rewrite set_nth_nth_error_other; [ | lia | try lia]).
+  assert (He: exists e, nth_error
+  (set_nth b3
+     (set_nth b2
+        (set_nth b1 (ml_data (mem_data m)) (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr)))
+           b1) (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 1)) b2)
+     (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 2)) b3)
+  (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 3)) = Some e). { apply notNone_Some. intro Hcontra. apply nth_error_Some in Hcontra; lia. } destruct He.
+  erewrite set_nth_nth_error_same; try lia; auto. eassumption.
+Qed.
 
 Lemma store_constr_args_reduce : forall ys sargs state s f,
   INV s f ->
@@ -2362,7 +2389,6 @@ Proof.
          econstructor.
          assert (occurs_free e split; intros.
         } *)
-        admit. admit.  admit. admit. } admit. }
         have IH := IHHev e' _ state _ INVres INVgmp INVcap INVlinmem INVptrInMem INVglobalptrInMem INVcapInMem INVlocals H11 Hrel.
 
         destruct IH as [srfinal [frfinal [Hredfinal Hvalfinal]]]. clear IHHev.
@@ -2977,7 +3003,7 @@ Proof with eauto.
     dostep. elimr_nary_instr 0.
     apply r_get_local. eassumption.
 
-     assert (Harith: (N.of_nat addr) = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))). admit. cbn.
+     assert (Harith: (N.of_nat addr) = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))). cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. cbn.
     rewrite Harith in H15.
      unfold load_i32 in H8.
     destruct (load m (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))
@@ -2986,14 +3012,22 @@ Proof with eauto.
        eapply r_load_success.
        apply Hlinmem. eassumption.
        apply Hload. unfold load_i32 in H15. rewrite Hload in H15.
-       assert (wasm_deserialise b T_i32 = VAL_int32 (tag_to_i32 t)). {  inv H15. unfold wasm_deserialise. f_equal. unfold tag_to_i32. admit. } rewrite H.
+       assert (wasm_deserialise b T_i32 = VAL_int32 (tag_to_i32 t)). {  inv H15. unfold wasm_deserialise. f_equal. unfold tag_to_i32. cbn. cbn in Hload.
+       rewrite Wasm_int.Int32.Z_mod_modulus_id in Hload; try lia.
+       replace (Z.to_N (Z.of_nat addr)) with (N.of_nat addr) in Hload by lia.
+       apply decode_int_bounds in Hload.
+       rewrite Wasm_int.Int32.Z_mod_modulus_id in H0; auto. rewrite H0.
+       rewrite Wasm_int.Int32.Z_mod_modulus_id; auto.
+       admit. } rewrite H.
 
        dostep. elimr_nary_instr 2.
        constructor. apply rs_relop.
        assert ((wasm_bool
                  (app_relop (Relop_i ROI_eq) (VAL_int32 (tag_to_i32 t))
                     (nat_to_value (Pos.to_nat t0)))) = nat_to_i32 0). {
-                    unfold nat_to_value, nat_to_i32, tag_to_i32. admit. } (* by t <> t0 *)
+                    unfold nat_to_value, nat_to_i32, tag_to_i32.
+      unfold wasm_bool. cbn. unfold Wasm_int.Int32.eq. cbn. rewrite zeq_false; auto. admit.
+       } (* by t <> t0 *)
       rewrite H0.
       dostep'. separate_instr. constructor. apply rs_if_false. reflexivity.
 
