@@ -1420,7 +1420,7 @@ Definition INV_global_mem_ptr_in_linear_memory s f := forall addr m,
   sglob_val (host_function:=host_function) s (f_inst f) global_mem_ptr = Some (VAL_int32 addr) ->
   exists bytes, load m (Wasm_int.N_of_uint i32m addr) 0%N (t_length T_i32) = Some bytes.
 
-Definition INV_global_constr_alloc_ptr_in_linear_memory s f := forall addr t m,
+Definition INV_constr_alloc_ptr_in_linear_memory s f := forall addr t m,
   sglob_val (host_function:=host_function) s (f_inst f) constr_alloc_ptr = Some (VAL_int32 addr)
   -> exists m', store m (Wasm_int.N_of_uint i32m addr) 0%N (bits (nat_to_value (Pos.to_nat t))) (t_length T_i32) = Some m'.
 
@@ -1438,7 +1438,7 @@ Definition INV (s : store_record) (f : frame) :=
  /\ INV_local_vars_exist f
  /\ INV_local_ptr_in_linear_memory s f
  /\ INV_global_mem_ptr_in_linear_memory s f
- /\ INV_global_constr_alloc_ptr_in_linear_memory s f
+ /\ INV_constr_alloc_ptr_in_linear_memory s f
  /\ INV_num_functions_upper_bound s.
 
 
@@ -1579,10 +1579,10 @@ Proof. Admitted.
 
 (* TODO: false, additional restriction on num required *)
 Lemma update_global_preserves_constr_alloc_ptr_in_linear_memory : forall j sr sr' f  num,
-  INV_global_constr_alloc_ptr_in_linear_memory sr f ->
+  INV_constr_alloc_ptr_in_linear_memory sr f ->
   supdate_glob (host_function:=host_function) sr (f_inst f) j
              (VAL_int32 num) = Some sr' ->
-  INV_global_constr_alloc_ptr_in_linear_memory sr' f.
+  INV_constr_alloc_ptr_in_linear_memory sr' f.
 Proof. Admitted.
 
 
@@ -1714,25 +1714,66 @@ Lemma update_mem_preserves_local_ptr_in_linear_memory : forall s s' f m m',
    upd_s_mem (host_function:=host_function) s
                 (update_list_at (s_mems s) 0 m') = s' ->
    INV_local_ptr_in_linear_memory s' f.
-Proof. Admitted.
+Proof.
+  unfold INV_local_ptr_in_linear_memory. intros. subst.
+  cbn in H5. unfold update_list_at in H5. rewrite take0 in H5. inv H5.
+  have H' := H _ _ _ _ H3 H4 H0. destruct H' as [bs Hload]. eauto.
+  unfold load in Hload. cbn in Hload. unfold load. cbn.
+  destruct ((Z.to_N (Wasm_int.Int32.unsigned x) + 4 <=?
+           mem_length m)%N) eqn:Harith. 2: inv Hload. apply N.leb_le in Harith.
+  assert ((Z.to_N (Wasm_int.Int32.unsigned x) + 4 <=? mem_length m0)%N) as Harith'. { apply N.leb_le. lia. } rewrite Harith'. clear Harith'. unfold read_bytes, those. rewrite N.add_0_r. cbn.
+  unfold mem_lookup. cbn. rewrite N.add_0_r. unfold mem_length, memory_list.mem_length in Harith, H1.
+  assert (Hb1: exists b1, nth_error (ml_data (mem_data m0))
+        (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned x))) = Some b1). {
+   apply notNone_Some. intro. apply nth_error_None in H2; auto. lia. }
+  destruct Hb1 as [b1 Hb1]. rewrite Hb1. clear Hb1.
+  assert (Hb2: exists b2, nth_error (ml_data (mem_data m0))
+        (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned x) + 1)) = Some b2). {
+   apply notNone_Some. intro. apply nth_error_None in H2; auto. lia. }
+  destruct Hb2 as [b2 Hb2]. rewrite Hb2. clear Hb2.
+ assert (Hb3: exists b3, nth_error (ml_data (mem_data m0))
+        (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned x) + 2)) = Some b3). {
+   apply notNone_Some. intro. apply nth_error_None in H2; auto. lia. }
+  destruct Hb3 as [b3 Hb3]. rewrite Hb3. clear Hb3.
+  assert (Hb4: exists b4, nth_error (ml_data (mem_data m0))
+        (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned x) + 3)) = Some b4). {
+   apply notNone_Some. intro. apply nth_error_None in H2; auto. lia. }
+  destruct Hb4 as [b4 Hb4]. rewrite Hb4. clear Hb4. eauto.
+Qed.
 
 Lemma update_mem_preserves_global_mem_ptr_in_linear_memory : forall s s' f m m',
    INV_global_mem_ptr_in_linear_memory s f ->
+   INV_global_mem_ptr_writable s f ->
+   INV_globals_all_mut_i32 s ->
    nth_error (s_mems s) 0  = Some m ->
    (mem_length m' >= mem_length m)%N ->
    upd_s_mem (host_function:=host_function) s
                 (update_list_at (s_mems s) 0 m') = s' ->
    INV_global_mem_ptr_in_linear_memory s' f.
-Proof. Admitted.
+Proof.
+  unfold INV_global_mem_ptr_in_linear_memory. intros ? ? ? ? ? H Hinv Hinv' ? ? ? ? ? ?.
+  eapply update_mem_preserves_global_var_w in Hinv; eauto.
+  apply global_var_w_implies_global_var_r in Hinv.
+  unfold global_var_r in Hinv. destruct Hinv as [v Hv]. rewrite H3 in Hv. inv Hv.
+  eapply H in H3; eauto. now eapply update_mem_preserves_all_mut_i32.
+Qed.
 
 Lemma update_mem_preserves_global_constr_alloc_ptr_in_linear_memory : forall s s' f m m',
-   INV_global_constr_alloc_ptr_in_linear_memory s f  ->
+   INV_constr_alloc_ptr_in_linear_memory s f  ->
+   INV_constr_alloc_ptr_writable s f ->
+   INV_globals_all_mut_i32 s ->
    nth_error (s_mems s) 0  = Some m ->
    (mem_length m' >= mem_length m)%N ->
    upd_s_mem (host_function:=host_function) s
                 (update_list_at (s_mems s) 0 m') = s' ->
-   INV_global_constr_alloc_ptr_in_linear_memory s' f.
-Proof. Admitted.
+   INV_constr_alloc_ptr_in_linear_memory s' f.
+Proof.
+  unfold INV_constr_alloc_ptr_in_linear_memory. intros ? ? ? ? ? H Hinv Hinv' ? ? ? ? ? ? ?.
+  eapply update_mem_preserves_global_var_w in Hinv; eauto.
+  apply global_var_w_implies_global_var_r in Hinv.
+  unfold global_var_r in Hinv. destruct Hinv as [v Hv]. rewrite H3 in Hv. inv Hv.
+  eapply H in H3; eauto. now eapply update_mem_preserves_all_mut_i32.
+Qed.
 
 Lemma update_mem_preserves_num_functions_upper_bound : forall s s' m,
    INV_num_functions_upper_bound s  ->
