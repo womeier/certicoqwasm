@@ -371,13 +371,13 @@ Inductive repr_read_var_or_funvar : positive -> basic_instruction -> Prop :=
     repr_funvar p i -> repr_read_var_or_funvar p (BI_const (nat_to_value i)).
 
 (* constr_alloc_ptr: pointer to linear_memory[p + 4 + 4*n] = value v *)
-Inductive is_nth_projection : nat -> var -> list basic_instruction -> Prop :=
-  Make_nth_proj: forall (v : var) n v',
-                        repr_read_var_or_funvar v v' ->
-                        is_nth_projection n v [ BI_get_global constr_alloc_ptr
+Inductive set_nth_constr_arg : nat -> var -> list basic_instruction -> Prop :=
+  Make_nth_proj: forall (v : var) n instr,
+                        repr_read_var_or_funvar v instr ->
+                        set_nth_constr_arg n v [ BI_get_global constr_alloc_ptr
                                               ; BI_const (nat_to_value ((1 + n) * 4))
                                               ; BI_binop T_i32 (Binop_i BOI_add)
-                                              ; v'
+                                              ; instr
                                               ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
                                               ].
 
@@ -431,7 +431,7 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
             ; BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr
             ] ->
     (* store args *)
-    Forall_statements_in_seq is_nth_projection vs sargs ->
+    Forall_statements_in_seq set_nth_constr_arg vs sargs ->
     (* set result *)
     sres = [BI_get_global constr_alloc_ptr; BI_set_local x'] ->
     (* following expression *)
@@ -1034,9 +1034,9 @@ Proof.
             constructor.  econstructor. eassumption. apply IHl; auto.
 Qed.
 
-Lemma nth_proj_assign : forall l instr n,
+Lemma set_nth_constr_arg_correct : forall l instr n,
   set_constructor_args nenv venv fenv l n = Ret instr ->
-  Forall_statements_in_seq' (is_nth_projection fenv venv nenv) l instr n.
+  Forall_statements_in_seq' (set_nth_constr_arg fenv venv nenv) l instr n.
 Proof.
   induction l; intros.
   - inv H. econstructor; auto.
@@ -1171,7 +1171,7 @@ Proof.
         repeat rewrite <- app_assoc.
 
         eapply Rconstr_e; eauto.
-        econstructor. eassumption. apply nth_proj_assign. assumption.
+        econstructor. eassumption. apply set_nth_constr_arg_correct. assumption.
 
         apply IHe; auto.
         assert (subterm_e e (Econstr v t l e) ). { constructor; constructor. }
@@ -2284,6 +2284,26 @@ Proof.
      repeat (rewrite Nat2N.inj_max; rewrite N.max_lt_iff; right). rewrite -length_is_size. lia. } rewrite Ha. eauto.
 Qed.
 
+Lemma load_store_load : forall m m' a1 a2 v,
+length v = 4 ->
+((Wasm_int.N_of_uint i32m a1) + 4 <= (Wasm_int.N_of_uint i32m a2))%N ->
+load_i32 m (Wasm_int.N_of_uint i32m a1) = Some (wasm_deserialise v T_i32) ->
+store m (Wasm_int.N_of_uint i32m a2) 0%N v 4 = Some m' ->
+load_i32 m' (Wasm_int.N_of_uint i32m a1) = Some (wasm_deserialise v T_i32).
+Proof.
+  intros.
+  replace (Wasm_int.N_of_uint i32m a1) with (N.of_nat (N.to_nat (Wasm_int.N_of_uint i32m a1))) in H0 by lia.
+  replace (Wasm_int.N_of_uint i32m a2) with (N.of_nat (N.to_nat (Wasm_int.N_of_uint i32m a2))) in H0 by lia.
+  remember (N.to_nat (Wasm_int.N_of_uint i32m a2)) as a2'. generalize dependent a2. generalize dependent a1.
+  generalize dependent v. revert m m'.
+  induction a2'; intros; try lia.
+(*
+  eapply IHa2'. 4 : {
+  assert (Ha: a2' = N.to_nat (Wasm_int.N_of_uint i32m (Wasm_int.Int32.isub a2 Wasm_int.Int32.one))). { admit. } eassumption. } all: eauto. admit.
+  destruct v. inv H. destruct v. inv H. destruct v. inv H. destruct v. inv H. destruct v. 2: inv H. clear H. cbn in H1.
+  unfold store in H2. *)
+Admitted.
+
 Lemma store_load : forall m m' addr v,
 length v = 4 ->
 store m (Wasm_int.N_of_uint i32m addr) 0%N v 4 = Some m' ->
@@ -2358,45 +2378,72 @@ Proof.
   erewrite set_nth_nth_error_same; try lia; auto. eassumption.
 Qed.
 
-Lemma store_constr_args_reduce : forall ys sargs state s f,
+Lemma store_constr_args_reduce : forall ys vs sargs state rho s f offset,
   INV s f ->
   (Z.of_nat (length ys) <= max_constr_args)%Z ->
-  Forall_statements_in_seq (is_nth_projection fenv venv nenv) ys sargs ->
+  Forall_statements_in_seq' (set_nth_constr_arg fenv venv nenv) ys sargs offset ->
+  get_list ys rho = Some vs ->
   exists s' f', reduce_trans
-  (state, s, f, [seq AI_basic i | i <- sargs])
-  (state, s', f', []) /\ INV s' f' (* /\ (s_mem s') as args set*).
+                  (state, s, f, [seq AI_basic i | i <- sargs])
+                  (state, s', f', [])
+            /\ INV s' f'
+            /\ exists v_cap, sglob_val (host_function:=host_function) s' (f_inst f')
+               constr_alloc_ptr = Some (VAL_int32 (nat_to_i32 v_cap))
+               /\ repr_val_constr_args_LambdaANF_Codegen fenv venv nenv _ vs s' (4 + (4*offset) + v_cap).
 Proof.
-  unfold Forall_statements_in_seq. intros ys sargs state s f Hinv Hmaxargs H. remember (is_nth_projection fenv venv nenv) as R.
-  generalize dependent HeqR. generalize dependent s. generalize dependent f.
-  induction H; intros.
-  { exists s. exists f. split. apply rt_refl. assumption. }
-  { subst. rename s into instr. rename s' into instr'. rename s0 into s.
-    edestruct IHForall_statements_in_seq' as [sr [fr [Hred Hinv']]]; eauto. cbn in Hmaxargs. lia.
-    rewrite map_cat.
-    inv H0. cbn. inv H1.
+  induction ys; intros vs sargs state rho s f offset Hinv Hargs H Hvs.
+  { inv Hvs. inv H. exists s. exists f. split. apply rt_refl. split. assumption.
+    have I := Hinv. destruct I as [_ [_ [_ [Hcap_w [Hmut _]]]]].
+    apply global_var_w_implies_global_var_r in Hcap_w; auto.
+    destruct Hcap_w as [v Hv]. eexists. split. unfold nat_to_i32. cbn. rewrite Hv. admit.
+    constructor.
+  }
+  { inv H. inv H6. subst.
+    (* rewrite map_cat. inv H0. cbn. *)
+    inv H.
     { (* store var *)
+      destruct vs. { cbn in Hvs. destruct (rho ! a). 2: inv Hvs. destruct (get_list ys rho); inv Hvs. }
+      assert (Hgetlist: get_list ys rho = Some vs). {
+          cbn in Hvs. destruct (rho ! a). 2: inv Hvs. destruct (get_list ys rho); inv Hvs; auto. }
+      clear Hvs. rename Hgetlist into Hvs.
       (* invariants *)
       have I := Hinv. destruct I as [_ [_ [_ [Hinv_cap [Hinv_muti32 [Hinv_linmem [Hinv_locals _]]]]]]].
       eapply global_var_w_implies_global_var_r in Hinv_cap; auto. destruct Hinv_cap.
       destruct (Hinv_locals _ _ H0).
-      destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
+      destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. cbn.
 
+      assert (exists m0,  store m'
+        (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd x (nat_to_i32 (S (S (S (S (offset * 4)))))))) 0%N
+          (bits (VAL_int32 x0)) (t_length T_i32) = Some m0) as Hm0. { admit. }
+      destruct Hm0 as [m0 Hm0].
+
+      (* prepare IH *)
+      assert (Hmaxargs : (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z). {
+      cbn in Hargs. lia. } clear Hargs.
+      have IH := IHys _ _ state _ _ _ _ _ Hmaxargs H3 Hvs. clear IHys.
+      edestruct IH as [sr [fr [Hred [Hinv' [v_cap [Hv1 Hv2]]]]]]. (* TODO: instantiate IH wiht s, f *)
+      2: {
       eexists. eexists. split.
       (* reduce *)
       separate_instr. dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
       separate_instr. dostep. elimr_nary_instr 2. constructor. constructor. reflexivity.
-      separate_instr. dostep. apply r_eliml. auto. elimr_nary_instr 0. now apply r_get_local.
-      separate_instr. dostep. elimr_nary_instr 2. eapply r_store_success; eauto.
+      separate_instr. dostep. apply r_eliml. auto. elimr_nary_instr 0. apply r_get_local. eassumption.
 
-      unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add, Wasm_int.Int32.unsigned, Wasm_int.Int32.intval.
-
-      (* store successful *) admit. cbn.
-      assert (Hrefl: is_nth_projection fenv venv nenv = is_nth_projection fenv venv nenv) by reflexivity.
-      have IH := IHForall_statements_in_seq' _ _ _ Hinv Hrefl. clear Hrefl.
-      admit. eassumption.
+      separate_instr. dostep. elimr_nary_instr 2. eapply r_store_success; eauto. eassumption.
+      split. assumption. exists v_cap. split; eauto. econstructor. admit. admit. admit.
+      assert ((4 + 4 * S offset + v_cap) = (4 + S (S (S (S (offset + (offset + (offset + (offset + 0)))
+                                           + v_cap)))))) as Harith by lia.
+      rewrite -Harith. assumption. }
+      eapply update_mem_preserves_INV. 6: reflexivity. all: eauto.
+      have H' := mem_store_preserves_length _ _ _ _ _ Hm0. unfold mem_length, memory_list.mem_length. lia.
+      erewrite <-mem_store_preserves_max_pages; eauto.
+      exists size; split; auto. rewrite -Hmem3. unfold mem_size, mem_length, memory_list.mem_length.
+      apply mem_store_preserves_length in Hm0. congruence.
     }
-    { (* store fn index *) admit. }
-
+    { (* store fn index *)
+      (* invariants *)
+      admit.
+    }
     (*
       (* set args + finish *)
       induction H9.
