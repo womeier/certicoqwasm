@@ -170,12 +170,11 @@ Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tag
         ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
         ; BI_relop T_i32 (Relop_i ROI_eq)
         ; BI_if (Tf nil nil)
-                ((instr_write_string " ") ++ (if ctor_arity =? 0 then [ BI_nop ] else (instr_write_string "(")) ++ instr_write_string ctor_name ++
+                ((instr_write_string " ") ++ (if ctor_arity =? 0 then [] else (instr_write_string "(")) ++ instr_write_string ctor_name ++
                  [ BI_get_local constr_ptr
                  ; BI_set_local tmp
                  ] ++ gen_rec_calls ctor_arity ctor_arity)
-
-                [ BI_nop ]
+                []
         ]
   in
   blocks <- sequence (map gen_print_constr_block tags) ;;
@@ -251,7 +250,7 @@ Definition generate_indirection_function (fns : list func_signature) (fenv : fna
                  [ BI_call f_var
                  ; BI_return
                  ])
-                [ BI_nop ]
+                []
         ]
   in
 
@@ -373,9 +372,9 @@ Definition grow_memory_if_necessary (required_bytes : nat) : list basic_instruct
                        ; BI_const (Z_to_value (-1))
                        ; BI_relop T_i32 (Relop_i ROI_eq)
                        ; BI_if (Tf nil nil) [ BI_const (nat_to_value 1); BI_set_global result_out_of_mem ]
-                                            [ BI_nop ]
+                                            [ ]
                        ]
-                       [ BI_nop ]
+                       []
   ].
 
 (* store argument pointers in memory *)
@@ -439,11 +438,15 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
       store_constr <- store_constructor nenv cenv venv fenv tg ys;;
 
       Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++
-          [ BI_block (Tf [] [])
-              ([ BI_get_global result_out_of_mem; BI_br_if 0] ++ store_constr ++
-               [ BI_get_global constr_alloc_ptr
-               ; BI_set_local x_var
-               ] ++ following_instr)
+          [ BI_get_global result_out_of_mem
+          ; BI_const (nat_to_value 1)
+          ; BI_relop T_i32 (Relop_i ROI_eq)
+          ; BI_if (Tf [] [])
+                  []
+                  (store_constr ++
+                  [ BI_get_global constr_alloc_ptr
+                  ; BI_set_local x_var
+                  ] ++ following_instr)
           ])
 
    | Ecase x arms =>
