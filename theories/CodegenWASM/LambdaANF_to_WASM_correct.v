@@ -2209,6 +2209,18 @@ Proof.
   rewrite H2 in H. inv H. rewrite H5. cbn. rewrite Hsize. reflexivity.
 Qed.
 
+Lemma global_var_write_read : forall sr sr' i val fr,
+  supdate_glob (host_function:=host_function) sr  (f_inst fr) i (VAL_int32 val) = Some sr' ->
+     sglob_val (host_function:=host_function) sr' (f_inst fr) i = Some (VAL_int32 val).
+Proof.
+  unfold supdate_glob, supdate_glob_s, sglob_val, sglob, sglob_ind. cbn. intros.
+  destruct (nth_error (inst_globs (f_inst fr)) i) eqn:H1. 2: inv H. cbn in H.
+  destruct (nth_error (s_globals sr) g) eqn:H2. 2: inv H. inv H. cbn.
+  rewrite nth_error_update_list_hit; auto.
+  apply /ssrnat.leP. apply lt_le_S. apply nth_error_Some. congruence.
+Qed.
+
+
 Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* in bytes *)
 
 Lemma memory_grow_reduce : forall  (ys : list cps.var)  grow state s f,
@@ -2227,7 +2239,7 @@ Proof with eauto.
   (* grow memory if necessary *)
   intros ys grow state sr fr H Hinv. subst.
   unfold grow_memory_if_necessary. cbn.
-  have I := Hinv. destruct I as [? [_ [INVgmp_w [INVcap_w [INVmuti32 [INVlinmem [? [? [INVglobalptrInMem [INVcapInMem _]]]]]]]]]].
+  have I := Hinv. destruct I as [_ [INVresM_w [INVgmp_w [INVcap_w [INVmuti32 [INVlinmem [? [? [INVglobalptrInMem [INVcapInMem _]]]]]]]]]].
   have I := INVlinmem. destruct I as [Hm1 [m [Hm2 [size [Hm3 [Hm4 Hm5]]]]]].
 
   assert (global_var_r global_mem_ptr sr fr) as H2. { apply global_var_w_implies_global_var_r; auto. } destruct H2. cbn.
@@ -2241,11 +2253,11 @@ Proof with eauto.
   {
   destruct (N.leb_spec (size + 1) max_mem_pages); unfold max_mem_pages in *.
   (* grow memory success *)
-  assert (mem_size m + 1 <= page_limit)%N. { unfold max_mem_pages in H3. unfold page_limit. lia. }
+  assert (mem_size m + 1 <= page_limit)%N. { unfold page_limit. lia. }
   assert (Hsize: (mem_size m + 1 <=? max_mem_pages)%N). { subst. apply N.leb_le. now unfold max_mem_pages. }
 
-  have Hgrow := memory_grow_success _ _ _ INVlinmem Hm2 Hsize .
-  destruct Hgrow. clear H4.
+  have Hgrow := memory_grow_success _ _ _ INVlinmem Hm2 Hsize.
+  destruct Hgrow.
   { eexists. eexists. split.
     edestruct INVgmp_w as [sr' Hgmp].
     unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
@@ -2287,13 +2299,13 @@ Proof with eauto.
     { (* invariant *) eapply update_mem_preserves_INV. 6: reflexivity. assumption. eassumption.
       erewrite mem_grow_increases_length; eauto. lia.
     eapply mem_grow_preserves_max_pages... exists (mem_size m + 1)%N. split.
-    eapply mem_grow_increases_size in H5; auto. rewrite N.add_comm. apply H5. now apply N.leb_le. }
+    eapply mem_grow_increases_size in H4; auto. rewrite N.add_comm. apply H4. now apply N.leb_le. }
     { (* enough memory available *)
-      rename x0 into m''. intros. subst. destruct (update_list_at (s_mems sr) 0 m'') eqn:Hm'. inv Hm'. inv H4. inv H4. assert (m0 = m''). { unfold update_list_at in Hm'.  rewrite take0 in Hm'. now inv Hm'. } subst m0. rename m'' into m'.
+      rename x0 into m''. intros. subst. destruct (update_list_at (s_mems sr) 0 m'') eqn:Hm'. inv Hm'. inv H5. inv H5. assert (m0 = m''). { unfold update_list_at in Hm'.  rewrite take0 in Hm'. now inv Hm'. } subst m0. rename m'' into m'.
        assert (mem_size m' = (1 + mem_size m)%N) as Hsize'. { eapply mem_grow_increases_size; eauto. } assert (sglob_val (host_function:=host_function) sr (f_inst fr) global_mem_ptr =
                  sglob_val (host_function:=host_function)(upd_s_mem (host_function:=host_function)
                  sr (m' :: l)) (f_inst fr) global_mem_ptr) as H_preserves_global by auto.
-        rewrite H_preserves_global in H2. rewrite H2 in H6. inv H6.
+        rewrite H_preserves_global in H1. rewrite H1 in H6. inv H6.
         unfold Wasm_int.Int32.lt in HneedMoreMem.
         destruct (zlt _ _) as [|Hc]. inv HneedMoreMem. clear HneedMoreMem. cbn in Hc.
         unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in Hc. cbn in Hc.
@@ -2314,30 +2326,37 @@ Proof with eauto.
         admit.
      } }
      (* growing memory fails *)
+    edestruct INVresM_w as [sr'' HresM].
+
     eexists. eexists. split.
-    edestruct INVgmp_w as [sr' Hgmp].
     unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
     (* load global_mem_ptr *)
     dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
     (* add required bytes *)
-    dostep. separate_instr. elimr_nary_instr 2. constructor.
+    dostep. elimr_nary_instr 2. constructor.
     apply rs_binop_success. reflexivity.
-    dostep. separate_instr. elimr_nary_instr 2. constructor.
+    dostep. elimr_nary_instr 2. constructor.
     apply rs_binop_success. cbn. unfold is_left.
     rewrite zeq_false. reflexivity.
     intro. zify.  (* unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in H5. *) admit. (* addition correct *)
     dostep. apply r_eliml; auto.
     elimr_nary_instr 0. eapply r_current_memory...
 
-    dostep. separate_instr. elimr_nary_instr 2.
-    constructor. apply rs_relop.
+    dostep. elimr_nary_instr 2. constructor. apply rs_relop.
 
-    dostep'. separate_instr.
-    constructor. subst.
-    rewrite HneedMoreMem. apply rs_if_true. discriminate.
-    dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto. cbn.
+    dostep'. separate_instr. constructor. subst. rewrite HneedMoreMem. apply rs_if_true. discriminate.
+    dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
+    apply reduce_trans_label.
+    dostep. elimr_nary_instr 1. eapply r_grow_memory_failure; try eassumption.
+    dostep. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
+    dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
+    dostep'. constructor. eapply rs_block with (vs:=[]); auto.
     apply reduce_trans_label. cbn.
-    separate_instr. admit. admit.
+    constructor. apply r_set_global. eassumption.
+    (* INV *)
+    split. eapply update_global_preserves_INV; try eassumption.
+    (* correct resulting environment *)
+    intros. right. eapply global_var_write_read. eassumption.
     }
     (* enough space already *)
     {
@@ -2368,10 +2387,10 @@ Proof with eauto.
 
     (* enough space *)
     { intros. left. unfold max_mem_pages in *.
-      rewrite H2 in H4. inv H4.
+      rewrite H1 in H3. inv H3.
       unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in HneedMoreMem. cbn in HneedMoreMem.
-      cbn in Hm2. rewrite H3 in Hm2. inv Hm2.
-      unfold Wasm_int.Int32.lt in HneedMoreMem. Search "zlt".
+      cbn in Hm2. rewrite H2 in Hm2. inv Hm2.
+      unfold Wasm_int.Int32.lt in HneedMoreMem.
       destruct (zlt _ _) as [Ha|Ha]. 2: inv HneedMoreMem. clear HneedMoreMem.
       rewrite Z_nat_bin in Ha.
       rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: admit.
