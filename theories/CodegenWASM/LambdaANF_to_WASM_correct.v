@@ -2917,49 +2917,21 @@ Proof with eauto.
       destruct HenoughM as [HenoughM | HoutofM].
       { (* enough memory *)
       assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
-      have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ _ Hmaxargs.
-      (* store constructor args *)
-      (* assert (Hinv'''': INV (upd_s_mem (host_function:=host_function) s'''
-       (update_list_at (s_mems s''') 0 m'')) f'). { eapply update_mem_preserves_INV. 4: reflexivity. eauto. erewrite <- mem_store_preserves_max_pages...
-       apply mem_store_preserves_length in H12. admit. exists size. subst. unfold mem_size, mem_length, memory_list.mem_length. rewrite <- H12. split; auto. }
-      have Hredargs := store_constr_args_reduce _ _ state (upd_s_mem (host_function:=host_function) s''' (update_list_at (s_mems s''') 0 m'')) f' Hinv'''' H9.
-      destruct Hredargs as [s_args [f_args [Hred_args Hinv_s_args]]].
 
-     (* invariants after stepping through Hred_args *)
-     have I'''' := Hinv_s_args. destruct I'''' as [_ [_ [INVgmp_w_s_args [INVcap_w_s_args [INVmuti32_s_args [_ [INVlocals_s_args [? [? [INVcapInMem_s_args ?]]]]]]]]]].
+      have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ _ Hmaxargs H9 H.
+      edestruct Hconstr as [s_v [f_v [Hred_v [Hinv_v [cap_v [wal [? [? Hvalue]]]]]]]]. 2:{ clear Hconstr. subst cap_v.
 
-     have INVcap_r_s_args := global_var_w_implies_global_var_r _ _ _ INVmuti32_s_args INVcap_w_s_args.
+    (* prepare IH *) (* TODO not s_v but updated with global var *)
+    assert (Hrel_m_v : rel_mem_LambdaANF_Codegen fenv venv nenv host_function e rho'
+       s_v f_v). admit.
+    have IH := IHHev _ _ state _ Hinv_v Hexp Hrel_m_v.
+    destruct IH as [s_final [f_final [Hred_IH Hval]]].
 
-     eexists. eexists. split.
+    eexists. eexists. split.
+    (* steps *)
+    eapply rt_trans. apply app_trans. apply Hred. cbn.
 
-      (* reduce store constr args *)
-     eapply rt_trans with (y := (?[hs], ?[sr], ?[f], ?[s])).
-     apply app_trans. apply Hred_args. cbn.
-
-    edestruct INVcap_r_s_args.
-    dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption. rename x3 into wal.
-
-    eapply rt_trans with (y := (?[hs], ?[sr], {|
-           f_locs :=
-             set_nth (VAL_int32 wal) (f_locs f_args) x' (VAL_int32 wal);
-           f_inst := f_inst f_args |}, ?[s])); first  apply rt_step.
-
-    separate_instr. elimr_nary_instr 1. eapply r_set_local; auto.
-    apply /ssrnat.leP.
-    assert (x' < length (f_locs f_args)). { destruct (INVlocals_s_args x x'). auto. apply nth_error_Some.  congruence. } lia.
-    cbn. reflexivity. cbn.
-
-    remember ({|
-    f_locs := set_nth (VAL_int32 wal) (f_locs f_args) x' (VAL_int32 wal);
-    f_inst := f_inst f_args
-  |}) as f_before_IH.
-
-    (* step through IH *)
-    have IH := IHHev _ f_args state s_args. (*  have IH' := IH _ Hinv_s_args. Hinv''' Hexp.
- *)
-    edestruct IH as [sr_final [f_final [Hred_final Hrel_final]]]. admit. (* Hrel_m *)
- *)
-      admit. }
+      admit. eassumption. } eassumption. }
       { (* grow mem failed *)
       eexists. eexists. split. eapply rt_trans. apply app_trans. apply Hred.
       dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
