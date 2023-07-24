@@ -2931,7 +2931,7 @@ Proof.
   destruct (sglob_ind (host_function:=host_function) s' (f_inst f) global_mem_ptr) eqn:he. 2: inv H1.
   cbn in H1. destruct (nth_error (s_globals s') n) eqn:He. 2: inv H1. inv H1. cbn. cbn in Hm.
   unfold sglob_val, sglob, sglob_ind in H.
-  admit.
+  all: admit.
    }
   split. assumption.
   (* constr value in memory *)
@@ -3032,7 +3032,7 @@ Proof with eauto.
     (* steps *)
     eapply rt_trans. apply app_trans. apply Hred. cbn.
 
-      admit. eassumption. } eassumption. }
+      admit. eassumption. } eassumption. admit.  }
       { (* grow mem failed *)
       eexists. eexists. split. eapply rt_trans. apply app_trans. apply Hred.
       dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
@@ -3075,7 +3075,7 @@ Proof with eauto.
   apply peq_true.
   split. exists x'. split.
   inv H8. unfold translate_var in H5. unfold translate_var. eapply lookup_local_var_generalize_err_string. eassumption.
-  assert ((wasm_deserialise bs T_i32) = (VAL_int32 (wasm_value_to_i32 (Val_ptr (addr + 4 + (4 * N.to_nat n)))))). admit. rewrite H6.
+  assert ((wasm_deserialise bs T_i32) = (VAL_int32 (wasm_value_to_i32 (Val_ptr (addr + 4 + (4 * N.to_nat n)))))) as Harith. { rewrite -Heq. admit. }  rewrite Harith.
 
   have I := Hinv. destruct I as [_ [_ [_ [_ [_ [Hlinmem [Hl _]]]]]]].
   destruct (Hl x x'). assumption.
@@ -3199,7 +3199,7 @@ Proof with eauto.
 
     apply Hlinmem. eassumption.
 
-    assert (N.of_nat addr = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))). admit. (* arithmetic fact *)
+    assert (N.of_nat addr = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))). { cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
     rewrite <- H. apply Hload.
 
     remember (VAL_int32 (tag_to_i32 t)) as tag.
@@ -3415,115 +3415,6 @@ Proof with eauto.
 Admitted.
 
 End THEOREM.
-(*
-Lemma funargs_reduce_to_const : forall sr fr state, repr_fun_args_Codegen fenv venv nenv ys args' -> reduce_trans (state, sr, fr, [seq AI_basic i | i <- args']) (state, sr, fr, args) /\ vs_co *)
-
-(*
-  - (* Econstr *)
-
-    (* get the tempenv and mem after assigning the constructor *)
-    assert (exists lenv' m',
-               ( clos_trans state (traceless_step2 (globalenv p))
-                                     (State fu s (Kseq s' k) empty_env lenv m)
-                                     (State fu Sskip (Kseq s' k) empty_env lenv' m') )
-               /\  rel_mem_LambdaANF_Codegen_id fenv finfo_env p rep_env e (M.set x (Vconstr t vs) rho) m' lenv'
-               /\ correct_tinfo p (Z.of_nat (max_allocs e)) lenv' m' /\
-                   same_args_ptr lenv lenv').
-    {
-      inv H6.
-      - (* boxed *)
-
-        assert (Ha_l : a = N.of_nat (length ys) /\ ys <> []). {
-          assert (subterm_or_eq (Econstr x t ys e) (Econstr x t ys e)) by constructor 2.
-          inv Hc_env. destruct H5 as [H5' H5]. destruct H5 as [H5 H6].
-          apply H5 in H3.   destruct (M.get t cenv) eqn:Hmc. destruct c0. inv H6.
-          apply H9 in H0. inv H0. rewrite H10 in Hmc. inv Hmc.
-          split; auto. destruct ys. inv H2. intro. inv H0. inv H3.
-        }
-
-
-        (* 1 -> get the alloc info, steps through the assignment of the header *)
-        assert (Hc_tinfo' := Hc_tinfo).
-        unfold correct_tinfo in Hc_tinfo.
-        destruct Hc_tinfo as [alloc_b [alloc_ofs [limit_ofs [args_b [args_ofs [tinf_b [tinf_ofs [Hget_alloc [Halign_alloc [Hrange_alloc [Hget_limit [Hbound_limit [Hget_args [Hdj_args [Hbound_args [Hrange_args [Htinf1 [Htinf2 [Htinf3 [Hinf_limit [Htinf_deref Hglobals]]]]]]]]]]]]]]]]]]]]].
-
-        assert (Hx_loc_eq : (Ptrofs.add (Ptrofs.add alloc_ofs (Ptrofs.mul (Ptrofs.repr int_size) (Ptrofs.repr Z.one))) (Ptrofs.mul (Ptrofs.repr int_size) (Ptrofs.repr (-1)))) = alloc_ofs). {
-          rewrite Ptrofs.add_assoc.
-          rewrite Ptrofs.mul_mone.
-          rewrite Ptrofs.mul_one.
-          rewrite Ptrofs.add_neg_zero.
-          apply Ptrofs.add_zero.
-        }
-
-
-        assert ( {m2 : mem |  Mem.store int_chunk m alloc_b
-                                      (Ptrofs.unsigned alloc_ofs) (make_vint h) = Some m2}). {
-          apply Mem.valid_access_store.
-          split.
-          intro.
-          intro. apply Hrange_alloc.
-          unfold int_size in *.
-          simpl size_chunk in *.
-          inv H4.
-          split; auto.
-          eapply OrdersEx.Z_as_OT.lt_le_trans. eauto.
-          inv Hbound_limit.
-          inv Hc_alloc. simpl max_allocs. destruct ys. exfalso; inv Ha_l; auto. simpl max_allocs in H4.
-          rewrite Nat2Z.inj_succ in H4. chunk_red; lia.
-          auto.
-        }
-        destruct X as [m2 Hm2].
-
-        assert (Hstep_m2 : clos_trans state (traceless_step2 (globalenv p))
-                            (State fu
-         (Ssequence
-            (Ssequence
-               (Ssequence
-                  (Sset x
-                     (Ecast
-                        (add (Etempvar allocIdent (Tpointer val {| attr_volatile := false; attr_alignas := None |}))
-                           (c_int' Z.one val)) val))
-                  (Sset allocIdent
-                     (add (Etempvar allocIdent (Tpointer val {| attr_volatile := false; attr_alignas := None |}))
-                        (c_int' (Z.of_N (a + 1)) val))))
-               (Sassign
-                  (Ederef
-                     (add (Ecast (Etempvar x val) (Tpointer val {| attr_volatile := false; attr_alignas := None |}))
-                          (c_int' (-1)%Z val)) val) (c_int' h val))) s0) (Kseq s' k) empty_env lenv m)
-                           (State fu s0 (Kseq s' k) empty_env
-       (Maps.PTree.set allocIdent
-          (Vptr alloc_b (Ptrofs.add alloc_ofs (Ptrofs.mul (Ptrofs.repr (sizeof (globalenv p) val)) (Ptrofs.repr (Z.of_N (a + 1))))))
-          (Maps.PTree.set x
-             (Vptr alloc_b (Ptrofs.add alloc_ofs (Ptrofs.mul (Ptrofs.repr (sizeof (globalenv p) val)) (Ptrofs.repr Z.one)))) lenv)) m2)).
-        {
-          eapply t_trans. constructor. constructor.
-          eapply t_trans. constructor. constructor.
-          eapply t_trans. constructor. constructor.
-          chunk_red; archi_red.
-          (* branch ptr64 *)
-
-          {
-            eapply t_trans. constructor. constructor. econstructor.
-            econstructor. constructor. eauto. constructor. constructor.
-            constructor.
-            eapply t_trans. constructor. constructor.
-
-            eapply t_trans. constructor. constructor.
-            econstructor. constructor. rewrite M.gso.
-            eauto. intro. apply H3. rewrite <- H4. inList.
-            constructor. constructor.
-            eapply t_trans. constructor. constructor.
-            eapply t_trans. constructor. econstructor. constructor. simpl. econstructor.
-            econstructor. constructor. rewrite M.gso. rewrite M.gss. reflexivity.
-            intro. apply H3. rewrite  H4. inList.
-            constructor. econstructor. constructor. constructor. constructor. simpl.
-            econstructor. econstructor.  simpl.  unfold Ptrofs.of_int64. rewrite ptrofs_of_int64. rewrite ptrofs_of_int64.
-            rewrite Hx_loc_eq. eauto.
-            constructor. unfold Ptrofs.of_int64. do 2 (rewrite ptrofs_of_int64).
-            constructor.
-          }
-*)
-
 
 (* Definition extract_const g := match g.(modglob_init) with (* guarantee non-divergence during instantiation *)
 | [:: BI_const c] => Ret c
