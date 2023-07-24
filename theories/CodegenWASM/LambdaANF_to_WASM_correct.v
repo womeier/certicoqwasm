@@ -2462,6 +2462,80 @@ Proof.
      repeat (rewrite Nat2N.inj_max; rewrite N.max_lt_iff; right). rewrite -length_is_size. lia. } rewrite Ha. eauto.
 Qed.
 
+(* adjusted from iriswasm *)
+Lemma enough_space_to_store m k off bs :
+  (k + off + N.of_nat (length bs) <= mem_length m)%N ->
+  exists mf, store m k off bs (length bs) = Some mf.
+Proof.
+  intros Hmlen.
+  unfold store.
+  apply N.leb_le in Hmlen.
+  rewrite Hmlen.
+  unfold write_bytes, fold_lefti.
+  cut (forall i dat,
+          i <= length bs ->
+          length (ml_data dat) = N.to_nat (mem_length m) ->
+          let j := length bs - i in
+          exists datf, (let '(_, acc_end) :=
+                      fold_left (fun '(k0,acc) x =>
+                                  (k0 + 1,
+                                    match acc with
+                                    | Some dat => mem_update (k + off + N.of_nat k0)%N x dat
+                                    | None => None
+                                    end)) (bytes_takefill #00%byte (length (drop j bs))
+                                                          (drop j bs))
+                                (j, Some dat) in acc_end) = Some datf).
+  - intros H.
+    assert (length bs <= length bs) ; first lia.
+    apply (H _ (mem_data m)) in H0 as [datf' Hdatf'].
+    + rewrite PeanoNat.Nat.sub_diag in Hdatf'.
+      rewrite drop0 in Hdatf'.
+      rewrite Hdatf'.
+      by eexists _.
+    + unfold mem_length, memory_list.mem_length.
+      by rewrite Nat2N.id.
+  - induction i ; intros ; subst j.
+    + rewrite <- minus_n_O.
+      repeat rewrite length_is_size. rewrite drop_size.
+      by eexists _.
+    + assert (i <= length bs) ; first lia.
+      destruct (drop (length bs - S i) bs) eqn:Hdrop.
+      * assert (length (drop (length bs - S i) bs) = 0) ; first by rewrite Hdrop.
+        rewrite length_is_size in H2. rewrite size_drop in H2.
+        rewrite -length_is_size in H2. rewrite ssrnat.subnE in H2. unfold ssrnat.subn_rec in H2. lia.
+      * assert (exists datupd,
+                   mem_update (k + off + N.of_nat (length bs - S i))%N b dat =
+                     Some datupd ) as [datupd Hdatupd].
+        { unfold mem_update.
+           apply N.leb_le in Hmlen.
+           assert ( k + off + N.of_nat (length bs - S i) <
+                      N.of_nat (length (ml_data dat)))%N ;
+             first lia.
+           apply N.ltb_lt in H2 ; rewrite H2.
+           by eexists _. }
+        eapply (IHi datupd) in H1 as [datf Hdatf].
+        ++ rewrite - Hdrop.
+           have H' := (take_drop 1 _ (drop (length bs - S i) bs)).
+           rewrite ssrnat.addnE in H'. cbn in H'.
+           rewrite length_is_size. rewrite size_drop. rewrite -length_is_size.
+           rewrite ssrnat.subnE. unfold ssrnat.subn_rec.
+           replace (Datatypes.length bs - (Datatypes.length bs - S i)) with (S i) by lia. cbn.
+           rewrite Hdrop. cbn.
+           replace (Datatypes.length bs - S i + 1) with (Datatypes.length bs - i) by lia.
+           rewrite Hdatupd.
+           rewrite length_is_size in Hdatf. rewrite size_drop in Hdatf.
+           rewrite -length_is_size in Hdatf. rewrite ssrnat.subnE in Hdatf.
+           unfold ssrnat.subn_rec in Hdatf.
+           replace (Datatypes.length bs - (Datatypes.length bs - i)) with i in Hdatf by lia.
+           assert (drop 1 (drop (Datatypes.length bs - S i) bs) = l) as Hd. {
+           rewrite Hdrop. now rewrite drop1. } rewrite -Hd.
+           rewrite drop_drop. rewrite ssrnat.addnE. cbn.
+           replace (S (Datatypes.length bs - S i)) with (Datatypes.length bs - i) by lia.
+           now rewrite Hdatf.
+        ++ rewrite <- H0.
+           now apply mem_update_length in Hdatupd.
+Qed.
+
 Lemma load_store_load : forall m m' a1 a2 v,
 length v = 4 ->
 ((Wasm_int.N_of_uint i32m a1) + 4 <= (Wasm_int.N_of_uint i32m a2))%N ->
@@ -2620,16 +2694,17 @@ Proof.
       destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. cbn.
 
       destruct (i32_exists_nat x) as [x1 [Hx ?]].
-      assert (exists m0, forall v_cap, store m'
+      assert (forall v_cap, exists m0, store m'
         (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 v_cap) (nat_to_i32 (S (S (S (S (offset * 4)))))))) 0%N
-          (bits (VAL_int32 x0)) (t_length T_i32) = Some m0) as Hm0. { admit. }
-      destruct Hm0 as [m0 Hm0].
-
+          (bits (VAL_int32 x0)) (t_length T_i32) = Some m0) as Hm0. {
+          intros.  edestruct enough_space_to_store as [m3 Hstore]. 2: { exists m3.
+          replace (t_length T_i32) with (Datatypes.length (bits (VAL_int32 x0))) by auto. apply Hstore. } admit. }
 
       (* prepare IH *)
       assert (Hmaxargs : (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z). {
       cbn in Hargs. lia. } clear Hargs.
       have IH := IHys _ _ state _ _ _ _ _ Hmaxargs H3 Hvs. clear IHys.
+      destruct (Hm0 x1) as [m0 Hm0']. clear Hm0. rename Hm0' into Hm0.
       edestruct IH as [sr [fr [Hred [Hinv' [v_cap [Hv1 [? [Hv2 [? [m1 [m2 [Hm1 [Hm2 ?]]]]]]]]]]]]].
       2: {
       assert (sglob_val (host_function:=host_function) s (f_inst f) constr_alloc_ptr
@@ -2643,7 +2718,8 @@ Proof.
       separate_instr. dostep. apply r_eliml. auto. elimr_nary_instr 0. apply r_get_local. eassumption.
 
       separate_instr. dostep. elimr_nary_instr 2. eapply r_store_success. 4: { rewrite Hx.
-        apply Hm0. }
+      subst x. assert (nat_to_i32 x1 = nat_to_i32 v_cap) as Heq. { rewrite Hglob_cap in H. rewrite H in H5.
+      remember (nat_to_i32 x1) as X1. remember (nat_to_i32 v_cap) as X2. now inv H5. } rewrite -Heq. apply Hm0. }
       auto. eassumption. eassumption. apply Hred.
       split. assumption. exists v_cap. split; eauto. split. lia.
       split. econstructor.
@@ -2659,10 +2735,10 @@ Proof.
       (* INV from before applying IH *)
       eapply update_mem_preserves_INV. 6: reflexivity. all: eauto.
 
-      have H' := mem_store_preserves_length _ _ _ _ _ (Hm0 x1). unfold mem_length, memory_list.mem_length. lia.
+      have H' := mem_store_preserves_length _ _ _ _ _ Hm0. unfold mem_length, memory_list.mem_length. lia.
       erewrite <-mem_store_preserves_max_pages; eauto.
       exists size; split; auto. rewrite -Hmem3. unfold mem_size, mem_length, memory_list.mem_length.
-      have H' := mem_store_preserves_length _ _ _ _ _ (Hm0 x1). congruence.
+      have H' := mem_store_preserves_length _ _ _ _ _ Hm0. congruence.
     }
     { (* store fn index *)
       (* invariants *)
