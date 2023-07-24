@@ -1288,19 +1288,6 @@ Import Lia.
 Import Relations.Relation_Operators.
 Import ssreflect seq.
 
-Lemma set_global_var_updated: forall sr fr value s',
-  supdate_glob (host_function:=host_function) sr (f_inst fr) result_var value = Some s' ->
-  sglob_val (host_function:=host_function) s' (f_inst fr) result_var = Some value.
-Proof.
-  intros.
-  unfold supdate_glob, supdate_glob_s in H. cbn in H.
-  unfold sglob_val, sglob; cbn. destruct (inst_globs (f_inst fr)) eqn:Hgl. inv H.
-  destruct l eqn:Hl. inv H.
-  destruct l0 eqn:Hl0. inv H. subst. cbn in H. cbn.
-  destruct (nth_error (s_globals sr) g1) eqn:Hntherr. 2: inv H. inv H. cbn.
-  rewrite nth_error_update_list_hit. reflexivity.
-  apply /ssrnat.leP. assert (g1 < length (s_globals sr)). { apply nth_error_Some. intro. congruence. } lia.
-Qed.
 
 Lemma val_relation_depends_only_on_mem_and_funcs : forall v sr sr' value,
     sr.(s_mems) = sr'.(s_mems) ->
@@ -1402,8 +1389,8 @@ Definition INV (s : store_record) (f : frame) :=
  /\ INV_globals_all_mut_i32 s
  /\ INV_linear_memory s f
  /\ INV_local_vars_exist f
- /\ INV_local_ptr_in_linear_memory s f
- /\ INV_global_mem_ptr_in_linear_memory s f
+(*  /\ INV_local_ptr_in_linear_memory s f
+ /\ INV_global_mem_ptr_in_linear_memory s f *)
  /\ INV_constr_alloc_ptr_in_linear_memory s f
  /\ INV_num_functions_upper_bound s.
 
@@ -1472,6 +1459,7 @@ Proof.
     eexists. rewrite nth_error_update_list_others. eassumption. lia.
     apply /ssrnat.leP. lia.
 Qed.
+
 
 Lemma update_global_preserves_global_var_w : forall i j sr sr' f num,
   global_var_w i sr f ->
@@ -1558,7 +1546,7 @@ Corollary update_global_preserves_INV : forall sr sr' i f num,
              (VAL_int32 num) = Some sr' ->
   INV sr' f.
 Proof with eauto.
-  intros. unfold INV. destruct H as [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]].
+  intros. unfold INV. destruct H as [? [? [? [? [? [? [? [? ?]]]]]]]].
   split. eapply update_global_preserves_global_var_w...
   split. eapply update_global_preserves_global_var_w...
   split. eapply update_global_preserves_global_var_w...
@@ -1566,8 +1554,8 @@ Proof with eauto.
   split. eapply update_global_preserves_globals_all_mut_i32...
   split. eapply update_global_preserves_linear_memory...
   split. assumption.
-  split. eapply update_global_preserves_local_ptr_in_linear_memory...
-  split. eapply update_global_preserves_global_mem_ptr_in_linear_memory...
+  (* split. eapply update_global_preserves_local_ptr_in_linear_memory...
+  split. eapply update_global_preserves_global_mem_ptr_in_linear_memory... *)
   split. eapply update_global_preserves_constr_alloc_ptr_in_linear_memory...
   eapply update_global_preserves_num_functions_upper_bound...
 Qed.
@@ -1612,10 +1600,10 @@ Corollary update_local_preserves_INV : forall sr f f' x' v,
         |} ->
   INV sr f'.
 Proof with eauto.
-  intros. unfold INV. destruct H as [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]. subst. cbn.
+  intros. unfold INV. destruct H as [? [? [? [? [? [? [? [? ?]]]]]]]]. subst. cbn.
   repeat (split; auto).
   eapply update_local_preserves_local_var_exists...
-  eapply update_local_preserves_local_ptr_in_memory...
+  (* eapply update_local_preserves_local_ptr_in_memory... *)
 Qed.
 
 (* writable implies readable *)
@@ -1760,7 +1748,7 @@ Corollary update_mem_preserves_INV : forall s s' f m m',
                 (update_list_at (s_mems s) 0 m') = s' ->
   INV s' f.
 Proof with eauto.
- intros. unfold INV. destruct H as [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]].
+ intros. unfold INV. destruct H as [? [? [? [? [? [? [? [? ?]]]]]]]].
  split. eapply update_mem_preserves_global_var_w...
  split. eapply update_mem_preserves_global_var_w...
  split. eapply update_mem_preserves_global_var_w...
@@ -1768,8 +1756,8 @@ Proof with eauto.
  split. eapply update_mem_preserves_all_mut_i32...
  split. eapply update_mem_preserves_linear_memory...
  split. assumption.
- split. eapply update_mem_preserves_local_ptr_in_linear_memory...
- split. eapply update_mem_preserves_global_mem_ptr_in_linear_memory...
+(*  split. eapply update_mem_preserves_local_ptr_in_linear_memory...
+ split. eapply update_mem_preserves_global_mem_ptr_in_linear_memory... *)
  split. eapply update_mem_preserves_global_constr_alloc_ptr_in_linear_memory...
  eapply update_mem_preserves_num_functions_upper_bound...
 Qed.
@@ -2209,7 +2197,7 @@ Proof.
   rewrite H2 in H. inv H. rewrite H5. cbn. rewrite Hsize. reflexivity.
 Qed.
 
-Lemma global_var_write_read : forall sr sr' i val fr,
+Lemma global_var_write_read_same : forall sr sr' i val fr,
   supdate_glob (host_function:=host_function) sr  (f_inst fr) i (VAL_int32 val) = Some sr' ->
      sglob_val (host_function:=host_function) sr' (f_inst fr) i = Some (VAL_int32 val).
 Proof.
@@ -2219,6 +2207,26 @@ Proof.
   rewrite nth_error_update_list_hit; auto.
   apply /ssrnat.leP. apply lt_le_S. apply nth_error_Some. congruence.
 Qed.
+
+Lemma global_var_write_read_other : forall i j sr sr' fr num val,
+  i <> j ->
+  sglob_val (host_function:=host_function) sr (f_inst fr) i = Some (VAL_int32 val) ->
+  supdate_glob (host_function:=host_function) sr (f_inst fr) j
+             (VAL_int32 num) = Some sr' ->
+  sglob_val (host_function:=host_function) sr' (f_inst fr) i = Some (VAL_int32 val).
+Proof.
+  intros ? ? ? ? ? ? ? Hneq Hr Hw.
+    unfold supdate_glob, sglob_ind, supdate_glob_s in *.
+    destruct (nth_error (inst_globs (f_inst fr)) j) eqn:Heqn. 2: inv Hw. cbn in Hw.
+    destruct (nth_error (s_globals sr) g) eqn:Heqn'. 2: inv Hw. inv Hw.
+    unfold sglob_val, sglob, sglob_ind in *.
+    destruct (nth_error (inst_globs (f_inst fr)) i) eqn:Heqn''.  2: inv Hr.
+    cbn. cbn in Hr.
+    assert (g <> g1). { admit. (* should follow from i<>j*) }
+    rewrite nth_error_update_list_others; auto.
+     assert (g < length (s_globals sr)) as Hl. { apply nth_error_Some. intro. congruence. }
+     apply /ssrnat.leP. lia.
+Admitted.
 
 
 Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* in bytes *)
@@ -2239,7 +2247,7 @@ Proof with eauto.
   (* grow memory if necessary *)
   intros ys grow state sr fr H Hinv. subst.
   unfold grow_memory_if_necessary. cbn.
-  have I := Hinv. destruct I as [_ [INVresM_w [INVgmp_w [INVcap_w [INVmuti32 [INVlinmem [? [? [INVglobalptrInMem [INVcapInMem _]]]]]]]]]].
+  have I := Hinv. destruct I as [_ [INVresM_w [INVgmp_w [INVcap_w [INVmuti32 [INVlinmem [? [? _]]]]]]]].
   have I := INVlinmem. destruct I as [Hm1 [m [Hm2 [size [Hm3 [Hm4 Hm5]]]]]].
 
   assert (global_var_r global_mem_ptr sr fr) as H2. { apply global_var_w_implies_global_var_r; auto. } destruct H2. cbn.
@@ -2260,7 +2268,6 @@ Proof with eauto.
   destruct Hgrow.
   { eexists. eexists. split.
     edestruct INVgmp_w as [sr' Hgmp].
-    unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
     (* load global_mem_ptr *)
     dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
     (* add required bytes *)
@@ -2329,7 +2336,6 @@ Proof with eauto.
     edestruct INVresM_w as [sr'' HresM].
 
     eexists. eexists. split.
-    unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
     (* load global_mem_ptr *)
     dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
     (* add required bytes *)
@@ -2356,13 +2362,12 @@ Proof with eauto.
     (* INV *)
     split. eapply update_global_preserves_INV; try eassumption.
     (* correct resulting environment *)
-    intros. right. eapply global_var_write_read. eassumption.
+    intros. right. eapply global_var_write_read_same. eassumption.
     }
     (* enough space already *)
     {
     eexists. eexists. split.
     edestruct INVgmp_w as [sr' Hgmp].
-    unfold INV_global_mem_ptr_in_linear_memory in INVglobalptrInMem.
     (* load global_mem_ptr *)
     dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
     (* add required bytes *)
@@ -2698,7 +2703,11 @@ Proof.
         (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 v_cap) (nat_to_i32 (S (S (S (S (offset * 4)))))))) 0%N
           (bits (VAL_int32 x0)) (t_length T_i32) = Some m0) as Hm0. {
           intros.  edestruct enough_space_to_store as [m3 Hstore]. 2: { exists m3.
-          replace (t_length T_i32) with (Datatypes.length (bits (VAL_int32 x0))) by auto. apply Hstore. } admit. }
+          replace (t_length T_i32) with (Datatypes.length (bits (VAL_int32 x0))) by auto. apply Hstore. } rewrite N.add_0_r.
+       replace (N.of_nat (Datatypes.length (bits (VAL_int32 x0)))) with 4%N by reflexivity.
+
+      admit.
+      }
 
       (* prepare IH *)
       assert (Hmaxargs : (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z). {
@@ -2842,7 +2851,10 @@ Qed.
 
 Lemma store_constr_reduce : forall state s f rho ys (vs : list cps.val) t sargs,
   INV s f ->
-  (* TODO: enough memory available *)
+  (* enough memory available *)
+  (forall m gmp_v, nth_error (s_mems s) 0 = Some m ->
+             sglob_val s (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp_v)) ->
+             Z.of_nat gmp_v + max_constr_alloc_size + 4 < Z.of_N (mem_length m))%Z ->
   (Z.of_nat (length ys) <= max_constr_args)%Z ->
   Forall_statements_in_seq (set_nth_constr_arg fenv venv nenv) ys sargs ->
   get_list ys rho = Some vs ->
@@ -2865,7 +2877,7 @@ Lemma store_constr_reduce : forall state s f rho ys (vs : list cps.val) t sargs,
           /\ wasm_value_to_i32 wasmval = cap_v
           /\ repr_val_LambdaANF_Codegen fenv venv nenv  _ (Vconstr t vs) s' wasmval).
 Proof.
-  intros ? ? ? ? ? ? ? ? Hinv Hmaxargs Hsetargs Hrho.
+  intros ? ? ? ? ? ? ? ? Hinv HenoughM Hmaxargs Hsetargs Hrho.
 
   have I := Hinv. destruct I as [_ [_ [INVgmp_w [INVcap_w [INVmuti32 _]]]]].
   have INVgmp_r := global_var_w_implies_global_var_r _ _ _ INVmuti32 INVgmp_w.
@@ -2882,12 +2894,15 @@ Proof.
 
  (* invariants after set_global gmp *)
   assert (INV s'' f) as Hinv''. { eapply update_global_preserves_INV; eassumption. }
-  have I'' := Hinv''. destruct I'' as [_ [_ [_ [INVcap_w'' [INVmuti32'' [INVlinmem'' [_ [_ [_ [INVcapInMem'' _]]]]]]]]]].
+  have I'' := Hinv''. destruct I'' as [_ [_ [_ [INVcap_w'' [INVmuti32'' [INVlinmem'' [_ [_  _]]]]]]]].
   have INVcap_r'' := global_var_w_implies_global_var_r _ _ _ INVmuti32'' INVcap_w''.
-  destruct INVcap_r''. clear INVmuti32''.
+  destruct INVcap_r'' as [cap_v H2]. clear INVmuti32''.
   (* invariants mem *)
   edestruct INVlinmem'' as [Hmem1'' [m'' [Hmem2'' [size'' [Hmem3'' [Hmem4'' Hmem5'']]]]]].
-  edestruct INVcapInMem'' as [m''' Hstore''']. eassumption.
+
+  assert (exists mem, store m'' (Wasm_int.N_of_uint i32m gmp_v') 0%N (bits (nat_to_value (Pos.to_nat t)))
+  (t_length T_i32) = Some mem) as Htest. { apply enough_space_to_store. admit. }
+  destruct Htest as [m''' Hstore'''].
 
   have Hargs := store_constr_args_reduce _ _ _ state _ _ _ _ _ Hmaxargs Hsetargs Hrho.
   edestruct Hargs as [s_final [f_final [Hred [Hinv_final [v_cap [Hcap_v [? [Hargs_val [Hcap_v' [m [m' [Hm [Hm' Hmemsame]]]]]]]]]]]]].
@@ -2907,7 +2922,17 @@ Proof.
   (* write tag *)
   dostep. elimr_nary_instr 2. eapply r_store_success. 4: eassumption.
   reflexivity. eassumption. eassumption.
-  apply Hred. } assumption.
+  apply Hred. }
+  { clear HenoughM Hmaxargs INVcap_w' INVcap_w'' INVlinmem'' Hmem1'' Hinv'' Hstore''' Hred Hinv_final Hcap_v Hargs_val.
+  have I := Hinv. destruct I as [_ [_ [_ [Hcap_w _]]]].
+   apply global_var_w_implies_global_var_r in Hcap_w. destruct Hcap_w as [x Hcap_r].
+  unfold supdate_glob, supdate_glob_s, sglob_ind in H1.
+  unfold sglob_val, sglob, sglob_ind.
+  destruct (sglob_ind (host_function:=host_function) s' (f_inst f) global_mem_ptr) eqn:he. 2: inv H1.
+  cbn in H1. destruct (nth_error (s_globals s') n) eqn:He. 2: inv H1. inv H1. cbn. cbn in Hm.
+  unfold sglob_val, sglob, sglob_ind in H.
+  admit.
+   }
   split. assumption.
   (* constr value in memory *)
   eexists. eexists. split. eassumption.
@@ -2916,10 +2941,10 @@ Proof.
   eassumption. reflexivity. reflexivity.
   rewrite <- Hmemsame; try lia.
   apply store_load in Hstore'''.
-  assert (m = m'''). { cbn in Hm. unfold update_list_at in Hm. rewrite take0 in Hm. now inv Hm. }
-  subst m'''.  rewrite deserialise_bits in  Hstore'''; auto.
-  assert ((Wasm_int.N_of_uint i32m (nat_to_i32 v_cap) = N.of_nat v_cap)) as Harith. { cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
-  rewrite Harith in Hstore'''. assumption. reflexivity. assumption.
+  assert (m = m'''). { cbn in Hm. unfold update_list_at in Hm. rewrite take0 in Hm. now inv Hm. } subst m'''.
+  rewrite deserialise_bits in  Hstore'''; auto.
+  assert ((Wasm_int.N_of_uint i32m gmp_v') = (N.of_nat v_cap)) as Heq. { admit. } rewrite -Heq. assumption.
+  reflexivity. assumption.
   }
   { (* INV before stepping through sargs *)
     eapply update_mem_preserves_INV. 6: reflexivity. assumption.
@@ -2930,7 +2955,7 @@ Proof.
     unfold mem_size, mem_length, memory_list.mem_length in *.
     apply mem_store_preserves_length in Hstore'''. congruence.
    }
-Qed.
+Admitted.
 
 
 
@@ -2994,8 +3019,8 @@ Proof with eauto.
       { (* enough memory *)
       assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
 
-      have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ _ Hmaxargs H9 H.
-      edestruct Hconstr as [s_v [f_v [Hred_v [Hinv_v [cap_v [wal [? [? Hvalue]]]]]]]]. 2:{ clear Hconstr. subst cap_v.
+      have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ _ _ Hmaxargs H9 H.
+      edestruct Hconstr as [s_v [f_v [Hred_v [Hinv_v [cap_v [wal [? [? Hvalue]]]]]]]]. 3:{ clear Hconstr. subst cap_v.
 
     (* prepare IH *) (* TODO not s_v but updated with global var *)
     assert (Hrel_m_v : rel_mem_LambdaANF_Codegen fenv venv nenv host_function e rho'
@@ -3030,7 +3055,7 @@ Proof with eauto.
 
     inv Hlocal. destruct H.
 
-    have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hinv_bound]]]]]]]]]].
+    have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ Hinv_bound]]]]]]]].
     have Hextr := extract_constr_arg n vs v _ _ _ Hinv_bound H0 H3 H11.
     destruct Hextr as [bs [wal [Hload [Heq Hbsval]]]].
 
@@ -3383,7 +3408,7 @@ Proof with eauto.
     apply rt_refl.
     unfold result_val_LambdaANF_Codegen. left.
     exists (wasm_value_to_i32 wal). exists wal.
-    repeat split. eapply set_global_var_updated. eassumption.
+    repeat split. eapply global_var_write_read_same. eassumption.
     apply val_relation_depends_only_on_mem_and_funcs with sr...
     eapply update_glob_keeps_memory_intact. eassumption.
     eapply update_glob_keeps_funcs_intact. eassumption.
