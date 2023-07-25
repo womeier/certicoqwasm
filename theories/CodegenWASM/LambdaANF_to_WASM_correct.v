@@ -2237,12 +2237,11 @@ Lemma memory_grow_reduce : forall  (ys : list cps.var)  grow state s f,
   exists s' f', reduce_trans
    (state, s, f, [seq AI_basic i | i <- grow])
    (state, s', f', [])
-  /\ INV s' f'
   (* enough memory to alloc. constructor *)
-  /\ (forall m v_gmp, nth_error (s_mems s') 0 = Some m ->
+  /\ (INV s' f' /\ (forall m v_gmp, nth_error (s_mems s') 0 = Some m ->
       sglob_val (host_function:=host_function) s' (f_inst f') global_mem_ptr = Some (VAL_int32 (nat_to_i32 v_gmp)) ->
-      (Z.of_nat v_gmp + max_constr_alloc_size < Z.of_N (mem_length m))%Z
-  \/ (sglob_val (host_function:=host_function) s' (f_inst f') result_out_of_mem = Some (VAL_int32 (nat_to_i32 1)))).
+      (Z.of_nat v_gmp + max_constr_alloc_size < Z.of_N (mem_length m))%Z)
+      \/ (sglob_val (host_function:=host_function) s' (f_inst f') result_out_of_mem = Some (VAL_int32 (nat_to_i32 1)))).
 Proof with eauto.
   (* grow memory if necessary *)
   intros ys grow state sr fr H Hinv. subst.
@@ -2302,7 +2301,8 @@ Proof with eauto.
        unfold Wasm_int.Int32.modulus, Wasm_int.Int32.wordsize, Wordsize_32.wordsize, two_power_nat. cbn. lia. }
     dostep'. separate_instr. constructor. apply rs_block with (vs:= [])(n:=0); eauto.
     apply reduce_trans_label. cbn. apply rt_refl.
-    split.
+    intros.
+    left. split.
     { (* invariant *) eapply update_mem_preserves_INV. 6: reflexivity. assumption. eassumption.
       erewrite mem_grow_increases_length; eauto. lia.
     eapply mem_grow_preserves_max_pages... exists (mem_size m + 1)%N. split.
@@ -2318,7 +2318,7 @@ Proof with eauto.
         unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in Hc. cbn in Hc.
         rewrite Wasm_int.Int32.Z_mod_modulus_id in Hc. 2: admit. (* v_gmp < i32.max *)
         rewrite Wasm_int.Int32.Z_mod_modulus_id in Hc. 2: admit. (* length ys * 4 + 4 < i32.max *)
-        cbn in Hc. left.
+        cbn in Hc.
         assert (Z.of_nat v_gmp < Z.of_N (mem_length m))%Z as Hlength. admit. (* from invariant *)
         unfold mem_size in Hsize'. (* Search (?a + ?b / ?c). *)
 (*
@@ -2359,10 +2359,8 @@ Proof with eauto.
     dostep'. constructor. eapply rs_block with (vs:=[]); auto.
     apply reduce_trans_label. cbn.
     constructor. apply r_set_global. eassumption.
-    (* INV *)
-    split. eapply update_global_preserves_INV; try eassumption.
     (* correct resulting environment *)
-    intros. right. eapply global_var_write_read_same. eassumption.
+    right. intros. eapply global_var_write_read_same. eassumption.
     }
     (* enough space already *)
     {
@@ -2388,10 +2386,10 @@ Proof with eauto.
     rewrite HneedMoreMem. apply rs_if_false. reflexivity.
 
     dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto. cbn.
-    apply reduce_trans_label. apply rt_refl. split. assumption.
+    apply reduce_trans_label. apply rt_refl. left. split. assumption.
 
     (* enough space *)
-    { intros. left. unfold max_mem_pages in *.
+    { intros. unfold max_mem_pages in *.
       rewrite H1 in H3. inv H3.
       unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in HneedMoreMem. cbn in HneedMoreMem.
       cbn in Hm2. rewrite H2 in Hm2. inv Hm2.
@@ -3002,7 +3000,7 @@ Proof with eauto.
       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [Hlinmem _]]]]]].
       destruct Hlinmem as [Hmem1 [m [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
       have Hgrowmem := memory_grow_reduce _ _ state sr fr Heqgrow Hinv.
-      destruct Hgrowmem as [s' [f' [Hred [Hinv' Henoughmem]]]].
+      destruct Hgrowmem as [s' [f' [Hred [[Hinv' Henoughmem] | HoutofM]]]].
       have I := Hinv'. destruct I as [_ [_ [Hgmp [_ [Hmuti32 [Hlinmem' _]]]]]].
       destruct Hlinmem' as [Hmem1' [m' [Hmem2' [size' [Hmem3' _]]]]].
       apply global_var_w_implies_global_var_r in Hgmp; auto. destruct Hgmp as [val Hgmp].
@@ -3015,7 +3013,6 @@ Proof with eauto.
       edestruct i32_exists_nat as [gmp_v' [Hn ?]]. erewrite Hn in Hgmp'. clear Hn n.
       have HenoughM := Henoughmem _ _ Hmem2' Hgmp'. clear Henoughmem.
 
-      destruct HenoughM as [HenoughM | HoutofM].
       { (* enough memory *)
       assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
 
