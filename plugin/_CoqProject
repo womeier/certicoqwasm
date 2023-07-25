@@ -156,6 +156,8 @@ extraction/ctypes.ml
 extraction/ctypes.mli
 extraction/datatypes.ml
 extraction/datatypes.mli
+extraction/operations.ml
+extraction/operations.mli
 extraction/dead_param_elim.ml
 extraction/dead_param_elim.mli
 extraction/decimal.ml

@@ -1,6 +1,6 @@
 Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
 
-From Wasm Require Import datatypes.
+From Wasm Require Import datatypes operations.
 
 From CertiCoq Require Import LambdaANF.toplevel.
 From CertiCoq Require Import Common.Common Common.compM Common.Pipeline_utils.
@@ -437,7 +437,8 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
       x_var <- translate_var nenv venv x "translate_exp constr";;
       store_constr <- store_constructor nenv cenv venv fenv tg ys;;
 
-      Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++
+      (* Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++ *)
+      Ret (grow_memory_if_necessary (N.to_nat page_size) ++
           [ BI_get_global result_out_of_mem
           ; BI_const (nat_to_value 1)
           ; BI_relop T_i32 (Relop_i ROI_eq)
