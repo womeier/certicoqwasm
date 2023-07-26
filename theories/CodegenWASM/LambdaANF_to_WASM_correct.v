@@ -2593,26 +2593,6 @@ Proof.
   apply N.leb_le in Harith. cbn in Harith. lia.
 Qed.
 
-Lemma load_store_load : forall m m' a1 a2 v w,
-length v = 4 ->
-((Wasm_int.N_of_uint i32m a1) + 4 <= (Wasm_int.N_of_uint i32m a2))%N ->
-load_i32 m (Wasm_int.N_of_uint i32m a1) = Some (wasm_deserialise v T_i32) ->
-store m (Wasm_int.N_of_uint i32m a2) 0%N w 4 = Some m' ->
-load_i32 m' (Wasm_int.N_of_uint i32m a1) = Some (wasm_deserialise v T_i32).
-Proof.
-  intros.
-  replace (Wasm_int.N_of_uint i32m a1) with (N.of_nat (N.to_nat (Wasm_int.N_of_uint i32m a1))) in H0 by lia.
-  replace (Wasm_int.N_of_uint i32m a2) with (N.of_nat (N.to_nat (Wasm_int.N_of_uint i32m a2))) in H0 by lia.
-  remember (N.to_nat (Wasm_int.N_of_uint i32m a2)) as a2'. generalize dependent a2. generalize dependent a1.
-  generalize dependent v. revert m m'.
-  induction a2'; intros; try lia.
-(*
-  eapply IHa2'. 4 : {
-  assert (Ha: a2' = N.to_nat (Wasm_int.N_of_uint i32m (Wasm_int.Int32.isub a2 Wasm_int.Int32.one))). { admit. } eassumption. } all: eauto. admit.
-  destruct v. inv H. destruct v. inv H. destruct v. inv H. destruct v. inv H. destruct v. 2: inv H. clear H. cbn in H1.
-  unfold store in H2. *)
-Admitted.
-
 Lemma store_load : forall m m' addr v,
 length v = 4 ->
 store m (Wasm_int.N_of_uint i32m addr) 0%N v 4 = Some m' ->
@@ -2687,6 +2667,90 @@ Proof.
   erewrite set_nth_nth_error_same; try lia; auto. eassumption.
 Qed.
 
+Ltac solve_arith_load_store := repeat (try rewrite length_is_size; try rewrite size_set_nth;
+                                       try rewrite maxn_nat_max;
+                                       try rewrite Nat2N.inj_max;
+                                       try apply N.ltb_lt; try apply N.leb_le;
+                                       try (apply N.max_lt_iff; right); try (apply Nat.max_lt_iff; right);
+                                       rewrite -length_is_size; try lia).
+
+Lemma load_store_load : forall m m' a1 a2 v w,
+  length w = 4 ->
+  ((Wasm_int.N_of_uint i32m a1) + 4 <= (Wasm_int.N_of_uint i32m a2))%N ->
+  load_i32 m (Wasm_int.N_of_uint i32m a1) = Some (wasm_deserialise v T_i32) ->
+  store m (Wasm_int.N_of_uint i32m a2) 0%N w 4 = Some m' ->
+  load_i32 m' (Wasm_int.N_of_uint i32m a1) = Some (wasm_deserialise v T_i32).
+Proof.
+  intros ? ? ? ? ? ? Hlw Harith Hload Hstore.
+  cbn in Harith.
+  unfold store in Hstore. destruct ((Wasm_int.N_of_uint i32m a2 + 0 + N.of_nat 4 <=?
+        mem_length m)%N) eqn:Ha. 2: inv Hstore.
+  apply N.leb_le in Ha. cbn in Ha. unfold mem_length, memory_list.mem_length in Ha.
+  destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw. destruct w. 2: inv Hlw. clear Hlw.
+  unfold write_bytes in Hstore. cbn in Hstore. unfold mem_update in Hstore. cbn in Hstore.
+  destruct ((Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 0 <?
+                    N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Ha1. 2: discriminate.
+  cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
+  rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 1 <? N.of_nat (Datatypes.length (set_nth b (ml_data (mem_data m))
+                    (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 0)) b)))%N) as Ha2. { solve_arith_load_store. }
+ rewrite Ha2 in Hstore. cbn in Hstore. repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+assert ((Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 2 <?
+                N.of_nat
+                  (Datatypes.length
+                     (set_nth b0
+                        (set_nth b (ml_data (mem_data m))
+                          (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 0)) b)
+                        (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 1)) b0)))%N) as Ha3. { solve_arith_load_store. }
+  rewrite Ha3 in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 3 <?
+           N.of_nat (Datatypes.length
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 0)) b)
+                             (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 1)) b0)
+                          (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 2)) b1)))%N) as Ha4. { solve_arith_load_store. }
+  rewrite Ha4 in Hstore. inv Hstore.
+
+  unfold load_i32, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
+  destruct ((Z.to_N (Wasm_int.Int32.unsigned a1) + 4 <=?
+             N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hr1. 2: discriminate. cbn in Ha4.
+        unfold read_bytes, those in Hload. cbn in Hload. unfold mem_lookup in Hload. cbn in Hload.
+
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a1) + 0 + 0))) eqn:Hl1. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a1) + 0 + 1))) eqn:Hl2. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a1) + 0 + 2))) eqn:Hl3. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a1) + 0 + 3))) eqn:Hl4. 2: discriminate.
+                cbn in Hload. rewrite -Hload.
+
+  rewrite length_is_size in Ha2. rewrite size_set_nth in Ha2.
+  rewrite maxn_nat_max in Ha2.
+  assert ((Z.to_N (Wasm_int.Int32.unsigned a1) + 4 <=?
+     N.of_nat
+       (Datatypes.length
+          (set_nth b2
+             (set_nth b1
+                (set_nth b0
+                   (set_nth b (ml_data (mem_data m))
+                      (N.to_nat
+                         (Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 0)) b)
+                   (N.to_nat
+                      (Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 1)) b0)
+                (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 2))
+                b1)
+             (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned a2) + 0 + 3)) b2)))%N) as Hdf. { solve_arith_load_store. }  rewrite Hdf. cbn.
+
+  unfold read_bytes, those, mem_lookup. cbn.
+  repeat rewrite set_nth_nth_error_other; try by lia.
+  rewrite Hl1 Hl2 Hl3 Hl4. reflexivity. all: solve_arith_load_store.
+Qed.
+
 Lemma i32_exists_nat : forall (x : i32), exists n, x = nat_to_i32 n /\ (-1 < Z.of_nat n <  Wasm_int.Int32.modulus)%Z.
 Proof.
   intros [val H]. exists (Z.to_nat val). split; try lia.
@@ -2719,8 +2783,7 @@ Lemma store_constr_args_reduce : forall ys vs sargs state rho s f offset,
                 = Some (VAL_int32 (nat_to_i32 v_cap))
                /\ exists m m', nth_error (s_mems s ) 0 = Some m
                             /\ nth_error (s_mems s') 0 = Some m'
-                            /\ forall a, ((* tag *) a = v_cap \/ (* previous mem *) a + 4 < v_cap)
-                                         -> load_i32 m (N.of_nat a) = load_i32 m' (N.of_nat a).
+                            /\ forall a, a <= v_cap -> load_i32 m (N.of_nat a) = load_i32 m' (N.of_nat a).
 
 Proof.
   induction ys; intros vs sargs state rho s f offset Hinv Hargs H Hvs.
