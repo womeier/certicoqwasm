@@ -71,6 +71,9 @@ Definition nat_to_value (n : nat) :=
 Definition Z_to_value (z : Z) :=
   VAL_int32 (Wasm_int.Int32.repr z).
 
+Definition N_to_value (n : N) :=
+  Z_to_value (Z.of_N n).
+
 Definition translate_var_to_string (nenv : name_env) (v : cps.var) : string :=
   "$" ++ show_tree (show_var nenv v).
 
@@ -355,10 +358,10 @@ Definition translate_call (nenv : name_env) (venv : var_env) (fenv : fname_env) 
 *)
 
 (* a page is 2^16 bytes *)
-Definition grow_memory_if_necessary (required_bytes : nat) : list basic_instruction :=
+Definition grow_memory_if_necessary (required_bytes : N) : list basic_instruction :=
   (* required number of total pages *)
   [ BI_get_global global_mem_ptr
-  ; BI_const (nat_to_value required_bytes)
+  ; BI_const (N_to_value required_bytes)
   ; BI_binop T_i32 (Binop_i BOI_add)
   ; BI_const (Z_to_value (Z.pow 2 16))
   ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
@@ -438,7 +441,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
       store_constr <- store_constructor nenv cenv venv fenv tg ys;;
 
       (* Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++ *)
-      Ret (grow_memory_if_necessary (N.to_nat page_size) ++
+      Ret (grow_memory_if_necessary page_size ++
           [ BI_get_global result_out_of_mem
           ; BI_const (nat_to_value 1)
           ; BI_relop T_i32 (Relop_i ROI_eq)

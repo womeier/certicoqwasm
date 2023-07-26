@@ -422,7 +422,7 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
     (* translated assigned var *)
     repr_var x x' ->
     (* allocate memory *)
-    grow_memory_if_necessary (N.to_nat page_size) = sgrow ->
+    grow_memory_if_necessary page_size = sgrow ->
     (* initialize pointers *)
     sinit = [ BI_get_global global_mem_ptr
             ; BI_set_global constr_alloc_ptr
@@ -482,12 +482,12 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
 
 (* Variable mem : memory. *) (* WASM memory, created e.g. at initialization *)
 
-Definition load_i32 m addr : option value := match load m addr (N.of_nat 0) 4 with (* offset: 0, 4 bytes *)
+Definition load_i32 m addr : option value := match load m addr 0%N 4 with (* offset: 0, 4 bytes *)
                                              | None => None
                                              | Some bs => Some (wasm_deserialise bs T_i32)
                                              end.
 
-Definition store_i32 mem addr (v : value) : option memory := store mem addr (N.of_nat 0) (bits v) 4.
+Definition store_i32 mem addr (v : value) : option memory := store mem addr 0%N (bits v) 4.
 
 
 Definition tag_to_i32 (t : ctor_tag) := Wasm_int.Int32.repr (BinInt.Z.of_nat (Pos.to_nat t)).
@@ -1098,7 +1098,7 @@ Proof.
   end.
   rename i into v'.
   replace   ([:: BI_get_global global_mem_ptr] ++
-   [:: BI_const (nat_to_value (Pos.to_nat 65536))] ++
+   [:: BI_const (N_to_value 65536)] ++
    [:: BI_binop T_i32 (Binop_i BOI_add)] ++
    [:: BI_const (Z_to_value 65536)] ++
    [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
@@ -1121,7 +1121,7 @@ Proof.
           ([:: BI_get_global constr_alloc_ptr] ++
            [:: BI_set_local v'] ++ l0)%SEQ)%list]) with
    (([:: BI_get_global global_mem_ptr] ++
-   [:: BI_const (nat_to_value (N.to_nat page_size))] ++
+   [:: BI_const (N_to_value 65536)] ++
    [:: BI_binop T_i32 (Binop_i BOI_add)] ++
    [:: BI_const (Z_to_value 65536)] ++
    [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
@@ -1144,7 +1144,7 @@ Proof.
           ([:: BI_get_global constr_alloc_ptr] ++
            [:: BI_set_local v'] ++ l0)%SEQ)%list]) by reflexivity.
   remember ([:: BI_get_global global_mem_ptr] ++
-   [:: BI_const (nat_to_value (N.to_nat page_size))] ++
+   [:: BI_const (N_to_value 65536)] ++
    [:: BI_binop T_i32 (Binop_i BOI_add)] ++
    [:: BI_const (Z_to_value 65536)] ++
    [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
@@ -1161,19 +1161,19 @@ Proof.
          []]) as grow_instr.
       unfold store_constructor in store_constr.
       destruct (set_constructor_args nenv venv fenv l 0) eqn:Hconstrargs. inv store_constr.
-         remember (grow_memory_if_necessary (N.to_nat page_size)) as grow.
+         remember (grow_memory_if_necessary page_size) as grow.
       inversion store_constr.
 
          replace ([:: BI_get_global constr_alloc_ptr, BI_set_local v' & l0]) with
          ([:: BI_get_global constr_alloc_ptr; BI_set_local v'] ++ l0) by reflexivity.
 
        replace ([:: BI_get_global global_mem_ptr, BI_set_global constr_alloc_ptr,
-        BI_get_global global_mem_ptr, BI_const (nat_to_value (N.to_nat page_size)),
+        BI_get_global global_mem_ptr, BI_const (N_to_value page_size),
         BI_binop T_i32 (Binop_i BOI_add), BI_set_global global_mem_ptr,
         BI_get_global constr_alloc_ptr, BI_const (nat_to_value (Pos.to_nat t)),
         BI_store T_i32 None 2%N 0%N
       & l2]) with ([:: BI_get_global global_mem_ptr; BI_set_global constr_alloc_ptr;
-        BI_get_global global_mem_ptr; BI_const (nat_to_value (N.to_nat page_size));
+        BI_get_global global_mem_ptr; BI_const (N_to_value page_size);
         BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr] ++
         [BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
         BI_store T_i32 None 2%N 0%N] ++ l2) by reflexivity.
@@ -1930,13 +1930,13 @@ Proof.
 Qed.
 
 Lemma decode_int_bounds : forall b m addr,
-  load m (N.of_nat addr) (N.of_nat 0) 4 = Some b ->
+  load m (N.of_nat addr) 0%N 4 = Some b ->
   (-1 < decode_int b < Wasm_int.Int32.modulus)%Z.
 Proof.
   intros.
   (* length b = 4 bytes *)
   unfold load, those in H.
-  destruct (N.of_nat addr + (N.of_nat 0 + N.of_nat 4) <=? mem_length m)%N. 2: inv H.
+  destruct (N.of_nat addr + (0 + N.of_nat 4) <=? mem_length m)%N. 2: inv H.
   unfold read_bytes in H. cbn in H.
   destruct (memory_list.mem_lookup (N.of_nat addr + 0 + 0)%N (mem_data m)). 2: inv H.
   destruct (memory_list.mem_lookup (N.of_nat addr + 0 + 1)%N (mem_data m)). 2: inv H.
@@ -1979,7 +1979,7 @@ Proof.
   induction (N.to_nat n); intros.
   - (* n = 0 *)
     inv H4. rewrite H in H3. inv H3. rename m0 into m. rewrite N.add_comm.
-    unfold load_i32 in H0. destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hl; try inv H0.
+    unfold load_i32 in H0. destruct (load m (N.of_nat addr) 0%N 4) eqn:Hl; try inv H0.
      exists b. exists wal. repeat split. rewrite <- Hl. reflexivity. unfold wasm_value_to_i32.
     have H'' := value_bounds wal.
     unfold wasm_deserialise. f_equal. f_equal.
@@ -2273,7 +2273,7 @@ Qed.
 
 (* there is quite a bit of copy paste in this lemma: TODO reorganize/automate *)
 Lemma memory_grow_reduce : forall grow state s f,
-  grow = grow_memory_if_necessary (N.to_nat page_size) ->
+  grow = grow_memory_if_necessary page_size ->
   INV s f ->
   exists s' f', reduce_trans
    (state, s, f, [seq AI_basic i | i <- grow])
@@ -2318,16 +2318,15 @@ Proof with eauto.
       rewrite zeq_false. reflexivity.
       { (*TODO code duplication *)
         intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
-                      Wasm_int.Int32.unsigned in HA.
-        cbn in HA. rewrite Wasm_int.Int32.Z_mod_modulus_id in HA.
+                      Wasm_int.Int32.unsigned in HA;
+        cbn in HA.
         assert ((Wasm_int.Int32.signed
           (Wasm_int.Int32.repr
-             (Wasm_int.Int32.intval x + Z.of_nat (N.to_nat page_size))) ÷ 65536 <= 10000000)%Z).
+             (Wasm_int.Int32.intval x + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
         apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
-        have H' := signed_upper_bound (Wasm_int.Int32.intval x + Z.of_nat (N.to_nat page_size)).
+        have H' := signed_upper_bound (Wasm_int.Int32.intval x + Z.of_N page_size).
         unfold Wasm_int.Int32.half_modulus in *. cbn in H'. cbn. lia. cbn.
-        unfold page_size in *. cbn in H5. lia.
-        unfold Wasm_int.Int32.modulus, two_power_nat. cbn. lia. }
+        unfold page_size in *. cbn in H5. lia. }
       dostep. apply r_eliml; auto.
       elimr_nary_instr 0. eapply r_current_memory...
 
@@ -2382,15 +2381,15 @@ Proof with eauto.
       rewrite zeq_false. reflexivity.
       { (*TODO code duplication *)
         intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
-                      Wasm_int.Int32.unsigned in HA.
-        cbn in HA. rewrite Wasm_int.Int32.Z_mod_modulus_id in HA.
+                      Wasm_int.Int32.unsigned in HA;
+        cbn in HA.
         assert ((Wasm_int.Int32.signed
           (Wasm_int.Int32.repr
-             (Wasm_int.Int32.intval x + Z.of_nat (N.to_nat page_size))) ÷ 65536 <= 10000000)%Z).
+             (Wasm_int.Int32.intval x + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
         apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
-        have H' := signed_upper_bound (Wasm_int.Int32.intval x + Z.of_nat (N.to_nat page_size)).
-        unfold Wasm_int.Int32.half_modulus in *. cbn in H'. cbn. lia. cbn in H3. lia.
-        unfold Wasm_int.Int32.modulus, two_power_nat. cbn. lia. }
+        have H' := signed_upper_bound (Wasm_int.Int32.intval x + Z.of_N page_size).
+        unfold Wasm_int.Int32.half_modulus in *. cbn in H'. cbn. lia. cbn.
+        unfold page_size in *. cbn in H3. lia. }
       dostep. apply r_eliml; auto.
       elimr_nary_instr 0. eapply r_current_memory...
 
@@ -2422,15 +2421,15 @@ Proof with eauto.
       rewrite zeq_false. reflexivity.
       { (*TODO code duplication *)
         intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
-                      Wasm_int.Int32.unsigned in HA.
-        cbn in HA. rewrite Wasm_int.Int32.Z_mod_modulus_id in HA.
+                      Wasm_int.Int32.unsigned in HA;
+        cbn in HA.
         assert ((Wasm_int.Int32.signed
           (Wasm_int.Int32.repr
-             (Wasm_int.Int32.intval x + Z.of_nat (N.to_nat page_size))) ÷ 65536 <= 10000000)%Z).
+             (Wasm_int.Int32.intval x + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
         apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
-        have H' := signed_upper_bound (Wasm_int.Int32.intval x + Z.of_nat (N.to_nat page_size)).
-        unfold Wasm_int.Int32.half_modulus in *. cbn in H'. cbn. lia. cbn in H2. lia.
-        unfold Wasm_int.Int32.modulus, two_power_nat. cbn. lia. }
+        have H' := signed_upper_bound (Wasm_int.Int32.intval x + Z.of_N page_size).
+        unfold Wasm_int.Int32.half_modulus in *. cbn in H'. cbn. lia. cbn.
+        unfold page_size in *. cbn in H2. lia. }
       dostep. apply r_eliml; auto.
       elimr_nary_instr 0. eapply r_current_memory...
 
@@ -2513,9 +2512,9 @@ load_i32 m (Wasm_int.N_of_uint i32m addr) = Some v ->
 exists m', store m (Wasm_int.N_of_uint i32m addr) 0%N [b1;b2;b3;b4] 4 = Some m'.
 Proof.
   intros. unfold load_i32 in H.
-  destruct (load m (Wasm_int.N_of_uint i32m addr) (N.of_nat 0) 4) eqn:Heqn; inv H.
+  destruct (load m (Wasm_int.N_of_uint i32m addr) 0%N 4) eqn:Heqn; inv H.
   unfold load in Heqn.
-  destruct ((Wasm_int.N_of_uint i32m addr + (N.of_nat 0 + N.of_nat 4) <=? mem_length m)%N) eqn:Harith. 2: inv Heqn.
+  destruct ((Wasm_int.N_of_uint i32m addr + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Harith. 2: inv Heqn.
   unfold read_bytes, those in Heqn. cbn in Heqn.
   repeat rewrite N.add_0_r in Heqn. clear Heqn.
   unfold store, write_bytes. rewrite N.add_0_r. cbn in Harith. rewrite Harith.
@@ -3087,7 +3086,7 @@ Proof with eauto.
   induction Hev; intros instructions fr state sr Hinv Hrepr_e Hrel_m.
   - (* Econstr *)
     inversion Hrepr_e. subst t0 x0 vs0 e0 sgrow. rename H5 into Hx. rename H11 into Hexp.
-    { remember (grow_memory_if_necessary (N.to_nat page_size)) as grow.
+    { remember (grow_memory_if_necessary page_size) as grow.
       cbn. repeat rewrite map_cat. cbn.
 
       (* prepare calling memory_grow_reduce *)
