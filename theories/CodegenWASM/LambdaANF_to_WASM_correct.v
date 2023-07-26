@@ -2506,57 +2506,6 @@ Proof with eauto.
 (* Qed. hangs here *)
 Admitted.
 
-(* TODO: automate with zify *)
-Lemma load_store : forall m addr v b1 b2 b3 b4,
-load_i32 m (Wasm_int.N_of_uint i32m addr) = Some v ->
-exists m', store m (Wasm_int.N_of_uint i32m addr) 0%N [b1;b2;b3;b4] 4 = Some m'.
-Proof.
-  intros. unfold load_i32 in H.
-  destruct (load m (Wasm_int.N_of_uint i32m addr) 0%N 4) eqn:Heqn; inv H.
-  unfold load in Heqn.
-  destruct ((Wasm_int.N_of_uint i32m addr + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Harith. 2: inv Heqn.
-  unfold read_bytes, those in Heqn. cbn in Heqn.
-  repeat rewrite N.add_0_r in Heqn. clear Heqn.
-  unfold store, write_bytes. rewrite N.add_0_r. cbn in Harith. rewrite Harith.
-  unfold fold_lefti. cbn. apply N.leb_le in Harith.
-  unfold mem_update. unfold mem_length, memory_list.mem_length in Harith.
-  rewrite take_drop_is_set_nth; try lia. rewrite N.add_0_r.
-  assert ((Z.to_N (Wasm_int.Int32.unsigned addr) <?
-             N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) as Ha. apply N.ltb_lt. lia.
-  rewrite Ha. clear Ha. cbn.
-  rewrite length_is_size. rewrite size_set_nth.
-  assert ((Z.to_N (Wasm_int.Int32.unsigned addr) + 1 <?
-           N.of_nat
-             (ssrnat.maxn (S (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr))))
-                (size (ml_data (mem_data m)))))%N) as Ha. {
-  rewrite maxn_nat_max. rewrite Nat2N.inj_max. apply N.ltb_lt.
-  apply N.max_lt_iff. right. rewrite -length_is_size. lia. } rewrite Ha. clear Ha.
-  cbn. rewrite take_drop_is_set_nth. 2: { remember (Z.to_N (Wasm_int.Int32.unsigned addr)) as a. rewrite length_is_size size_set_nth. rewrite -length_is_size. rewrite maxn_nat_max. lia. }
-  assert ((Z.to_N (Wasm_int.Int32.unsigned addr) + 2 <?
-         N.of_nat
-           (Datatypes.length
-              (set_nth b2
-                 (set_nth b1 (ml_data (mem_data m))
-                    (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr))) b1)
-                 (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 1)) b2)))%N) as Ha.
-  { rewrite length_is_size size_set_nth maxn_nat_max Nat2N.inj_max.
-    rewrite size_set_nth maxn_nat_max Nat2N.inj_max. apply N.ltb_lt. apply N.max_lt_iff. right.
-    apply N.max_lt_iff. right. rewrite -length_is_size. lia. } rewrite Ha. clear Ha. cbn.
-  rewrite take_drop_is_set_nth. 2: { rewrite length_is_size size_set_nth maxn_nat_max.
-  rewrite size_set_nth maxn_nat_max. rewrite -length_is_size. lia. }
-  intros. rewrite length_is_size.
-  assert ((Z.to_N (Wasm_int.Int32.unsigned addr) + 3 <?
-       N.of_nat
-         (size
-            (set_nth b3
-               (set_nth b2
-                  (set_nth b1 (ml_data (mem_data m))
-                     (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr))) b1)
-                  (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 1)) b2)
-               (N.to_nat (Z.to_N (Wasm_int.Int32.unsigned addr) + 2)) b3)))%N) as Ha.
-   { repeat rewrite size_set_nth maxn_nat_max. apply N.ltb_lt.
-     repeat (rewrite Nat2N.inj_max; rewrite N.max_lt_iff; right). rewrite -length_is_size. lia. } rewrite Ha. eauto.
-Qed.
 
 (* adjusted from iriswasm *)
 Lemma enough_space_to_store m k off bs :
@@ -2630,6 +2579,18 @@ Proof.
            now rewrite Hdatf.
         ++ rewrite <- H0.
            now apply mem_update_length in Hdatupd.
+Qed.
+
+Lemma load_store : forall m addr v b1 b2 b3 b4,
+load_i32 m (Wasm_int.N_of_uint i32m addr) = Some v ->
+exists m', store m (Wasm_int.N_of_uint i32m addr) 0%N [b1;b2;b3;b4] 4 = Some m'.
+Proof.
+  intros. unfold load_i32 in H.
+  destruct (load m (Wasm_int.N_of_uint i32m addr) 0%N 4) eqn:Heqn; inv H.
+  unfold load in Heqn.
+  apply enough_space_to_store. cbn.
+  destruct ((Wasm_int.N_of_uint i32m addr + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Harith. 2: inv Heqn.
+  apply N.leb_le in Harith. cbn in Harith. lia.
 Qed.
 
 Lemma load_store_load : forall m m' a1 a2 v w,
