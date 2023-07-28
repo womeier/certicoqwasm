@@ -2693,9 +2693,9 @@ Ltac solve_arith_load_store := repeat (try rewrite length_is_size; try rewrite s
 Lemma load_store_load : forall m m' a1 a2 v w,
   length w = 4 ->
   (a1 + 4 <= a2)%N ->
-  load_i32 m a1 = Some (wasm_deserialise v T_i32) ->
+  load_i32 m a1 = Some v ->
   store m a2 0%N w 4 = Some m' ->
-  load_i32 m' a1 = Some (wasm_deserialise v T_i32).
+  load_i32 m' a1 = Some v.
 Proof.
   intros ? ? ? ? ? ? Hlw Harith Hload Hstore.
   cbn in Harith.
@@ -2760,6 +2760,31 @@ assert ((a2 + 0 + 2 <?
   rewrite Hl1 Hl2 Hl3 Hl4. reflexivity. all: solve_arith_load_store.
 Qed.
 
+(* taken from iriswasm *)
+Lemma deserialise_bits v t :
+  types_agree t v -> wasm_deserialise (bits v) t = v.
+Proof.
+  intros Htv.
+  unfold wasm_deserialise.
+  destruct t ;
+    unfold bits ;
+    destruct v ; (try by inversion Htv).
+  rewrite Memdata.decode_encode_int.
+  rewrite Z.mod_small.
+  by rewrite Wasm_int.Int32.repr_unsigned.
+  destruct s ; simpl; replace (two_power_pos _)
+    with Wasm_int.Int32.modulus ; [lia | done].
+  rewrite Memdata.decode_encode_int.
+  rewrite Z.mod_small.
+  by rewrite Wasm_int.Int64.repr_unsigned.
+  destruct s ; simpl ; replace (two_power_pos _)
+    with Wasm_int.Int64.modulus ; [lia | done].
+  rewrite Memdata.decode_encode_int_4.
+  by rewrite Wasm_float.FloatSize32.of_to_bits.
+  rewrite Memdata.decode_encode_int_8.
+  by rewrite Wasm_float.FloatSize64.of_to_bits.
+Qed.
+
 Lemma i32_exists_nat : forall (x : i32), exists n, x = nat_to_i32 n /\ (-1 < Z.of_nat n <  Wasm_int.Int32.modulus)%Z.
 Proof.
   intros [val H]. exists (Z.to_nat val). split; try lia.
@@ -2771,6 +2796,12 @@ Proof.
   rewrite (Wasm_int.Int32.Z_lt_irrelevant low low').
   rewrite (Wasm_int.Int32.Z_lt_irrelevant high high'). reflexivity.
 Qed.
+
+Lemma i32_exists_value : forall (x : i32), exists n, x = (wasm_value_to_i32 n).
+Proof.
+  cbn. intros. unfold wasm_value_to_i32, wasm_value_to_immediate.
+  exists (Val_ptr (0)). Admitted.
+
 
 Lemma store_constr_args_reduce : forall ys vs sargs state rho s f offset m v_cap,
   INV s f ->
@@ -2795,7 +2826,7 @@ Lemma store_constr_args_reduce : forall ys vs sargs state rho s f offset m v_cap
                 = Some (VAL_int32 (nat_to_i32 v_cap))
                /\ exists m m', nth_error (s_mems s ) 0 = Some m
                             /\ nth_error (s_mems s') 0 = Some m'
-                            /\ forall a, a <= v_cap -> load_i32 m (N.of_nat a) = load_i32 m' (N.of_nat a).
+                            /\ forall a, a <= v_cap + 4 * (1 + offset) -> load_i32 m (N.of_nat a) = load_i32 m' (N.of_nat a).
 Proof.
   induction ys; intros vs sargs state rho s f offset m v_cap Hinv Hm Hcap Hlen Hargs Hoffset H Hvs.
   { inv Hvs. inv H. exists s. exists f. split. apply rt_refl. split. assumption.
@@ -2810,7 +2841,7 @@ Proof.
     destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
     exists m, m. auto.
   }
-  { inv H. inv H6.
+  { inv H. inv H6. rename s' into instr_args.
     (* rewrite map_cat. inv H0. cbn. *)
     inv H.
     { (* store var *)
@@ -2821,7 +2852,8 @@ Proof.
       (* invariants *)
       have I := Hinv. destruct I as [_ [_ [_ [_ [Hinv_cap [Hinv_muti32 [Hinv_linmem [Hinv_locals _]]]]]]]].
       eapply global_var_w_implies_global_var_r in Hinv_cap; auto. destruct Hinv_cap.
-      destruct (Hinv_locals _ _ H0).
+      destruct (Hinv_locals _ _ H0) as [x0 ?].
+      destruct (i32_exists_value x0) as [? ?]. subst x0. rename x1 into x0.
       destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. subst size. cbn.
 
       assert (m = m') by congruence. subst m'. clear Hmem2.
@@ -2829,10 +2861,10 @@ Proof.
       destruct (i32_exists_nat x) as [x1 [Hx ?]].
       assert (exists m0, store m
         (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 v_cap) (nat_to_i32 (S (S (S (S (offset * 4)))))))) 0%N
-          (bits (VAL_int32 x0)) (t_length T_i32) = Some m0) as Hm0. {
+          (bits (VAL_int32 (wasm_value_to_i32 x0))) (t_length T_i32) = Some m0) as Hm0. {
           intros.  edestruct enough_space_to_store as [m3 Hstore]. 2: { exists m3.
-          replace (t_length T_i32) with (Datatypes.length (bits (VAL_int32 x0))) by auto. apply Hstore. } rewrite N.add_0_r.
-       replace (N.of_nat (Datatypes.length (bits (VAL_int32 x0)))) with 4%N by reflexivity.
+          replace (t_length T_i32) with (Datatypes.length (bits (VAL_int32 (wasm_value_to_i32 x0)))) by auto. apply Hstore. } rewrite N.add_0_r.
+       replace (N.of_nat (Datatypes.length (bits (VAL_int32 (wasm_value_to_i32 x0))))) with 4%N by reflexivity.
        unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
        remember (S (S (S (S (offset * 4))))) as n. cbn.
        have H' := mem_length_upper_bound _ Hmem5. cbn in H'.
@@ -2859,7 +2891,7 @@ Proof.
       destruct Hm0 as [m0 Hm0].
       have IH := IHys _ _ state _ _ _ _ _ _ _ _ _ _ Hmaxargs Hoffset H3 Hvs. clear IHys.
       edestruct IH as [sr [fr [Hred [Hinv' [v_cap' [Hv1 [? [Hv2 [? [m1 [m2 [Hm1 [Hm2 ?]]]]]]]]]]]]].
-      5: {
+      5: { clear IH.
       assert (sglob_val (host_function:=host_function) s (f_inst f) constr_alloc_ptr
             = sglob_val (host_function:=host_function) (upd_s_mem (host_function:=host_function) s
                        (update_list_at (s_mems s) 0 m0)) (f_inst f) constr_alloc_ptr) as Hglob_cap by reflexivity.
@@ -2879,21 +2911,29 @@ Proof.
       separate_instr. dostep. elimr_nary_instr 2. constructor. constructor. reflexivity.
       separate_instr. dostep. apply r_eliml. auto. elimr_nary_instr 0. apply r_get_local. eassumption.
 
-      separate_instr. dostep. elimr_nary_instr 2. eapply r_store_success.
-      4: apply Hm0.
-      auto. eassumption. assumption. apply Hred.
-      split. assumption. exists v_cap. split. assumption. split. simpl_modulus. cbn.
-      cbn in HlenBound. lia.
-      split. econstructor.
-      admit. (* mem exists *)
-      { (* load val *)
-      admit. }
-      admit. (* v ~ wal *)
-      assert ((4 + 4 * S offset + v_cap) = (4 + S (S (S (S (offset + (offset + (offset + (offset + 0)))
-                                           + v_cap)))))) as Harith by lia.
-      rewrite -Harith. assumption.
+      separate_instr. dostep. elimr_nary_instr 2. eapply r_store_success. 5: apply Hred.
+      4: apply Hm0. auto. assumption. assumption. split. assumption.
+      exists v_cap. split. assumption. split. simpl_modulus. cbn. lia. split.
+      econstructor.
+      - apply Hm2.
+      - (* load val *) rewrite -H6; try lia. assert (m0 = m1). {
+        cbn in Hm1. unfold update_list_at in Hm1. rewrite take0 in Hm1. now inv Hm1. } subst m1.
+        apply store_load in Hm0.
+        assert ((N.of_nat (S (S (S (S (offset + (offset + (offset + (offset + 0))) + v_cap)))))) =
+                (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 v_cap)
+                            (nat_to_i32 (S (S (S (S (offset * 4))))))))) as Har. {
+        remember (S (S (S (S (offset * 4))))) as o. cbn.
+        assert (Z.of_nat offset < 2 * max_constr_args)%Z as HarOffset by lia. cbn in HarOffset.
+        repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.
+       }
+      rewrite deserialise_bits in Hm0. rewrite Har. eassumption.
+      auto. reflexivity.
+      admit. (* related to val, should follow from memory relation, maybe  i32_exists_value not even necessary *)
+      replace ((4 + S (S (S (S (offset + (offset + (offset + (offset + 0))) + v_cap)))))) with
+      (4 + 4 * S offset + v_cap) by lia. apply Hv2.
       split. rewrite <- H5. reflexivity. exists m, m2.
-      split. assumption. split. assumption. (* m0 -> m1, *) admit. }
+      split. assumption. split. assumption.
+      intros. (* m0 -> m1, load_store_load *) admit. }
 
       (* INV from before applying IH *)
       eapply update_mem_preserves_INV. 6: reflexivity. all: eauto.
@@ -2978,31 +3018,6 @@ Proof.
       eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])). apply Htrans. apply Htransf.
       assumption. *) *)
 Admitted.
-
-(* taken from iriswasm *)
-Lemma deserialise_bits v t :
-  types_agree t v -> wasm_deserialise (bits v) t = v.
-Proof.
-  intros Htv.
-  unfold wasm_deserialise.
-  destruct t ;
-    unfold bits ;
-    destruct v ; (try by inversion Htv).
-  rewrite Memdata.decode_encode_int.
-  rewrite Z.mod_small.
-  by rewrite Wasm_int.Int32.repr_unsigned.
-  destruct s ; simpl; replace (two_power_pos _)
-    with Wasm_int.Int32.modulus ; [lia | done].
-  rewrite Memdata.decode_encode_int.
-  rewrite Z.mod_small.
-  by rewrite Wasm_int.Int64.repr_unsigned.
-  destruct s ; simpl ; replace (two_power_pos _)
-    with Wasm_int.Int64.modulus ; [lia | done].
-  rewrite Memdata.decode_encode_int_4.
-  by rewrite Wasm_float.FloatSize32.of_to_bits.
-  rewrite Memdata.decode_encode_int_8.
-  by rewrite Wasm_float.FloatSize64.of_to_bits.
-Qed.
 
 Lemma store_constr_reduce : forall state s f rho ys (vs : list cps.val) t sargs,
   INV s f ->
