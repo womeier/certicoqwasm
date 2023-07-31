@@ -2950,7 +2950,7 @@ Proof.
       erewrite <-mem_store_preserves_max_pages; eauto.
       exists (mem_size m0); split; auto. unfold mem_size, mem_length, memory_list.mem_length in Hmem5.
       unfold mem_size, mem_length, memory_list.mem_length.
-      have H' := (mem_store_preserves_length _ _ _ _ _ Hm0). congruence. admit. (* falsch *)
+      have H' := (mem_store_preserves_length _ _ _ _ _ Hm0). congruence. admit. admit. (* falsch *)
     }
     { (* store fn index *)
       (* invariants *)
@@ -3223,7 +3223,7 @@ Proof with eauto.
       edestruct i32_exists_nat as [gmp_v' [Hn ?]]. erewrite Hn in Hgmp'. clear Hn n.
       have HenoughM := Henoughmem _ _ Hmem2' Hgmp'. clear Henoughmem.
 
-      { (* enough memory *)
+      { (* enough memory: TODO e.g. refuse to compile otherwise *)
       assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
 
       have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ _ _ Hmaxargs H9 H.
@@ -3243,13 +3243,29 @@ Proof with eauto.
       assert (Hinv_before_IH: INV s_v f_before_IH). {
         eapply update_local_preserves_INV; try eassumption.
         apply nth_error_Some. congruence. }
-      (* prepare IH *) (* TODO not s_v but updated with global var *)
-      assert (Hrel_m_v : rel_mem_LambdaANF_Codegen fenv venv nenv host_function e rho'
-         s_v f_before_IH). admit.
+      (* prepare IH *)
+
+      (* memory relation *)
+      assert (Hrel_m_v : rel_mem_LambdaANF_Codegen fenv venv nenv host_function e rho' s_v f_before_IH). { clear IHHev Hinv Hmem1 Hmem2 Hmem3 Hmem4 Hmem1' Hmem2' Hmem3'. clear Hred Hinv' Hred_v H8.
+         destruct Hrel_m as [HrelmFun HrelmVar]. admit. }
+       (*   assert (Hocc: occurs_free (Econstr x t ys e) x). { apply Free_Econstr1. }
+         apply HrelmVar in Hocc. destruct Hocc as [v' [w' [Hrho' [Hlocals Hval]]]].
+         split.
+         - (* fun *) intros x1 r fds f val Hrho' Hfunsub.
+            (* have Hrel_f := HrelmFun _ _ _ _ _ Hrho'. *)
+         - (* var *) intros x1 Hfree.
+            destruct (var_dec x x1).
+            subst x1.
+            (* x1 = x *)
+
+            (* x1 <> x*)
+
+             exists v', w'. cbn.
+           } *)
       have IH := IHHev _ _ state _ Hinv_before_IH Hexp Hrel_m_v.
       destruct IH as [s_final [f_final [Hred_IH Hval]]].
 
-      eexists. eexists. split.
+      exists s_final. exists f_final. split.
       (* steps *)
       eapply rt_trans. apply app_trans. apply Hred. cbn.
 
@@ -3309,38 +3325,42 @@ Proof with eauto.
     have Hextr := extract_constr_arg n vs v _ _ _ Hinv_bound H0 H3 H11.
     destruct Hextr as [bs [wal [Hload [Heq Hbsval]]]].
 
-     assert (Hrm: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e (map_util.M.set x v rho) sr
-  {|
-    f_locs := set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32);
-    f_inst := f_inst fr
-  |}).
-  {
-  split; intros. admit. (* x not a fundef *)
+    assert (Hrm: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e (map_util.M.set x v rho) sr
+     {| f_locs := set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32);
+        f_inst := f_inst fr
+      |}). {
+      split; intros. admit. (* x not a fundef *)
 
-  destruct (var_dec x x1).
-  (* x = x1 *)
-  subst x1.
-  exists v. exists (Val_ptr (addr + 4 + (4 * N.to_nat n))). split.
-  rewrite map_util.M.gsspec.
-  apply peq_true.
-  split. exists x'. split.
-  inv H8. unfold translate_var in H5. unfold translate_var. eapply lookup_local_var_generalize_err_string. eassumption.
-  assert ((wasm_deserialise bs T_i32) = (VAL_int32 (wasm_value_to_i32 (Val_ptr (addr + 4 + (4 * N.to_nat n)))))) as Harith. { rewrite -Heq. admit. }  rewrite Harith.
+      destruct (var_dec x x1).
+      { (* x = x1 *)
+        subst x1.
+        exists v. exists wal. split.
+        rewrite map_util.M.gsspec.
+        apply peq_true.
+        split; auto. exists x'. split.
+        inv H8. unfold translate_var in H5. unfold translate_var.
+        eapply lookup_local_var_generalize_err_string. eassumption. cbn.
+        unfold wasm_deserialise in Heq. rewrite -Heq.
+        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [Hlocals _]]]]]]]].
+        destruct (Hlocals _ _ H8).
+        eapply set_nth_nth_error_same. eassumption. }
 
-  have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hlinmem [Hl _]]]]]]]].
-  destruct (Hl x x'). assumption.
-  eapply set_nth_nth_error_same. eassumption. admit.
+      { (* x <> x1 *)
+        assert (occurs_free (Eproj x t n y e) x1). { constructor; assumption. }
+        apply Hvar in H6. destruct H6 as [v6 [wal' [Henv [Hloc Hval]]]].
+        exists v6. exists wal'. repeat split; auto.
+        rewrite map_util.M.gsspec.
+        rewrite peq_false. assumption. auto.
+        destruct Hloc as [x1' [? ?]].
+        unfold stored_in_locals. cbn.
+        assert (x1' <> x'). admit. (* different vars -> different wasm local vars *)
+        exists x1'. split; auto.
+        rewrite set_nth_nth_error_other; auto.
+        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [Hlocals _]]]]]]]].
+        destruct (Hlocals _ _ H8). eapply nth_error_Some. congruence.
+        }
+   }
 
-  (* x <> x1 *)
-  assert (occurs_free (Eproj x t n y e) x1). { constructor; assumption. }
-  apply Hvar in H6. destruct H6 as [v6 [wal' [Henv [Hloc Hval]]]].
-  exists v6. exists wal'. repeat split.
-  rewrite map_util.M.gsspec.
-  rewrite peq_false. assumption. intro. subst. contradiction.
-  cbn.
-  admit. (* different vars -> different wasm local vars *)
-  assumption.
-  }
   assert (INV sr
          {|
            f_locs :=
@@ -3361,7 +3381,10 @@ Proof with eauto.
     destruct (Hl _ _ Hvy).
     rewrite H in H4. injection H4 => H4'. subst. clear H4.
 
-    rewrite set_nth_nth_error_other in H9. 2: admit. 2: admit. cbn.
+    rewrite set_nth_nth_error_other in H9.
+    2: admit. (* x <> y -> x' <> y' *)
+    2: { have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [Hlocals _]]]]]]]].
+        destruct (Hlocals _ _ H8). eapply nth_error_Some. congruence. }
     rewrite H1 in H9. injection H9 => H9'. subst. clear H9.
 
     (* get_local y' *)
