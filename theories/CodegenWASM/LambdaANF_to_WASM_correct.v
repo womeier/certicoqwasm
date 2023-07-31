@@ -3782,10 +3782,9 @@ Proof.
 Qed.
 
 Lemma module_instantiatable : forall e module fenv venv,
-LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, venv) ->
+  LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, venv) ->
   exists sr f exports, instantiate host_function host_instance empty_store_record module []
-       (sr, (f_inst f), exports, None)
-       /\ INV venv nenv _ sr f.
+       (sr, (f_inst f), exports, None).
 Proof.
   intros. eexists. eexists. intros. unfold LambdaANF_to_WASM in H.
   destruct (create_fname_mapping nenv e) eqn:Hmapping. inv H. simpl in H. rename f into fname_mapping.
@@ -3822,7 +3821,7 @@ Proof.
           | _ => e end)) eqn:Hexpr. inv H. rename l into wasm_main_instr.
   destruct (lookup_function_var main_function_name fname_mapping
          "main function") eqn:Hfmain. inv H. inv H.
-   eexists. split. repeat esplit.
+   eexists. repeat esplit.
    (* function types *) { cbn. repeat rewrite map_app; cbn. apply Forall2_app. admit. admit. }
    (* module glob typing *) {
       apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
@@ -3858,8 +3857,16 @@ Proof.
    (* check_bounds elem *) { reflexivity. }
    (* check_bounds data *) { reflexivity. }
    (* check_start *) { cbn. admit. }
-   (* INV *) { admit. }
-   Unshelve. apply empty_store_record.
+Admitted.
+
+Lemma module_instantiate_INV : forall e module fenv venv sr f exports,
+  LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, venv) ->
+  instantiate host_function host_instance empty_store_record module [] (sr, (f_inst f), exports, None) ->
+  INV venv nenv _ sr f.
+Proof.
+  intros e module fenv venv s f exports Hcompile Hinst.
+  unfold instantiate in Hinst.
+  destruct Hinst as [t_imps [t_exps [state [s' [ g_inits [e_offs [d_offs [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]]]]].
 Admitted.
 
 
