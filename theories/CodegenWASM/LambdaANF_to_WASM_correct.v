@@ -1330,6 +1330,7 @@ Proof.
   { econstructor; eauto. rewrite -H0. eassumption. }
 Qed.
 
+(* TODO: remove duplicate *)
 Lemma update_glob_keeps_memory_intact : forall sr sr' fr value,
   supdate_glob (host_function:=host_function) sr (f_inst fr) result_var
   (VAL_int32 (wasm_value_to_i32 value)) = Some sr' -> sr.(s_mems) = sr'.(s_mems).
@@ -2692,6 +2693,17 @@ Proof.
   erewrite set_nth_nth_error_same; try lia; auto. eassumption.
 Qed.
 
+
+Lemma enough_space_to_load m k :
+  (k + 4 <= mem_length m)%N -> exists v, load_i32 m k = Some v.
+Proof.
+  intros. unfold load_i32, load.
+  assert ((k + (0 + N.of_nat 4) <=? mem_length m)%N). apply N.leb_le. lia. rewrite H0.
+  unfold read_bytes, those, mem_lookup. cbn.
+  unfold mem_length, memory_list.mem_length in H0.
+Admitted.
+
+
 Ltac solve_arith_load_store := repeat (try rewrite length_is_size; try rewrite size_set_nth;
                                        try rewrite maxn_nat_max;
                                        try rewrite Nat2N.inj_max;
@@ -2806,11 +2818,6 @@ Proof.
   rewrite (Wasm_int.Int32.Z_lt_irrelevant high high'). reflexivity.
 Qed.
 
-Lemma i32_exists_value : forall (x : i32), exists n, x = (wasm_value_to_i32 n).
-Proof.
-  cbn. intros. unfold wasm_value_to_i32, wasm_value_to_immediate.
-  exists (Val_ptr (0)). Admitted.
-
 
 Lemma store_constr_args_reduce : forall ys vs sargs state rho s f offset m v_cap,
   INV s f ->
@@ -2821,6 +2828,10 @@ Lemma store_constr_args_reduce : forall ys vs sargs state rho s f offset m v_cap
   (-1 < Z.of_nat (length ys + offset) < 2 * max_constr_args)%Z ->
   Forall_statements_in_seq' (set_nth_constr_arg fenv venv nenv) ys sargs offset ->
   get_list ys rho = Some vs ->
+  (* memory relation: ys are available as locals in frame f *)
+  (forall y, In y ys -> (exists v6 val, M.get y rho = Some v6
+                                     /\ stored_in_locals venv nenv y val f
+                                     /\ repr_val_LambdaANF_Codegen fenv venv nenv _ v6 s val)) ->
   exists s' f', reduce_trans
                   (state, s, f, [seq AI_basic i | i <- sargs])
                   (state, s', f', [])
@@ -2835,9 +2846,9 @@ Lemma store_constr_args_reduce : forall ys vs sargs state rho s f offset m v_cap
                 = Some (VAL_int32 (nat_to_i32 v_cap))
                /\ exists m', nth_error (s_mems s') 0 = Some m'
                           /\ mem_length m = mem_length m'
-                          /\ forall a, a <= v_cap + 4 * (1 + offset) -> load_i32 m (N.of_nat a) = load_i32 m' (N.of_nat a).
+                          /\ forall a, a <= v_cap + 4 * offset -> load_i32 m (N.of_nat a) = load_i32 m' (N.of_nat a).
 Proof.
-  induction ys; intros vs sargs state rho s f offset m v_cap Hinv Hm Hcap Hlen Hargs Hoffset H Hvs.
+  induction ys; intros vs sargs state rho s f offset m v_cap Hinv Hm Hcap Hlen Hargs Hoffset H Hvs HmemR.
   { inv Hvs. inv H. exists s. exists f. split. apply rt_refl. split. assumption.
     have I := Hinv. destruct I as [_ [_ [_ [_ [Hcap_w [Hmut _]]]]]].
     apply global_var_w_implies_global_var_r in Hcap_w; auto.
@@ -2850,19 +2861,27 @@ Proof.
     destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
     exists m. auto.
   }
-  { inv H. inv H6. rename s' into instr_args.
+  { inv H. inv H6. rename s' into instr_args. rename a into y.
     (* rewrite map_cat. inv H0. cbn. *)
-    inv H.
+    inv H. rename i into y'.
     { (* store var *)
-      destruct vs. { cbn in Hvs. destruct (rho ! a). 2: inv Hvs. destruct (get_list ys rho); inv Hvs. }
+      destruct vs. { cbn in Hvs. destruct (rho ! y). 2: inv Hvs. destruct (get_list ys rho); inv Hvs. }
       assert (Hgetlist: get_list ys rho = Some vs). {
-          cbn in Hvs. destruct (rho ! a). 2: inv Hvs. destruct (get_list ys rho); inv Hvs; auto. }
+          cbn in Hvs. destruct (rho ! y). 2: inv Hvs. destruct (get_list ys rho); inv Hvs; auto. }
+      assert (Hrhoy: rho ! y = Some v). { cbn in Hvs. destruct (rho ! y). 2: inv Hvs.
+        destruct (get_list ys rho); inv Hvs; auto. }
       clear Hvs. rename Hgetlist into Hvs.
       (* invariants *)
       have I := Hinv. destruct I as [_ [_ [_ [_ [Hinv_cap [Hinv_muti32 [Hinv_linmem [Hinv_locals _]]]]]]]].
       eapply global_var_w_implies_global_var_r in Hinv_cap; auto. destruct Hinv_cap.
-      destruct (Hinv_locals _ _ H0) as [x0 ?].
-      destruct (i32_exists_value x0) as [? ?]. subst x0. rename x1 into x0.
+      destruct (Hinv_locals _ _ H0) as [x0 Hly].
+
+      assert (Htmp: In y (y :: ys)) by (cbn; auto).
+      destruct (HmemR _ Htmp) as [val [wal [Hrho [[y0' [Htv Hly']] Hy_val]]]].
+      assert (val = v) by congruence. subst v. clear Hrhoy.
+      assert (y' = y0'). admit. subst y0'.
+      rewrite Hly in Hly'. inv Hly'. clear Htmp.
+
       destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. subst size. cbn.
 
       assert (m = m') by congruence. subst m'. clear Hmem2.
@@ -2870,16 +2889,17 @@ Proof.
       destruct (i32_exists_nat x) as [x1 [Hx ?]].
       assert (exists m0, store m
         (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 v_cap) (nat_to_i32 (S (S (S (S (offset * 4)))))))) 0%N
-          (bits (VAL_int32 (wasm_value_to_i32 x0))) (t_length T_i32) = Some m0) as Hm0. {
+          (bits (VAL_int32 (wasm_value_to_i32 wal))) (t_length T_i32) = Some m0) as Hm0. {
           intros.  edestruct enough_space_to_store as [m3 Hstore]. 2: { exists m3.
-          replace (t_length T_i32) with (Datatypes.length (bits (VAL_int32 (wasm_value_to_i32 x0)))) by auto. apply Hstore. } rewrite N.add_0_r.
-       replace (N.of_nat (Datatypes.length (bits (VAL_int32 (wasm_value_to_i32 x0))))) with 4%N by reflexivity.
+          replace (t_length T_i32) with (Datatypes.length (bits (VAL_int32 (wasm_value_to_i32 wal)))) by auto. apply Hstore. } rewrite N.add_0_r.
+       replace (N.of_nat (Datatypes.length (bits (VAL_int32 (wasm_value_to_i32 wal))))) with 4%N by reflexivity.
        unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
        remember (S (S (S (S (offset * 4))))) as n. cbn.
        have H' := mem_length_upper_bound _ Hmem5. cbn in H'.
 
        assert (Z.of_nat offset < 2 * max_constr_args)%Z by lia.
-       assert (Z.of_nat n + 4 < Z.of_N page_size)%Z. { cbn in H4. assert (N.of_nat n < 10000)%N. lia. cbn. lia. }
+       assert (Z.of_nat n + 4 < Z.of_N page_size)%Z. { cbn in H2.
+        assert (N.of_nat n < 10000)%N. lia. cbn. lia. }
        rewrite Wasm_int.Int32.Z_mod_modulus_id.
        rewrite Wasm_int.Int32.Z_mod_modulus_id.
        rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
@@ -2894,25 +2914,56 @@ Proof.
       assert (Hmaxargs : (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z). {
       cbn in Hargs. lia. } clear Hargs.
 
-      assert (Hoff: (Datatypes.length (a :: ys) + offset) = Datatypes.length ys + (S offset)). { cbn. lia. }
+      assert (Hoff: (Datatypes.length (y :: ys) + offset) = Datatypes.length ys + (S offset)). { cbn. lia. }
       rewrite Hoff in Hoffset. clear Hoff.
 
       destruct Hm0 as [m0 Hm0].
-      have IH := IHys _ _ state _ _ _ _ _ _ _ _ _ _ Hmaxargs Hoffset H3 Hvs. clear IHys.
-      edestruct IH as [sr [fr [Hred [Hinv' [v_cap' [Hv1 [? [Hv2 [? [m1 [Hm2 [? ?]]]]]]]]]]]].
-      5: { clear IH.
+      remember (upd_s_mem (host_function:=host_function) s
+                       (update_list_at (s_mems s) 0 m0)) as s_before_IH.
+      assert (Hinv_before_IH : INV s_before_IH f). {
+        eapply update_mem_preserves_INV. 6: subst; reflexivity. assumption. eassumption.
+        apply mem_store_preserves_length in Hm0. unfold mem_length, memory_list.mem_length. lia.
+        apply mem_store_preserves_max_pages in Hm0. congruence.
+        eexists. split. reflexivity.
+        apply mem_store_preserves_length in Hm0. unfold mem_size, mem_length, memory_list.mem_length.
+        unfold mem_size, mem_length, memory_list.mem_length in Hmem5. now rewrite Hm0 in Hmem5. }
+
+      assert (Hmem_before_IH : nth_error (s_mems s_before_IH) 0 = Some m0). { subst s_before_IH. cbn.
+      unfold update_list_at. now rewrite take0. }
+
+      assert (Hcap_before_IH: sglob_val (host_function:=host_function) s_before_IH
+       (f_inst f) constr_alloc_ptr = Some (VAL_int32 (nat_to_i32 v_cap))). { subst. rewrite -Hcap. reflexivity. }
+
+      assert (Hlen_m0: (N.of_nat v_cap + page_size < mem_length m0)%N). {
+        apply mem_store_preserves_length in Hm0. unfold mem_length, memory_list.mem_length in *. congruence. }
+
+      assert (HrelM_before_IH: (forall y : var,
+      In y ys ->
+      exists (v6 : cps.val) (val : wasm_value),
+        rho ! y = Some v6 /\
+        stored_in_locals venv nenv y val f /\
+        repr_val_LambdaANF_Codegen fenv venv nenv host_function v6 s_before_IH val)). {
+        intros. assert (Htmp : In y0 (y :: ys)) by (right; assumption).
+        destruct (HmemR _ Htmp) as [val' [wal' [? [? ?]]]].
+        subst s_before_IH. exists val', wal'. repeat split; try assumption.
+        admit. (* repr_val depends only on mem < v_cap*)
+        }
+
+      have IH := IHys _ _ state _ _ _ _ _ _ Hinv_before_IH Hmem_before_IH Hcap_before_IH Hlen_m0 Hmaxargs Hoffset H3 Hvs HrelM_before_IH.
+      clear IHys Hmem_before_IH Hinv_before_IH HrelM_before_IH Hcap_before_IH.
+      destruct IH as [sr [fr [Hred [Hinv' [v_cap' [Hv1 [? [Hv2 [? [m1 [Hm2 [? ?]]]]]]]]]]]].
       assert (sglob_val (host_function:=host_function) s (f_inst f) constr_alloc_ptr
             = sglob_val (host_function:=host_function) (upd_s_mem (host_function:=host_function) s
                        (update_list_at (s_mems s) 0 m0)) (f_inst f) constr_alloc_ptr) as Hglob_cap by reflexivity.
       have HlenBound := mem_length_upper_bound _ Hmem5. cbn in HlenBound.
       assert (v_cap' = v_cap). {
-        assert (nat_to_i32 v_cap' = nat_to_i32 v_cap) as Heq. {
-        rewrite Hglob_cap in H. erewrite H in H5.
-        remember (nat_to_i32 x1) as X1. remember (nat_to_i32 v_cap) as X2. now inv H5. }
+        assert (nat_to_i32 v_cap' = nat_to_i32 v_cap) as Heq. { now subst. }
         unfold nat_to_i32 in Heq. cbn in Heq. inv Heq.
-        rewrite Wasm_int.Int32.Z_mod_modulus_id in H9; try lia.
-        rewrite Wasm_int.Int32.Z_mod_modulus_id in H9. 2: { simpl_modulus. cbn. lia. } lia.
+        rewrite Wasm_int.Int32.Z_mod_modulus_id in H8; try lia.
+        rewrite Wasm_int.Int32.Z_mod_modulus_id in H8. 2: { simpl_modulus. cbn. lia. } lia.
       } subst v_cap'.
+      assert (x = nat_to_i32 v_cap). { rewrite H in Hcap. now inv Hcap. } subst x.
+      assert (x1 = v_cap). { inv H7. rewrite Wasm_int.Int32.Z_mod_modulus_id in H9; try lia. rewrite Wasm_int.Int32.Z_mod_modulus_id in H9; lia. } subst x1.
 
       eexists. eexists. split.
       (* reduce *)
@@ -2920,38 +2971,38 @@ Proof.
       separate_instr. dostep. elimr_nary_instr 2. constructor. constructor. reflexivity.
       separate_instr. dostep. apply r_eliml. auto. elimr_nary_instr 0. apply r_get_local. eassumption.
 
-      separate_instr. dostep. elimr_nary_instr 2. eapply r_store_success. 5: apply Hred.
-      4: apply Hm0. auto. assumption. assumption. split. assumption.
+      separate_instr. dostep. elimr_nary_instr 2. eapply r_store_success.
+      5: subst; apply Hred. 4: apply Hm0. auto. assumption. assumption.
+      split. assumption.
       exists v_cap. split. assumption. split. simpl_modulus. cbn. lia. split.
-      econstructor.
-      - apply Hm2.
-      - (* load val *)
-        rewrite -H7; try lia.
-        apply store_load in Hm0.
-        assert ((N.of_nat (S (S (S (S (offset + (offset + (offset + (offset + 0))) + v_cap)))))) =
-                (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 v_cap)
-                            (nat_to_i32 (S (S (S (S (offset * 4))))))))) as Har. {
+      econstructor. apply Hm2.
+      (* load val *)
+      rewrite -H6; try lia.
+      apply store_load in Hm0.
+      assert ((N.of_nat (S (S (S (S (offset + (offset + (offset + (offset + 0))) + v_cap)))))) =
+              (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 v_cap)
+                          (nat_to_i32 (S (S (S (S (offset * 4))))))))) as Har. {
         remember (S (S (S (S (offset * 4))))) as o. cbn.
         assert (Z.of_nat offset < 2 * max_constr_args)%Z as HarOffset by lia. cbn in HarOffset.
         repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.
-       }
+      }
       rewrite deserialise_bits in Hm0. rewrite Har. eassumption.
       auto. reflexivity.
-      admit. (* related to val, should follow from memory relation, maybe  i32_exists_value not even necessary *)
+      (* repr_rel ... s ... = repr_rel ... sr ... *) admit.
       replace ((4 + S (S (S (S (offset + (offset + (offset + (offset + 0))) + v_cap)))))) with
       (4 + 4 * S offset + v_cap) by lia. apply Hv2.
-      split. rewrite <- H5. reflexivity. exists m1.
-      split. assumption. split.  intros. (* m0 -> m1, load_store_load *) admit. admit. }
-
-      (* INV from before applying IH *)
-      eapply update_mem_preserves_INV. 6: reflexivity. all: eauto.
-
-      have H' := mem_store_preserves_length _ _ _ _ _ Hm0. unfold mem_length, memory_list.mem_length. lia.
-      erewrite <-mem_store_preserves_max_pages; eauto.
-      exists (mem_size m0); split; auto. unfold mem_size, mem_length, memory_list.mem_length in Hmem5.
-      unfold mem_size, mem_length, memory_list.mem_length.
-      have H' := (mem_store_preserves_length _ _ _ _ _ Hm0). congruence. admit. admit. (* falsch *)
-    }
+      split. rewrite <- H4. subst. reflexivity. exists m1.
+      split. assumption. split. apply mem_store_preserves_length in Hm0.
+      unfold mem_length, memory_list.mem_length in *. congruence.
+      intros. rewrite -H6; try lia.
+      { assert (exists v, load_i32 m (N.of_nat a) = Some v). {
+          apply enough_space_to_load. unfold store in Hm0.
+          destruct ((Wasm_int.N_of_uint i32m
+           (Wasm_int.Int32.iadd (nat_to_i32 v_cap)
+              (nat_to_i32 (S (S (S (S (offset * 4))))))) + 0 +
+         N.of_nat (t_length T_i32) <=? mem_length m)%N) eqn:Har. 2: inv Hm0.
+         admit. } destruct H9.
+        have Ht := load_store_load _ _ _ _ _ _ _ _ H9 Hm0. admit. } }
     { (* store fn index *)
       (* invariants *)
       admit.
@@ -3034,6 +3085,13 @@ Lemma store_constr_reduce : forall state s f rho ys (vs : list cps.val) t sargs,
              sglob_val s (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp_v)) ->
              (-1 < Z.of_nat gmp_v < Wasm_int.Int32.modulus)%Z ->
              Z.of_nat gmp_v + Z.of_N page_size < Z.of_N (mem_length m))%Z ->
+  (* memory relation: ys available as local vars *)
+  (forall y : var,
+         In y ys ->
+         exists (v6 : cps.val) (val : wasm_value),
+           rho ! y = Some v6 /\
+           stored_in_locals venv nenv y val f /\
+           repr_val_LambdaANF_Codegen fenv venv nenv host_function v6 s val) ->
   (Z.of_nat (length ys) <= max_constr_args)%Z ->
   Forall_statements_in_seq (set_nth_constr_arg fenv venv nenv) ys sargs ->
   get_list ys rho = Some vs ->
@@ -3056,7 +3114,7 @@ Lemma store_constr_reduce : forall state s f rho ys (vs : list cps.val) t sargs,
           /\ wasm_value_to_i32 wasmval = cap_v
           /\ repr_val_LambdaANF_Codegen fenv venv nenv  _ (Vconstr t vs) s' wasmval).
 Proof.
-  intros ? ? ? ? ? ? ? ? Hinv HenoughM Hmaxargs Hsetargs Hrho.
+  intros ? ? ? ? ? ? ? ? Hinv HenoughM HmemR Hmaxargs Hsetargs Hrho.
 
   have I := Hinv. destruct I as [_ [_ [_ [INVgmp_w [INVcap_w [INVmuti32 _]]]]]].
   have INVgmp_r := global_var_w_implies_global_var_r _ _ _ INVmuti32 INVgmp_w.
@@ -3134,7 +3192,17 @@ Proof.
   assert (HlenBound: (-1 < Z.of_nat (Datatypes.length ys + 0) < 2 * max_constr_args)%Z). { rewrite plus_0_r.
     cbn. unfold max_constr_args in Hmaxargs. lia. }
 
-  have Hargs := store_constr_args_reduce _ _ _ state _ _ _ _ _ _ Hinv_tag Hmem Hglob_cap HenoughM' Hmaxargs HlenBound Hsetargs Hrho.
+  assert (HrelM': forall y : var,
+In y ys ->
+exists (v6 : cps.val) (val : wasm_value),
+  rho ! y = Some v6 /\
+  stored_in_locals venv nenv y val f /\
+  repr_val_LambdaANF_Codegen fenv venv nenv host_function v6 s_tag val). {
+    intros y Hy. apply HmemR in Hy. destruct Hy as [val [wal [Hrho' [Hylocal Hval]]]].
+    exists val, wal. repeat (split; auto). (* repr_val s -> repr_val s_tag *) admit.
+  }
+
+  have Hargs := store_constr_args_reduce _ _ _ state _ _ _ _ _ _ Hinv_tag Hmem Hglob_cap HenoughM' Hmaxargs HlenBound Hsetargs Hrho HrelM'.
   destruct Hargs as [s_final [f_final [Hred [Hinv_final [v_cap [Hcap_v [? [Hargs_val [Hcap_v' [m' [Hm' [Hmemlen Hmemsame]]]]]]]]]]]].
   {
   cbn in Hargs_val. clear Hsetargs Hrho HenoughM' HlenBound.
@@ -3167,7 +3235,7 @@ Proof.
    unfold nat_to_i32. cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. } rewrite -Heq. assumption.
   reflexivity. assumption.
   }
-Qed.
+Admitted.
 
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
@@ -3190,13 +3258,11 @@ Theorem repr_bs_LambdaANF_Codegen_related:
         (* invariants *)
         INV sr f ->
 
-        repr_expr_LambdaANF_Codegen fenv venv nenv e instructions -> (* translate_body e returns stm *)
+        (* translate_body e returns stm *)
+        repr_expr_LambdaANF_Codegen fenv venv nenv e instructions ->
+
+        (* relates a LambdaANF evaluation environment [rho] to a WASM environment [store/frame] (free variables in e) *)
         rel_mem_LambdaANF_Codegen fenv venv nenv _ e rho sr f ->
-        (* " relates a LambdaANF evaluation environment [rho] to a Clight memory [m/lenv] up to the free variables in e " *)
-        (* also says fundefs in e are correct in m *)
-        (* NOTE: this is only place pertaining to outside of the body, and can likely incorporate free variables here *)
-       (* correct_alloc e max_alloc ->  (* max_alloc correct *)
-        correct_tinfo p max_alloc lenv m -> (* thread_info correct *) *)
         exists (sr' : store_record) (f' : frame),
           reduce_trans (hs, sr, f, map AI_basic instructions) (hs, sr', f', []) /\
           (* memory m/lenv becomes m'/lenv' after executing stm *)
@@ -3226,9 +3292,18 @@ Proof with eauto.
       { (* enough memory: TODO e.g. refuse to compile otherwise *)
       assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
 
-      have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ _ _ Hmaxargs H9 H.
+      assert (HrelM : (forall y : var,
+           In y ys ->
+           exists (v6 : cps.val) (val : wasm_value),
+             rho ! y = Some v6 /\
+             stored_in_locals venv nenv y val f' /\
+             repr_val_LambdaANF_Codegen fenv venv nenv host_function v6 s' val)). {
+              destruct Hrel_m as [_ Hvar]. intros.
+        assert (Hocc: occurs_free (Econstr x t ys e) y) by (constructor; auto).
+        apply Hvar in Hocc. admit. }
+
+      have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ Hinv' _  HrelM Hmaxargs H9 H.
       edestruct Hconstr as [s_v [f_v [Hred_v [Hinv_v [cap_v [wal [? [? Hvalue]]]]]]]].
-      apply Hinv'.
       { intros. assert (m' = m0) by congruence. subst m0.
         assert (gmp_v = gmp_v'). { rewrite Hgmp' in H3. inv H3.
           rewrite Wasm_int.Int32.Z_mod_modulus_id in H6; try lia.
@@ -3543,7 +3618,7 @@ Proof with eauto.
        apply decode_int_bounds in Hload.
        rewrite Wasm_int.Int32.Z_mod_modulus_id in H0; auto. rewrite H0.
        rewrite Wasm_int.Int32.Z_mod_modulus_id; auto.
-       admit. } rewrite H.
+       admit. (* t < i32 max *) } rewrite H.
 
        dostep. elimr_nary_instr 2.
        constructor. apply rs_relop.
@@ -3551,8 +3626,10 @@ Proof with eauto.
                  (app_relop (Relop_i ROI_eq) (VAL_int32 (tag_to_i32 t))
                     (nat_to_value (Pos.to_nat t0)))) = nat_to_i32 0). {
                     unfold nat_to_value, nat_to_i32, tag_to_i32.
-      unfold wasm_bool. cbn. unfold Wasm_int.Int32.eq. cbn. rewrite zeq_false; auto. admit.
-       } (* by t <> t0 *)
+      unfold wasm_bool. cbn. unfold Wasm_int.Int32.eq. cbn. rewrite zeq_false; auto.
+      rewrite Wasm_int.Int32.Z_mod_modulus_id. 2: admit. (* t < i32 max *)
+      rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. admit. (* t0 < i32 max *)
+       }
       rewrite H0.
       dostep'. separate_instr. constructor. apply rs_if_false. reflexivity.
 
