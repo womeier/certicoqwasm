@@ -542,12 +542,21 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> store_record -> fram
       repr_val_LambdaANF_Codegen (LambdaANF.cps.Vfun env fds f) sr fr (Val_funidx idx)
 
 with repr_val_constr_args_LambdaANF_Codegen : (list LambdaANF.cps.val) -> store_record -> frame -> immediate -> Prop :=
-     | Rnil_l : forall sr fr addr,
+     | Rnil_l : forall sr fr addr gmp,
+        (* addr < gmp: redundant (?), makes a proof easier *)
+        sglob_val (host_function:=host_function) sr (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
+        (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
+        (addr <= gmp) ->
         repr_val_constr_args_LambdaANF_Codegen nil sr fr (addr : nat)
 
-     | Rcons_l: forall v wal vs sr fr m addr,
+     | Rcons_l: forall v wal vs sr fr m addr gmp,
         (* store_record contains memory *)
         List.nth_error sr.(s_mems) 0 = Some m ->
+
+        (* addr < gmp: redundant (?), makes a proof easier *)
+        sglob_val (host_function:=host_function) sr (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
+        (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
+        (addr + 4 <= gmp) ->
 
         (* constr arg is ptr related to value v *)
         load_i32 m (N.of_nat addr) = Some (VAL_int32 (wasm_value_to_i32 wal)) ->
@@ -1357,19 +1366,38 @@ Proof.
                 (forall a, (a + 4 <= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
                    repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function l s' f' i)
     ). eapply indPrinciple in H16; intros; clear indPrinciple.
-    { assert (gmp = gmp0). admit. subst gmp0.
+    { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; lia. } subst gmp0.
       assert (m = m0) by congruence; subst m0.
       econstructor. eassumption. lia. lia. eassumption. reflexivity. rewrite <- H8. assumption. lia. eassumption. }
-    { assert (gmp = gmp0). admit. subst gmp0.
-      assert (gmp = gmp1). admit. subst gmp1.
+    { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; lia. } subst gmp0.
+      assert (gmp = gmp1). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; lia. } subst gmp1.
       assert (m = m0) by congruence. subst m0.
       assert (m1 = m2) by congruence. subst m2. subst.
       econstructor; eauto. lia. rewrite <- H25; auto; try lia. }
     { econstructor; eauto. erewrite <- e1. congruence. }
-    { constructor. }
-    { assert (gmp = gmp0). admit. subst gmp0.
-      econstructor; eauto. rewrite <- H26. assert (m1 = m2) by congruence. subst m2.
-       eassumption. admit.
+    { econstructor. eassumption. lia. assert (gmp = gmp1). {
+          assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
+          inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H26; try lia.
+                  rewrite Wasm_int.Int32.Z_mod_modulus_id in H26; lia. }
+      assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; lia. } subst gmp0. lia. }
+     { econstructor; eauto. lia. assert (gmp1 = gmp). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst. lia.
+      rewrite <- H26. assert (m1 = m2) by congruence. subst m2.
+      eassumption. { inv r0. assert (gmp2 = gmp). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp2) by congruence.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H31; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H31; lia. } subst gmp2. lia.
+                              assert (gmp1 = gmp). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H35; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H35; lia. } subst. lia. }
       inv r. assert (m3 = m2) by congruence; subst.
       eapply H9; eauto; lia.
       econstructor; eauto. erewrite <- H18. eassumption. }
