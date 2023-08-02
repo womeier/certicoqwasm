@@ -543,7 +543,6 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> store_record -> fram
 
 with repr_val_constr_args_LambdaANF_Codegen : (list LambdaANF.cps.val) -> store_record -> frame -> immediate -> Prop :=
      | Rnil_l : forall sr fr addr gmp,
-        (* addr < gmp: redundant (?), makes a proof easier *)
         sglob_val (host_function:=host_function) sr (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
         (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
         (addr <= gmp) ->
@@ -553,7 +552,6 @@ with repr_val_constr_args_LambdaANF_Codegen : (list LambdaANF.cps.val) -> store_
         (* store_record contains memory *)
         List.nth_error sr.(s_mems) 0 = Some m ->
 
-        (* addr < gmp: redundant (?), makes a proof easier *)
         sglob_val (host_function:=host_function) sr (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
         (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
         (addr + 4 <= gmp) ->
@@ -1365,7 +1363,7 @@ Proof.
                 gmp' >= gmp ->
                 (forall a, (a + 4 <= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
                    repr_val_constr_args_LambdaANF_Codegen fenv venv nenv host_function l s' f' i)
-    ). eapply indPrinciple in H16; intros; clear indPrinciple.
+    ). eapply indPrinciple in H16; intros; clear indPrinciple; try eassumption; try lia.
     { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
                              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; try lia.
                              rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; lia. } subst gmp0.
@@ -1401,16 +1399,7 @@ Proof.
       inv r. assert (m3 = m2) by congruence; subst.
       eapply H9; eauto; lia.
       econstructor; eauto. erewrite <- H18. eassumption. }
-    { eassumption. }
-    { assumption. }
-    { assumption. }
-    { eassumption. }
-    { eassumption. }
-    { eassumption. }
     { assert (m = m0) by congruence. subst m0. lia. }
-    { eassumption.  }
-    { lia. }
-    { lia. }
     { assert (m = m0) by congruence; subst m0. apply H8. lia. }
   }
   (* function *)
