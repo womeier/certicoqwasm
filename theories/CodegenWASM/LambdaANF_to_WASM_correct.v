@@ -2183,18 +2183,6 @@ Proof.
     split. rewrite -Hl. f_equal. lia. split; eauto.
 Qed.
 
-(* TODO RENAME *)
-Lemma arith_addr_helper : forall n addr, Wasm_int.N_of_uint i32m
-     (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
-        (nat_to_i32 ((N.to_nat n + 1) * 4))) = (N.of_nat (4 + addr) + 4 * n)%N .
-Proof.
-  intros. unfold wasm_value_to_i32, wasm_value_to_immediate, nat_to_i32.
-  assert ((Z.of_nat
-           (N.to_nat n + 1 +
-            (N.to_nat n + 1 + (N.to_nat n + 1 + (N.to_nat n + 1 + 0))))) = Z.of_nat (4 * (1 + N.to_nat n))) by lia.
-  unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
-admit. Admitted. (* TODO: wrong, assert that n < Int32.max *)
-
 Lemma N_div_ge0 : forall a b, (b > 0)%N -> (a >= 0)%N -> (a / b >= 0)%N.
 Proof.
   intros. assert (Z.of_N a / Z.of_N b >= 0)%Z. apply Z_div_ge0; lia. lia.
@@ -2994,7 +2982,7 @@ Proof.
       assert (Htmp: In y (y :: ys)) by (cbn; auto).
       destruct (HmemR _ Htmp) as [val [wal [Hrho [[y0' [Htv Hly']] Hy_val]]]].
       assert (val = v) by congruence. subst v. clear Hrhoy.
-      assert (y' = y0'). admit. subst y0'.
+      assert (y' = y0'). { inv H0. rewrite Htv in H1. congruence. } subst y0'.
       rewrite Hly in Hly'. inv Hly'. clear Htmp.
 
       destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. subst size. cbn.
@@ -3334,7 +3322,12 @@ exists (v6 : cps.val) (val : wasm_value),
       simpl_modulus_in HenoughM'. cbn in HenoughM'.  simpl_modulus. cbn.
       subst size''. apply mem_length_upper_bound in Hmem5''. cbn in Hmem5''. apply mem_store_preserves_length in Hstore'''. lia. }
     { lia. }
-    { intros. admit. }
+    { intros.
+      assert (Hv: exists v, load_i32 m'' a = Some v). { apply enough_space_to_load. subst.
+        simpl_modulus_in HenoughM'. apply mem_store_preserves_length in Hstore'''. lia. }
+      destruct Hv as [? Hv].
+      assert (load_i32 m''' a = Some x). { eapply load_store_load; try apply Hstore'''; eauto. cbn.
+       rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. } congruence. }
   }
 
   have Hargs := store_constr_args_reduce _ _ _ state _ _ _ _ _ _ Hinv_tag Hmem Hglob_cap HenoughM' Hmaxargs HlenBound Hsetargs Hrho HrelM'.
@@ -3405,6 +3398,9 @@ Proof with eauto.
   intros rho v e n Hev.
   induction Hev; intros instructions fr state sr Hinv Hrepr_e Hrel_m.
   - (* Econstr *)
+    (*  TODO. refuse to compile otherwise *)
+    assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
+
     inversion Hrepr_e. subst t0 x0 vs0 e0 sgrow. rename H5 into Hx. rename H11 into Hexp.
     { remember (grow_memory_if_necessary page_size) as grow.
       cbn. repeat rewrite map_cat. cbn.
@@ -3423,10 +3419,7 @@ Proof with eauto.
       edestruct i32_exists_nat as [gmp_v' [Hn ?]]. erewrite Hn in Hgmp'. clear Hn n.
       have HenoughM := Henoughmem _ _ Hmem2' Hgmp'. clear Henoughmem.
 
-      { (* enough memory: TODO e.g. refuse to compile otherwise *)
-      assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
-
-      assert (HrelM : (forall y : var,
+      { assert (HrelM : (forall y : var,
            In y ys ->
            exists (v6 : cps.val) (val : wasm_value),
              rho ! y = Some v6 /\
@@ -3613,7 +3606,16 @@ Proof with eauto.
     destruct Hlinmem as [Hmem1 [m' Hmem2]].
     eassumption. apply H5.
 
-    rewrite arith_addr_helper. apply Hload.
+    assert (Har: Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
+        (nat_to_i32 ((N.to_nat n + 1) * 4))) = (N.of_nat (4 + addr) + 4 * n)%N). {
+        replace (4 + addr) with (addr + 4) by lia. replace (4*n)%N with (n*4)%N by lia. cbn.
+     unfold load in Hload.
+     destruct ((N.of_nat (4 + addr) + 4 * n + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Heqn. 2: inv Hload.
+     apply N.leb_le in Heqn.
+     destruct Hlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. assert (m' = m) by congruence. subst.
+     apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
+     repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia). }
+    rewrite Har. apply Hload.
 
     (* save result in x' *)
     have Hx := H8. inv H8.
