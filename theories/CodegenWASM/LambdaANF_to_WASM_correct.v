@@ -2802,10 +2802,23 @@ Lemma enough_space_to_load m k :
   (k + 4 <= mem_length m)%N -> exists v, load_i32 m k = Some v.
 Proof.
   intros. unfold load_i32, load.
-  assert ((k + (0 + N.of_nat 4) <=? mem_length m)%N). apply N.leb_le. lia. rewrite H0.
+  assert ((k + (0 + N.of_nat 4) <=? mem_length m)%N). { apply N.leb_le. lia. } rewrite H0.
   unfold read_bytes, those, mem_lookup. cbn.
-  unfold mem_length, memory_list.mem_length in H0.
-Admitted.
+  apply N.leb_le in H0. unfold mem_length, memory_list.mem_length in H0.
+  assert (Hex1 : exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 0)) = Some v).
+  { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
+  destruct Hex1 as [x1 Hex1]. rewrite Hex1.
+  assert (Hex2: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 1)) = Some v).
+  { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
+  destruct Hex2 as [x2 Hex2]. rewrite Hex2.
+  assert (Hex3: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 2)) = Some v).
+  { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
+  destruct Hex3 as [x3 Hex3]. rewrite Hex3.
+  assert (Hex4: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 3)) = Some v).
+  { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
+  destruct Hex4 as [x4 Hex4]. rewrite Hex4.
+   eauto.
+Qed.
 
 
 Ltac solve_arith_load_store := repeat (try rewrite length_is_size; try rewrite size_set_nth;
