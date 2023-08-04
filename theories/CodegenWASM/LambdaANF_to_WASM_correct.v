@@ -3072,12 +3072,10 @@ Proof.
                        (update_list_at (s_mems s) 0 m0)) (f_inst f) constr_alloc_ptr) as Hglob_cap by reflexivity.
       have HlenBound := mem_length_upper_bound _ Hmem5. cbn in HlenBound.
       assert (v_cap' = v_cap). {
-        assert (nat_to_i32 v_cap' = nat_to_i32 v_cap) as Heq. {
-           unfold sglob_val, sglob, sglob_ind in *. admit. }
-        unfold nat_to_i32 in Heq. cbn in Heq. inv Heq.
+        unfold sglob_val, sglob, sglob_ind in Hcap, Hv1. cbn in Hcap, Hv1.
+        rewrite <- H4 in Hv1. subst. cbn in Hv1. rewrite Hv1 in Hcap. inv Hcap.
         rewrite Wasm_int.Int32.Z_mod_modulus_id in H8; try lia.
-        rewrite Wasm_int.Int32.Z_mod_modulus_id in H8. 2: { simpl_modulus. cbn. lia. } lia.
-      } subst v_cap'.
+        rewrite Wasm_int.Int32.Z_mod_modulus_id in H8; try lia. simpl_modulus. cbn. lia. } subst v_cap'.
       assert (x = nat_to_i32 v_cap). { rewrite H in Hcap. now inv Hcap. } subst x.
       assert (x1 = v_cap). { inv H7. rewrite Wasm_int.Int32.Z_mod_modulus_id in H9; try lia. rewrite Wasm_int.Int32.Z_mod_modulus_id in H9; lia. } subst x1.
 
@@ -3091,7 +3089,7 @@ Proof.
       5: subst; apply Hred. 4: apply Hm0. auto. assumption. assumption.
       split. assumption.
       exists v_cap. split. assumption. split. simpl_modulus. cbn. lia. split.
-      econstructor. apply Hm2. admit. admit. admit.
+      econstructor. apply Hm2.  admit. admit. admit.
       (* load val *)
       rewrite -H6; try lia.
       apply store_load in Hm0.
