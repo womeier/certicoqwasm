@@ -154,7 +154,7 @@ Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tag
                   ; BI_binop T_i32 (Binop_i BOI_add)
                   ; BI_set_local tmp
                   ; BI_get_local tmp
-                  ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+                  ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
                   ; BI_call self_fn_var
                   ] ++ (gen_rec_calls calls' arity)
     end in
@@ -170,7 +170,7 @@ Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tag
 
     Ret [ BI_const (nat_to_value ctor_id)
         ; BI_get_local constr_ptr
-        ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+        ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
         ; BI_relop T_i32 (Relop_i ROI_eq)
         ; BI_if (Tf nil nil)
                 ((instr_write_string " ") ++ (if ctor_arity =? 0 then [] else (instr_write_string "(")) ++ instr_write_string ctor_name ++
@@ -391,7 +391,14 @@ Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_e
                     ; BI_const (nat_to_value (4 * (1 + current))) (* plus 1 : skip tag *)
                     ; BI_binop T_i32 (Binop_i BOI_add)
                     ; read_y
-                    ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+                    ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+
+                    (* increase gmp by 4 *)
+                    ; BI_get_global global_mem_ptr
+                    ; BI_const (nat_to_value 4)
+                    ; BI_binop T_i32 (Binop_i BOI_add)
+                    ; BI_set_global global_mem_ptr
+
                     ] ++ remaining)
   end.
 
@@ -402,15 +409,17 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (venv : var_env
   Ret ([ BI_get_global global_mem_ptr
        ; BI_set_global constr_alloc_ptr
 
-       ; BI_get_global global_mem_ptr
-       ; BI_const (nat_to_value ((length ys + 1) * 4))
-       ; BI_binop T_i32 (Binop_i BOI_add)
-       ; BI_set_global global_mem_ptr
-
        (* set tag *)
        ; BI_get_global constr_alloc_ptr
        ; BI_const (nat_to_value ctor_id)
-       ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+       ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+
+       (* increase gmp by 4 *)
+       ; BI_get_global global_mem_ptr
+       ; BI_const (nat_to_value 4)
+       ; BI_binop T_i32 (Binop_i BOI_add)
+       ; BI_set_global global_mem_ptr
+
        ] ++ set_constr_args).
 
 Fixpoint create_case_nested_if_chain (v : immediate) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
@@ -418,7 +427,7 @@ Fixpoint create_case_nested_if_chain (v : immediate) (es : list (ctor_tag * list
   | [] => [ BI_unreachable ]
   | (t, instr) :: tl =>
             [ BI_get_local v
-            ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+            ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
             ; BI_const (nat_to_value (Pos.to_nat t)) (* ctor id*)
             ; BI_relop T_i32 (Relop_i ROI_eq)
             ; BI_if (Tf nil nil) instr (create_case_nested_if_chain v tl)
@@ -474,7 +483,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
       Ret ([ BI_get_local y_var
            ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4)) (* skip ctor_id and previous constr arguments *)
            ; BI_binop T_i32 (Binop_i BOI_add)
-           ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0) (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+           ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
            ; BI_set_local x_var
            ] ++ following_instr)
 
@@ -680,7 +689,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
        ; mod_funcs := functions_final
        ; mod_tables := []
 
-       ; mod_mems := {| lim_min := N_of_nat 1         (* initial memory size in pages (1 page = 2^16 = 64 KiB), is grown as needed *)
+       ; mod_mems := {| lim_min := 1%N                (* initial memory size in pages (1 page = 2^16 = 64 KiB), is grown as needed *)
                       ; lim_max := Some max_mem_pages (* set to ensure, i32 ptr doesn't overflow, but memory grow fails instead *)
                       |} :: nil
 
