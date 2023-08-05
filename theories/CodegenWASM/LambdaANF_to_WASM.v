@@ -622,6 +622,12 @@ Definition create_local_variable_mapping (nenv : name_env) (fenv: fname_env) (e 
   let venv := add_vars_to_local_variable_mapping nenv fenv expr_vars (M_string.empty _) in
   create_local_variable_mapping' nenv fenv fds venv.
 
+Fixpoint list_function_types (n : nat) : list function_type :=
+  match n with
+  | 0 => [Tf [] []]
+  | S n' => list_function_types n' ++ [Tf (List.repeat T_i32 (S n')) []]
+  end.
+
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * var_env) :=
   fname_mapping <- create_fname_mapping nenv e ;;
   let venv := create_local_variable_mapping nenv fname_mapping e in
@@ -663,7 +669,6 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                         |}
   in
   let functions := fns ++ [constr_pp_function] ++ indirection_functions ++ [main_function] in
-  let types := map (fun f => f.(type)) functions in
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (Mk_funcidx f.(var))
                                 |}) functions (* function exports for debug names *)
@@ -677,14 +682,13 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                      ; modexp_desc := MED_global (Mk_globalidx result_var)
                      |} :: nil in
 
-  let functions_final := map (fun f => {| modfunc_type := Mk_typeidx f.(var)
+  let functions_final := map (fun f => {| modfunc_type := Mk_typeidx (match f.(type) with Tf args _ => length args end)
                                         ; modfunc_locals := f.(locals)
                                         ; modfunc_body := f.(body)
                                         |}) functions in
   let module :=
-      {| mod_types := [ Tf [T_i32] []                 (* type write_char *)
-                      ; Tf [T_i32] []                 (* type write_int  *)
-                      ] ++ types
+      {| mod_types := list_function_types (list_max (1 :: (map (fun f => match f.(type) with Tf t1 _ => length t1 end) functions)))
+                                                    (* 1: for imported functions *)
 
        ; mod_funcs := functions_final
        ; mod_tables := []
@@ -712,7 +716,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
 
        ; mod_imports := {| imp_module := String.print "env"
                          ; imp_name := String.print write_char_function_name
-                         ; imp_desc := ID_func 0
+                         ; imp_desc := ID_func 1
                          |} ::
                         {| imp_module := String.print "env"
                          ; imp_name := String.print write_int_function_name
