@@ -424,18 +424,11 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
            ] ++ s)
 
 | Rconstr_e:
-    forall x x' t vs sgrow sinit sargs sres e e',
+    forall x x' t vs sgrow sargs sres e e',
     (* translated assigned var *)
     repr_var x x' ->
     (* allocate memory *)
     grow_memory_if_necessary page_size = sgrow ->
-    (* initialize pointers *)
-    sinit = [ BI_get_global global_mem_ptr
-            ; BI_set_global constr_alloc_ptr
-            ; BI_get_global global_mem_ptr
-            ; BI_const (nat_to_value ((length vs + 1) * 4))
-            ; BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr
-            ] ->
     (* store args *)
     Forall_statements_in_seq set_nth_constr_arg vs sargs ->
     (* set result *)
@@ -448,11 +441,17 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
                                     ; BI_const (nat_to_value 1)
                                     ; BI_relop T_i32 (Relop_i ROI_eq)
                                     ; BI_if (Tf nil nil)
-                                            [] (* grow mem failed *)
-                                            (sinit ++
-                                             [ BI_get_global constr_alloc_ptr
+                                            (* grow mem failed *) []
+                                            (* grow mem success *)
+                                            ([ BI_get_global global_mem_ptr
+                                             ; BI_set_global constr_alloc_ptr
+                                             ; BI_get_global constr_alloc_ptr
                                              ; BI_const (nat_to_value (Pos.to_nat t))
                                              ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
+                                             ; BI_get_global global_mem_ptr
+                                             ; BI_const (nat_to_value 4)
+                                             ; BI_binop T_i32 (Binop_i BOI_add)
+                                             ; BI_set_global global_mem_ptr
                                              ] ++ sargs ++ sres ++ e')
                                      ])
 
@@ -1201,22 +1200,28 @@ Proof.
 
         replace ([:: BI_get_global constr_alloc_ptr] ++ [:: BI_set_local v'] ++ l0) with
                 ([BI_get_global constr_alloc_ptr; BI_set_local v'] ++ l0) by reflexivity.
+        remember ([BI_get_global constr_alloc_ptr; BI_set_local v']) as sres.
 
-        replace ([:: BI_get_global global_mem_ptr, BI_set_global constr_alloc_ptr,
+        replace ([:: BI_get_global global_mem_ptr,
+              BI_set_global constr_alloc_ptr,
+              BI_get_global constr_alloc_ptr,
+              BI_const (nat_to_value (Pos.to_nat t)),
+              BI_store T_i32 None 2%N 0%N,
               BI_get_global global_mem_ptr,
-              BI_const (nat_to_value ((Datatypes.length l + 1) * 4)),
-              BI_binop T_i32 (Binop_i BOI_add), BI_set_global global_mem_ptr,
-              BI_get_global constr_alloc_ptr, BI_const (nat_to_value (Pos.to_nat t)),
-              BI_store T_i32 None 2%N 0%N
-            & l2]) with ([ BI_get_global global_mem_ptr; BI_set_global constr_alloc_ptr;
-              BI_get_global global_mem_ptr;
-              BI_const (nat_to_value ((Datatypes.length l + 1) * 4));
-              BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr] ++ [
+              BI_const (nat_to_value 4),
+              BI_binop T_i32 (Binop_i BOI_add),
+              BI_set_global global_mem_ptr
+            & l2]) with ([ BI_get_global global_mem_ptr;
+              BI_set_global constr_alloc_ptr ] ++ [
               BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
-              BI_store T_i32 None 2%N 0%N
+              BI_store T_i32 None 2%N 0%N;
+              BI_get_global global_mem_ptr;
+              BI_const (nat_to_value 4);
+              BI_binop T_i32 (Binop_i BOI_add);
+              BI_set_global global_mem_ptr
             ] ++ l2) by reflexivity.
         repeat rewrite <- app_assoc.
-        eapply Rconstr_e; eauto.
+        eapply Rconstr_e with (e' := l0) (sres := sres); eauto.
         econstructor. eassumption. apply set_nth_constr_arg_correct. assumption.
 
         apply IHe; auto.
@@ -2958,15 +2963,15 @@ Lemma store_constr_args_reduce : forall ys vs sargs state rho s f offset m v_cap
                   (state, s', f, [])
             /\ INV s' f
             (* constructor args val *)
-            /\ exists v_cap, sglob_val (host_function:=host_function) s' (f_inst f)
-               constr_alloc_ptr = Some (VAL_int32 (nat_to_i32 v_cap))
-               /\ (0 <= Z.of_nat v_cap < Wasm_int.Int32.modulus)%Z
-               /\ repr_val_constr_args_LambdaANF_Codegen fenv venv nenv _ vs s' f (4 + (4*offset) + v_cap)
-               /\ s_globals s = s_globals s'
-               (* previous mem including tag unchanged *)
-               /\ exists m', nth_error (s_mems s') 0 = Some m'
-                          /\ mem_length m = mem_length m'
-                          /\ forall a, a <= v_cap + 4 * offset -> load_i32 m (N.of_nat a) = load_i32 m' (N.of_nat a).
+            /\ sglob_val (host_function:=host_function) s' (f_inst f)
+                 constr_alloc_ptr = Some (VAL_int32 (nat_to_i32 v_cap))
+            /\ (0 <= Z.of_nat v_cap < Wasm_int.Int32.modulus)%Z
+            /\ repr_val_constr_args_LambdaANF_Codegen fenv venv nenv _ vs s' f (4 + (4*offset) + v_cap)
+            /\ s_globals s = s_globals s'
+            (* previous mem including tag unchanged *)
+            /\ exists m', nth_error (s_mems s') 0 = Some m'
+                       /\ mem_length m = mem_length m'
+                       /\ forall a, a <= v_cap + 4 * offset -> load_i32 m (N.of_nat a) = load_i32 m' (N.of_nat a).
 Proof.
   induction ys; intros vs sargs state rho s f offset m v_cap Hinv Hm Hcap Hlen Hargs Hoffset H Hvs HmemR.
   { inv Hvs. inv H. exists s. split. apply rt_refl. split. assumption.
@@ -2978,10 +2983,12 @@ Proof.
     destruct Hgmp_r as [v' Hv'].
     edestruct i32_exists_nat as [x' [Hx' ?]]. erewrite Hx' in Hv'. clear Hx' v'.
 
-    eexists. split. eassumption. split. lia. split. econstructor.
+    split. eassumption.
+     have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hinv_linmem _]]]]]]].
+    destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. assert (m = m') by congruence. subst m' size.
+    apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
+    split. simpl_modulus. cbn. lia. split. econstructor.
     split. unfold sglob_val, sglob, sglob_ind in *. congruence.
-    have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hinv_linmem _]]]]]]].
-    destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
     exists m. auto.
   }
   { inv H. inv H6. rename s' into instr_args. rename a into y.
@@ -2995,21 +3002,23 @@ Proof.
         destruct (get_list ys rho); inv Hvs; auto. }
       clear Hvs. rename Hgetlist into Hvs.
       (* invariants *)
-      have I := Hinv. destruct I as [_ [_ [_ [_ [Hinv_cap [Hinv_muti32 [Hinv_linmem [Hinv_locals _]]]]]]]].
-      eapply global_var_w_implies_global_var_r in Hinv_cap; auto. destruct Hinv_cap.
+      have I := Hinv. destruct I as [_ [_ [_ [Hinv_gmp [Hinv_cap [Hinv_muti32 [Hinv_linmem [Hinv_locals _]]]]]]]].
+      eapply global_var_w_implies_global_var_r in Hinv_cap; auto. destruct Hinv_cap as [cap ?].
+      eapply global_var_w_implies_global_var_r in Hinv_gmp; auto. destruct Hinv_gmp as [gmp ?].
       destruct (Hinv_locals _ _ H0) as [x0 Hly].
 
       assert (Htmp: In y (y :: ys)) by (cbn; auto).
       destruct (HmemR _ Htmp) as [val [wal [Hrho [[y0' [Htv Hly']] Hy_val]]]].
       assert (val = v) by congruence. subst v. clear Hrhoy.
-      assert (y' = y0'). { inv H0. rewrite Htv in H1. congruence. } subst y0'.
+      assert (y' = y0'). { inv H0. congruence. } subst y0'.
       rewrite Hly in Hly'. inv Hly'. clear Htmp.
 
       destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. subst size. cbn.
 
       assert (m = m') by congruence. subst m'. clear Hmem2.
 
-      destruct (i32_exists_nat x) as [x1 [Hx ?]].
+      destruct (i32_exists_nat cap) as [x1 [Hx ?]]. subst cap. rename x1 into cap.
+      destruct (i32_exists_nat gmp) as [x1 [Hx' ?]]. subst gmp. rename x1 into gmp.
       assert (exists m0, store m
         (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 v_cap) (nat_to_i32 (S (S (S (S (offset * 4)))))))) 0%N
           (bits (VAL_int32 (wasm_value_to_i32 wal))) (t_length T_i32) = Some m0) as Hm0. {
@@ -3021,8 +3030,8 @@ Proof.
        have H' := mem_length_upper_bound _ Hmem5. cbn in H'.
 
        assert (Z.of_nat offset < 2 * max_constr_args)%Z by lia.
-       assert (Z.of_nat n + 4 < Z.of_N page_size)%Z. { cbn in H2.
-        assert (N.of_nat n < 10000)%N. lia. cbn. lia. }
+       assert (Z.of_nat n + 4 < Z.of_N page_size)%Z. { cbn in H5.
+        assert (N.of_nat n < 10000)%N.  lia. cbn. lia. }
        rewrite Wasm_int.Int32.Z_mod_modulus_id.
        rewrite Wasm_int.Int32.Z_mod_modulus_id.
        rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
@@ -3042,19 +3051,25 @@ Proof.
 
       destruct Hm0 as [m0 Hm0].
       remember (upd_s_mem (host_function:=host_function) s
-                       (update_list_at (s_mems s) 0 m0)) as s_before_IH.
-      assert (Hinv_before_IH : INV s_before_IH f). {
+                       (update_list_at (s_mems s) 0 m0)) as s'.
+      assert (Hinv' : INV s' f). {
         eapply update_mem_preserves_INV. 6: subst; reflexivity. assumption. eassumption.
         apply mem_store_preserves_length in Hm0. lia.
         apply mem_store_preserves_max_pages in Hm0. congruence.
         eexists. split. reflexivity.
         apply mem_store_preserves_length in Hm0. unfold mem_size in Hmem5. now rewrite Hm0 in Hmem5. }
+      have I := Hinv'. destruct I as [_ [_ [_ [Hgmp_w _]]]]. edestruct Hgmp_w as [s_before_IH ?].
 
-      assert (Hmem_before_IH : nth_error (s_mems s_before_IH) 0 = Some m0). { subst s_before_IH. cbn.
+      assert (Hinv_before_IH : INV s_before_IH f). { eapply update_global_preserves_INV; try eassumption. unfold result_out_of_mem, global_mem_ptr. lia. }
+
+      assert (Hmem_before_IH : nth_error (s_mems s_before_IH) 0 = Some m0). { subst s'.
+        erewrite <- update_glob_keeps_memory_intact; try eassumption. cbn.
       unfold update_list_at. now rewrite take0. }
 
       assert (Hcap_before_IH: sglob_val (host_function:=host_function) s_before_IH
-       (f_inst f) constr_alloc_ptr = Some (VAL_int32 (nat_to_i32 v_cap))). { subst. rewrite -Hcap. reflexivity. }
+       (f_inst f) constr_alloc_ptr = Some (VAL_int32 (nat_to_i32 v_cap))). { subst.
+       eapply  global_var_write_read_other; try apply H5.
+       unfold constr_alloc_ptr, global_mem_ptr. lia. cbn. rewrite -Hcap. reflexivity. }
 
       assert (Hlen_m0: (N.of_nat v_cap + page_size < mem_length m0)%N). {
         apply mem_store_preserves_length in Hm0. unfold mem_length, memory_list.mem_length in *. congruence. }
@@ -3067,41 +3082,39 @@ Proof.
         repr_val_LambdaANF_Codegen fenv venv nenv host_function v6 s_before_IH f val)). {
         intros. assert (Htmp : In y0 (y :: ys)) by (right; assumption).
         destruct (HmemR _ Htmp) as [val' [wal' [? [? ?]]]].
-        subst s_before_IH. exists val', wal'. repeat split; try assumption.
+        subst s'. exists val', wal'. repeat split; try assumption.
         admit. (* repr_val depends only on mem < v_cap*)
         }
 
       have IH := IHys _ _ state _ _ _ _ _ _ Hinv_before_IH Hmem_before_IH Hcap_before_IH Hlen_m0 Hmaxargs Hoffset H3 Hvs HrelM_before_IH.
       clear IHys Hmem_before_IH Hinv_before_IH HrelM_before_IH Hcap_before_IH.
-      destruct IH as [sr [Hred [Hinv' [v_cap' [Hv1 [? [Hv2 [? [m1 [Hm2 [? ?]]]]]]]]]]].
+      destruct IH as [sr [Hred [Hinv'' [Hv1 [? [Hv2 [? [m1 [Hm2 [? ?]]]]]]]]]].
       assert (sglob_val (host_function:=host_function) s (f_inst f) constr_alloc_ptr
             = sglob_val (host_function:=host_function) (upd_s_mem (host_function:=host_function) s
                        (update_list_at (s_mems s) 0 m0)) (f_inst f) constr_alloc_ptr) as Hglob_cap by reflexivity.
       have HlenBound := mem_length_upper_bound _ Hmem5. cbn in HlenBound.
-      assert (v_cap' = v_cap). {
-        unfold sglob_val, sglob, sglob_ind in Hcap, Hv1. cbn in Hcap, Hv1.
-        rewrite <- H4 in Hv1. subst. cbn in Hv1. rewrite Hv1 in Hcap. inv Hcap.
-        rewrite Wasm_int.Int32.Z_mod_modulus_id in H8; try lia.
-        rewrite Wasm_int.Int32.Z_mod_modulus_id in H8; try lia. simpl_modulus. cbn. lia. } subst v_cap'.
-      assert (x = nat_to_i32 v_cap). { rewrite H in Hcap. now inv Hcap. } subst x.
-      assert (x1 = v_cap). { inv H7. rewrite Wasm_int.Int32.Z_mod_modulus_id in H9; try lia. rewrite Wasm_int.Int32.Z_mod_modulus_id in H9; lia. } subst x1.
+      assert (cap = v_cap). { rewrite H in Hcap. inv Hcap.
+        rewrite Wasm_int.Int32.Z_mod_modulus_id in H11; try lia. rewrite Wasm_int.Int32.Z_mod_modulus_id in H11; lia. } subst v_cap.
 
       eexists. split.
       (* reduce *)
-      separate_instr. dostep. elimr_nary_instr 0. apply r_get_global. rewrite Hglob_cap. eassumption.
-      separate_instr. dostep. elimr_nary_instr 2. constructor. constructor. reflexivity.
-      separate_instr. dostep. apply r_eliml. auto. elimr_nary_instr 0. apply r_get_local. eassumption.
+      dostep. elimr_nary_instr 0. apply r_get_global. rewrite Hglob_cap. eassumption.
+      dostep. elimr_nary_instr 2. constructor. constructor. reflexivity.
+      dostep. apply r_eliml. auto. elimr_nary_instr 0. apply r_get_local. eassumption.
 
-      separate_instr. dostep. elimr_nary_instr 2. eapply r_store_success.
-      5: subst; apply Hred. 4: apply Hm0. auto. assumption. assumption.
-      split. assumption.
-      exists v_cap. split. assumption. split. simpl_modulus. cbn. lia. split.
-      econstructor. apply Hm2.  admit. admit. admit.
+      dostep. elimr_nary_instr 2. eapply r_store_success; try eassumption; auto.
+      dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
+      dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
+      dostep. elimr_nary_instr 1. apply r_set_global. subst. eassumption.
+      apply Hred.
+
+      split. assumption. split. auto. split. simpl_modulus. cbn. lia. split.
+      econstructor. apply Hm2. admit. admit. admit.
       (* load val *)
-      rewrite -H6; try lia.
+      rewrite -H9; try lia.
       apply store_load in Hm0.
-      assert ((N.of_nat (S (S (S (S (offset + (offset + (offset + (offset + 0))) + v_cap)))))) =
-              (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 v_cap)
+      assert ((N.of_nat (S (S (S (S (offset + (offset + (offset + (offset + 0))) + cap)))))) =
+              (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 cap)
                           (nat_to_i32 (S (S (S (S (offset * 4))))))))) as Har. {
         remember (S (S (S (S (offset * 4))))) as o. cbn.
         assert (Z.of_nat offset < 2 * max_constr_args)%Z as HarOffset by lia. cbn in HarOffset.
@@ -3110,19 +3123,19 @@ Proof.
       rewrite deserialise_bits in Hm0. rewrite Har. eassumption.
       auto. reflexivity.
       (* repr_rel ... s ... = repr_rel ... sr ... *) admit.
-      replace ((4 + S (S (S (S (offset + (offset + (offset + (offset + 0))) + v_cap)))))) with
-      (4 + 4 * S offset + v_cap) by lia. apply Hv2.
-      split. rewrite <- H4. subst. reflexivity. exists m1.
+      replace ((4 + S (S (S (S (offset + (offset + (offset + (offset + 0))) + cap)))))) with
+      (4 + 4 * S offset + cap) by lia. apply Hv2.
+      split. subst. admit. (* falsch TODO *) exists m1.
       split. assumption. split. apply mem_store_preserves_length in Hm0. congruence.
-      intros. rewrite -H6; try lia.
+      intros. rewrite -H9; try lia.
       { assert (exists v, load_i32 m (N.of_nat a) = Some v). {
           apply enough_space_to_load. unfold store in Hm0.
           destruct ((Wasm_int.N_of_uint i32m
-           (Wasm_int.Int32.iadd (nat_to_i32 v_cap)
+           (Wasm_int.Int32.iadd (nat_to_i32 cap)
               (nat_to_i32 (S (S (S (S (offset * 4))))))) + 0 +
          N.of_nat (t_length T_i32) <=? mem_length m)%N) eqn:Har. 2: inv Hm0.
-         admit. } destruct H9.
-        have Ht := load_store_load _ _ _ _ _ _ _ _ H9 Hm0. admit. } }
+         admit. } destruct H11.
+        have Ht := load_store_load _ _ _ _ _ _ _ _ H11 Hm0. admit. } }
     { (* store fn index *)
       (* invariants *)
       admit.
@@ -3220,13 +3233,13 @@ Lemma store_constr_reduce : forall state s f rho ys (vs : list cps.val) t sargs,
     (state, s, f,
       [:: AI_basic (BI_get_global global_mem_ptr)] ++
       [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
-      [:: AI_basic (BI_get_global global_mem_ptr)] ++
-      [:: AI_basic (BI_const (nat_to_value ((Datatypes.length ys + 1) * 4)))] ++
-      [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
-      [:: AI_basic (BI_set_global global_mem_ptr)] ++
       [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
       [:: AI_basic (BI_const (nat_to_value (Pos.to_nat t)))] ++
       [:: AI_basic (BI_store T_i32 None 2%N 0%N)] ++
+      [:: AI_basic (BI_get_global global_mem_ptr)] ++
+      [:: AI_basic (BI_const (nat_to_value 4))] ++
+      [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
+      [:: AI_basic (BI_set_global global_mem_ptr)] ++
       [seq AI_basic i | i <- sargs])
     (state, s', f, []) /\ INV s' f
       (* cap points to value *)
@@ -3278,7 +3291,7 @@ Proof.
 
   remember (upd_s_mem s'' (update_list_at s''.(s_mems) 0 m''')) as s_tag.
   assert (INV s_tag f) as Hinv_tag.
-  { (* INV before stepping through sargs *)
+  { (* INV after setting tag *)
     eapply update_mem_preserves_INV. 6: subst s_tag; reflexivity. assumption.
     eassumption. apply mem_store_preserves_length in Hstore'''. lia.
     apply mem_store_preserves_max_pages in Hstore'''. congruence.
@@ -3349,27 +3362,23 @@ exists (v6 : cps.val) (val : wasm_value),
   }
 
   have Hargs := store_constr_args_reduce _ _ _ state _ _ _ _ _ _ Hinv_tag Hmem Hglob_cap HenoughM' Hmaxargs HlenBound Hsetargs Hrho HrelM'.
-  destruct Hargs as [s_final [Hred [Hinv_final [v_cap [Hcap_v [? [Hargs_val [Hglobsame [m' [Hm' [Hmemlen Hmemsame]]]]]]]]]]].
+  destruct Hargs as [s_final [Hred [Hinv_final [Hcap_v [? [Hargs_val [Hglobsame [m' [Hm' [Hmemlen Hmemsame]]]]]]]]]].
   {
   cbn in Hargs_val. clear Hsetargs Hrho HenoughM' HlenBound.
-  assert (gmp_v = v_cap). { unfold sglob_val, sglob, sglob_ind in *. rewrite Hglobsame in Hglob_cap.
-  inv Hglob_cap. cbn in H5.  (* rewrite Wasm_int.Int32.Z_mod_modulus_id in H5; try lia. rewrite Wasm_int.Int32.Z_mod_modulus_id in H5; lia. *) admit. } subst v_cap.
 
   exists s_final. split.
   (* steps *)
-  (* get global, increase, set global *)
   dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
-  dostep. elimr_nary_instr 1. apply r_set_global. eassumption.
-  dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
-  dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-  dostep. elimr_nary_instr 1. apply r_set_global. eassumption.
-  dostep. elimr_nary_instr 0. apply r_get_global. 2: { (* eassumption. *)
+  dostep. elimr_nary_instr 1. apply r_set_global. eassumption. cbn.
+  dostep. elimr_nary_instr 0. apply r_get_global. eapply global_var_write_read_same. eassumption.
   (* write tag *)
   dostep. elimr_nary_instr 2. eapply r_store_success. 4: eassumption.
-  reflexivity. eassumption. eassumption.
-  subst s_tag. cbn. apply Hred. }
-  { rewrite -Hglob_cap. subst s_tag. reflexivity. }
-  split. assumption.
+  reflexivity. eassumption. erewrite update_glob_keeps_memory_intact; try eassumption. cbn.
+
+  dostep. elimr_nary_instr 0. apply r_get_global. eassumption. cbn.
+  dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
+  dostep. elimr_nary_instr 1. apply r_set_global. admit.
+  cbn. apply Hred. split. assumption.
   (* constr value in memory *)
   eexists. eexists. split. eassumption.
   split.
@@ -3419,7 +3428,7 @@ Proof with eauto.
     (*  TODO. refuse to compile otherwise *)
     assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
 
-    inversion Hrepr_e. subst t0 x0 vs0 e0 sgrow. rename H5 into Hx. rename H11 into Hexp.
+    inversion Hrepr_e. subst t0 x0 vs0 e0 sgrow. rename H5 into Hx. rename H10 into Hexp.
     { remember (grow_memory_if_necessary page_size) as grow.
       cbn. repeat rewrite map_cat. cbn.
 
@@ -3447,13 +3456,14 @@ Proof with eauto.
         assert (Hocc: occurs_free (Econstr x t ys e) y) by (constructor; auto).
         apply Hvar in Hocc. admit. }
 
-      have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ Hinv' _  HrelM Hmaxargs H9 H.
+      have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ Hinv' _  HrelM Hmaxargs _ H.
       edestruct Hconstr as [s_v [Hred_v [Hinv_v [cap_v [wal [? [? Hvalue]]]]]]].
       { intros. assert (m' = m0) by congruence. subst m0.
         assert (gmp_v = gmp_v'). { rewrite Hgmp' in H3. inv H3.
           rewrite Wasm_int.Int32.Z_mod_modulus_id in H6; try lia.
           rewrite Wasm_int.Int32.Z_mod_modulus_id in H6; try lia. } subst gmp_v'. lia. }
-      { clear Hconstr. subst cap_v.
+     eassumption.
+     { clear Hconstr. subst cap_v.
       have I := Hinv_v. destruct I as [_ [_ [_ [_ [_ [_ [_ [Hlocals _]]]]]]]].
       destruct (Hlocals _ _ Hx) as [? Hlx]. clear Hlocals.
 
@@ -3495,20 +3505,32 @@ Proof with eauto.
       dostep'. constructor. eapply rs_block with (vs := []); auto.
       apply reduce_trans_label. unfold to_e_list. cbn.
       repeat rewrite map_cat. cbn. repeat rewrite map_cat.
-      separate_instr.
-      assert (Heq: [seq AI_basic i | i <- sinit] ++
-    [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
-    [:: AI_basic (BI_const (nat_to_value (Pos.to_nat t)))] ++
-    [:: AI_basic (BI_store T_i32 None 2%N 0%N)] ++
-    [seq AI_basic i | i <- sargs] ++ [seq AI_basic i | i <- sres] ++ [seq AI_basic i | i <- e']  =
-    ([seq AI_basic i | i <- sinit] ++
-    [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
-    [:: AI_basic (BI_const (nat_to_value (Pos.to_nat t)))] ++
-    [:: AI_basic (BI_store T_i32 None 2%N 0%N)] ++
-    [seq AI_basic i | i <- sargs]) ++ [seq AI_basic i | i <- sres] ++ [seq AI_basic i | i <- e']). { rewrite <- app_assoc. reflexivity. }
-    cbn. rewrite Heq.
+      separate_instr. cbn.
+      assert (Heq: [:: AI_basic (BI_get_global global_mem_ptr),
+      AI_basic (BI_set_global constr_alloc_ptr),
+      AI_basic (BI_get_global constr_alloc_ptr),
+      AI_basic (BI_const (nat_to_value (Pos.to_nat t))),
+      AI_basic (BI_store T_i32 None 2%N 0%N),
+      AI_basic (BI_get_global global_mem_ptr),
+      AI_basic (BI_const (nat_to_value 4)),
+      AI_basic (BI_binop T_i32 (Binop_i BOI_add)),
+      AI_basic (BI_set_global global_mem_ptr)
+    & [seq AI_basic i | i <- sargs] ++
+      [seq AI_basic i | i <- sres] ++ [seq AI_basic i | i <- e']] =
+  ([:: AI_basic (BI_get_global global_mem_ptr)] ++
+  [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
+  [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
+  [:: AI_basic (BI_const (nat_to_value (Pos.to_nat t)))] ++
+  [:: AI_basic (BI_store T_i32 None 2%N 0%N)] ++
+  [:: AI_basic (BI_get_global global_mem_ptr)] ++
+  [:: AI_basic (BI_const (nat_to_value 4))] ++
+  [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
+  [:: AI_basic (BI_set_global global_mem_ptr)] ++
+  [seq AI_basic i | i <- sargs]) ++
+  [seq AI_basic i | i <- sres] ++ [seq AI_basic i | i <- e']). { rewrite <- app_assoc. reflexivity. }
+    rewrite Heq.
     clear Heq. replace ([::]) with ([::] ++ [::]: list administrative_instruction) by reflexivity.
-    eapply rt_trans. apply app_trans. subst. apply Hred_v. clear Hred_v. subst sres. cbn.
+    eapply rt_trans. apply app_trans. apply Hred_v. clear Hred_v. subst sres. cbn.
     separate_instr.
     replace ([:: AI_basic (BI_get_global constr_alloc_ptr)] ++
     [:: AI_basic (BI_set_local x')] ++ [seq AI_basic i | i <- e']) with (([:: AI_basic (BI_get_global constr_alloc_ptr)] ++
