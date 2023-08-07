@@ -542,10 +542,7 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> store_record -> fram
       repr_val_LambdaANF_Codegen (LambdaANF.cps.Vfun env fds f) sr fr (Val_funidx idx)
 
 with repr_val_constr_args_LambdaANF_Codegen : (list LambdaANF.cps.val) -> store_record -> frame -> immediate -> Prop :=
-     | Rnil_l : forall sr fr addr gmp,
-        sglob_val (host_function:=host_function) sr (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
-        (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
-        (addr <= gmp) ->
+     | Rnil_l : forall sr fr addr,
         repr_val_constr_args_LambdaANF_Codegen nil sr fr (addr : nat)
 
      | Rcons_l: forall v wal vs sr fr m addr gmp,
@@ -1336,7 +1333,7 @@ Proof.
     { econstructor; eauto. congruence. }
     { econstructor; eauto. congruence. }
     { econstructor; eauto. }
-    { econstructor; eauto. congruence. }
+    { econstructor; eauto. }
     { econstructor; eauto. congruence. }
   }
   (* function *)
@@ -1409,26 +1406,21 @@ Proof.
       assert (m1 = m2) by congruence. subst m2. subst.
       econstructor; eauto. lia. rewrite <- H25; auto; try lia. }
     { econstructor; eauto. erewrite <- e1. congruence. }
-    { econstructor. eassumption. lia. assert (gmp = gmp1). {
-          assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
-          inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H26; try lia.
-                  rewrite Wasm_int.Int32.Z_mod_modulus_id in H26; lia. }
-      assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
-                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; try lia.
-                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; lia. } subst gmp0. lia. }
-     { econstructor; eauto. lia. assert (gmp1 = gmp). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
-                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
-                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst. lia.
-      rewrite <- H26. assert (m1 = m2) by congruence. subst m2.
-      eassumption. { inv r0. assert (gmp2 = gmp). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp2) by congruence.
-                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H31; try lia.
-                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H31; lia. } subst gmp2. lia.
-                              assert (gmp1 = gmp). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
-                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H35; try lia.
-                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H35; lia. } subst. lia. }
-      inv r. assert (m3 = m2) by congruence; subst.
-      eapply H9; eauto; lia.
-      econstructor; eauto. erewrite <- H18. eassumption. }
+    { econstructor. }
+    { assert (gmp = gmp0). {
+         assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
+              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
+              rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst gmp0.
+      econstructor; eauto. lia. assert (gmp1 = gmp). {
+         assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
+              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
+              rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst. lia.
+      rewrite <- H26. assert (m1 = m2) by congruence. subst m2. eassumption.
+      assert (gmp1 = gmp). {
+                 assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
+                 inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
+                 rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst gmp1. lia.
+      eapply H9; eauto; lia. }
     { assert (m = m0) by congruence. subst m0. lia. }
     { assert (m = m0) by congruence; subst m0. apply H8. lia. }
   }
@@ -2152,7 +2144,7 @@ Lemma extract_constr_arg : forall n vs v sr fr addr m,
              repr_val_LambdaANF_Codegen fenv venv nenv host_function v sr fr wal.
 Proof.
   intros n vs v sr fr addr m Hinv H H1 H2. generalize dependent v. generalize dependent n. generalize dependent m.
-  induction H2; intros. 1: inv H3.
+  induction H2; intros. 1: inv H.
   assert (n = N.of_nat (N.to_nat n)) by lia. rewrite H8 in H7. generalize dependent v0.
   induction (N.to_nat n); intros.
   - (* n = 0 *)
@@ -2966,12 +2958,15 @@ Lemma store_constr_args_reduce : forall ys vs sargs state rho s f offset m v_cap
 Proof.
   induction ys; intros vs sargs state rho s f offset m v_cap Hinv Hm Hcap Hlen Hargs Hoffset H Hvs HmemR.
   { inv Hvs. inv H. exists s. split. apply rt_refl. split. assumption.
-    have I := Hinv. destruct I as [_ [_ [_ [_ [Hcap_w [Hmut _]]]]]].
-    apply global_var_w_implies_global_var_r in Hcap_w; auto.
-    destruct Hcap_w as [v Hv].
+    have I := Hinv. destruct I as [_ [_ [_ [Hgmp_r [Hcap_r [Hmut _]]]]]].
+    apply global_var_w_implies_global_var_r in Hcap_r; auto.
+    apply global_var_w_implies_global_var_r in Hgmp_r; auto.
+    destruct Hcap_r as [v Hv].
     edestruct i32_exists_nat as [x [Hx ?]]. erewrite Hx in Hv. clear Hx v.
-    eexists. split. eassumption. split. lia.
-    split. econstructor. admit. admit. admit.
+    destruct Hgmp_r as [v' Hv'].
+    edestruct i32_exists_nat as [x' [Hx' ?]]. erewrite Hx' in Hv'. clear Hx' v'.
+
+    eexists. split. eassumption. split. lia. split. econstructor.
     split. unfold sglob_val, sglob, sglob_ind in *. congruence.
     have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hinv_linmem _]]]]]]].
     destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
