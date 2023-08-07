@@ -381,6 +381,10 @@ Inductive set_nth_constr_arg : nat -> var -> list basic_instruction -> Prop :=
                                               ; BI_binop T_i32 (Binop_i BOI_add)
                                               ; instr
                                               ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
+                                              ; BI_get_global global_mem_ptr
+                                              ; BI_const (nat_to_value 4)
+                                              ; BI_binop T_i32 (Binop_i BOI_add)
+                                              ; BI_set_global global_mem_ptr
                                               ].
 
 (* args are pushed on the stack before calling a function *)
@@ -1060,12 +1064,20 @@ Proof.
    :: BI_const
         (nat_to_value (S (n + S (n + S (n + S (n + 0))))))
       :: BI_binop T_i32 (Binop_i BOI_add)
-         :: b :: BI_store T_i32 None 2%N 0%N :: l0)) with
+         :: b :: BI_store T_i32 None 2%N 0%N
+               :: BI_get_global global_mem_ptr
+                  :: BI_const (nat_to_value 4)
+                     :: BI_binop T_i32 (Binop_i BOI_add)
+                        :: BI_set_global global_mem_ptr :: l0)) with
       (([ BI_get_global constr_alloc_ptr
         ; BI_const (nat_to_value (S (n + S (n + S (n + S (n + 0))))))
         ; BI_binop T_i32 (Binop_i BOI_add)
         ; b
-        ; BI_store T_i32 None 2%N 0%N] ++ l0)) by reflexivity.
+        ; BI_store T_i32 None 2%N 0%N
+        ; BI_get_global global_mem_ptr
+        ; BI_const (nat_to_value 4)
+        ; BI_binop T_i32 (Binop_i BOI_add)
+        ; BI_set_global global_mem_ptr] ++ l0)) by reflexivity.
    constructor; auto.
 
   replace ((nat_to_value (S (n + S (n + S (n + S (n + 0))))))) with ((nat_to_value ((1 + n) * 4))). constructor.
