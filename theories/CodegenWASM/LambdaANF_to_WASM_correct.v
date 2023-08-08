@@ -323,8 +323,6 @@ Section RELATION.
   Variable venv : CodegenWASM.LambdaANF_to_WASM.var_env.
   Variable nenv : LambdaANF.cps_show.name_env.
   Variable finfo_env: LambdaANF_to_Clight.fun_info_env. (* map from a function name to its type info *)
-  (* TODO: cleanup, program not required *)
-  Variable p:program.
 
   (* This should be a definition rather than a parameter, computed once and for all from cenv *)
   Variable rep_env: M.t ctor_rep.
@@ -612,19 +610,6 @@ Definition correct_environments_for_functions: fundefs -> genv -> fun_env -> M.t
  *)
 
 
-(* Domain of find_symbol (globalenv p) is disjoint from bound_var e /\ \sum_rho (bound_var_val x \setminus names_in_fundef x) *)
-(*  *)
-Definition functions_not_bound (rho:LambdaANF.eval.env) (e:exp): Prop :=
-  (forall x,
-    bound_var e x ->
-    Genv.find_symbol (Genv.globalenv p) x = None)/\
-  (forall x y v,
-      M.get y rho = Some v ->
-      bound_notfun_val v x ->
-      Genv.find_symbol (Genv.globalenv p) x = None).
-
-
-
 Inductive unique_bindings_val: LambdaANF.cps.val -> Prop :=
 | UB_Vfun: forall rho fds f,
     unique_bindings_fundefs fds ->
@@ -659,37 +644,6 @@ Proof.
   intros.
   inv H.
   split; auto.
-Qed.
-
-
-(* TODO: also need UB for the functions in rho
-Theorem unique_bindings_env_weaken :
-  unique_bindings_env rho e ->
-  rho' subseteq rho
-unique_bindings_env rho e *)
-
-
-Theorem functions_not_bound_subterm:
-  forall rho e,
-    functions_not_bound rho e ->
-    forall e',
-    subterm_e e' e ->
-    functions_not_bound rho e'.
-Proof.
-  intros. split. intro; intros.
-  apply H.
-Admitted.
-
-Theorem functions_not_bound_set:
-    forall rho e y v,
-      functions_not_bound rho e ->
-      (forall x, bound_notfun_val v x -> Genv.find_symbol (globalenv p) x = None) ->
-      functions_not_bound (M.set y v rho) e.
-Proof.
-  intros. split. apply H.
-  intros. destruct (var_dec y0 y).
-  - subst. rewrite M.gss in H1. inv H1. destruct H. apply H0. auto.
-  - rewrite M.gso in H1 by auto. inv H. eapply H4; eauto.
 Qed.
 
 Theorem find_def_bound_in_bundle:
@@ -3320,7 +3274,7 @@ Admitted.
 Theorem repr_bs_LambdaANF_Codegen_related:
 
   (*
-  forall (p : program) (rep_env : M.t ctor_rep) (cenv : ctor_env)
+  forall (rep_env : M.t ctor_rep) (cenv : ctor_env)
          (finfo_env : M.t (positive * fun_tag)) (ienv : n_ind_env), *)
   (*  program_inv p -> (* isPtr function is defined/correct /\ thread info is correct /\ gc invariant *)
     find_symbol_domain p finfo_env -> (* finfo_env [LambdaANF] contains precisely the same things as global env [Clight] *)
@@ -3918,7 +3872,6 @@ Variable cenv:LambdaANF.cps.ctor_env.
 Variable funenv:LambdaANF.cps.fun_env.
 Variable nenv : LambdaANF.cps_show.name_env.
 Variable finfo_env: LambdaANF_to_Clight.fun_info_env. (* map from a function name to its type info *)
-Variable p:program. (* TODO remove program relict from Codegen *)
  (* This should be a definition rather than a parameter, computed once and for all from cenv *)
 Variable rep_env: M.t ctor_rep.
 
