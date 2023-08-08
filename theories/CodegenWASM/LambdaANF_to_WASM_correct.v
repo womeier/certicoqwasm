@@ -469,21 +469,12 @@ Inductive repr_expr_LambdaANF_Codegen: LambdaANF.cps.exp -> list basic_instructi
                                     ; BI_if (Tf nil nil) e' instrs_more
                                     ]
 
-| R_app_e_direct : forall v v' t args args',
+| R_app_e : forall v instr t args args',
     (* args are provided properly *)
     repr_fun_args_Codegen args args' ->
-    (* funvar to call *)
-    repr_funvar v v' ->
-    repr_expr_LambdaANF_Codegen (Eapp v t args) ((args' ++ [BI_call v']))
-
-| R_app_e_indirect : forall v t args args' i ind,
-    repr_fun_args_Codegen args args' ->
-    lookup_function_var (indirection_function_name (map (fun _ : var => T_i32) args)) fenv
-                        "translate call, ind function" = Ret ind ->
-    lookup_local_var (translate_var_to_string nenv v) venv
-                        ("ind call from var: " ++ translate_var_to_string nenv v) = Ret i ->
-    repr_expr_LambdaANF_Codegen (Eapp v t args) ((args' ++ [BI_get_local i; BI_call ind])).
-
+    (* instr reduces to const containing funidx to call *)
+    repr_read_var_or_funvar v instr ->
+    repr_expr_LambdaANF_Codegen (Eapp v t args) ((args' ++ [instr] ++ [BI_call_indirect (length args)])).
 
 (* Variable mem : memory. *) (* WASM memory, created e.g. at initialization *)
 
@@ -1269,16 +1260,14 @@ Proof.
     simpl in H. unfold translate_call in H.
     destruct (pass_function_args nenv venv fenv l) eqn:Hargs. inv H.
     destruct (is_function_name fenv (translate_var_to_string nenv v)) eqn:Hind. inv H.
-    (* direct call*)
-    - { destruct (lookup_function_var (translate_var_to_string nenv v) fenv "direct function call") eqn:Hvar. inv H1. inv H1.
+      (* direct call*)
+  - destruct (lookup_function_var (translate_var_to_string nenv v) fenv "direct function call") eqn:Hvar. inv H1. inv H1.
     constructor. apply pass_function_args_correct. assumption.
-    econstructor. unfold translate_function_var. unfold translate_var_to_string. eapply lookup_function_var_generalize_err_string. eassumption. }
+    econstructor. constructor. unfold translate_function_var. unfold translate_var_to_string. eapply lookup_function_var_generalize_err_string. eassumption.
    (* indirect call *)
    - { destruct (lookup_local_var (translate_var_to_string nenv v) venv
-        ("ind call from var: " ++ translate_var_to_string nenv v)) eqn:Hlvar. inv H.
-         destruct (lookup_function_var (indirection_function_name (List.map (fun _ : var => T_i32) l))
-        fenv ("didn't find ind. function for: " ++ translate_var_to_string nenv v)) eqn:Hlvar2. inv H. injection H => Heq. subst. clear H. constructor; auto.
-                 apply pass_function_args_correct. assumption. eapply lookup_function_var_generalize_err_string. eassumption. }
+        ("ind call from var: " ++ translate_var_to_string nenv v)) eqn:Hlvar. inv H. inv H. constructor. apply pass_function_args_correct. assumption.
+        constructor. econstructor. unfold translate_var. eassumption. }
   - (* Eprim *)
     inv H. inv H.
   - (* Ehalt *)
@@ -3825,37 +3814,16 @@ Proof with eauto.
       dostep_label. 2: apply rt_refl.
   admit. } admit. } admit. } *)
   - (* Eapp *)
-    inv Hrepr_e.
-    + (* direct call *)
-      { unfold rel_mem_LambdaANF_Codegen in Hrel_m. destruct Hrel_m.
-        edestruct H3 as [j [Hfvar [Hval Hclosed]]]. eassumption.
-         constructor. constructor. eapply find_def_name_in_fundefs. eassumption.
-        (* apply rt_refl. *) inv Hval.
-        rewrite H1 in H11. inv H11. rename e0 into e.
-        rewrite map_cat. cbn.
-
-        eexists. eexists. split. dostep. apply r_eliml. admit. apply r_call. assert (j = v') by admit. subst.  admit. admit. admit.
-
-      }
-     (*
-      assert (exists sr', exists f', exists args'',
-        reduce_trans (state, sr, fr, [seq AI_basic i | i <- args'])%list
-                     (state, sr', f', [seq AI_basic i | i <- args''])%list) /\ .  *) admit.
-    + (* indirect call *) admit.
-  (*   rewrite map_cat.
-    assert (occurs_free (Eapp f t ys) f) by constructor.
-
-    eexists. eexists. split. rewrite map_cat. cbn.
-    Check r_eliml. cbn.
-    dostep'. cbn. apply r_eliml. admit. (* args' const *)
-    apply r_call. admit. admit. admit. *)
+    inv Hrepr_e. inv H8.
+    + (* indirect call*) admit.
+    + (* direct call *) admit.
   - (* Eletapp *)   inv Hrepr_e. (* absurd, we require CPS *)
   - (* Efun *)      inv Hrepr_e. (* absurd, fn defs only on topmost level *)
   - (* Eprim_val *) inv Hrepr_e. (* absurd, primitives not supported *)
   - (* Eprim *)     inv Hrepr_e. (* absurd, primitives not supported *)
   - (* Ehalt *)
-    cbn. destruct Hrel_m. destruct (H2 x) as [v6 [wal [Henv [Hloc Hrepr]]]]. constructor.
-    rewrite Henv in H. inv H.
+    cbn. destruct Hrel_m. destruct (H1 x) as [v6 [wal [Henv [Hloc Hrepr]]]]. constructor.
+    rewrite Henv in H. inv H. inv Hrepr_e.
 
     have I := Hinv. destruct I as [INVres [_ [_ [Hgmp_r [_ [Hmuti32 [Hlinmem [_ [HgmpInMem _]]]]]]]]].
     apply global_var_w_implies_global_var_r in Hgmp_r; auto. destruct Hgmp_r.
@@ -3869,10 +3837,10 @@ Proof with eauto.
     specialize INVres with (wasm_value_to_i32 wal).
     destruct INVres as [s' Hs].
 
-    exists s'. eexists fr.
+    exists s'. eexists fr. cbn.
 
-    destruct H1.
-    destruct Hloc as [ilocal [H4 Hilocal]]. split. erewrite H4 in H1. injection H1 => H'. subst. clear H1.
+    destruct H2.
+    destruct Hloc as [ilocal [H4 Hilocal]]. split. erewrite H4 in H2. injection H2 => H'. subst. clear H2.
     (* execute wasm instructions *)
     dostep. separate_instr. apply r_elimr. eapply r_get_local. eassumption.
     dostep'. apply r_set_global. eassumption.
@@ -3992,8 +3960,6 @@ Proof.
   destruct (create_fname_mapping nenv e) eqn:Hmapping. inv H. simpl in H. rename f into fname_mapping.
   destruct (generate_constr_pp_function cenv fname_mapping
        (collect_constr_tags e)) eqn:Hppconst. inv H.
-  destruct (collect_function_signatures nenv e) eqn:Hfsigs. inv H. rename l into sigs.
-  destruct (generate_indirection_functions sigs fname_mapping) eqn:Hind. inv H. rename l into indfns.
   destruct (match e with
        | Efun fds _ =>
            (fix iter (fds0 : fundefs) : error (seq.seq wasm_function) :=
@@ -4031,20 +3997,9 @@ Proof.
       apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
       apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
       apply Forall2_nil. }
-   (* module elem typing *) { apply Forall_nil. }
+   (* module elem typing *) { admit. }
    (* module data typing *) { apply Forall_nil. }
-   (* module import typing *) {
-      apply Forall2_cons. cbn. unfold is_true.
-      assert (match ET_func (Tf [T_i32] []) with
-              | ET_func tf => function_type_eqb tf (Tf [T_i32] [])
-              | _ => false
-              end = true) by reflexivity. eassumption.
-      apply Forall2_cons. cbn.
-      assert (match ET_func (Tf [T_i32] []) with
-              | ET_func tf => function_type_eqb tf (Tf [T_i32] [])
-              | _ => false
-              end = true) by reflexivity. eassumption.
-      apply Forall2_nil. }
+   (* module import typing *) { admit. }
    (* module export typing *) {
       apply Forall2_app. (* exporting functions *) repeat rewrite map_app. apply Forall2_app. admit. admit.
       apply Forall2_cons. cbn. unfold is_true. admit.
@@ -4054,9 +4009,9 @@ Proof.
    (* external typing *) { admit. }
    (* alloc_module is true *) { admit. }
    (* instantiate globals *) { admit. }
-   (* instantiate elem *) { apply Forall2_nil. }
+   (* instantiate elem *) { admit. }
    (* instantiate data *) { apply Forall2_nil. }
-   (* check_bounds elem *) { reflexivity. }
+   (* check_bounds elem *) { admit. }
    (* check_bounds data *) { reflexivity. }
    (* check_start *) { cbn. admit. }
 Admitted.
@@ -4101,8 +4056,6 @@ Proof.
   destruct (create_fname_mapping nenv e) eqn:Hmapping. inv H0. simpl in H0. rename f into fname_mapping.
   destruct (generate_constr_pp_function cenv fname_mapping
        (collect_constr_tags e)) eqn:Hppconst. inv H0.
-  destruct (collect_function_signatures nenv e) eqn:Hfsigs. inv H0. rename l into sigs.
-  destruct (generate_indirection_functions sigs fname_mapping) eqn:Hind. inv H0. rename l into indfns.
   destruct (match e with
        | Efun fds _ =>
            (fix iter (fds0 : fundefs) : error (seq.seq wasm_function) :=
@@ -4156,8 +4109,6 @@ Proof.
   (* top exp is not Efun _ _ *)
   exfalso. assert (mainexpr = e). { destruct e; auto. exfalso. eauto. } subst mainexpr.
   assert (fns = []). { destruct e; inv Hfuns; auto. exfalso. eauto. } subst.
-  unfold collect_function_signatures in Hfsigs.
-  assert (sigs = []). { destruct e; inv Hfsigs; auto. exfalso. eauto. } subst. inv Hind. clear Hfsigs Hfuns.
   rewrite H0 in Hexpr.
 
   remember (create_local_variable_mapping nenv fenv e) as venv.
