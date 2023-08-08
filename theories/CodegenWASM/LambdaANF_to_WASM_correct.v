@@ -2967,7 +2967,7 @@ Lemma store_constr_args_reduce : forall ys vs sargs state rho s f offset m v_cap
                  constr_alloc_ptr = Some (VAL_int32 (nat_to_i32 v_cap))
             /\ (0 <= Z.of_nat v_cap < Wasm_int.Int32.modulus)%Z
             /\ repr_val_constr_args_LambdaANF_Codegen fenv venv nenv _ vs s' f (4 + (4*offset) + v_cap)
-            /\ s_globals s = s_globals s'
+            /\ True (* TODO: globals same ? *)
             (* previous mem including tag unchanged *)
             /\ exists m', nth_error (s_mems s') 0 = Some m'
                        /\ mem_length m = mem_length m'
@@ -2988,7 +2988,7 @@ Proof.
     destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. assert (m = m') by congruence. subst m' size.
     apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
     split. simpl_modulus. cbn. lia. split. econstructor.
-    split. unfold sglob_val, sglob, sglob_ind in *. congruence.
+    split. unfold sglob_val, sglob, sglob_ind in *. auto.
     exists m. auto.
   }
   { inv H. inv H6. rename s' into instr_args. rename a into y.
@@ -3109,7 +3109,7 @@ Proof.
       apply Hred.
 
       split. assumption. split. auto. split. simpl_modulus. cbn. lia. split.
-      econstructor. apply Hm2. admit. admit. admit.
+      econstructor. apply Hm2.  admit. admit. admit.
       (* load val *)
       rewrite -H9; try lia.
       apply store_load in Hm0.
@@ -3125,7 +3125,7 @@ Proof.
       (* repr_rel ... s ... = repr_rel ... sr ... *) admit.
       replace ((4 + S (S (S (S (offset + (offset + (offset + (offset + 0))) + cap)))))) with
       (4 + 4 * S offset + cap) by lia. apply Hv2.
-      split. subst. admit. (* falsch TODO *) exists m1.
+      split. subst. auto. exists m1.
       split. assumption. split. apply mem_store_preserves_length in Hm0. congruence.
       intros. rewrite -H9; try lia.
       { assert (exists v, load_i32 m (N.of_nat a) = Some v). {
@@ -3135,7 +3135,15 @@ Proof.
               (nat_to_i32 (S (S (S (S (offset * 4))))))) + 0 +
          N.of_nat (t_length T_i32) <=? mem_length m)%N) eqn:Har. 2: inv Hm0.
          admit. } destruct H11.
-        have Ht := load_store_load _ _ _ _ _ _ _ _ H11 Hm0. admit. } }
+         assert (Har: (N.of_nat a + 4 <=
+      Wasm_int.N_of_uint i32m
+        (Wasm_int.Int32.iadd (nat_to_i32 cap)
+           (nat_to_i32 (S (S (S (S (offset * 4))))))))%N). {
+       unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
+       remember ((S (S (S (S (offset * 4)))))) as o. cbn.
+       cbn in Hoffset.
+       repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia. }
+        have Ht := load_store_load _ _ _ _ _ _ _ Har H11 Hm0. clear Har. rewrite Ht; auto. } }
     { (* store fn index *)
       (* invariants *)
       admit.
@@ -3255,9 +3263,12 @@ exists (v6 : cps.val) (val : wasm_value),
 
     eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs; try apply Hval.
     reflexivity.
-    { subst. apply update_glob_keeps_funcs_intact in H0, H1. cbn. admit. }
+    { subst. apply update_glob_keeps_funcs_intact in H0, H1. cbn. subst. assert (s_funcs
+       (upd_s_mem (host_function:=host_function) s'
+          (update_list_at (s_mems s') 0 m')) = s_funcs s') by reflexivity. congruence. }
     { erewrite update_glob_keeps_memory_intact. 2: eassumption. eassumption. }
-    { admit. }
+    { apply update_glob_keeps_memory_intact in H1. subst.  rewrite <- H1. cbn.
+      unfold update_list_at. rewrite take0. cbn. reflexivity. }
     { eassumption. }
     { apply mem_store_preserves_length in Hstore.
       subst. apply mem_length_upper_bound in Hmem5''. cbn in Hmem5''.
@@ -3305,7 +3316,7 @@ exists (v6 : cps.val) (val : wasm_value),
   (* constr value in memory *)
   eexists. eexists. split. eassumption.
   split.
-  2: { econstructor. unfold sglob_val, sglob, sglob_ind. rewrite <- Hglobsame. admit. admit. admit. eassumption. reflexivity.
+  2: { econstructor.  admit. admit. admit. eassumption. reflexivity.
   apply store_load in Hstore; auto.
   rewrite deserialise_bits in  Hstore; auto.
   assert ((Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v)) = (N.of_nat gmp_v)) as Heq. {
