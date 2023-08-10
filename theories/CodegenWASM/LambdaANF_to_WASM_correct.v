@@ -3399,7 +3399,7 @@ Theorem repr_bs_LambdaANF_Codegen_related:
       (* protected_id_not_bound_id rho e ->
       unique_bindings_env rho e -> *)
       (* functions_not_bound p rho e -> (* function names in p/rho not bound in e *) *)
-      forall (instructions : list basic_instruction) (f : frame) (hs : host_state) (sr : store_record) (*(k : cont) (max_alloc : Z) (fu : function) *),
+      forall (hs : host_state) (sr : store_record)  (f : frame) (instructions : list basic_instruction) (*(k : cont) (max_alloc : Z) (fu : function) *),
 
         (* invariants *)
         INV sr f ->
@@ -3415,7 +3415,7 @@ Theorem repr_bs_LambdaANF_Codegen_related:
           result_val_LambdaANF_Codegen v sr' f'. (* value v is related to memory m'/lenv' *)
 Proof with eauto.
   intros rho v e n Hev.
-  induction Hev; intros instructions fr state sr Hinv Hrepr_e Hrel_m.
+  induction Hev; intros state sr fr instructions Hinv Hrepr_e Hrel_m.
   - (* Econstr *)
     (*  TODO. refuse to compile otherwise *)
     assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
@@ -3484,7 +3484,7 @@ Proof with eauto.
 
              exists v', w'. cbn.
            } *)
-      have IH := IHHev _ _ state _ Hinv_before_IH Hexp Hrel_m_v.
+      have IH := IHHev state _ _ _ Hinv_before_IH Hexp Hrel_m_v.
       destruct IH as [s_final [f_final [Hred_IH Hval]]].
 
       exists s_final. exists f_final. split.
@@ -3606,7 +3606,7 @@ Proof with eauto.
          have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [Hl _]]]]]]]].
          destruct (Hl _ _ H8). apply nth_error_Some. intro. congruence. }
 
-   have IH := IHHev e' (Build_frame (set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32)) (f_inst fr)) state sr Hinv' H7 Hrm. destruct IH as [sr' [f' [Hred Hval]]].
+   have IH := IHHev state sr (Build_frame (set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32)) (f_inst fr)) e' Hinv' H7 Hrm. destruct IH as [sr' [f' [Hred Hval]]].
 
     eexists. eexists. cbn. split.
     { (* take steps *)
@@ -3700,7 +3700,7 @@ Proof with eauto.
       assert (Hrel: rel_mem_LambdaANF_Codegen fenv venv nenv host_function e rho sr fr).
       { unfold rel_mem_LambdaANF_Codegen. split; intros... }
 
-      have IH := IHHev _ _ state _ Hinv H9  Hrel. destruct IH as [sr' [f' [Hstep Hval]]].
+      have IH := IHHev state _ _ _ Hinv H9  Hrel. destruct IH as [sr' [f' [Hstep Hval]]].
 
     eexists. eexists.
     split. {
@@ -4019,25 +4019,38 @@ Proof.
   destruct Hinst as [t_imps [t_exps [state [s' [ g_inits [e_offs [d_offs [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]]]]].
 Admitted.
 
+Ltac separate_instr :=
+  cbn;
+  repeat match goal with
+  |- context C [?x :: ?l] =>
+     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+  end.
+Ltac dostep :=
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])); first apply rt_step; separate_instr.
+
+(* only returns single list of instructions *)
+Ltac dostep' :=
+   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first  apply rt_step.
+
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 
 Corollary LambdaANF_Codegen_related :
   forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat), (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
-  forall (hs : host_state) module fenv venv exports mainidx function,
+  forall (hs : host_state) module fenv venv mainidx errMsg,
 
   (* evaluation of LambdaANF expression *)
   bstep_e (M.empty _) cenv rho e v n ->
   (* compilation function *)
   LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, venv) ->
+  lookup_function_var main_function_name fenv errMsg = Ret mainidx ->
   (* constructors welformed *)
   correct_cenv_of_exp cenv e ->
   (* expression must be closed *)
   (~ exists x, occurs_free e x) ->
   (* TODO: imports *)
-  exists sr fr,
+  exists sr fr exports,
   instantiate _ host_instance empty_store_record module [] ((sr, (f_inst fr), exports), None) /\
-  List.nth_error sr.(s_funcs) mainidx = Some function /\
   (* *)
   exists (sr' : store_record),
        reduce_trans (hs, sr,  (Build_frame [] (f_inst fr)), [ AI_basic (BI_call mainidx) ])
@@ -4045,10 +4058,16 @@ Corollary LambdaANF_Codegen_related :
 
        result_val_LambdaANF_Codegen fenv venv nenv _ v sr' fr.
 Proof.
-  intros. eexists. eexists. intros. have HL2WASM := H0. unfold LambdaANF_to_WASM in H0.
-  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv H0. simpl in H0. rename f into fname_mapping.
+  intros ? ? ? ? ? ? ? ? ? ? Hstep LANF2WASM Hmainidx Hcenv Hfreevars.
+  have Hinstantiate := module_instantiatable _ _ _ _ LANF2WASM.
+  destruct Hinstantiate as [sr [f [exports Hinst]]].
+  assert (Hinv : INV venv nenv _ sr f). { eapply module_instantiate_INV; eauto. }
+  exists sr, f, exports. split. assumption. clear Hinst.
+
+  unfold LambdaANF_to_WASM in LANF2WASM.
+  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv LANF2WASM. simpl in LANF2WASM. rename f0 into fname_mapping.
   destruct (generate_constr_pp_function cenv fname_mapping
-       (collect_constr_tags e)) eqn:Hppconst. inv H0.
+       (collect_constr_tags e)) eqn:Hppconst. inv LANF2WASM.
   destruct (match e with
        | Efun fds _ =>
            (fix iter (fds0 : fundefs) : error (seq.seq wasm_function) :=
@@ -4071,47 +4090,42 @@ Proof.
               | Fnil => Ret []
               end) fds
        | _ => Ret []
-       end) eqn:Hfuns. inv H0. rename l into fns.
+       end) eqn:Hfuns. inv LANF2WASM. rename l into fns.
        destruct ( translate_exp nenv cenv (create_local_variable_mapping nenv fname_mapping e) fname_mapping
        (match e with
           | Efun _ exp => exp
-          | _ => e end)) eqn:Hexpr. inv H0. rename l into wasm_main_instr.
+          | _ => e end)) eqn:Hexpr. inv LANF2WASM. rename l into wasm_main_instr.
   destruct (lookup_function_var main_function_name fname_mapping
-         "main function") eqn:Hfmain. inv H0. inv H0.
+         "main function") eqn:Hfmain. inv LANF2WASM. inv LANF2WASM.
        remember (match e with
           | Efun _ exp => exp
           | _ => e end) as mainexpr.
 
   remember (create_local_variable_mapping nenv fenv e) as venv.
-  have Hinstantiate := module_instantiatable _ _ _ _ HL2WASM.
-  destruct Hinstantiate as [sr [inst [exports' [Hinst HINV2]]]].
 
   have Heqdec := inductive_eq_dec e. destruct Heqdec.
-  destruct e0 as [fds' [e' He]]. subst.
+  destruct e0 as [fds' [e' He]]. subst e.
   (* top exp is Efun _ _ *)
-  exfalso. inv H. (* TODO *)
-  remember (Efun fds' e') as e.
-  remember (create_local_variable_mapping nenv fenv e) as venv.
 
-  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env _ rep_env _ host_instance _ _ _ _ H7 wasm_main_instr.
-  edestruct HMAIN.
-  (* program, relict, should be removed *) admit.
-  (* INVariants *) admit.
-  eapply translate_exp_correct. eapply Forall_constructors_subterm in H1. eassumption. subst. constructor. apply dsubterm_fds2. assumption. split; intros. admit. admit. admit.
+  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env rep_env _ host_instance _ _ _ _ Hstep hs _ _ wasm_main_instr Hinv.
+  admit.
 
   (* top exp is not Efun _ _ *)
-  exfalso. assert (mainexpr = e). { destruct e; auto. exfalso. eauto. } subst mainexpr.
+  assert (mainexpr = e). { destruct e; auto. exfalso. eauto. } subst mainexpr.
   assert (fns = []). { destruct e; inv Hfuns; auto. exfalso. eauto. } subst.
-  rewrite H0 in Hexpr.
+  rewrite H in Hexpr.
 
   remember (create_local_variable_mapping nenv fenv e) as venv.
-  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env _ rep_env _ host_instance rho _ _ _ H wasm_main_instr.
-  edestruct HMAIN.
-  (* program, relict, should be removed *) admit.
-  (* INVariants  rw *) admit.
-  eapply translate_exp_correct. eassumption. assumption. split; intros.
-  (* absurd: no functions -> rho ! x = None *)
-  admit. admit. admit.
+  eapply translate_exp_correct in Hexpr; auto.
+
+  assert (Hrelm : rel_mem_LambdaANF_Codegen fenv venv nenv
+          host_function e rho sr f). {
+    split. admit. (* absurd, no functions *)
+    intros. exfalso. eauto. }
+  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env rep_env _ host_instance rho _ _ _ Hstep hs _ _ wasm_main_instr Hinv Hexpr Hrelm.
+  destruct HMAIN as [s' [f' [Hred Hval]]]. cbn.
+  exists s'. split.
+  dostep'. apply r_call.
 Admitted.
 
 (*
