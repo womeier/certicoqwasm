@@ -4001,12 +4001,92 @@ Proof.
       apply Forall2_nil. }
    (* external typing *) { admit. }
    (* alloc_module is true *) { admit. }
-   (* instantiate globals *) { admit. }
-   (* instantiate elem *) { admit. }
+   (* instantiate globals *) { unfold instantiate_globals.
+                               apply Forall2_cons. apply rt_refl.
+                               apply Forall2_cons. apply rt_refl.
+                               apply Forall2_cons. apply rt_refl.
+                               apply Forall2_cons. apply rt_refl.
+                               apply Forall2_nil. }
+   (* instantiate elem *) { unfold instantiate_elem. cbn. admit. }
    (* instantiate data *) { apply Forall2_nil. }
    (* check_bounds elem *) { admit. }
    (* check_bounds data *) { reflexivity. }
    (* check_start *) { cbn. admit. }
+Admitted.
+
+Lemma eqseq_true {T : eqType} : forall (l1 l2 : seq.seq T), eqseq l1 l2 = true -> l1 = l2.
+Proof.
+  intros. rewrite eqseqE in H. (*
+   rewrite eqseq_all in H. rewrite all2E in H. cbn in H.
+  generalize dependent l2.
+  induction l1; intros; destruct l2; auto.
+  - inv H.
+  - inv H. cbn in H.
+    apply andb_prop in H. destruct H. apply andb_prop in H0. destruct H0. assert (H': eq_op a s = false). have H' := eqbE. rewrite eqE in H0. Check Equality.op. rewrite eq_true in H0. cbn in H'. edestruct (eqtype.eqbE true true). in H0. rewrite eqtype.eqbE in H0.
+    rewrite eqE in H0. rewrite
+    assert (a = s). Search "eq_dec". rewrite eqE in H0. unfold Equality.op in H0. cbn in H0. destruct (Equality.class T). cbn in H0. Check op. unfold op in H0. edestruct eq_dec.  unfold eq_op in *. Search "eq_op". rewrite <- eqbE in H. cbn in H. *)
+Admitted.
+
+Lemma add_funcs_effect : forall s' s'' l l1 l2 f,
+    fold_left
+          (fun '(s, ys) (x : module_func) =>
+           (add_func host_function s
+              (FC_func_native (f_inst f)
+                 (nth match modfunc_type x with
+                      | Mk_typeidx n => n
+                      end (inst_types (f_inst f)) (Tf [] []))
+                 (modfunc_locals x) (modfunc_body x)),
+           (Mk_funcidx (Datatypes.length (s_funcs s)) :: ys)%SEQ)) l
+          (s', l1) = (s'', l2) -> (s_globals s' = s_globals s'') /\ (s_mems s' = s_mems s'') /\
+                                  (s_tables s' = s_tables s'') /\
+        (s_funcs s'' = (s_funcs s') ++
+        (map (fun a =>
+               FC_func_native (f_inst f)
+                  (nth match modfunc_type a with
+                    | Mk_typeidx n => n
+                    end (inst_types (f_inst f)) (Tf [] []))
+                    (modfunc_locals a) (modfunc_body a)) l ))%list.
+Proof.
+  intros. generalize dependent l1. revert s' s'' f l2.
+  induction l; intros.
+  - inv H. cbn. rewrite app_nil_r. auto.
+  - cbn in H. apply IHl in H.
+    destruct H as [H1 [H2 [H3 H4]]]. rewrite -H1 -H2 -H3 H4.
+    rewrite -app_assoc. auto.
+Qed.
+
+Lemma reduce_forall_elem_effect : forall fns l f s state,
+  Forall2 (fun (e : module_element) (c : Wasm_int.Int32.T) =>
+                  opsem.reduce_trans (host_instance:=host_instance)
+                    (state, s, {| f_locs := []; f_inst := f_inst f |},
+                    to_e_list (modelem_offset e))
+                    (state, s, {| f_locs := []; f_inst := f_inst f |},
+                    [AI_basic (BI_const (VAL_int32 c))]))
+                 (map
+                    (fun f : wasm_function =>
+                     {|
+                       modelem_table := Mk_tableidx 0;
+                       modelem_offset :=
+                         [BI_const (nat_to_value (LambdaANF_to_WASM.var f))];
+                       modelem_init := [Mk_funcidx (LambdaANF_to_WASM.var f)]
+                     |}) fns) l -> l = map (fun f => nat_to_i32 (LambdaANF_to_WASM.var f)) fns.
+Proof.
+  induction fns; intros.
+  - now inv H.
+  - cbn in H. inv H. cbn in H2. apply clos_rt_rt1n in H2. inv H2.
+    { cbn. f_equal. eapply IHfns; eassumption. }
+    { destruct y0 as [[[? ?] ?] ?]. inv H. inv H1.
+      { destruct vs; inv H. destruct vs; inv H6. }
+      { destruct vs; inv H. destruct vs; inv H6. }
+      { exfalso. induction lh. unfold lfilled, lfill in H2.
+        destruct (const_list l). cbn in H2. destruct l. inv H2. destruct l; inv H2.
+        apply andb_prop in H3. destruct H3 as [? Hcontra]. inv Hcontra.
+        apply andb_prop in H3. destruct H3 as [? Hcontra]. inv Hcontra.
+        inv H2. admit. }
+      { destruct vcs; inv H1. destruct vcs; inv H5. }
+      { destruct vcs; inv H1. destruct vcs; inv H5. }
+      { destruct vcs; inv H1. destruct vcs; inv H5. }
+      { admit. }
 Admitted.
 
 Lemma module_instantiate_INV : forall e module fenv venv sr f exports,
@@ -4016,8 +4096,52 @@ Lemma module_instantiate_INV : forall e module fenv venv sr f exports,
 Proof.
   intros e module fenv venv s f exports Hcompile Hinst.
   unfold instantiate in Hinst.
-  destruct Hinst as [t_imps [t_exps [state [s' [ g_inits [e_offs [d_offs [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]]]]].
+  unfold LambdaANF_to_WASM in Hcompile.
+  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv Hcompile. simpl in Hcompile.
+  destruct (generate_constr_pp_function cenv f0 (collect_constr_tags e)) eqn:HgenPP. inv Hcompile.
+  destruct (match e with | Efun fds _ => _ | _ => _ end) eqn:HtransFns. inv Hcompile.
+  destruct (translate_exp nenv cenv (create_local_variable_mapping nenv f0 e) _ _) eqn:Hexpr. inv Hcompile.
+  destruct (lookup_function_var main_function_name f0 "main function") eqn:HmainFname. inv Hcompile.
+  inv Hcompile. unfold INV. cbn in Hinst. unfold is_true in *.
+  destruct Hinst as [t_imps [t_exps [state [s' [ g_inits [e_offs [d_offs
+      [Hmodule [Himports [HallocModule [HinstGlobals [HinstElem
+         [HinstData [HboundsElem [HboundsData [_ Hinst]]]]]]]]]]]]]]]].
+  rename l into fns.
+  (* module typing *) clear Hmodule.
+  (* globals red. to const *)
+  unfold instantiate_globals in HinstGlobals. cbn in HinstGlobals.
+  inv HinstGlobals. inv H3. inv H5. inv H6. inv H7.
+  (* data offsets of mem init. red. to const, empty list *) inv HinstData.
+  (* elem vals red. to const *)
+  unfold instantiate_elem in HinstElem. cbn in HinstElem. rewrite map_app in HinstElem. cbn in HinstElem.
+  apply Forall2_app_inv_l in HinstElem. destruct HinstElem as [l1' [l2' [HinstElemFns [HinstElem ?]]]].
+  subst e_offs. inv HinstElem. inv H7. inv H9. cbn in Hinst. rewrite map_cat in Hinst.
+  rewrite map_app in Hinst. cbn in Hinst. unfold init_tabs, init_tab in Hinst. cbn in Hinst.
+  unfold store_record_eqb in Hinst. destruct (store_record_eq_dec) eqn:Heqn; cbn in Hinst. 2: inv Hinst.
+  unfold alloc_module, alloc_funcs, alloc_globs, add_mem, add_table, alloc_Xs in HallocModule.
+  cbn in HallocModule. repeat rewrite map_app in HallocModule. cbn in HallocModule.
+  destruct (fold_left _ _) eqn:HaddTab.
+  (* TODO: effect HaddTab fold_left *)
+  destruct (fold_left _ ((map _ fns) ++ _ )) eqn:HaddF.
+  unfold add_glob in HallocModule. cbn in HallocModule.
+  unfold store_record_eqb in HallocModule.
+  destruct (store_record_eq_dec s'); cbn in HallocModule. 2: inv HallocModule.
+  repeat (apply andb_prop in HallocModule;
+           destruct HallocModule as [HallocModule ?F]).
+  apply eqseq_true in F0,F1,F2,F3,F, HallocModule.
+  apply add_funcs_effect in HaddF. cbn in HaddF. destruct HaddF as [Hs01 [Hs02 [Hs03 Hs04]]].
+  rewrite <- Hs01 in e1, F0. rewrite <- Hs02 in e1, F1.
+  rewrite <- Hs03 in e1, F2. rewrite Hs04 in e1, F3. cbn in F0, F1, F2, F3.
+  clear Hs01 Hs02 Hs03 Hs04 s0.
+  cbn in Hinst. unfold init_tabs, init_mems, init_mem in Hinst. cbn in Hinst.
+  clear HboundsData HboundsElem HtransFns. (* clear for now *)
+  subst.
+  (* INV globals *)
+  unfold INV_result_var_writable. unfold global_var_w, supdate_glob, supdate_glob_s. split; intros.
+  cbn. rewrite F0. cbn.
+
 Admitted.
+
 
 Ltac separate_instr :=
   cbn;
@@ -4120,8 +4244,10 @@ Proof.
 
   assert (Hrelm : rel_mem_LambdaANF_Codegen fenv venv nenv
           host_function e rho sr f). {
-    split. admit. (* absurd, no functions *)
-    intros. exfalso. eauto. }
+    split.
+    { intros. inv Hfuns. admit. (* absurd, no functions *)
+    }
+    { intros. exfalso. eauto. }}
   have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv venv nenv finfo_env rep_env _ host_instance rho _ _ _ Hstep hs _ _ wasm_main_instr Hinv Hexpr Hrelm.
   destruct HMAIN as [s' [f' [Hred Hval]]]. cbn.
   exists s'. split.
