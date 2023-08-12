@@ -3932,6 +3932,22 @@ Import Common.Common Common.compM Common.Pipeline_utils.
 Import ExtLib.Structures.Monad.
 Import MonadNotation.
 
+
+Ltac simpl_modulus := unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat.
+
+Ltac separate_instr :=
+  cbn;
+  repeat match goal with
+  |- context C [?x :: ?l] =>
+     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+  end.
+Ltac dostep :=
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])); first apply rt_step; separate_instr.
+
+(* only returns single list of instructions *)
+Ltac dostep' :=
+   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first  apply rt_step.
+
 Definition empty_store_record : store_record := {|
     s_funcs := nil;
     s_tables := nil;
@@ -4055,6 +4071,67 @@ Proof.
     rewrite -app_assoc. auto.
 Qed.
 
+
+(* TODO: generalize table initialization *)
+Lemma add_tab_effect : forall l s s' f,
+  fold_left
+            (fun (s : datatypes.store_record host_function) '(e_ind, e) =>
+             let
+             '{| table_data := tab_e; table_max_opt := maxo |} :=
+              nth
+                (nth match modelem_table e with
+                     | Mk_tableidx i => i
+                     end (inst_tab (f_inst f)) 0) (datatypes.s_tables s)
+                dummy_table in
+              {|
+                s_funcs := datatypes.s_funcs s;
+                s_tables :=
+                  insert_at
+                    {|
+                      table_data :=
+                        (firstn e_ind tab_e ++
+                         map
+                           (fun i : funcidx =>
+                            nth_error (inst_funcs (f_inst f))
+                              match i with
+                              | Mk_funcidx j => j
+                              end) (modelem_init e) ++
+                         skipn
+                           (ssrnat.addn_rec e_ind
+                              (Datatypes.length
+                                 (map
+                                    (fun i : funcidx =>
+                                     nth_error (inst_funcs (f_inst f))
+                                       match i with
+                                       | Mk_funcidx j => j
+                                       end) (modelem_init e)))) tab_e)%list;
+                      table_max_opt := maxo
+                    |}
+                    (nth match modelem_table e with
+                         | Mk_tableidx i => i
+                         end (inst_tab (f_inst f)) 0) (datatypes.s_tables s);
+                s_mems := datatypes.s_mems s;
+                s_globals := datatypes.s_globals s
+              |}) l s = s' ->
+                s_globals s = s_globals s' /\ s_mems s = s_mems s' /\ s_funcs s = s_funcs s'.
+Proof.
+  induction l; intros.
+  - cbn in H. inv H. auto.
+  - cbn in H. apply IHl in H. cbn in H. destruct H as [H1 [H2 H3]].
+    rewrite -H1 -H2 -H3. cbn.
+    destruct a. destruct (nth
+      (nth match modelem_table m with
+           | Mk_tableidx i => i
+           end (inst_tab (f_inst f)) 0) (s_tables s) dummy_table). cbn. auto.
+Qed.
+
+
+Lemma reduce_trans_refl_eq : forall state s f c c',
+   opsem.reduce_trans (host_instance:=host_instance)
+                    (state, s, f, [AI_basic (BI_const c)])
+                    (state, s, f, [AI_basic (BI_const c')]) -> c = c'.
+Proof. Admitted.
+
 Lemma reduce_forall_elem_effect : forall fns l f s state,
   Forall2 (fun (e : module_element) (c : Wasm_int.Int32.T) =>
                   opsem.reduce_trans (host_instance:=host_instance)
@@ -4089,17 +4166,24 @@ Proof.
       { admit. }
 Admitted.
 
-Lemma module_instantiate_INV : forall e module fenv venv sr f exports,
+Fixpoint fds_length (fds : fundefs) : nat :=
+  match fds with
+  | Fnil => 0
+  | Fcons _ _ _ _ fds' => 1 + fds_length fds'
+  end.
+
+Lemma module_instantiate_INV : forall e (fds : fundefs) module fenv venv sr f exports,
+  (Z.of_nat (match e with | Efun fds _ => fds_length fds | _ => 0 end) + 2 < max_num_functions)%Z ->
   LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, venv) ->
   instantiate host_function host_instance empty_store_record module [] (sr, (f_inst f), exports, None) ->
   INV venv nenv _ sr f.
 Proof.
-  intros e module fenv venv s f exports Hcompile Hinst.
+  intros e fds module fenv venv s f exports HfdsLength Hcompile Hinst.
   unfold instantiate in Hinst.
   unfold LambdaANF_to_WASM in Hcompile.
   destruct (create_fname_mapping nenv e) eqn:Hmapping. inv Hcompile. simpl in Hcompile.
   destruct (generate_constr_pp_function cenv f0 (collect_constr_tags e)) eqn:HgenPP. inv Hcompile.
-  destruct (match e with | Efun fds _ => _ | _ => _ end) eqn:HtransFns. inv Hcompile.
+  destruct (match e with | Efun fds _ => _ | _ => Ret [] end) eqn:HtransFns. inv Hcompile.
   destruct (translate_exp nenv cenv (create_local_variable_mapping nenv f0 e) _ _) eqn:Hexpr. inv Hcompile.
   destruct (lookup_function_var main_function_name f0 "main function") eqn:HmainFname. inv Hcompile.
   inv Hcompile. unfold INV. cbn in Hinst. unfold is_true in *.
@@ -4118,10 +4202,11 @@ Proof.
   subst e_offs. inv HinstElem. inv H7. inv H9. cbn in Hinst. rewrite map_cat in Hinst.
   rewrite map_app in Hinst. cbn in Hinst. unfold init_tabs, init_tab in Hinst. cbn in Hinst.
   unfold store_record_eqb in Hinst. destruct (store_record_eq_dec) eqn:Heqn; cbn in Hinst. 2: inv Hinst.
-  unfold alloc_module, alloc_funcs, alloc_globs, add_mem, add_table, alloc_Xs in HallocModule.
+  unfold alloc_module, alloc_funcs, alloc_globs, add_mem, alloc_Xs in HallocModule.
   cbn in HallocModule. repeat rewrite map_app in HallocModule. cbn in HallocModule.
   destruct (fold_left _ _) eqn:HaddTab.
-  (* TODO: effect HaddTab fold_left *)
+  destruct (add_tab_effect _ _ _ _ HaddTab) as [HT0 [HT1 HT2]]. cbn in HT0, HT1, HT2.
+   subst s_globals s_mems s_funcs.
   destruct (fold_left _ ((map _ fns) ++ _ )) eqn:HaddF.
   unfold add_glob in HallocModule. cbn in HallocModule.
   unfold store_record_eqb in HallocModule.
@@ -4134,27 +4219,43 @@ Proof.
   rewrite <- Hs03 in e1, F2. rewrite Hs04 in e1, F3. cbn in F0, F1, F2, F3.
   clear Hs01 Hs02 Hs03 Hs04 s0.
   cbn in Hinst. unfold init_tabs, init_mems, init_mem in Hinst. cbn in Hinst.
-  clear HboundsData HboundsElem HtransFns. (* clear for now *)
+  clear HboundsData HboundsElem. (* clear for now *)
   subst.
+
   (* INV globals *)
-  unfold INV_result_var_writable. unfold global_var_w, supdate_glob, supdate_glob_s. split; intros.
-  cbn. rewrite F0. cbn.
-
+  unfold INV_result_var_writable, INV_result_var_out_of_mem_writable, INV_global_mem_ptr_writable,
+  INV_constr_alloc_ptr_writable. unfold global_var_w, supdate_glob, supdate_glob_s. cbn.
+  rewrite F0.
+  split. (* res_var_w *) eexists. reflexivity.
+  split. (* res_var_M_w *) eexists. reflexivity.
+  split. (* res_var_M_0 *) unfold INV_result_var_out_of_mem_is_zero. unfold sglob_val, sglob.
+  cbn. rewrite F0. cbn. admit. (* y2 should be 0 *)
+  split. (* gmp_w *) eexists. reflexivity.
+  split. (* cap_w *) eexists. reflexivity.
+  (* globals mut i32 *)
+  split. unfold INV_globals_all_mut_i32, globals_all_mut_i32. intros. cbn. cbn in H. subst.
+  { destruct g. inv H. admit. destruct g. inv H. admit.
+    destruct g. inv H. admit. destruct g. inv H. admit.
+    destruct g; inv H. }
+  split. (* linmem *)
+  { unfold INV_linear_memory. unfold smem_ind. cbn. rewrite F1.
+    split; auto. eexists; auto. split. reflexivity. unfold mem_mk. cbn. unfold mem_size, mem_length, memory_list.mem_length. cbn. eexists. split. reflexivity.
+    split; auto. unfold max_mem_pages. rewrite repeat_length. cbn.
+    replace (N.of_nat (Pos.to_nat 65536)) with 65536%N by lia. cbn. lia. }
+   split. (* local vars exist *)
+   unfold INV_local_vars_exist. intros. inv H.
+   admit.
+   (* gmp in linmem *)
+   split. unfold INV_global_mem_ptr_in_linear_memory.
+   unfold sglob_val, sglob. cbn. intros. rewrite F0 in H0. cbn in H0.
+   admit. (* y should be 0 *)
+   (* num functions upper bound *)
+   { unfold INV_num_functions_upper_bound.
+     rewrite map_length. cbn. rewrite app_length. rewrite map_length. cbn.
+     destruct e; try (inv HtransFns; simpl_modulus; cbn; lia).
+     assert (Hlen: fds_length f0 = length fns). { admit. } rewrite -Hlen.
+     unfold max_num_functions in HfdsLength. simpl_modulus. cbn. lia. }
 Admitted.
-
-
-Ltac separate_instr :=
-  cbn;
-  repeat match goal with
-  |- context C [?x :: ?l] =>
-     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-  end.
-Ltac dostep :=
-  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])); first apply rt_step; separate_instr.
-
-(* only returns single list of instructions *)
-Ltac dostep' :=
-   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first  apply rt_step.
 
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
@@ -4185,7 +4286,8 @@ Proof.
   intros ? ? ? ? ? ? ? ? ? ? Hstep LANF2WASM Hmainidx Hcenv Hfreevars.
   have Hinstantiate := module_instantiatable _ _ _ _ LANF2WASM.
   destruct Hinstantiate as [sr [f [exports Hinst]]].
-  assert (Hinv : INV venv nenv _ sr f). { eapply module_instantiate_INV; eauto. }
+  assert (Hinv : INV venv nenv _ sr f). { eapply module_instantiate_INV; eauto. apply Fnil.
+                                          admit. (* TODO: enforce fds + 2 < max_num_functions *) }
   exists sr, f, exports. split. assumption. clear Hinst.
 
   unfold LambdaANF_to_WASM in LANF2WASM.
