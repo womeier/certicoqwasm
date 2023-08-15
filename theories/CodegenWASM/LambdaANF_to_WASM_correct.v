@@ -4107,18 +4107,18 @@ Proof.
 Qed.
 
 
-Lemma reduce_trans_const_eq : forall state s f c c',
+Lemma reduce_trans_const_eq : forall state state' s s' f f' c c',
    opsem.reduce_trans (host_instance:=host_instance)
                     (state, s, f, [AI_basic (BI_const c)])
-                    (state, s, f, [AI_basic (BI_const c')]) -> c = c'.
+                    (state', s', f', [AI_basic (BI_const c')]) -> c = c'.
 Proof.
   intros.
   remember (state, s, f, [AI_basic (BI_const c)]) as x.
-  remember (state, s, f, [AI_basic (BI_const c')]) as x'.
-  generalize dependent c. generalize dependent c'. revert f s state.
+  remember (state', s', f', [AI_basic (BI_const c')]) as x'.
+  generalize dependent c. generalize dependent c'. revert f f' s s' state state'.
   apply clos_rt_rt1n in H. induction H; intros; subst; try inv Heqx; auto.
   apply clos_rt1n_rt in H0.
-  destruct y as [[[state' s'] f'] instr]. inv H.
+  destruct y as [[[state'' s''] f''] instr]. inv H.
   { inv H1. destruct vs; inv H. destruct vs; inv H5.
     destruct vs; inv H. destruct vs; inv H5.
     unfold lfilled, lfill in H2. destruct lh; try (by inv H2).
@@ -4127,7 +4127,16 @@ Proof.
   { destruct vcs; inv H1. destruct vcs; inv H4. }
   { destruct vcs; inv H1. destruct vcs; inv H4. }
   { destruct vcs; inv H1. destruct vcs; inv H4. }
-  { admit. }
+  { generalize dependent lh. generalize dependent es. revert es'.
+    induction k; intros.
+    { destruct lh; cbn in H2, H3. 2: inv H3.
+      unfold lfilled, lfill in H2, H3.
+      destruct (const_list l). 2: inv H2.
+      apply eqseq_true in H2, H3.
+      destruct es, es'. cbn in H2, H3.
+      { eapply IHclos_refl_trans_1n; eauto. subst. now rewrite -H2. }
+      (* not sure if true *) admit.
+  (* IH *)
 Admitted.
 
 Lemma reduce_forall_elem_effect : forall fns l f s state,
@@ -4157,6 +4166,30 @@ Fixpoint fds_length (fds : fundefs) : nat :=
   | Fnil => 0
   | Fcons _ _ _ _ fds' => 1 + fds_length fds'
   end.
+
+Lemma fds_length_length :
+  forall fenv f0 fns,
+  (fix iter (fds : fundefs) : error (seq.seq wasm_function) :=
+               match fds with
+               | Fcons x _ xs e fds' =>
+                   match translate_function nenv cenv fenv x xs e with
+                   | Err t => fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
+                   | Ret a => fun m2 : wasm_function -> error (seq.seq wasm_function) => m2 a
+                   end
+                     (fun fn : wasm_function =>
+                      match iter fds' with
+                      | Err t =>
+                          fun _ : seq.seq wasm_function -> error (seq.seq wasm_function) => Err t
+                      | Ret a =>
+                          fun m2 : seq.seq wasm_function -> error (seq.seq wasm_function) => m2 a
+                      end (fun following : seq.seq wasm_function => Ret (fn :: following)%SEQ))
+               | Fnil => Ret []
+               end) f0 = Ret fns -> fds_length f0 = length fns.
+Proof.
+  intro fenv. induction f0; intros. 2: { now inv H. }
+  destruct (translate_function nenv cenv fenv v l e). inv H.
+  destruct (_ f0). inv H. destruct fns; inv H. cbn. now rewrite -IHf0.
+Qed.
 
 Lemma module_instantiate_INV : forall e (fds : fundefs) module fenv lenv sr f exports,
   (Z.of_nat (match e with | Efun fds _ => fds_length fds | _ => 0 end) + 2 < max_num_functions)%Z ->
@@ -4243,7 +4276,7 @@ Proof.
    { unfold INV_num_functions_upper_bound.
      rewrite map_length. cbn. rewrite app_length. rewrite map_length. cbn.
      destruct e; try (inv HtransFns; simpl_modulus; cbn; lia).
-     assert (Hlen: fds_length f0 = length fns). { admit. } rewrite -Hlen.
+     erewrite <- fds_length_length; eauto.
      unfold max_num_functions in HfdsLength. simpl_modulus. cbn. lia. }
 Admitted.
 
