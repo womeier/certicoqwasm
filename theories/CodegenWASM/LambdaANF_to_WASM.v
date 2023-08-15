@@ -35,16 +35,16 @@ Module M_string := FMapAVL.Make MyStringOT.
 
 
 (* TODO: map var/fn ids to new ids instead of string intermediate *)
-Definition var_env := M_string.t nat.    (* maps variable names to their id (id=index in list of vars) *)
-Definition fname_env := M_string.t nat.  (* maps function export names to their id (id=index in list of functions) *)
+Definition localvar_env := M_string.t nat.  (* maps variable names to their id (id=index in list of vars) *)
+Definition fname_env := M_string.t nat.     (* maps function export names to their id (id=index in list of functions) *)
 
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
 
 (* global vars *)
-Definition global_mem_ptr : immediate := 0.
-Definition constr_alloc_ptr : immediate := 1. (* ptr to beginning of constr alloc in linear mem *)
-Definition result_var : immediate := 2. (* final result *)
+Definition global_mem_ptr    : immediate := 0.
+Definition constr_alloc_ptr  : immediate := 1. (* ptr to beginning of constr alloc in linear mem *)
+Definition result_var        : immediate := 2. (* final result *)
 Definition result_out_of_mem : immediate := 3.
 
 (* target type for generating functions, contains more fields than the one from Wasm *)
@@ -78,15 +78,15 @@ Definition N_to_value (n : N) :=
 Definition translate_var_to_string (nenv : name_env) (v : cps.var) : string :=
   "$" ++ show_tree (show_var nenv v).
 
-Definition lookup_local_var (name : string) (venv : var_env) (err : string) : error immediate :=
-  match M_string.find name venv with
+Definition lookup_local_var (name : string) (lenv : localvar_env) (err : string) : error immediate :=
+  match M_string.find name lenv with
   | Some n => Ret n
   | None => Err ("expected to find id for variable " ++ name ++ " in var mapping: " ++ err)
   end.
 
-Definition translate_var (nenv : name_env) (venv : var_env) (v : cps.var) (err_location : string): error immediate :=
+Definition translate_var (nenv : name_env) (lenv : localvar_env) (v : cps.var) (err_location : string): error immediate :=
   let name := translate_var_to_string nenv v in
-  lookup_local_var name venv err_location.
+  lookup_local_var name lenv err_location.
 
 Definition lookup_function_var (name : string) (fenv : fname_env) (err : string): error immediate :=
   match M_string.find name fenv with
@@ -206,13 +206,13 @@ Definition is_function_name (fenv : fname_env) (v : string) : bool :=
   | None => false
   end.
 
-Definition translate_local_var_read (nenv : name_env) (venv : var_env) (fenv : fname_env) (v : cps.var) : error basic_instruction :=
+Definition translate_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (v : cps.var) : error basic_instruction :=
   let var_name := translate_var_to_string nenv v in
   if is_function_name fenv var_name
     then var <- lookup_function_var var_name fenv "translate local var read: obtaining function id" ;;
          Ret (BI_const (nat_to_value var)) (* passing id of function <var_name> *)
 
-    else var <- lookup_local_var var_name venv "translate_local_var_read: normal var";;
+    else var <- lookup_local_var var_name lenv "translate_local_var_read: normal var";;
          Ret (BI_get_local var).
 
 
@@ -220,23 +220,23 @@ Definition translate_local_var_read (nenv : name_env) (venv : var_env) (fenv : f
 
 (* every function has type: T_i32^{#args} -> [] *)
 
-Fixpoint pass_function_args (nenv : name_env) (venv: var_env) (fenv : fname_env) (args : list cps.var) : error (list basic_instruction) :=
+Fixpoint pass_function_args (nenv : name_env) (lenv: localvar_env) (fenv : fname_env) (args : list cps.var) : error (list basic_instruction) :=
   match args with
   | [] => Ret []
   | a0 :: args' =>
-      a0' <- translate_local_var_read nenv venv fenv a0;;
-      args'' <- pass_function_args nenv venv fenv args';;
+      a0' <- translate_local_var_read nenv lenv fenv a0;;
+      args'' <- pass_function_args nenv lenv fenv args';;
       Ret (a0' :: args'')
   end.
 
-Definition translate_call (nenv : name_env) (venv : var_env) (fenv : fname_env) (f : cps.var) (args : list cps.var) : error (list basic_instruction) :=
-  instr_pass_params <- pass_function_args nenv venv fenv args;;
+Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (f : cps.var) (args : list cps.var) : error (list basic_instruction) :=
+  instr_pass_params <- pass_function_args nenv lenv fenv args;;
   let arg_types := map (fun _ => T_i32) args in
   let f_var_string := translate_var_to_string nenv f in
   instr_fidx <- (if is_function_name fenv f_var_string
                  then f_var <- lookup_function_var f_var_string fenv "direct function call";;
                       Ret (BI_const (nat_to_value f_var))
-                 else f_var <- lookup_local_var f_var_string venv ("ind call from var: " ++ f_var_string);;
+                 else f_var <- lookup_local_var f_var_string lenv ("ind call from var: " ++ f_var_string);;
                       Ret (BI_get_local f_var));;
 
   Ret (instr_pass_params ++ [instr_fidx] ++ [BI_call_indirect (length args)]). (* all fns return nothing, typeidx = num args *)
@@ -280,11 +280,11 @@ Definition grow_memory_if_necessary (required_bytes : N) : list basic_instructio
   ].
 
 (* store argument pointers in memory *)
-Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_env) (args : list cps.var) (current : nat) : error (list basic_instruction) :=
+Fixpoint set_constructor_args (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (args : list cps.var) (current : nat) : error (list basic_instruction) :=
   match args with
   | [] => Ret []
-  | y :: ys => read_y <- translate_local_var_read nenv venv fenv y;;
-               remaining <- set_constructor_args nenv venv fenv ys (1 + current);;
+  | y :: ys => read_y <- translate_local_var_read nenv lenv fenv y;;
+               remaining <- set_constructor_args nenv lenv fenv ys (1 + current);;
 
                Ret ([ BI_get_global constr_alloc_ptr
                     ; BI_const (nat_to_value (4 * (1 + current))) (* plus 1 : skip tag *)
@@ -302,9 +302,9 @@ Fixpoint set_constructor_args (nenv : name_env) (venv : var_env) (fenv : fname_e
   end.
 
 
-Definition store_constructor (nenv : name_env) (cenv : ctor_env) (venv : var_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
+Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localvar_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
   let ctor_id := Pos.to_nat c in
-  set_constr_args <- set_constructor_args nenv venv fenv ys 0;;
+  set_constr_args <- set_constructor_args nenv lenv fenv ys 0;;
   Ret ([ BI_get_global global_mem_ptr
        ; BI_set_global constr_alloc_ptr
 
@@ -339,14 +339,14 @@ Fixpoint create_case_nested_if_chain (v : immediate) (es : list (ctor_tag * list
 e.g. for let x := Eproj ... in (halt x)
 halt x expects the previous result in this var.
 *)
-Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv : fname_env) (e : exp) : error (list basic_instruction) :=
+Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (e : exp) : error (list basic_instruction) :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' =>
        (*      if Z.gtb (Z.of_nat (length ys)) max_constr_args then Err "found constructor with too many args" else *)
-      following_instr <- translate_exp nenv cenv venv fenv e' ;;
-      x_var <- translate_var nenv venv x "translate_exp constr";;
-      store_constr <- store_constructor nenv cenv venv fenv tg ys;;
+      following_instr <- translate_exp nenv cenv lenv fenv e' ;;
+      x_var <- translate_var nenv lenv x "translate_exp constr";;
+      store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
 
       (* Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++ *)
       Ret (grow_memory_if_necessary page_size ++
@@ -365,19 +365,19 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp)) : error (list (ctor_tag * list basic_instruction)) :=
       match arms with
       | [] => Ret []
-      | (t, e)::tl => e' <- translate_exp nenv cenv venv fenv e;;
+      | (t, e)::tl => e' <- translate_exp nenv cenv lenv fenv e;;
                       arms' <- translate_case_branch_expressions tl;;
                       Ret ((t, e') :: arms')
       end in
       transl_branch_exprs <- translate_case_branch_expressions arms;;
 
-      x_var <- translate_var nenv venv x "translate_exp case";;
+      x_var <- translate_var nenv lenv x "translate_exp case";;
       Ret (create_case_nested_if_chain x_var transl_branch_exprs)
 
    | Eproj x tg n y e' =>
-      following_instr <- translate_exp nenv cenv venv fenv e' ;;
-       y_var <- translate_var nenv venv y "translate_exp proj y";;
-       x_var <- translate_var nenv venv x "translate_exp proj x";;
+      following_instr <- translate_exp nenv cenv lenv fenv e' ;;
+       y_var <- translate_var nenv lenv y "translate_exp proj y";;
+       x_var <- translate_var nenv lenv x "translate_exp proj x";;
 
       Ret ([ BI_get_local y_var
            ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4)) (* skip ctor_id and previous constr arguments *)
@@ -387,22 +387,22 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (venv: var_env) (fenv
            ] ++ following_instr)
 
    | Eletapp x f ft ys e' => Err "got unexpected non-tailcall, did you forget the -cps flag?" (*
-     following_instr <- (translate_exp nenv cenv venv fenv e' : error (list basic_instruction)) ;;
-     x_var <- translate_var nenv venv x "translate_exp app";;
-     instr_call <- translate_call nenv venv fenv f ys ;;
+     following_instr <- (translate_exp nenv cenv lenv fenv e' : error (list basic_instruction)) ;;
+     x_var <- translate_var nenv lenv x "translate_exp app";;
+     instr_call <- translate_call nenv lenv fenv f ys ;;
      Ret (instr_call ++
           [ BI_set_local x_var
           ] ++ following_instr) *)
 
    | Eapp f ft ys => (* wasm doesn't treat tail call in a special way at the time *)
-     instr_call <- translate_call nenv venv fenv f ys ;;
+     instr_call <- translate_call nenv lenv fenv f ys ;;
 
      Ret instr_call (* tail calls are not supported yet in wasm. normal function return.  *)
 
    | Eprim_val x p e' => Err "translating prim_val to WASM not supported yet"
    | Eprim x p ys e' => Err "translating prim to WASM not supported yet"
    | Ehalt x =>
-     x_var <- translate_var nenv venv x "translate_exp halt";;
+     x_var <- translate_var nenv lenv x "translate_exp halt";;
      Ret [ BI_get_local x_var; BI_set_global result_var ]
    end.
 
@@ -423,12 +423,27 @@ Fixpoint collect_local_variables (e : exp) : list cps.var :=
   | Ehalt _ => []
   end.
 
+(* locals U params are expected to be unique *)
+Definition create_local_variable_mapping (nenv : name_env) (fenv : fname_env) (vars : list cps.var) : localvar_env :=
+  let fix aux (start_id : nat) (vars : list cps.var) (lenv : localvar_env) :=
+    match vars with
+    | [] => lenv
+    | v :: l' => let mapping := aux (1 + start_id) l' lenv in
+                 let v_str := translate_var_to_string nenv v in
+                 M_string.add v_str start_id mapping
+    end in
+  aux 0 vars (M_string.empty _).
 
-Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env) (venv : var_env)
+
+Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
                               (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
-  body_res <- translate_exp nenv cenv venv fenv body ;;
+
+  let locals := collect_local_variables body in
+  let lenv := create_local_variable_mapping nenv fenv (args ++ locals) in
+
+  body_res <- translate_exp nenv cenv lenv fenv body ;;
+
   let arg_types := map (fun _ => T_i32) args in
-  let locals := map (fun _ => T_i32) (collect_local_variables body) in
 
   let fn_name := translate_var_to_string nenv name in
   fn_var <- lookup_function_var fn_name fenv "translate function" ;;
@@ -437,7 +452,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   {| var := fn_var
    ; export_name := fn_name
    ; type := Tf arg_types []
-   ; locals := locals
+   ; locals := map (fun _ => T_i32) locals
    ; body := body_res
    |}.
 
@@ -473,50 +488,18 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
 
   Ret fname_mapping.
 
-(* locals U params are expected to be globally unique *)
-Definition add_vars_to_local_variable_mapping (nenv : name_env) (fenv : fname_env) (locals : list cps.var) (initial : var_env) : var_env :=
-  let fix aux (start_id : nat) (locals : list cps.var) (venv : var_env) :=
-    match locals with
-    | [] => initial
-    | v :: l' => let mapping := aux (1 + start_id) l' venv in
-                 let v_str := translate_var_to_string nenv v in
-                 M_string.add v_str start_id mapping
-    end in
-  aux 0 locals initial.
-
-(* start counting at 0 for every function *)
-Fixpoint create_local_variable_mapping' (nenv : name_env) (fenv: fname_env) (fds : fundefs) (initial : var_env) :=
-  match fds with
-  | Fnil => initial
-  | Fcons _ _ params e fds' => let locals := params ++ collect_local_variables e in
-                               let venv := add_vars_to_local_variable_mapping nenv fenv locals initial in
-                               create_local_variable_mapping' nenv fenv fds' venv
-  end.
-
-Definition create_local_variable_mapping (nenv : name_env) (fenv: fname_env) (e : exp) :=
-  let fds := match e with Efun fds _ => fds | _ => Fnil end in
-  let expr := match e with Efun _ e' => e' | _ => e end in
-  let expr_vars := collect_local_variables expr in
-  let venv := add_vars_to_local_variable_mapping nenv fenv expr_vars (M_string.empty _) in
-  create_local_variable_mapping' nenv fenv fds venv.
-
 Fixpoint list_function_types (n : nat) : list function_type :=
   match n with
   | 0 => [Tf [] []]
   | S n' => list_function_types n' ++ [Tf (List.repeat T_i32 (S n')) []]
   end.
 
-Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * var_env) :=
+Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
   fname_mapping <- create_fname_mapping nenv e ;;
-  let venv := create_local_variable_mapping nenv fname_mapping e in
 
   let constr_tags := collect_constr_tags e in
   constr_pp_function <- generate_constr_pp_function cenv fname_mapping constr_tags ;;
 
-  let main_expr := match e with
-                   | Efun _ exp => exp
-                   | _ => e
-                   end in
   fns <-
     match e with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
@@ -524,16 +507,21 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
           match fds with
           | Fnil => Ret []
           | Fcons x tg xs e fds' =>
-             fn <- translate_function nenv cenv fname_mapping venv x xs e ;;
+             fn <- translate_function nenv cenv fname_mapping x xs e ;;
              following <- iter fds' ;;
              Ret (fn :: following)
           end) fds
     | _ => Ret []
   end ;;
 
+  let main_expr := match e with
+                   | Efun _ exp => exp
+                   | _ => e
+                   end in
   let main_vars := collect_local_variables main_expr in
+  let main_lenv := create_local_variable_mapping nenv fname_mapping main_vars in
 
-  main_instr <- translate_exp nenv cenv venv fname_mapping main_expr ;;
+  main_instr <- translate_exp nenv cenv main_lenv fname_mapping main_expr ;;
   main_function_var <- lookup_function_var main_function_name fname_mapping "main function";;
 
   let main_function := {| var := main_function_var
@@ -610,4 +598,4 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
        |}
        in
        (* also return mappings to access them in proof *)
-       Ret (module, fname_mapping, venv).
+       Ret (module, fname_mapping, main_lenv).
