@@ -34,7 +34,7 @@ Module S_string := MSetAVL.Make StringOT.
 Module M_string := FMapAVL.Make MyStringOT.
 
 
-Definition localvar_env := cps.M.tree nat.  (* maps variable names to their id (id=index in list of vars) *)
+Definition localvar_env := M.tree nat.  (* maps variable names to their id (id=index in list of vars) *)
 (* TODO: map fn ids to new ids instead of string intermediate *)
 Definition fname_env := M_string.t nat.     (* maps function export names to their id (id=index in list of functions) *)
 
@@ -79,7 +79,7 @@ Definition translate_var_to_string (nenv : name_env) (v : cps.var) : string :=
   "$" ++ show_tree (show_var nenv v).
 
 Definition translate_var (nenv : name_env) (lenv : localvar_env) (v : cps.var) (err : string): error immediate :=
-  match cps.M.get v lenv with
+  match M.get v lenv with
   | Some n => Ret n
   | None => Err ("expected to find id for variable " ++ (show_tree (show_var nenv v)) ++ " in var mapping: " ++ err)
   end.
@@ -426,9 +426,9 @@ Definition create_local_variable_mapping (nenv : name_env) (fenv : fname_env) (v
     match vars with
     | [] => lenv
     | v :: l' => let mapping := aux (1 + start_id) l' lenv in
-                 cps.M.set v start_id mapping
+                 M.set v start_id mapping
     end in
-  aux 0 vars (cps.M.empty _).
+  aux 0 vars (M.empty _).
 
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
