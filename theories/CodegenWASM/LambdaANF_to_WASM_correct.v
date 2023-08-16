@@ -4169,18 +4169,28 @@ Proof.
      unfold max_num_functions in HfdsLength. simpl_modulus. cbn. lia. }
 Qed.
 
-Lemma local_var_mapping_list : forall fenv nenv l loc loc' err_str,
-  translate_var nenv (create_local_variable_mapping nenv fenv l) loc err_str = Ret loc' ->
-  loc' < length l.
+Lemma local_var_mapping_list_aux : forall l loc loc' err_str n,
+  translate_var nenv (create_local_variable_mapping' n l (M.empty _)) loc err_str = Ret loc' ->
+  loc' < length l + n.
 Proof.
-  intros fenv nenv ? ? ? ? H.
+  intros ? ? ? ? ? H.
   unfold translate_var in H.
-  destruct ((create_local_variable_mapping nenv fenv l) ! loc) eqn:Heqn; inv H.
-  generalize dependent loc. revert loc' err_str.
+  destruct (create_local_variable_mapping' n l (M.empty nat)) ! loc eqn:Heqn; inv H.
+  generalize dependent loc. revert loc' err_str n.
   induction l; intros. inv Heqn.
   destruct (var_dec loc a).
   (* loc = a *) subst. cbn in Heqn. rewrite Maps.PTree.gss in Heqn. inv Heqn. cbn. lia.
-Admitted.
+  (* loc <> a *) cbn in Heqn. rewrite Maps.PTree.gso in Heqn; auto. cbn.
+  replace (S (Datatypes.length l + n)) with (Datatypes.length l + (S n)) by lia.
+  eapply IHl; eauto.
+Qed.
+
+Lemma local_var_mapping_list : forall l loc loc' err_str,
+  translate_var nenv (create_local_variable_mapping l) loc err_str = Ret loc' ->
+  loc' < length l.
+Proof.
+  intros. apply local_var_mapping_list_aux in H. lia.
+Qed.
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 Corollary LambdaANF_Codegen_related :
@@ -4255,8 +4265,7 @@ Proof.
   eapply translate_exp_correct in Hexpr; auto.
   remember (Build_frame (repeat (nat_to_value 0) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
 
-  assert (Hrelm : rel_mem_LambdaANF_Codegen fenv (create_local_variable_mapping nenv fenv
-            (collect_local_variables e)) nenv
+  assert (Hrelm : rel_mem_LambdaANF_Codegen fenv (create_local_variable_mapping (collect_local_variables e)) nenv
           host_function e rho sr f_before_IH). {
     split.
     { intros. inv Hfuns. admit.
@@ -4265,8 +4274,7 @@ Proof.
     { intros. exfalso. eauto. }}
   rewrite -> H in *.
   assert (Hlocals: (forall (loc : positive) (loc' : immediate),
-         repr_var (create_local_variable_mapping nenv fenv
-           (collect_local_variables e)) nenv loc loc' ->
+         repr_var (create_local_variable_mapping (collect_local_variables e)) nenv loc loc' ->
          loc' < length (f_locs f_before_IH))). { intros. inv H0. cbn. rewrite repeat_length.
          eapply local_var_mapping_list. eassumption. }
   have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv _ nenv finfo_env rep_env _ host_instance rho _ _ _ Hstep hs _ _ wasm_main_instr Hinv_before_IH Hlocals Hexpr Hrelm.

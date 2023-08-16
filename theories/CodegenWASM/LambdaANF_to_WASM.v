@@ -421,21 +421,22 @@ Fixpoint collect_local_variables (e : exp) : list cps.var :=
   end.
 
 (* locals U params are expected to be unique *)
-Definition create_local_variable_mapping (nenv : name_env) (fenv : fname_env) (vars : list cps.var) : localvar_env :=
-  let fix aux (start_id : nat) (vars : list cps.var) (lenv : localvar_env) :=
-    match vars with
-    | [] => lenv
-    | v :: l' => let mapping := aux (1 + start_id) l' lenv in
-                 M.set v start_id mapping
-    end in
-  aux 0 vars (M.empty _).
+Fixpoint create_local_variable_mapping' (start_id : nat) (vars : list cps.var) (lenv : localvar_env) : localvar_env :=
+   match vars with
+   | [] => lenv
+   | v :: l' => let mapping := create_local_variable_mapping' (1 + start_id) l' lenv in
+                M.set v start_id mapping
+   end.
+
+Definition create_local_variable_mapping (vars : list cps.var) : localvar_env :=
+  create_local_variable_mapping' 0 vars (M.empty _).
 
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
                               (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
 
   let locals := collect_local_variables body in
-  let lenv := create_local_variable_mapping nenv fenv (args ++ locals) in
+  let lenv := create_local_variable_mapping (args ++ locals) in
 
   body_res <- translate_exp nenv cenv lenv fenv body ;;
 
@@ -515,7 +516,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                    | _ => e
                    end in
   let main_vars := collect_local_variables main_expr in
-  let main_lenv := create_local_variable_mapping nenv fname_mapping main_vars in
+  let main_lenv := create_local_variable_mapping main_vars in
 
   main_instr <- translate_exp nenv cenv main_lenv fname_mapping main_expr ;;
   main_function_var <- lookup_function_var main_function_name fname_mapping "main function";;
