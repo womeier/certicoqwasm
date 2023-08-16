@@ -1,3 +1,4 @@
+
 (*
   Proof of correctness of the WASM code generation phase of CertiCoq
   (this file is based on the proof for Clight code generation, it still contains some relicts that have not beed removed yet.)
@@ -1427,6 +1428,7 @@ Definition INV_linear_memory sr fr :=
 Definition INV_global_mem_ptr_in_linear_memory s f := forall gmp_v m,
   nth_error (s_mems s) 0 = Some m ->
   sglob_val (host_function:=host_function) s (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp_v)) ->
+  (Z.of_nat gmp_v < Wasm_int.Int32.modulus)%Z ->
   (* enough space to store an i32 *)
   (N.of_nat gmp_v + 4 <= mem_length m)%N.
 
@@ -1748,7 +1750,7 @@ Lemma update_mem_preserves_global_mem_ptr_in_linear_memory : forall s s' f m m',
                 (update_list_at (s_mems s) 0 m') = s' ->
    INV_global_mem_ptr_in_linear_memory s' f.
 Proof.
-  unfold INV_global_mem_ptr_in_linear_memory. intros ? ? ? ? ? H Hinv Hinv' ? ? ? ? ? ? ?.
+  unfold INV_global_mem_ptr_in_linear_memory. intros ? ? ? ? ? H Hinv Hinv' ? ? ? ? ? ? ? ?.
   subst. cbn in H3. unfold update_list_at in H3. rewrite take0 in H3. inv H3.
   eapply update_mem_preserves_global_var_w in Hinv; eauto.
   apply global_var_w_implies_global_var_r in Hinv. 2: now eapply update_mem_preserves_all_mut_i32.
@@ -2289,10 +2291,12 @@ Lemma memory_grow_reduce : forall grow state s f,
    (state, s, f, [seq AI_basic i | i <- grow])
    (state, s', f, [])
   (* enough memory to alloc. constructor *)
-  /\ (INV s' f /\ (forall m v_gmp, nth_error (s_mems s') 0 = Some m ->
-      sglob_val (host_function:=host_function) s' (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 v_gmp)) ->
-      (Z.of_nat v_gmp + Z.of_N page_size < Z.of_N (mem_length m))%Z)
-      \/ (sglob_val (host_function:=host_function) s' (f_inst f) result_out_of_mem = Some (VAL_int32 (nat_to_i32 1)))).
+  /\ (INV s' f /\
+      (forall m v_gmp, nth_error (s_mems s') 0 = Some m ->
+        sglob_val (host_function:=host_function) s' (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 v_gmp)) ->
+        (Z.of_nat v_gmp < Wasm_int.Int32.modulus)%Z ->
+        (Z.of_nat v_gmp + Z.of_N page_size < Z.of_N (mem_length m))%Z)
+   \/ (sglob_val (host_function:=host_function) s' (f_inst f) result_out_of_mem = Some (VAL_int32 (nat_to_i32 1)))).
 Proof with eauto.
   (* grow memory if necessary *)
   intros grow state sr fr H Hinv. subst.
@@ -4078,7 +4082,7 @@ Qed.
 Lemma module_instantiate_INV : forall e (fds : fundefs) module fenv main_lenv sr f exports,
   (Z.of_nat (match e with | Efun fds _ => fds_length fds | _ => 0 end) + 2 < max_num_functions)%Z ->
   LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, main_lenv) ->
-  (* for INV_locals_all_i32, we instantiate in a context with no local vars for simplicity *)
+  (* for INV_locals_all_i32, the initial context has no local vars for simplicity *)
   (f_locs f) = [] ->
   instantiate host_function host_instance empty_store_record module [] (sr, (f_inst f), exports, None) ->
   INV _ sr f.
@@ -4154,7 +4158,7 @@ Proof.
    { unfold INV_global_mem_ptr_in_linear_memory.
    unfold sglob_val, sglob. cbn. intros. rewrite F0 in H0. inv H0. inv H. cbn.
    unfold mem_mk, mem_length, memory_list.mem_length. cbn. rewrite repeat_length.
-   rewrite Wasm_int.Int32.Z_mod_modulus_id in H2; try lia. admit. (* gmp_v < max int *) }
+   rewrite Wasm_int.Int32.Z_mod_modulus_id in H3; try lia. }
    split. (* all locals i32 *)
    { unfold INV_locals_all_i32. intros. rewrite Hflocs in H. rewrite nth_error_nil in H. inv H. }
    (* num functions upper bound *)
@@ -4163,7 +4167,7 @@ Proof.
      destruct e; try (inv HtransFns; simpl_modulus; cbn; lia).
      erewrite <- fds_length_length; eauto.
      unfold max_num_functions in HfdsLength. simpl_modulus. cbn. lia. }
-Admitted.
+Qed.
 
 Lemma local_var_mapping_list : forall fenv nenv l loc loc' err_str,
   translate_var nenv (create_local_variable_mapping nenv fenv l) loc err_str = Ret loc' ->
