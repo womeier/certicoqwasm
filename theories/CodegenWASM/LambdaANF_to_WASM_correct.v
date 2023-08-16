@@ -4078,10 +4078,12 @@ Qed.
 Lemma module_instantiate_INV : forall e (fds : fundefs) module fenv main_lenv sr f exports,
   (Z.of_nat (match e with | Efun fds _ => fds_length fds | _ => 0 end) + 2 < max_num_functions)%Z ->
   LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, main_lenv) ->
+  (* for INV_locals_all_i32, we instantiate in a context with no local vars for simplicity *)
+  (f_locs f) = [] ->
   instantiate host_function host_instance empty_store_record module [] (sr, (f_inst f), exports, None) ->
   INV _ sr f.
 Proof.
-  intros e fds module fenv lenv s f exports HfdsLength Hcompile Hinst.
+  intros e fds module fenv lenv s f exports HfdsLength Hcompile Hflocs Hinst.
   unfold instantiate in Hinst.
   unfold LambdaANF_to_WASM in Hcompile.
   destruct (create_fname_mapping nenv e) eqn:Hmapping. inv Hcompile. simpl in Hcompile.
@@ -4154,7 +4156,7 @@ Proof.
    unfold mem_mk, mem_length, memory_list.mem_length. cbn. rewrite repeat_length.
    rewrite Wasm_int.Int32.Z_mod_modulus_id in H2; try lia. admit. (* gmp_v < max int *) }
    split. (* all locals i32 *)
-   { admit. }
+   { unfold INV_locals_all_i32. intros. rewrite Hflocs in H. rewrite nth_error_nil in H. inv H. }
    (* num functions upper bound *)
    { unfold INV_num_functions_upper_bound.
      rewrite map_length. cbn. rewrite app_length. rewrite map_length. cbn.
@@ -4202,13 +4204,22 @@ Corollary LambdaANF_Codegen_related :
 Proof.
   intros ? ? ? ? ? ? ? ? ? ? Hstep LANF2WASM Hmainidx Hcenv Hfreevars.
   have Hinstantiate := module_instantiatable _ _ _ _ LANF2WASM.
-  destruct Hinstantiate as [sr [f [exports Hinst]]].
-  assert (Hinv : INV _ sr f). { eapply module_instantiate_INV; eauto. apply Fnil.
+  destruct Hinstantiate as [sr [fr [exports Hinst]]].
+  remember ({| f_locs := []; f_inst := f_inst fr |}) as f.
+  assert (Hinv : INV _ sr f). { subst. eapply module_instantiate_INV; eauto. apply Fnil.
                                           admit. (* TODO: enforce fds + 2 < max_num_functions *) }
-  exists sr, f, exports. split. assumption. clear Hinst.
+  remember (Build_frame (repeat (nat_to_value 0) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
+  assert (Hinv_before_IH: INV _ sr f_before_IH). { subst.
+    destruct Hinv as [? [? [? [? [? [? [? [? [? ?]]]]]]]]].
+    unfold INV. repeat (split; try assumption).
+    unfold INV_locals_all_i32. cbn. intros. exists (nat_to_i32 0).
+    assert (i < (length (repeat (nat_to_value 0) (Datatypes.length (collect_local_variables e))))). { now apply nth_error_Some. }
+    rewrite nth_error_repeat in H9. inv H9. reflexivity. rewrite repeat_length in H10. assumption. }
+
+  exists sr, f, exports. subst f. split. assumption. clear Hinst.
 
   unfold LambdaANF_to_WASM in LANF2WASM.
-  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv LANF2WASM. simpl in LANF2WASM. rename f0 into fname_mapping.
+  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv LANF2WASM. simpl in LANF2WASM. rename f into fname_mapping.
   destruct (generate_constr_pp_function cenv fname_mapping
        (collect_constr_tags e)) eqn:Hppconst. inv LANF2WASM.
   destruct (match e with
@@ -4229,19 +4240,20 @@ Proof.
   destruct e0 as [fds' [e' He]]. subst e.
   (* top exp is Efun _ _ *)
 
-  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv _ nenv finfo_env rep_env _ host_instance _ _ _ _ Hstep hs _ _ wasm_main_instr Hinv.
+  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv _ nenv finfo_env rep_env _ host_instance _ _ _ _ Hstep hs _ _ wasm_main_instr Hinv_before_IH.
   admit.
 
   (* top exp is not Efun _ _ *)
   assert (mainexpr = e). { destruct e; auto. exfalso. eauto. } subst mainexpr.
-  assert (fns = []). { destruct e; inv Hfuns; auto. exfalso. eauto. } subst.
+  assert (fns = []). { destruct e; inv Hfuns; auto. exfalso. eauto. }  subst.
   rewrite H in Hexpr.
 
   eapply translate_exp_correct in Hexpr; auto.
+  remember (Build_frame (repeat (nat_to_value 0) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
 
   assert (Hrelm : rel_mem_LambdaANF_Codegen fenv (create_local_variable_mapping nenv fenv
             (collect_local_variables e)) nenv
-          host_function e rho sr f). {
+          host_function e rho sr f_before_IH). {
     split.
     { intros. inv Hfuns. admit.
       (* absurd, no functions *)
@@ -4251,11 +4263,10 @@ Proof.
   assert (Hlocals: (forall (loc : positive) (loc' : immediate),
          repr_var (create_local_variable_mapping nenv fenv
            (collect_local_variables e)) nenv loc loc' ->
-         loc' < length (f_locs f))). { intros. inv H0.
-           have H' := local_var_mapping_list _ _ _ _ _ _ H1.
-         assert (length (collect_local_variables e) = length (f_locs f)) by admit. congruence. }
-  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv _ nenv finfo_env rep_env _ host_instance rho _ _ _ Hstep hs _ _ wasm_main_instr Hinv Hlocals Hexpr Hrelm.
-  destruct HMAIN as [s' [f' [Hred Hval]]]. cbn.
+         loc' < length (f_locs f_before_IH))). { intros. inv H0. cbn. rewrite repeat_length.
+         eapply local_var_mapping_list. eassumption. }
+  have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv _ nenv finfo_env rep_env _ host_instance rho _ _ _ Hstep hs _ _ wasm_main_instr Hinv_before_IH Hlocals Hexpr Hrelm.
+  destruct HMAIN as [s' [f' [Hred Hval]]]. subst. cbn.
   exists s'. split.
   dostep'. apply r_call. cbn.
 Admitted.
