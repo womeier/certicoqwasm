@@ -34,8 +34,8 @@ Module S_string := MSetAVL.Make StringOT.
 Module M_string := FMapAVL.Make MyStringOT.
 
 
-(* TODO: map var/fn ids to new ids instead of string intermediate *)
-Definition localvar_env := M_string.t nat.  (* maps variable names to their id (id=index in list of vars) *)
+Definition localvar_env := cps.M.tree nat.  (* maps variable names to their id (id=index in list of vars) *)
+(* TODO: map fn ids to new ids instead of string intermediate *)
 Definition fname_env := M_string.t nat.     (* maps function export names to their id (id=index in list of functions) *)
 
 
@@ -78,15 +78,11 @@ Definition N_to_value (n : N) :=
 Definition translate_var_to_string (nenv : name_env) (v : cps.var) : string :=
   "$" ++ show_tree (show_var nenv v).
 
-Definition lookup_local_var (name : string) (lenv : localvar_env) (err : string) : error immediate :=
-  match M_string.find name lenv with
+Definition translate_var (nenv : name_env) (lenv : localvar_env) (v : cps.var) (err : string): error immediate :=
+  match cps.M.get v lenv with
   | Some n => Ret n
-  | None => Err ("expected to find id for variable " ++ name ++ " in var mapping: " ++ err)
+  | None => Err ("expected to find id for variable " ++ (show_tree (show_var nenv v)) ++ " in var mapping: " ++ err)
   end.
-
-Definition translate_var (nenv : name_env) (lenv : localvar_env) (v : cps.var) (err_location : string): error immediate :=
-  let name := translate_var_to_string nenv v in
-  lookup_local_var name lenv err_location.
 
 Definition lookup_function_var (name : string) (fenv : fname_env) (err : string): error immediate :=
   match M_string.find name fenv with
@@ -212,7 +208,7 @@ Definition translate_local_var_read (nenv : name_env) (lenv : localvar_env) (fen
     then var <- lookup_function_var var_name fenv "translate local var read: obtaining function id" ;;
          Ret (BI_const (nat_to_value var)) (* passing id of function <var_name> *)
 
-    else var <- lookup_local_var var_name lenv "translate_local_var_read: normal var";;
+    else var <- translate_var nenv lenv v "translate_local_var_read: normal var";;
          Ret (BI_get_local var).
 
 
@@ -236,7 +232,8 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
   instr_fidx <- (if is_function_name fenv f_var_string
                  then f_var <- lookup_function_var f_var_string fenv "direct function call";;
                       Ret (BI_const (nat_to_value f_var))
-                 else f_var <- lookup_local_var f_var_string lenv ("ind call from var: " ++ f_var_string);;
+
+                 else f_var <- translate_var nenv lenv f ("ind call from var: " ++ f_var_string);;
                       Ret (BI_get_local f_var));;
 
   Ret (instr_pass_params ++ [instr_fidx] ++ [BI_call_indirect (length args)]). (* all fns return nothing, typeidx = num args *)
@@ -429,10 +426,9 @@ Definition create_local_variable_mapping (nenv : name_env) (fenv : fname_env) (v
     match vars with
     | [] => lenv
     | v :: l' => let mapping := aux (1 + start_id) l' lenv in
-                 let v_str := translate_var_to_string nenv v in
-                 M_string.add v_str start_id mapping
+                 cps.M.set v start_id mapping
     end in
-  aux 0 vars (M_string.empty _).
+  aux 0 vars (cps.M.empty _).
 
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
