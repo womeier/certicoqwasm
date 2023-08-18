@@ -264,7 +264,6 @@ Datatypes0
 Datatypes_properties
 Operations
 Binary_format_printer
-Wasm_map_util
 LambdaANF_to_WASM
 Toplevel3
 

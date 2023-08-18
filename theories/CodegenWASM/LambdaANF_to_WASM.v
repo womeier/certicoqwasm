@@ -12,7 +12,7 @@ Require Import MSets.MSetAVL.
 From Coq Require Import FMapAVL.
 Require Import POrderedType.
 
-Require Import LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm_map_util.
+Require Import LambdaANF.cps LambdaANF.cps_show.
 Import MonadNotation.
 
 
@@ -24,19 +24,25 @@ Definition max_constr_args   := 1024%Z.      (* TODO enforce, should be possible
 Definition max_function_args := 1024%Z.      (* TODO enforce, should be possible to vary without breaking too much *)
 Definition max_num_functions := 1_000_000%Z. (* TODO enforce, sohuld be possible to vary without breaking too much *)
 
-(* Currently: all variables/parameters are of type i32, lambdaANF is untyped, arity enough to generate function calls *)
+(* ***** HARDCODED FUNCTION IDs ****** *)
+(* ids 0-100 are reserved *)
 
+(* imported, for debugging, not relevant for proof *)
+Definition write_char_function_id : positive := 42.
+Definition write_char_function_var : immediate := 0.
+Definition write_char_function_name := "$write_char".
+Definition write_int_function_var : immediate := 1.
+Definition write_int_function_id : positive := 43.
+Definition write_int_function_name := "$write_int".
+
+Definition constr_pp_function_id : positive := 44.
+Definition constr_pp_function_name : string := "$pretty_print_constructor".
+Definition main_function_id : positive := 45.
+Definition main_function_name := "$main_function".
 
 (* ***** MAPPINGS ****** *)
-
-Module S_pos := MSetAVL.Make Positive_as_OT.
-Module S_string := MSetAVL.Make StringOT.
-Module M_string := FMapAVL.Make MyStringOT.
-
-
-Definition localvar_env := M.tree nat.  (* maps variable names to their id (id=index in list of vars) *)
-(* TODO: map fn ids to new ids instead of string intermediate *)
-Definition fname_env := M_string.t nat.     (* maps function export names to their id (id=index in list of functions) *)
+Definition localvar_env := M.tree nat. (* maps variables to their id (id=index in list of local vars) *)
+Definition fname_env    := M.tree nat. (* maps function variables to their id (id=index in list of functions) *)
 
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
@@ -75,34 +81,21 @@ Definition Z_to_value (z : Z) :=
 Definition N_to_value (n : N) :=
   Z_to_value (Z.of_N n).
 
-Definition translate_var_to_string (nenv : name_env) (v : cps.var) : string :=
-  "$" ++ show_tree (show_var nenv v).
-
 Definition translate_var (nenv : name_env) (lenv : localvar_env) (v : cps.var) (err : string): error immediate :=
   match M.get v lenv with
   | Some n => Ret n
   | None => Err ("expected to find id for variable " ++ (show_tree (show_var nenv v)) ++ " in var mapping: " ++ err)
   end.
 
-Definition lookup_function_var (name : string) (fenv : fname_env) (err : string): error immediate :=
-  match M_string.find name fenv with
+Definition translate_function_var (nenv : name_env) (fenv : fname_env) (v : cps.var) (err : string) : error immediate :=
+  match M.get v fenv with
   | Some n => Ret n
-  | None => Err err
+  | None => Err ("expected to find id for variable " ++ (show_tree (show_var nenv v)) ++ " in function mapping: " ++ err)
   end.
 
-Definition translate_function_var (nenv : name_env) (fenv : fname_env) (v : cps.var) : error immediate :=
-  let x := translate_var_to_string nenv v in
-  lookup_function_var x fenv ("expected to find id for variable " ++ x ++ " in function mapping").
-
-
-(* ***** IMPORTED FUNCTIONS ****** *)
-Definition write_char_function_name := "$write_char".
-Definition write_char_function_var : immediate := 0.
-Definition write_int_function_name := "$write_int".
-Definition write_int_function_var : immediate := 1.
-
-
 (* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)
+
+Module S_pos := MSetAVL.Make Positive_as_OT.
 
 Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
   match e with
@@ -126,9 +119,6 @@ Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
 Definition collect_constr_tags (e : exp) : list ctor_tag :=
   S_pos.elements (collect_constr_tags' e).
 
-Definition constr_pp_function_name : string :=
-  "$pretty_print_constructor".
-
 Definition instr_write_string (s : string) : list basic_instruction :=
   let fix to_ascii_list s' :=
     match s' with
@@ -138,10 +128,10 @@ Definition instr_write_string (s : string) : list basic_instruction :=
   flat_map (fun c => [BI_const (nat_to_value c); BI_call write_char_function_var]) (to_ascii_list s).
 
 (* prints constructors as S-expressions *)
-Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tags : list ctor_tag) : error wasm_function :=
+Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (fenv : fname_env) (tags : list ctor_tag) : error wasm_function :=
   let constr_ptr := 0 in
   let tmp := 1 in
-  self_fn_var <- lookup_function_var constr_pp_function_name fenv "generate constr pp fn" ;;
+  self_fn_var <- translate_function_var nenv fenv constr_pp_function_id "generate constr pp fn" ;;
 
   let fix gen_rec_calls (calls : nat) (arity : nat) : list basic_instruction :=
     match calls with
@@ -196,16 +186,15 @@ Definition generate_constr_pp_function (cenv : ctor_env) (fenv : fname_env) (tag
        |}.
 
 
-Definition is_function_name (fenv : fname_env) (v : string) : bool :=
-  match M_string.find v fenv with
+Definition is_function_var (fenv : fname_env) (v : cps.var) : bool :=
+  match M.get v fenv with
   | Some _ => true
   | None => false
   end.
 
 Definition translate_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (v : cps.var) : error basic_instruction :=
-  let var_name := translate_var_to_string nenv v in
-  if is_function_name fenv var_name
-    then var <- lookup_function_var var_name fenv "translate local var read: obtaining function id" ;;
+  if is_function_var fenv v
+    then var <- translate_function_var nenv fenv v "translate local var read: obtaining function id" ;;
          Ret (BI_const (nat_to_value var)) (* passing id of function <var_name> *)
 
     else var <- translate_var nenv lenv v "translate_local_var_read: normal var";;
@@ -227,13 +216,11 @@ Fixpoint pass_function_args (nenv : name_env) (lenv: localvar_env) (fenv : fname
 
 Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (f : cps.var) (args : list cps.var) : error (list basic_instruction) :=
   instr_pass_params <- pass_function_args nenv lenv fenv args;;
-  let arg_types := map (fun _ => T_i32) args in
-  let f_var_string := translate_var_to_string nenv f in
-  instr_fidx <- (if is_function_name fenv f_var_string
-                 then f_var <- lookup_function_var f_var_string fenv "direct function call";;
+  instr_fidx <- (if is_function_var fenv f
+                 then f_var <- translate_function_var nenv fenv f "direct function call";;
                       Ret (BI_const (nat_to_value f_var))
 
-                 else f_var <- translate_var nenv lenv f ("ind call from var: " ++ f_var_string);;
+                 else f_var <- translate_var nenv lenv f ("ind call from var: " ++ (show_tree (show_var nenv f)));;
                       Ret (BI_get_local f_var));;
 
   Ret (instr_pass_params ++ [instr_fidx] ++ [BI_call_indirect (length args)]). (* all fns return nothing, typeidx = num args *)
@@ -441,47 +428,44 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   body_res <- translate_exp nenv cenv lenv fenv body ;;
 
   let arg_types := map (fun _ => T_i32) args in
-
-  let fn_name := translate_var_to_string nenv name in
-  fn_var <- lookup_function_var fn_name fenv "translate function" ;;
+  fn_var <- translate_function_var nenv fenv name "translate function" ;;
 
   Ret
   {| var := fn_var
-   ; export_name := fn_name
+   ; export_name := show_tree (show_var nenv name)
    ; type := Tf arg_types []
    ; locals := map (fun _ => T_i32) locals
    ; body := body_res
    |}.
 
 (* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
-Definition main_function_name := "$main_function".
 
-Fixpoint add_to_fname_mapping (names : list string) (start_id : nat) (initial : fname_env) : fname_env :=
+Fixpoint add_to_fname_mapping (names : list positive) (start_id : nat) (initial : fname_env) : fname_env :=
   match names with
   | [] => initial
-  | n :: names' => M_string.add n start_id (add_to_fname_mapping names' (1 + start_id) initial)
+  | n :: names' => M.set n start_id (add_to_fname_mapping names' (1 + start_id) initial)
   end.
 
 (* maps function names to ids (id=index in function list of module) *)
 (* TODO: use reserved function ids for write_char / write_int / main / pp_constr..., don't include in mapping *)
 Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [write_char_function_name; write_int_function_name] 0 (M_string.empty _), 2) in
+  let (fname_mapping, num_fns) := (add_to_fname_mapping [write_char_function_id; write_int_function_id] 0 (M.empty _), 2) in
 
-  let fun_names :=
+  let fun_ids :=
     match e with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
-      (fix iter (fds : fundefs) : list string :=
+      (fix iter (fds : fundefs) : list cps.var :=
           match fds with
           | Fnil => []
-          | Fcons x _ _ _ fds' => (translate_var_to_string nenv x) :: (iter fds')
+          | Fcons x _ _ _ fds' => x :: (iter fds')
           end) fds
     | _ => []
   end in
-  let (fname_mapping, num_fns) := (add_to_fname_mapping fun_names num_fns fname_mapping, num_fns + length fun_names) in
+  let (fname_mapping, num_fns) := (add_to_fname_mapping fun_ids num_fns fname_mapping, num_fns + length fun_ids) in
 
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [constr_pp_function_name] num_fns fname_mapping, num_fns + 1) in
+  let (fname_mapping, num_fns) := (add_to_fname_mapping [constr_pp_function_id] num_fns fname_mapping, num_fns + 1) in
 
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [main_function_name] num_fns fname_mapping, num_fns + 1) in
+  let (fname_mapping, num_fns) := (add_to_fname_mapping [main_function_id] num_fns fname_mapping, num_fns + 1) in
 
   Ret fname_mapping.
 
@@ -495,7 +479,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   fname_mapping <- create_fname_mapping nenv e ;;
 
   let constr_tags := collect_constr_tags e in
-  constr_pp_function <- generate_constr_pp_function cenv fname_mapping constr_tags ;;
+  constr_pp_function <- generate_constr_pp_function cenv nenv fname_mapping constr_tags ;;
 
   fns <-
     match e with
@@ -519,7 +503,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   let main_lenv := create_local_variable_mapping main_vars in
 
   main_instr <- translate_exp nenv cenv main_lenv fname_mapping main_expr ;;
-  main_function_var <- lookup_function_var main_function_name fname_mapping "main function";;
+  main_function_var <- translate_function_var nenv fname_mapping main_function_id "main function";;
 
   let main_function := {| var := main_function_var
                         ; export_name := main_function_name
