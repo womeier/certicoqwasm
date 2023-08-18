@@ -25,19 +25,25 @@ Definition max_function_args := 1024%Z.      (* TODO enforce, should be possible
 Definition max_num_functions := 1_000_000%Z. (* TODO enforce, sohuld be possible to vary without breaking too much *)
 
 (* ***** HARDCODED FUNCTION IDs ****** *)
-(* ids 0-100 are reserved *)
+(*  _idx  : idx in list of wasm functions
+    _var  : cps.var
+    _name : export name
 
-(* imported, for debugging, not relevant for proof *)
-Definition write_char_function_id : positive := 42.
-Definition write_char_function_var : immediate := 0.
+    fun vars 0-100 are reserved
+ *)
+
+(* imported, for printing result *)
+Definition write_char_function_var : positive := 42.
+Definition write_char_function_idx : immediate := 0.
 Definition write_char_function_name := "$write_char".
-Definition write_int_function_var : immediate := 1.
-Definition write_int_function_id : positive := 43.
+
+Definition write_int_function_var : positive := 43.
+Definition write_int_function_idx : immediate := 1.
 Definition write_int_function_name := "$write_int".
 
-Definition constr_pp_function_id : positive := 44.
+Definition constr_pp_function_var : positive := 44.
 Definition constr_pp_function_name : string := "$pretty_print_constructor".
-Definition main_function_id : positive := 45.
+Definition main_function_var : positive := 45.
 Definition main_function_name := "$main_function".
 
 (* ***** MAPPINGS ****** *)
@@ -55,7 +61,7 @@ Definition result_out_of_mem : immediate := 3.
 
 (* target type for generating functions, contains more fields than the one from Wasm *)
 Record wasm_function :=
-  { var : immediate
+  { fidx : immediate
   ; export_name : string
   ; type : function_type
   ; locals : list value_type
@@ -125,13 +131,14 @@ Definition instr_write_string (s : string) : list basic_instruction :=
     | String.EmptyString => []
     | String.String b s'' => Byte.to_nat b :: to_ascii_list s''
     end in
-  flat_map (fun c => [BI_const (nat_to_value c); BI_call write_char_function_var]) (to_ascii_list s).
+  flat_map (fun c => [BI_const (nat_to_value c); BI_call write_char_function_idx]) (to_ascii_list s).
 
 (* prints constructors as S-expressions *)
-Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (fenv : fname_env) (tags : list ctor_tag) : error wasm_function :=
-  let constr_ptr := 0 in
-  let tmp := 1 in
-  self_fn_var <- translate_function_var nenv fenv constr_pp_function_id "generate constr pp fn" ;;
+Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (fenv : fname_env) (e : cps.exp) : error wasm_function :=
+  let constr_ptr := 0 (* local var *) in
+  let tmp := 1        (* local var *) in
+  let tags := collect_constr_tags e in
+  self_fn_idx <- translate_function_var nenv fenv constr_pp_function_var "generate constr pp fn" ;;
 
   let fix gen_rec_calls (calls : nat) (arity : nat) : list basic_instruction :=
     match calls with
@@ -142,7 +149,7 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (fenv
                   ; BI_set_local tmp
                   ; BI_get_local tmp
                   ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-                  ; BI_call self_fn_var
+                  ; BI_call self_fn_idx
                   ] ++ (gen_rec_calls calls' arity)
     end in
 
@@ -172,13 +179,13 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (fenv
   let body := (concat blocks) ++
               (instr_write_string " <can't print constr: ") ++ (* e.g. could be fn-pointer or env-pointer *)
               [ BI_get_local constr_ptr
-              ; BI_call write_int_function_var
+              ; BI_call write_int_function_idx
               ] ++ instr_write_string ">" in
 
   let _ := ")"  (* hack to fix syntax highlighting bug *)
 
   in
-  Ret {| var := self_fn_var
+  Ret {| fidx := self_fn_idx
        ; export_name := constr_pp_function_name
        ; type := Tf [T_i32] []
        ; locals := [T_i32]
@@ -192,12 +199,12 @@ Definition is_function_var (fenv : fname_env) (v : cps.var) : bool :=
   | None => false
   end.
 
-Definition translate_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (v : cps.var) : error basic_instruction :=
+Definition instr_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (v : cps.var) : error basic_instruction :=
   if is_function_var fenv v
-    then var <- translate_function_var nenv fenv v "translate local var read: obtaining function id" ;;
-         Ret (BI_const (nat_to_value var)) (* passing id of function <var_name> *)
+    then fidx <- translate_function_var nenv fenv v "translate local var read: obtaining function id" ;;
+         Ret (BI_const (nat_to_value fidx)) (* passing id of function <var_name> *)
 
-    else var <- translate_var nenv lenv v "translate_local_var_read: normal var";;
+    else var <- translate_var nenv lenv v "instr_local_var_read: normal var";;
          Ret (BI_get_local var).
 
 
@@ -209,20 +216,14 @@ Fixpoint pass_function_args (nenv : name_env) (lenv: localvar_env) (fenv : fname
   match args with
   | [] => Ret []
   | a0 :: args' =>
-      a0' <- translate_local_var_read nenv lenv fenv a0;;
+      a0' <- instr_local_var_read nenv lenv fenv a0;;
       args'' <- pass_function_args nenv lenv fenv args';;
       Ret (a0' :: args'')
   end.
 
 Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (f : cps.var) (args : list cps.var) : error (list basic_instruction) :=
   instr_pass_params <- pass_function_args nenv lenv fenv args;;
-  instr_fidx <- (if is_function_var fenv f
-                 then f_var <- translate_function_var nenv fenv f "direct function call";;
-                      Ret (BI_const (nat_to_value f_var))
-
-                 else f_var <- translate_var nenv lenv f ("ind call from var: " ++ (show_tree (show_var nenv f)));;
-                      Ret (BI_get_local f_var));;
-
+  instr_fidx <- instr_local_var_read nenv lenv fenv f;;
   Ret (instr_pass_params ++ [instr_fidx] ++ [BI_call_indirect (length args)]). (* all fns return nothing, typeidx = num args *)
 
 
@@ -267,7 +268,7 @@ Definition grow_memory_if_necessary (required_bytes : N) : list basic_instructio
 Fixpoint set_constructor_args (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (args : list cps.var) (current : nat) : error (list basic_instruction) :=
   match args with
   | [] => Ret []
-  | y :: ys => read_y <- translate_local_var_read nenv lenv fenv y;;
+  | y :: ys => read_y <- instr_local_var_read nenv lenv fenv y;;
                remaining <- set_constructor_args nenv lenv fenv ys (1 + current);;
 
                Ret ([ BI_get_global constr_alloc_ptr
@@ -431,7 +432,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   fn_var <- translate_function_var nenv fenv name "translate function" ;;
 
   Ret
-  {| var := fn_var
+  {| fidx := fn_var
    ; export_name := show_tree (show_var nenv name)
    ; type := Tf arg_types []
    ; locals := map (fun _ => T_i32) locals
@@ -449,7 +450,7 @@ Fixpoint add_to_fname_mapping (names : list positive) (start_id : nat) (initial 
 (* maps function names to ids (id=index in function list of module) *)
 (* TODO: use reserved function ids for write_char / write_int / main / pp_constr..., don't include in mapping *)
 Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [write_char_function_id; write_int_function_id] 0 (M.empty _), 2) in
+  let (fname_mapping, num_fns) := (add_to_fname_mapping [write_char_function_var; write_int_function_var] 0 (M.empty _), 2) in
 
   let fun_ids :=
     match e with
@@ -463,9 +464,9 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
   end in
   let (fname_mapping, num_fns) := (add_to_fname_mapping fun_ids num_fns fname_mapping, num_fns + length fun_ids) in
 
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [constr_pp_function_id] num_fns fname_mapping, num_fns + 1) in
+  let (fname_mapping, num_fns) := (add_to_fname_mapping [constr_pp_function_var] num_fns fname_mapping, num_fns + 1) in
 
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [main_function_id] num_fns fname_mapping, num_fns + 1) in
+  let (fname_mapping, num_fns) := (add_to_fname_mapping [main_function_var] num_fns fname_mapping, num_fns + 1) in
 
   Ret fname_mapping.
 
@@ -478,8 +479,7 @@ Fixpoint list_function_types (n : nat) : list function_type :=
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
   fname_mapping <- create_fname_mapping nenv e ;;
 
-  let constr_tags := collect_constr_tags e in
-  constr_pp_function <- generate_constr_pp_function cenv nenv fname_mapping constr_tags ;;
+  constr_pp_function <- generate_constr_pp_function cenv nenv fname_mapping e;;
 
   fns <-
     match e with
@@ -503,9 +503,9 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   let main_lenv := create_local_variable_mapping main_vars in
 
   main_instr <- translate_exp nenv cenv main_lenv fname_mapping main_expr ;;
-  main_function_var <- translate_function_var nenv fname_mapping main_function_id "main function";;
+  main_function_idx <- translate_function_var nenv fname_mapping main_function_var "main function";;
 
-  let main_function := {| var := main_function_var
+  let main_function := {| fidx := main_function_idx
                         ; export_name := main_function_name
                         ; type := Tf [] []
                         ; locals := map (fun _ => T_i32) main_vars
@@ -514,7 +514,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   in
   let functions := fns ++ [constr_pp_function] ++ [main_function] in
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
-                                ; modexp_desc := MED_func (Mk_funcidx f.(var))
+                                ; modexp_desc := MED_func (Mk_funcidx f.(fidx))
                                 |}) functions (* function exports for debug names *)
                  ++ {| modexp_name := String.print "result_out_of_mem"
                      ; modexp_desc := MED_global (Mk_globalidx result_out_of_mem)
@@ -527,8 +527,8 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                      |} :: nil in
 
   let elements := map (fun f => {| modelem_table := Mk_tableidx 0
-                                 ; modelem_offset := [ BI_const (nat_to_value f.(var)) ]
-                                 ; modelem_init := [ Mk_funcidx f.(var) ]
+                                 ; modelem_offset := [ BI_const (nat_to_value f.(fidx)) ]
+                                 ; modelem_init := [ Mk_funcidx f.(fidx) ]
                                  |}) functions in
 
   let functions_final := map (fun f => {| modfunc_type := Mk_typeidx (match f.(type) with Tf args _ => length args end)

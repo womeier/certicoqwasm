@@ -330,7 +330,7 @@ Section RELATION.
 
 
 
-Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm_map_util.
+Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show.
 Import Common.Common Common.compM Common.Pipeline_utils.
 
 Import ExtLib.Structures.Monad.
@@ -361,8 +361,8 @@ Inductive repr_var : positive -> immediate -> Prop :=
 
 (* immediate=nat: used in BI_call i *)
 Inductive repr_funvar : positive -> immediate -> Prop :=
-| repr_funvar_FV : forall s i,
-        translate_function_var nenv fenv s = Ret i ->
+| repr_funvar_FV : forall s i errMsg,
+        translate_function_var nenv fenv s errMsg = Ret i ->
         repr_funvar s i.
 
 Inductive repr_read_var_or_funvar : positive -> basic_instruction -> Prop :=
@@ -761,13 +761,13 @@ Definition stored_in_locals (x : cps.var) (v : wasm_value) (f : frame ) :=
 Definition rel_mem_LambdaANF_Codegen (e : exp) (rho : LambdaANF.eval.env)
                                      (sr : store_record) (fr : frame) :=
         (* function def is related to function index *)
-        (forall x rho' fds f v,
+        (forall x rho' fds f v errMsg,
             M.get x rho = Some v ->
              (* 1) arg is subval of constructor
                 2) v listed in fds -> subval *)
             subval_or_eq (Vfun rho' fds f) v ->
             (* i is index of function f *)
-            exists i, translate_function_var nenv fenv f = Ret i /\
+            exists i, translate_function_var nenv fenv f errMsg = Ret i /\
             repr_val_LambdaANF_Codegen (Vfun rho' fds f) sr fr (Val_funidx i) /\
             closed_val (Vfun rho' fds f))
         /\
@@ -783,7 +783,7 @@ End RELATION.
 
 Section THEOREM.
 
-  Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm_map_util.
+  Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show.
 Import Common.Common Common.compM Common.Pipeline_utils.
 
 Import ExtLib.Structures.Monad.
@@ -961,27 +961,18 @@ Let reduce_trans := @reduce_trans host_function host_instance.
 
 Open Scope list.
 
-
-Definition lookup_function_var_generalize_err_string (name : string) (err : string) i :
-  lookup_function_var name fenv err = Ret i -> forall err', lookup_function_var name fenv err' = Ret i.
-Proof.
- unfold lookup_function_var. intros. destruct (M_string.find (elt:=nat) name fenv). auto. inv H.
-Qed.
-
 Lemma pass_function_args_correct : forall l instr,
  pass_function_args nenv lenv fenv l = Ret instr ->
  repr_fun_args_Codegen fenv lenv nenv l instr.
 Proof.
   induction l; intros.
   - cbn in H.  inv H. constructor.
-  - cbn in H. destruct (translate_local_var_read nenv lenv fenv a) eqn:Hvar. inv H.
+  - cbn in H. destruct (instr_local_var_read nenv lenv fenv a) eqn:Hvar. inv H.
     destruct (pass_function_args nenv lenv fenv l) eqn:prep. inv H. inv H.
-    unfold translate_local_var_read in Hvar.
-    destruct (is_function_name fenv (translate_var_to_string nenv a)) eqn:Hfname.
-    - destruct (lookup_function_var (translate_var_to_string nenv a) fenv
-           "translate local var read: obtaining function id") eqn:fun_var; inv Hvar.
-            constructor. econstructor. unfold translate_function_var.
-            unfold lookup_function_var in fun_var. eapply lookup_function_var_generalize_err_string. eassumption.
+    unfold instr_local_var_read in Hvar.
+    destruct (is_function_var fenv a) eqn:Hfname.
+    - destruct (translate_function_var nenv fenv a _) eqn:fun_var; inv Hvar.
+            constructor. econstructor. eassumption.
         apply IHl; auto.
     - destruct (translate_var  nenv lenv a _) eqn:var_var; inv Hvar.
             constructor.  econstructor. eassumption. apply IHl; auto.
@@ -993,7 +984,7 @@ Lemma set_nth_constr_arg_correct : forall l instr n,
 Proof.
   induction l; intros.
   - inv H. econstructor; auto.
-  - cbn in H. destruct (translate_local_var_read nenv lenv fenv a) eqn:Hvar. inv H.
+  - cbn in H. destruct (instr_local_var_read nenv lenv fenv a) eqn:Hvar. inv H.
   destruct (set_constructor_args nenv lenv fenv l (S n)) eqn:Harg. inv H. inv H.
   replace ((BI_get_global constr_alloc_ptr
    :: BI_const
@@ -1016,16 +1007,12 @@ Proof.
    constructor; auto.
 
   replace ((nat_to_value (S (n + S (n + S (n + S (n + 0))))))) with ((nat_to_value ((1 + n) * 4))). constructor.
-  unfold translate_local_var_read in Hvar.
-  destruct (is_function_name fenv (translate_var_to_string nenv a)) eqn:Hfn.
-  destruct (lookup_function_var (translate_var_to_string nenv a) fenv
-         "translate local var read: obtaining function id") eqn:Hvar'. inv Hvar. inv Hvar.
-         constructor. constructor. unfold translate_function_var.
-  eapply lookup_function_var_generalize_err_string in Hvar'. rewrite Hvar'; auto.
-
-  destruct (translate_var nenv lenv a _) eqn:Hloc. inv Hvar. inv Hvar.
-         constructor. econstructor. unfold translate_var. eassumption.
-    f_equal. lia.
+  unfold instr_local_var_read in Hvar.
+  destruct (is_function_var fenv a) eqn:Hfn.
+  - destruct (translate_function_var nenv fenv a _) eqn:Hvar'. inv Hvar. inv Hvar.
+    constructor. econstructor. eassumption.
+  - destruct (translate_var nenv lenv a _) eqn:Hloc. inv Hvar. inv Hvar.
+    constructor. econstructor. unfold translate_var. eassumption. f_equal. lia.
 Qed.
 
 Import seq.
@@ -1163,17 +1150,6 @@ Proof.
         assert (subterm_e e (Econstr v t l e) ). { constructor; constructor. }
         eapply Forall_constructors_subterm. eassumption. assumption.
         }
-    (*
-    constructor.
-    2: eapply IHe; eauto.
-    clear IHe H_eqTranslate.
-    apply Forall_constructors_in_constr in Hcenv.
-    destruct (M.get t cenv) eqn:Hccenv. destruct c.
-    subst.
-    eapply repr_asgn_constructorS; eauto.
-    inv Hcenv.
-    eapply Forall_constructors_subterm. apply Hcenv. constructor. constructor.
-        *)
 
   - (* Ecase nil *) simpl in H. destruct (translate_var nenv lenv v "translate_exp case") eqn:Hvar. inv H. inv H.
      constructor.
@@ -1203,17 +1179,14 @@ Proof.
   - (* Eapp *)
     simpl in H. unfold translate_call in H.
     destruct (pass_function_args nenv lenv fenv l) eqn:Hargs. inv H.
-    destruct (is_function_name fenv (translate_var_to_string nenv v)) eqn:Hind. inv H.
-    (* direct call*)
-    { destruct (lookup_function_var (translate_var_to_string nenv v) fenv "direct function call") eqn:Hvar.
-      inv H1. inv H1.
-      constructor. apply pass_function_args_correct. assumption.
-      econstructor. constructor. unfold translate_function_var. unfold translate_var_to_string.
-      eapply lookup_function_var_generalize_err_string. eassumption. }
-    (* indirect call *)
-    { destruct (translate_var nenv lenv v _) eqn:Hlvar. inv H. inv H.
-      constructor. apply pass_function_args_correct. assumption. constructor. econstructor.
-      unfold translate_var. eassumption. }
+    destruct (instr_local_var_read nenv lenv fenv v) eqn:Hloc. inv H. inv H. constructor.
+    apply pass_function_args_correct. assumption.
+    unfold instr_local_var_read in Hloc.
+    destruct (is_function_var fenv v) eqn:Hfname.
+    - destruct (translate_function_var nenv fenv v _) eqn:fun_var; inv Hloc.
+      constructor. econstructor. eassumption.
+    - destruct (translate_var  nenv lenv v _) eqn:var_var; inv Hloc.
+      constructor. econstructor. eassumption.
   - (* Eprim *)
     inv H. inv H.
   - (* Ehalt *)
@@ -3885,7 +3858,7 @@ Let reduce_trans := @reduce_trans host_function host_instance.
 
 From compcert Require Import Maps.
 
-Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show CodegenWASM.wasm_map_util.
+Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show.
 Import Common.Common Common.compM Common.Pipeline_utils.
 
 Import ExtLib.Structures.Monad.
@@ -3926,8 +3899,7 @@ Lemma module_instantiatable : forall e module fenv lenv,
 Proof.
   intros. eexists. eexists. intros. unfold LambdaANF_to_WASM in H.
   destruct (create_fname_mapping nenv e) eqn:Hmapping. inv H. simpl in H. rename f into fname_mapping.
-  destruct (generate_constr_pp_function cenv fname_mapping
-       (collect_constr_tags e)) eqn:Hppconst. inv H.
+  destruct (generate_constr_pp_function cenv nenv fname_mapping e) eqn:Hppconst. inv H.
   destruct (match e with
        | Efun fds _ => _ fds
        | _ => Ret []
@@ -3936,8 +3908,8 @@ Proof.
                                                            | Efun _ exp => exp
                                                            | _ => e end)) eqn:Hexpr.
   inv H. rename l into wasm_main_instr.
-  destruct (lookup_function_var main_function_name fname_mapping
-         "main function") eqn:Hfmain. inv H. inv H.
+  destruct (translate_function_var nenv fname_mapping main_function_var
+        "main function") eqn:Hfmain. inv H. inv H.
    eexists. repeat esplit.
    (* function types *) { cbn. repeat rewrite map_app; cbn. apply Forall2_app. admit. admit. }
    (* module glob typing *) {
@@ -4101,6 +4073,7 @@ Proof.
   exfalso. eapply reduce_const_false. eauto.
 Qed.
 
+
 Lemma reduce_forall_elem_effect : forall fns l f s state,
   Forall2 (fun (e : module_element) (c : Wasm_int.Int32.T) =>
                   opsem.reduce_trans (host_instance:=host_instance)
@@ -4113,9 +4086,9 @@ Lemma reduce_forall_elem_effect : forall fns l f s state,
                      {|
                        modelem_table := Mk_tableidx 0;
                        modelem_offset :=
-                         [BI_const (nat_to_value (LambdaANF_to_WASM.var f))];
-                       modelem_init := [Mk_funcidx (LambdaANF_to_WASM.var f)]
-                     |}) fns) l -> l = map (fun f => nat_to_i32 (LambdaANF_to_WASM.var f)) fns.
+                         [BI_const (nat_to_value (LambdaANF_to_WASM.fidx f))];
+                       modelem_init := [Mk_funcidx (LambdaANF_to_WASM.fidx f)]
+                     |}) fns) l -> l = map (fun f => nat_to_i32 (LambdaANF_to_WASM.fidx f)) fns.
 Proof.
   induction fns; intros.
   - now inv H.
@@ -4165,10 +4138,10 @@ Proof.
   unfold instantiate in Hinst.
   unfold LambdaANF_to_WASM in Hcompile.
   destruct (create_fname_mapping nenv e) eqn:Hmapping. inv Hcompile. simpl in Hcompile.
-  destruct (generate_constr_pp_function cenv f0 (collect_constr_tags e)) eqn:HgenPP. inv Hcompile.
+  destruct (generate_constr_pp_function cenv nenv f0 e) eqn:HgenPP. inv Hcompile.
   destruct (match e with | Efun fds _ => _ | _ => Ret [] end) eqn:HtransFns. inv Hcompile.
   destruct (translate_exp nenv cenv _ _ _) eqn:Hexpr. inv Hcompile.
-  destruct (lookup_function_var main_function_name f0 "main function") eqn:HmainFname. inv Hcompile.
+  destruct (translate_function_var nenv f0 main_function_var "main function") eqn:HmainFname. inv Hcompile.
   inv Hcompile. unfold INV. cbn in Hinst. unfold is_true in *.
   destruct Hinst as [t_imps [t_exps [state [s' [ g_inits [e_offs [d_offs
       [Hmodule [Himports [HallocModule [HinstGlobals [HinstElem
@@ -4275,7 +4248,7 @@ Corollary LambdaANF_Codegen_related :
   bstep_e (M.empty _) cenv rho e v n ->
   (* compilation function *)
   LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, lenv) ->
-  lookup_function_var main_function_name fenv errMsg = Ret mainidx ->
+  translate_function_var nenv fenv main_function_var errMsg = Ret mainidx ->
   (* constructors welformed *)
   correct_cenv_of_exp cenv e ->
   (* expression must be closed *)
@@ -4308,8 +4281,7 @@ Proof.
 
   unfold LambdaANF_to_WASM in LANF2WASM.
   destruct (create_fname_mapping nenv e) eqn:Hmapping. inv LANF2WASM. simpl in LANF2WASM. rename f into fname_mapping.
-  destruct (generate_constr_pp_function cenv fname_mapping
-       (collect_constr_tags e)) eqn:Hppconst. inv LANF2WASM.
+  destruct (generate_constr_pp_function cenv nenv fname_mapping e) eqn:Hppconst. inv LANF2WASM.
   destruct (match e with
        | Efun fds _ => _ fds
        | _ => Ret []
@@ -4318,11 +4290,11 @@ Proof.
        (match e with
           | Efun _ exp => exp
           | _ => e end)) eqn:Hexpr. inv LANF2WASM. rename l into wasm_main_instr.
-  destruct (lookup_function_var main_function_name fname_mapping
-         "main function") eqn:Hfmain. inv LANF2WASM. inv LANF2WASM.
-       remember (match e with
-          | Efun _ exp => exp
-          | _ => e end) as mainexpr.
+  destruct (translate_function_var nenv fname_mapping main_function_var "main function") eqn:Hfmain.
+  inv LANF2WASM. inv LANF2WASM.
+  remember (match e with
+           | Efun _ exp => exp
+           | _ => e end) as mainexpr.
 
   have Heqdec := inductive_eq_dec e. destruct Heqdec.
   destruct e0 as [fds' [e' He]]. subst e.
