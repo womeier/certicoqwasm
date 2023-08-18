@@ -3972,16 +3972,8 @@ Admitted.
 
 Lemma eqseq_true {T : eqType} : forall (l1 l2 : seq.seq T), eqseq l1 l2 = true -> l1 = l2.
 Proof.
-  intros. rewrite eqseqE in H. (*
-   rewrite eqseq_all in H. rewrite all2E in H. cbn in H.
-  generalize dependent l2.
-  induction l1; intros; destruct l2; auto.
-  - inv H.
-  - inv H. cbn in H.
-    apply andb_prop in H. destruct H. apply andb_prop in H0. destruct H0. assert (H': eq_op a s = false). have H' := eqbE. rewrite eqE in H0. Check Equality.op. rewrite eq_true in H0. cbn in H'. edestruct (eqtype.eqbE true true). in H0. rewrite eqtype.eqbE in H0.
-    rewrite eqE in H0. rewrite
-    assert (a = s). Search "eq_dec". rewrite eqE in H0. unfold Equality.op in H0. cbn in H0. destruct (Equality.class T). cbn in H0. Check op. unfold op in H0. edestruct eq_dec.  unfold eq_op in *. Search "eq_op". rewrite <- eqbE in H. cbn in H. *)
-Admitted.
+  intros. destruct (@eqseqP _ l1 l2); auto. inv H.
+Qed.
 
 Lemma add_funcs_effect : forall s' s'' l l1 l2 f,
     fold_left
@@ -4065,38 +4057,49 @@ Proof.
            end (inst_tab (f_inst f)) 0) (s_tables s) dummy_table). cbn. auto.
 Qed.
 
+Lemma reduce_const_false : forall state s f c,
+  ~ exists y,
+  (reduce_tuple (host_instance:=host_instance))
+  (state, s, f, [AI_basic (BI_const c)]) y.
+Proof.
+  (* intros ? ? ? ? [c' Hcontra]. cbn in Hcontra.
+  remember [AI_basic (BI_const c)] as instr.
+  remember [AI_basic (BI_const c')] as instr'. revert Heqinstr Heqinstr'.
+   induction Hcontra; intros; try (by inv Heqinstr); subst.
+  { inv H. }
+  { destruct vcs; inv Heqinstr. destruct vcs; inv H2. }
+  { destruct vcs; inv Heqinstr. destruct vcs; inv H2. }
+  { unfold is_true, lfilled in H0, H.
+    destruct (lfill k lh es) eqn:Heqn. 2: inv H.
+    destruct (lfill k lh es') eqn:Heqn'. 2: inv H0.
+    apply eqseq_true in H0, H. subst l l0.
+    destruct lh.
+    { destruct k; cbn in Heqn, Heqn'. 2: inv Heqn.
+      destruct (const_list l). 2: inv Heqn.
+      destruct l. 2: { inv Heqn. destruct l, es, l0; inv H1. inv Heqn'.
+      destruct es'; inv H1. admit. (* reduces [] *)  }
+      destruct es. 2: { destruct es', es, l0; inv Heqn; inv Heqn'. destruct es'; inv H1. auto. }
+      destruct l0. inv Heqn. destruct l0; inv Heqn. destruct es'; inv Heqn'. 2: destruct es'; inv H1. admit. }
+    { destruct k; cbn in Heqn, Heqn'. inv Heqn.
+      destruct (const_list l). 2: inv Heqn.
+      destruct (lfill k lh es'). 2: inv Heqn'.
+      destruct (lfill k lh es). 2: inv Heqn.
+      destruct l; inv Heqn. destruct l; inv H1. } *)
+Admitted.
 
-Lemma reduce_trans_const_eq : forall state state' s s' f f' c c',
+Lemma reduce_trans_const_eq : forall state s f c c',
    opsem.reduce_trans (host_instance:=host_instance)
                     (state, s, f, [AI_basic (BI_const c)])
-                    (state', s', f', [AI_basic (BI_const c')]) -> c = c'.
+                    (state, s, f, [AI_basic (BI_const c')]) -> c = c'.
 Proof.
   intros.
   remember (state, s, f, [AI_basic (BI_const c)]) as x.
-  remember (state', s', f', [AI_basic (BI_const c')]) as x'.
-  generalize dependent c. generalize dependent c'. revert f f' s s' state state'.
+  remember (state, s, f, [AI_basic (BI_const c')]) as x'.
+  generalize dependent c. generalize dependent c'. revert f s state.
   apply clos_rt_rt1n in H. induction H; intros; subst; try inv Heqx; auto.
   apply clos_rt1n_rt in H0.
-  destruct y as [[[state'' s''] f''] instr]. inv H.
-  { inv H1. destruct vs; inv H. destruct vs; inv H5.
-    destruct vs; inv H. destruct vs; inv H5.
-    unfold lfilled, lfill in H2. destruct lh; try (by inv H2).
-    destruct (const_list l); try (by inv H2).
-    apply eqseq_true in H2. destruct l; inv H2. destruct l; inv H4. }
-  { destruct vcs; inv H1. destruct vcs; inv H4. }
-  { destruct vcs; inv H1. destruct vcs; inv H4. }
-  { destruct vcs; inv H1. destruct vcs; inv H4. }
-  { generalize dependent lh. generalize dependent es. revert es'.
-    induction k; intros.
-    { destruct lh; cbn in H2, H3. 2: inv H3.
-      unfold lfilled, lfill in H2, H3.
-      destruct (const_list l). 2: inv H2.
-      apply eqseq_true in H2, H3.
-      destruct es, es'. cbn in H2, H3.
-      { eapply IHclos_refl_trans_1n; eauto. subst. now rewrite -H2. }
-      (* not sure if true *) admit.
-  (* IH *)
-Admitted.
+  exfalso. eapply reduce_const_false. eauto.
+Qed.
 
 Lemma reduce_forall_elem_effect : forall fns l f s state,
   Forall2 (fun (e : module_element) (c : Wasm_int.Int32.T) =>
