@@ -3231,7 +3231,7 @@ exists (v6 : cps.val) (val : wasm_value),
         Some (VAL_int32 (nat_to_i32 (4 + gmp_v)))). { apply global_var_write_read_same in H1. rewrite H1. do 3! f_equal. lia. }
 
   have Hargs := store_constr_args_reduce _ _ _ _ state _ _ _ _ _ Hinv_before_args Hmem Hglob_cap HenoughM' Hmaxargs HlenBound Hgmp_before_args Hsetargs Hrho HrelM'.
-  destruct Hargs as [s_final [Hred [Hinv_final [Hcap_v [? [Hargs_val [Hglobsame [m'' [Hm' [Hmemlen Hmemsame]]]]]]]]]].
+  destruct Hargs as [s_final [Hred [Hinv_final [Hcap_v [? [Hargs_val [Hglobsame [Hfuncs [m'' [Hm' [Hmemlen Hmemsame]]]]]]]]]]].
   {
   cbn in Hargs_val. clear Hsetargs Hrho HenoughM' HlenBound.
 
