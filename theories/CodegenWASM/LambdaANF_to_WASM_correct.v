@@ -2327,8 +2327,291 @@ Proof.
   rewrite Zdiv_small in Hn; lia.
 Qed.
 
+Lemma memory_grow_reduce_need_grow_mem : forall grow state s f gmp m,
+  grow = grow_memory_if_necessary page_size ->
+  INV s f ->
+  (* need more memory *)
+  sglob_val s (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
+  nth_error (s_mems s) 0 = Some m ->
+  (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
+  ~~
+               Wasm_int.Int32.lt
+                 (Wasm_int.Int32.repr
+                    (Wasm_int.Int32.signed
+                       (Wasm_int.Int32.iadd (nat_to_i32 gmp)
+                          (nat_to_i32 (N.to_nat page_size))) ÷ 65536))
+                 (Wasm_int.Int32.repr (Z.of_nat (ssrnat.nat_of_bin (mem_size m)))) =
+               true ->
+  exists s', reduce_trans
+   (state, s, f, [seq AI_basic i | i <- grow])
+   (state, s', f, [])
+  (* enough memory to alloc. constructor *)
+  /\ ((INV s' f /\
+        (forall m v_gmp, nth_error (s_mems s') 0 = Some m ->
+           sglob_val (host_function:=host_function) s' (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 v_gmp)) ->
+           (Z.of_nat v_gmp < Wasm_int.Int32.modulus)%Z ->
+           (Z.of_nat v_gmp + Z.of_N page_size < Z.of_N (mem_length m))%Z) /\
+        (forall wal val, repr_val_LambdaANF_Codegen fenv lenv nenv host_function val s f wal ->
+                         repr_val_LambdaANF_Codegen fenv lenv nenv host_function val s' f wal))
+      \/ (sglob_val (host_function:=host_function) s' (f_inst f) result_out_of_mem = Some (VAL_int32 (nat_to_i32 1)))).
+Proof with eauto.
+  (* grow memory if necessary *)
+  intros grow state sr fr gmp m H Hinv Hgmp Hm HgmpBound HneedMoreMem. subst.
+  unfold grow_memory_if_necessary. cbn.
+  have I := Hinv. destruct I as [_ [INVresM_w [_ [INVgmp_w [INVcap_w [INVmuti32 [INVlinmem [HgmpInM [? ?]]]]]]]]].
+  have I := INVlinmem. destruct I as [Hm1 [m' [Hm2 [size [Hm3 [Hm4 Hm5]]]]]].
+  assert (m = m') by congruence. subst m'.
 
-(* there is quite a bit of copy paste in this lemma: TODO reorganize/automate *)
+  assert (global_var_r global_mem_ptr sr fr) as H2. { apply global_var_w_implies_global_var_r; auto. }
+  have H' := HgmpInM _ _ Hm2 Hgmp HgmpBound.
+  (* need to grow memory *)
+  destruct (N.leb_spec (size + 1) max_mem_pages); unfold max_mem_pages in *.
+  (* grow memory success *)
+  assert (mem_size m + 1 <= page_limit)%N. { unfold page_limit. lia. }
+  assert (Hsize: (mem_size m + 1 <=? max_mem_pages)%N). { subst. apply N.leb_le. now unfold max_mem_pages. }
+
+  have Hgrow := memory_grow_success _ _ _ INVlinmem Hm2 Hsize.
+  destruct Hgrow.
+  { eexists. split.
+    (* load global_mem_ptr *)
+    dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
+    (* add required bytes *)
+    dostep. separate_instr. elimr_nary_instr 2. constructor.
+    apply rs_binop_success. reflexivity.
+    dostep. separate_instr. elimr_nary_instr 2. constructor.
+    apply rs_binop_success. cbn. unfold is_left.
+    rewrite zeq_false. reflexivity.
+    { (*TODO code duplication *)
+      intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
+                    Wasm_int.Int32.unsigned in HA;
+      cbn in HA.
+      assert ((Wasm_int.Int32.signed
+        (Wasm_int.Int32.repr
+           (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
+      apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
+      have H'' := signed_upper_bound (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size).
+      simpl_modulus_in H''. cbn. lia. cbn in H5. lia. }
+    dostep. apply r_eliml; auto.
+    elimr_nary_instr 0. eapply r_current_memory...
+
+    dostep. separate_instr. elimr_nary_instr 2.
+    constructor. apply rs_relop.
+
+    dostep'. separate_instr.
+    constructor. subst.
+    rewrite HneedMoreMem. apply rs_if_true. intro H3'. inv H3'.
+
+    dostep'. separate_instr. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
+    cbn.
+    apply reduce_trans_label.
+    dostep'. separate_instr. elimr_nary_instr 1. eapply r_grow_memory_success; eauto.
+    dostep'. separate_instr. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
+    dostep'. constructor. apply rs_if_false.
+
+    assert (size >= 0)%N. { subst. cbn. auto. lia. }
+    { unfold Wasm_int.Int32.eq. cbn. rewrite zeq_false. reflexivity. intro.
+      subst. cbn in *. unfold page_limit in *.
+      rewrite Z_nat_bin in H6.
+      rewrite Wasm_int.Int32.Z_mod_modulus_id in H6. lia. simpl_modulus. cbn. lia. }
+    dostep'. separate_instr. constructor. apply rs_block with (vs:= [])(n:=0); eauto.
+    apply reduce_trans_label. cbn. apply rt_refl.
+    intros.
+    left. split.
+    { (* invariant *) eapply update_mem_preserves_INV. 6: reflexivity. assumption. eassumption.
+      erewrite mem_grow_increases_length; eauto. lia.
+      eapply mem_grow_preserves_max_pages... exists (mem_size m + 1)%N. split.
+      eapply mem_grow_increases_size in H4; auto. rewrite N.add_comm. apply H4. now apply N.leb_le. }
+    { (* enough memory available *)
+      rename x into m''. split. intros. subst. destruct (update_list_at (s_mems sr) 0 m'') eqn:Hm'. inv H5.
+      inv H5. assert (m0 = m''). { unfold update_list_at in Hm'.  rewrite take0 in Hm'. now inv Hm'. } subst m0.
+      rename m'' into m'.
+      assert (mem_length m' = (page_size + mem_length m)%N) as Hlength'. {
+                        eapply mem_grow_increases_length in H4; eauto. }
+      assert (v_gmp = gmp). {
+        assert (Hgl: sglob_val (upd_s_mem sr (m' :: l)) (f_inst fr) global_mem_ptr
+                = sglob_val sr (f_inst fr) global_mem_ptr) by reflexivity.
+        rewrite Hgl in H6. rewrite H6 in Hgmp. inv Hgmp.
+        repeat rewrite Wasm_int.Int32.Z_mod_modulus_id in H8; lia. } subst v_gmp.
+      rewrite Hlength'. apply mem_length_upper_bound in Hm5; cbn in Hm5.
+      unfold page_size. lia.
+      (* preserved value relation *)
+      intros. eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs; try apply H5.
+      reflexivity. reflexivity. eassumption.
+      cbn. unfold update_list_at. rewrite take0. cbn. reflexivity. eassumption.
+      subst. apply mem_length_upper_bound in Hm5; cbn in Hm5. simpl_modulus; cbn; lia.
+      rewrite <- Hgmp. reflexivity.
+      subst. apply mem_length_upper_bound in Hm5; cbn in Hm5.
+      apply mem_grow_increases_length in H4. simpl_modulus; cbn; lia. lia.
+      intros. eapply mem_grow_preserves_original_values; eauto; unfold page_limit; lia. } }
+
+  { (* growing memory fails *)
+    edestruct INVresM_w as [sr'' HresM].
+
+    eexists. split.
+    (* load global_mem_ptr *)
+    dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
+    (* add required bytes *)
+    dostep. elimr_nary_instr 2. constructor.
+    apply rs_binop_success. reflexivity.
+    dostep. elimr_nary_instr 2. constructor.
+    apply rs_binop_success. cbn. unfold is_left.
+    rewrite zeq_false. reflexivity.
+    { (*TODO code duplication *)
+      intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
+                    Wasm_int.Int32.unsigned in HA;
+      cbn in HA.
+      assert ((Wasm_int.Int32.signed
+        (Wasm_int.Int32.repr
+           (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z). (* arbitrary number *)
+      apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
+      have H'' := signed_upper_bound (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size).
+      cbn. simpl_modulus_in H''. lia. cbn in H3. lia. }
+    dostep. apply r_eliml; auto.
+    elimr_nary_instr 0. eapply r_current_memory...
+
+    dostep. elimr_nary_instr 2. constructor. apply rs_relop.
+
+    dostep'. separate_instr. constructor. subst. rewrite HneedMoreMem. apply rs_if_true. discriminate.
+    dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
+    apply reduce_trans_label.
+    dostep. elimr_nary_instr 1. eapply r_grow_memory_failure; try eassumption.
+    dostep. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
+    dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
+    dostep'. constructor. eapply rs_block with (vs:=[]); auto.
+    apply reduce_trans_label. cbn.
+    constructor. apply r_set_global. eassumption.
+    (* correct resulting environment *)
+    right. intros. eapply global_var_write_read_same. eassumption. }
+Qed.
+
+
+Lemma memory_grow_reduce_already_enough_mem : forall grow state s f gmp m,
+  grow = grow_memory_if_necessary page_size ->
+  INV s f ->
+  sglob_val s (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
+  nth_error (s_mems s) 0 = Some m ->
+  (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
+  (* already enough memory *)
+  ~~           Wasm_int.Int32.lt
+                 (Wasm_int.Int32.repr
+                    (Wasm_int.Int32.signed
+                       (Wasm_int.Int32.iadd (nat_to_i32 gmp)
+                          (nat_to_i32 (N.to_nat page_size))) ÷ 65536))
+                 (Wasm_int.Int32.repr (Z.of_nat (ssrnat.nat_of_bin (mem_size m)))) =
+               false ->
+  exists s', reduce_trans
+   (state, s, f, [seq AI_basic i | i <- grow])
+   (state, s', f, [])
+  (* enough memory to alloc. constructor *)
+  /\ ((INV s' f /\
+        (forall m v_gmp, nth_error (s_mems s') 0 = Some m ->
+           sglob_val (host_function:=host_function) s' (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 v_gmp)) ->
+           (Z.of_nat v_gmp < Wasm_int.Int32.modulus)%Z ->
+           (Z.of_nat v_gmp + Z.of_N page_size < Z.of_N (mem_length m))%Z) /\
+        (forall wal val, repr_val_LambdaANF_Codegen fenv lenv nenv host_function val s f wal ->
+                         repr_val_LambdaANF_Codegen fenv lenv nenv host_function val s' f wal))
+      \/ (sglob_val (host_function:=host_function) s' (f_inst f) result_out_of_mem = Some (VAL_int32 (nat_to_i32 1)))).
+Proof with eauto.
+  destruct exists_i32 as [my_i32 _].
+  (* grow memory if necessary *)
+  intros grow state sr fr gmp m H Hinv Hgmp Hm HgmpBound HenoughMem. subst.
+  unfold grow_memory_if_necessary. cbn.
+  have I := Hinv. destruct I as [_ [INVresM_w [_ [INVgmp_w [INVcap_w [INVmuti32 [INVlinmem [HgmpInM ?]]]]]]]].
+  have I := INVlinmem. destruct I as [Hm1 [m' [Hm2 [size [Hm3 [Hm4 Hm5]]]]]].
+  assert (m' = m) by congruence. subst m'.
+
+  have H' := HgmpInM _ _ Hm2 Hgmp HgmpBound.
+    (* enough space already *)
+  { exists sr. split.
+    (* load global_mem_ptr *)
+    dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
+    (* add required bytes *)
+    dostep. separate_instr. elimr_nary_instr 2. constructor.
+    apply rs_binop_success. reflexivity.
+    dostep. separate_instr. elimr_nary_instr 2. constructor.
+    apply rs_binop_success. cbn. unfold is_left.
+    rewrite zeq_false. reflexivity.
+    { (*TODO code duplication *)
+      intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
+                    Wasm_int.Int32.unsigned in HA;
+      cbn in HA.
+      assert ((Wasm_int.Int32.signed
+        (Wasm_int.Int32.repr
+           (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
+      apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
+      have H'' := signed_upper_bound (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size).
+      simpl_modulus_in H''. cbn. lia. cbn in H0. lia. }
+    dostep. apply r_eliml; auto.
+    elimr_nary_instr 0. eapply r_current_memory...
+
+    dostep. separate_instr. elimr_nary_instr 2.
+    constructor. apply rs_relop.
+
+    dostep'. separate_instr.
+    constructor. subst.
+    rewrite HenoughMem. apply rs_if_false. reflexivity.
+
+    dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto. cbn.
+    apply reduce_trans_label. apply rt_refl. left. split. assumption.
+
+    (* enough space *)
+    { split; auto. intros. unfold max_mem_pages in *.
+      rewrite H1 in Hgmp. inv Hgmp.
+      repeat rewrite Wasm_int.Int32.Z_mod_modulus_id in H4; try lia. apply Nat2Z.inj in H4. subst gmp.
+      assert (m = m0). { cbn in Hm2. rewrite H0 in Hm2. now inv Hm2. } subst m0.
+      unfold Wasm_int.Int32.lt in HenoughMem.
+      destruct (zlt _ _) as [Ha|Ha]. 2: inv HenoughMem. clear HenoughMem.
+      unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in Ha. cbn in Ha.
+      rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: { unfold  Wasm_int.Int32.modulus,
+       two_power_nat. cbn. apply mem_length_upper_bound in Hm5; cbn in Hm5. lia. }
+      rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: { simpl_modulus. cbn. lia. }
+      remember ( (Wasm_int.Int32.signed
+              (Wasm_int.Int32.repr
+                 (Z.of_nat v_gmp + Z.of_nat (Pos.to_nat 65536))) ÷ 65536))%Z as y.
+      unfold Wasm_int.Int32.signed, Wasm_int.Int32.unsigned in Heqy.
+      rewrite Z_nat_bin in Ha.
+      have Hlength := mem_length_upper_bound _ Hm5. unfold page_size, max_mem_pages in Hlength. cbn in Hlength.
+      (* currently can only use half of memory, TODO: relax*)
+      rewrite zlt_true in Heqy. 2: { cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. lia. simpl_modulus. cbn. lia. }
+      { unfold Wasm_int.Int32.signed in Heqy. cbn in Heqy.
+        rewrite Wasm_int.Int32.Z_mod_modulus_id in Heqy. 2: { simpl_modulus. cbn. lia. }
+        cbn in Heqy. replace (Z.of_nat (Pos.to_nat 65536)) with 65536%Z in Heqy by lia.
+        rewrite (Z.quot_add (Z.of_nat v_gmp) 1 65536) in Heqy; try lia.
+        subst y. unfold Wasm_int.Int32.signed in Ha. cbn in Ha.
+        rewrite zlt_true in Ha. 2: { assert ((Z.of_nat v_gmp ÷ 65536 < 6000)%Z) as H''. { apply Z.quot_lt_upper_bound; lia. }
+        rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. simpl_modulus. cbn.
+        assert (Z.of_nat v_gmp ÷ 65536  >= 0)%Z.
+        rewrite Zquot.Zquot_Zdiv_pos; try lia.
+        apply Z_div_ge0; lia. lia. }
+        rewrite zlt_true in Ha. 2: { rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. simpl_modulus. cbn. lia. }
+        rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: {
+        assert ((Z.of_nat v_gmp ÷ 65536 < 6000)%Z) as H''. { apply Z.quot_lt_upper_bound; lia. }
+        simpl_modulus. cbn.
+        assert (Z.of_nat v_gmp ÷ 65536  >= 0)%Z. { rewrite Zquot.Zquot_Zdiv_pos; try lia. apply Z_div_ge0; lia. }
+        lia. }
+      rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: { simpl_modulus. cbn. lia. }
+      cbn in Ha. rewrite N2Z.inj_div in Ha.
+      rewrite Zquot.Zquot_Zdiv_pos in Ha; try lia.
+      remember (Z.of_nat v_gmp) as q.
+      remember (Z.of_N (mem_length m)) as r.
+      (* the following can probably be done in an easier way, TODO*)
+      assert (Hsimpl: (65536 > 0)%Z) by lia.
+      edestruct (Zdiv_eucl_exist Hsimpl q) as [[z z0] [H1' H2']].
+      rewrite H1' in Ha.
+      rewrite (Z.add_comm _ z0) in Ha.
+      rewrite Z.mul_comm in Ha.
+      rewrite Z.div_add in Ha; try lia.
+      rewrite (Zdiv_small z0) in Ha; try lia. cbn in Ha. rewrite H1'.
+      edestruct (Zdiv_eucl_exist Hsimpl r) as [[z1 z2] [H1'' H2'']].
+      rewrite H1'' in Ha.
+      rewrite (Z.add_comm _ z2) in Ha.
+      rewrite Z.mul_comm in Ha.
+      rewrite Z.div_add in Ha; try lia.
+      rewrite (Zdiv_small z2) in Ha; lia.
+   }}}
+Admitted.
+
+
 Lemma memory_grow_reduce : forall grow state s f,
   grow = grow_memory_if_necessary page_size ->
   INV s f ->
@@ -2345,7 +2628,6 @@ Lemma memory_grow_reduce : forall grow state s f,
                          repr_val_LambdaANF_Codegen fenv lenv nenv host_function val s' f wal))
       \/ (sglob_val (host_function:=host_function) s' (f_inst f) result_out_of_mem = Some (VAL_int32 (nat_to_i32 1)))).
 Proof with eauto.
-  destruct exists_i32 as [my_i32 _].
   (* grow memory if necessary *)
   intros grow state sr fr H Hinv. subst.
   unfold grow_memory_if_necessary. cbn.
@@ -2361,217 +2643,13 @@ Proof with eauto.
                               (nat_to_i32 (N.to_nat page_size))) ÷ 65536))
                      (Wasm_int.Int32.repr (Z.of_nat (ssrnat.nat_of_bin (mem_size m)))))) eqn:HneedMoreMem.
   2: rename HneedMoreMem into HenoughMem.
-  (* need to grow memory *)
-  { destruct (N.leb_spec (size + 1) max_mem_pages); unfold max_mem_pages in *.
-    (* grow memory success *)
-    assert (mem_size m + 1 <= page_limit)%N. { unfold page_limit. lia. }
-    assert (Hsize: (mem_size m + 1 <=? max_mem_pages)%N). { subst. apply N.leb_le. now unfold max_mem_pages. }
-
-    have Hgrow := memory_grow_success _ _ _ INVlinmem Hm2 Hsize.
-    destruct Hgrow.
-    { eexists. split.
-      (* load global_mem_ptr *)
-      dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
-      (* add required bytes *)
-      dostep. separate_instr. elimr_nary_instr 2. constructor.
-      apply rs_binop_success. reflexivity.
-      dostep. separate_instr. elimr_nary_instr 2. constructor.
-      apply rs_binop_success. cbn. unfold is_left.
-      rewrite zeq_false. reflexivity.
-      { (*TODO code duplication *)
-        intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
-                      Wasm_int.Int32.unsigned in HA;
-        cbn in HA.
-        assert ((Wasm_int.Int32.signed
-          (Wasm_int.Int32.repr
-             (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
-        apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
-        have H'' := signed_upper_bound (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size).
-        simpl_modulus_in H''. cbn. lia. cbn in H4. lia. }
-      dostep. apply r_eliml; auto.
-      elimr_nary_instr 0. eapply r_current_memory...
-
-      dostep. separate_instr. elimr_nary_instr 2.
-      constructor. apply rs_relop.
-
-      dostep'. separate_instr.
-      constructor. subst.
-      rewrite HneedMoreMem. apply rs_if_true. intro H3'. inv H3'.
-
-      dostep'. separate_instr. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
-      cbn.
-      apply reduce_trans_label.
-      dostep'. separate_instr. elimr_nary_instr 1. eapply r_grow_memory_success; eauto.
-      dostep'. separate_instr. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
-      dostep'. constructor. apply rs_if_false.
-
-      assert (size >= 0)%N. { subst. cbn. auto. lia. }
-      { unfold Wasm_int.Int32.eq. cbn. rewrite zeq_false. reflexivity. intro.
-        subst. cbn in *. unfold page_limit in *.
-        rewrite Z_nat_bin in H5.
-        rewrite Wasm_int.Int32.Z_mod_modulus_id in H5. lia. simpl_modulus. cbn. lia. }
-      dostep'. separate_instr. constructor. apply rs_block with (vs:= [])(n:=0); eauto.
-      apply reduce_trans_label. cbn. apply rt_refl.
-      intros.
-      left. split.
-      { (* invariant *) eapply update_mem_preserves_INV. 6: reflexivity. assumption. eassumption.
-        erewrite mem_grow_increases_length; eauto. lia.
-      eapply mem_grow_preserves_max_pages... exists (mem_size m + 1)%N. split.
-      eapply mem_grow_increases_size in H3; auto. rewrite N.add_comm. apply H3. now apply N.leb_le. }
-      { (* enough memory available *)
-        rename x into m''. split. intros. subst. destruct (update_list_at (s_mems sr) 0 m'') eqn:Hm'. inv H4.
-        inv H4. assert (m0 = m''). { unfold update_list_at in Hm'.  rewrite take0 in Hm'. now inv Hm'. } subst m0.
-        rename m'' into m'.
-        assert (mem_length m' = (page_size + mem_length m)%N) as Hlength'. {
-                        eapply mem_grow_increases_length in H3; eauto. }
-        assert (v_gmp = gmp). {
-          assert (Hgl: sglob_val (upd_s_mem sr (m' :: l)) (f_inst fr) global_mem_ptr
-                = sglob_val sr (f_inst fr) global_mem_ptr) by reflexivity.
-          rewrite Hgl in H5. rewrite H5 in Hgmp_r. inv Hgmp_r.
-          repeat rewrite Wasm_int.Int32.Z_mod_modulus_id in H7; lia. } subst v_gmp.
-        rewrite Hlength'. apply mem_length_upper_bound in Hm5; cbn in Hm5.
-        unfold page_size. lia.
-        (* preserved value relation *)
-        intros. eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs; try apply H4.
-        reflexivity. reflexivity. eassumption.
-        cbn. unfold update_list_at. rewrite take0. cbn. reflexivity. eassumption.
-        subst. apply mem_length_upper_bound in Hm5; cbn in Hm5. simpl_modulus; cbn; lia.
-        rewrite <- Hgmp_r. reflexivity.
-        subst. apply mem_length_upper_bound in Hm5; cbn in Hm5.
-        apply mem_grow_increases_length in H3. simpl_modulus; cbn; lia. lia.
-        intros. eapply mem_grow_preserves_original_values; eauto; unfold page_limit; lia. } }
-       (* growing memory fails *)
-      edestruct INVresM_w as [sr'' HresM].
-
-      eexists. split.
-      (* load global_mem_ptr *)
-      dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
-      (* add required bytes *)
-      dostep. elimr_nary_instr 2. constructor.
-      apply rs_binop_success. reflexivity.
-      dostep. elimr_nary_instr 2. constructor.
-      apply rs_binop_success. cbn. unfold is_left.
-      rewrite zeq_false. reflexivity.
-      { (*TODO code duplication *)
-        intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
-                      Wasm_int.Int32.unsigned in HA;
-        cbn in HA.
-        assert ((Wasm_int.Int32.signed
-          (Wasm_int.Int32.repr
-             (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z). (* arbitrary number *)
-        apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
-        have H'' := signed_upper_bound (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size).
-        cbn. simpl_modulus_in H''. lia. cbn in H2. lia. }
-      dostep. apply r_eliml; auto.
-      elimr_nary_instr 0. eapply r_current_memory...
-
-      dostep. elimr_nary_instr 2. constructor. apply rs_relop.
-
-      dostep'. separate_instr. constructor. subst. rewrite HneedMoreMem. apply rs_if_true. discriminate.
-      dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
-      apply reduce_trans_label.
-      dostep. elimr_nary_instr 1. eapply r_grow_memory_failure; try eassumption.
-      dostep. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
-      dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
-      dostep'. constructor. eapply rs_block with (vs:=[]); auto.
-      apply reduce_trans_label. cbn.
-      constructor. apply r_set_global. eassumption.
-      (* correct resulting environment *)
-      right. intros. eapply global_var_write_read_same. eassumption.
-      }
-    (* enough space already *)
-    {
-      eexists. split.
-      edestruct INVgmp_w as [sr' Hgmp].
-      (* load global_mem_ptr *)
-      dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
-      (* add required bytes *)
-      dostep. separate_instr. elimr_nary_instr 2. constructor.
-      apply rs_binop_success. reflexivity.
-      dostep. separate_instr. elimr_nary_instr 2. constructor.
-      apply rs_binop_success. cbn. unfold is_left.
-      rewrite zeq_false. reflexivity.
-      { (*TODO code duplication *)
-        intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
-                      Wasm_int.Int32.unsigned in HA;
-        cbn in HA.
-        assert ((Wasm_int.Int32.signed
-          (Wasm_int.Int32.repr
-             (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
-        apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
-        have H'' := signed_upper_bound (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size).
-        simpl_modulus_in H''. cbn. lia. cbn in H1. lia. }
-      dostep. apply r_eliml; auto.
-      elimr_nary_instr 0. eapply r_current_memory...
-
-      dostep. separate_instr. elimr_nary_instr 2.
-      constructor. apply rs_relop.
-
-      dostep'. separate_instr.
-      constructor. subst.
-      rewrite HenoughMem. apply rs_if_false. reflexivity.
-
-      dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto. cbn.
-      apply reduce_trans_label. apply rt_refl. left. split. assumption.
-
-      (* enough space *)
-      { split; auto. intros. unfold max_mem_pages in *.
-        rewrite H2 in Hgmp_r. inv Hgmp_r.
-        repeat rewrite Wasm_int.Int32.Z_mod_modulus_id in H5; try lia. apply Nat2Z.inj in H5. subst gmp.
-        assert (m = m0). { cbn in Hm2. rewrite H1 in Hm2. now inv Hm2. } subst m0.
-        unfold Wasm_int.Int32.lt in HenoughMem.
-        destruct (zlt _ _) as [Ha|Ha]. 2: inv HenoughMem. clear HenoughMem.
-        unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in Ha. cbn in Ha.
-        rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: { unfold  Wasm_int.Int32.modulus,
-         two_power_nat. cbn. apply mem_length_upper_bound in Hm5; cbn in Hm5. lia. }
-        rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: { simpl_modulus. cbn. lia. }
-        remember ( (Wasm_int.Int32.signed
-                (Wasm_int.Int32.repr
-                   (Z.of_nat v_gmp + Z.of_nat (Pos.to_nat 65536))) ÷ 65536))%Z as y.
-        unfold Wasm_int.Int32.signed, Wasm_int.Int32.unsigned in Heqy.
-        rewrite Z_nat_bin in Ha.
-        have Hlength := mem_length_upper_bound _ Hm5. unfold page_size, max_mem_pages in Hlength. cbn in Hlength.
-        (* currently can only use half of memory, TODO: relax*)
-        rewrite zlt_true in Heqy. 2: { cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. lia. simpl_modulus. cbn. lia. }
-        { unfold Wasm_int.Int32.signed in Heqy. cbn in Heqy.
-          rewrite Wasm_int.Int32.Z_mod_modulus_id in Heqy. 2: { simpl_modulus. cbn. lia. }
-          cbn in Heqy. replace (Z.of_nat (Pos.to_nat 65536)) with 65536%Z in Heqy by lia.
-          rewrite (Z.quot_add (Z.of_nat v_gmp) 1 65536) in Heqy; try lia.
-          subst y. unfold Wasm_int.Int32.signed in Ha. cbn in Ha.
-          rewrite zlt_true in Ha. 2: { assert ((Z.of_nat v_gmp ÷ 65536 < 6000)%Z) as H''. { apply Z.quot_lt_upper_bound; lia. } rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. simpl_modulus. cbn.
-          assert (Z.of_nat v_gmp ÷ 65536  >= 0)%Z.
-          rewrite Zquot.Zquot_Zdiv_pos; try lia.
-          apply Z_div_ge0; lia. lia. }
-          rewrite zlt_true in Ha. 2: { rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. simpl_modulus. cbn. lia. }
-          rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: {
-          assert ((Z.of_nat v_gmp ÷ 65536 < 6000)%Z) as H''. { apply Z.quot_lt_upper_bound; lia. }
-          simpl_modulus. cbn.
-          assert (Z.of_nat v_gmp ÷ 65536  >= 0)%Z. { rewrite Zquot.Zquot_Zdiv_pos; try lia. apply Z_div_ge0; lia. }
-          lia. }
-          rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: { simpl_modulus. cbn. lia. }
-          cbn in Ha. rewrite N2Z.inj_div in Ha.
-          rewrite Zquot.Zquot_Zdiv_pos in Ha; try lia.
-          remember (Z.of_nat v_gmp) as q.
-          remember (Z.of_N (mem_length m)) as r.
-          (* the following can probably be done in an easier way, TODO*)
-          assert (Hsimpl: (65536 > 0)%Z) by lia.
-          edestruct (Zdiv_eucl_exist Hsimpl q) as [[z z0] [H1' H2']].
-          rewrite H1' in Ha.
-          rewrite (Z.add_comm _ z0) in Ha.
-          rewrite Z.mul_comm in Ha.
-          rewrite Z.div_add in Ha; try lia.
-          rewrite (Zdiv_small z0) in Ha; try lia. cbn in Ha. rewrite H1'.
-          edestruct (Zdiv_eucl_exist Hsimpl r) as [[z1 z2] [H1'' H2'']].
-          rewrite H1'' in Ha.
-          rewrite (Z.add_comm _ z2) in Ha.
-          rewrite Z.mul_comm in Ha.
-          rewrite Z.div_add in Ha; try lia.
-          rewrite (Zdiv_small z2) in Ha; lia.
-     }}
-   } Unshelve. all: auto.
-(* Qed. hangs here *)
-Admitted.
-
+  { (* need to grow memory *)
+    have H'' := memory_grow_reduce_need_grow_mem _ state _ _ _ _ Logic.eq_refl Hinv
+                                         Hgmp_r Hm2 HgmpBound HneedMoreMem. apply H''. }
+  { (* enough space already *)
+     have H'' := memory_grow_reduce_already_enough_mem _ state _ _ _ _ Logic.eq_refl Hinv
+                                                   Hgmp_r Hm2 HgmpBound HenoughMem. apply H''. }
+Qed.
 
 (* adjusted from iriswasm *)
 Lemma enough_space_to_store m k off bs :
