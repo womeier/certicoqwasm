@@ -450,8 +450,10 @@ Fixpoint add_to_fname_mapping (names : list positive) (start_id : nat) (initial 
 (* maps function names to ids (id=index in function list of module) *)
 (* TODO: use reserved function ids for write_char / write_int / main / pp_constr..., don't include in mapping *)
 Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [write_char_function_var; write_int_function_var] 0 (M.empty _), 2) in
-
+  let (fname_mapping, num_fns) := (add_to_fname_mapping [ write_char_function_var
+                                                        ; write_int_function_var
+                                                        ; constr_pp_function_var
+                                                        ; main_function_var] 0 (M.empty _), 4) in
   let fun_ids :=
     match e with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
@@ -463,10 +465,6 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
     | _ => []
   end in
   let (fname_mapping, num_fns) := (add_to_fname_mapping fun_ids num_fns fname_mapping, num_fns + length fun_ids) in
-
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [constr_pp_function_var] num_fns fname_mapping, num_fns + 1) in
-
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [main_function_var] num_fns fname_mapping, num_fns + 1) in
 
   Ret fname_mapping.
 
@@ -512,7 +510,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                         ; body := main_instr
                         |}
   in
-  let functions := fns ++ [constr_pp_function] ++ [main_function] in
+  let functions := [constr_pp_function; main_function] ++ fns in
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (Mk_funcidx f.(fidx))
                                 |}) functions (* function exports for debug names *)

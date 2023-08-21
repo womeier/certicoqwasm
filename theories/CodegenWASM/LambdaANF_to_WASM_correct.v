@@ -4002,6 +4002,13 @@ Proof.
   intros. destruct (@eqseqP _ l1 l2); auto. inv H.
 Qed.
 
+Lemma store_record_eqb_true : forall s s',
+  store_record_eqb (host_function:=host_function) s s' = true -> s = s'.
+Proof.
+  intros. unfold store_record_eqb in H.
+  destruct (store_record_eq_dec _ _); auto. inv H.
+Qed.
+
 Lemma add_funcs_effect : forall s' s'' l l1 l2 f,
     fold_left
           (fun '(s, ys) (x : module_func) =>
@@ -4197,7 +4204,7 @@ Proof.
   destruct (match e with | Efun fds _ => _ | _ => Ret [] end) eqn:HtransFns. inv Hcompile.
   destruct (translate_exp nenv cenv _ _ _) eqn:Hexpr. inv Hcompile.
   destruct (translate_function_var nenv f0 main_function_var "main function") eqn:HmainFname. inv Hcompile.
-  inv Hcompile. unfold INV. cbn in Hinst. unfold is_true in *.
+  inv Hcompile. unfold INV. unfold is_true in *.
   destruct Hinst as [t_imps [t_exps [state [s' [ g_inits [e_offs [d_offs
       [Hmodule [Himports [HallocModule [HinstGlobals [HinstElem
          [HinstData [HboundsElem [HboundsData [_ Hinst]]]]]]]]]]]]]]]].
@@ -4208,36 +4215,55 @@ Proof.
   inv HinstGlobals. inv H3. inv H5. inv H6. inv H7.
   (* data offsets of mem init. red. to const, empty list *) inv HinstData.
   (* elem vals red. to const *)
-  unfold instantiate_elem in HinstElem. cbn in HinstElem. rewrite map_app in HinstElem. cbn in HinstElem.
-  apply Forall2_app_inv_l in HinstElem. destruct HinstElem as [l1' [l2' [HinstElemFns [HinstElem ?]]]].
-  subst e_offs. inv HinstElem. inv H7. inv H9. cbn in Hinst. rewrite map_cat in Hinst.
-  rewrite map_app in Hinst. cbn in Hinst. unfold init_tabs, init_tab in Hinst. cbn in Hinst.
-  unfold store_record_eqb in Hinst. destruct (store_record_eq_dec) eqn:Heqn; cbn in Hinst. 2: inv Hinst.
+  unfold instantiate_elem in HinstElem. cbn in HinstElem. cbn in Hinst.
+  replace ([:: {| modelem_table := Mk_tableidx 0;
+                  modelem_offset := [BI_const (nat_to_value (fidx w))];
+                  modelem_init := [Mk_funcidx (fidx w)] |},
+               {| modelem_table := Mk_tableidx 0;
+                  modelem_offset := [BI_const (nat_to_value i)];
+                  modelem_init := [Mk_funcidx i] |}
+                & map (fun f : wasm_function =>
+                     {| modelem_table := Mk_tableidx 0;
+                        modelem_offset := [BI_const (nat_to_value (fidx f))];
+                        modelem_init := [Mk_funcidx (fidx f)] |}) fns])
+  with    ([{| modelem_table := Mk_tableidx 0;
+               modelem_offset := [BI_const (nat_to_value (fidx w))];
+               modelem_init := [Mk_funcidx (fidx w)] |};
+            {| modelem_table := Mk_tableidx 0;
+               modelem_offset := [BI_const (nat_to_value i)];
+               modelem_init := [Mk_funcidx i] |}] ++
+            map (fun f : wasm_function => {| modelem_table := Mk_tableidx 0;
+                                             modelem_offset := [BI_const (nat_to_value (fidx f))];
+                                             modelem_init := [Mk_funcidx (fidx f)] |}) fns)%list
+  in HinstElem by reflexivity. apply Forall2_app_inv_l in HinstElem.
+  destruct HinstElem as [l1' [l2' [HinstElem [HinstElemFns ?]]]].
+  subst e_offs. inv HinstElem. inv H7. inv H9.
+  unfold init_tabs, init_tab in Hinst. apply store_record_eqb_true in Hinst.
+
   apply reduce_trans_const_eq in H1, H2, H3, H4. subst y y0 y1 y2.
   unfold alloc_module, alloc_funcs, alloc_globs, add_mem, alloc_Xs in HallocModule.
   cbn in HallocModule. repeat rewrite map_app in HallocModule. cbn in HallocModule.
+  destruct (fold_left _ (map _ fns) _) eqn:HaddF.
   destruct (fold_left _ _) eqn:HaddTab.
   destruct (add_tab_effect _ _ _ _ HaddTab) as [HT0 [HT1 HT2]]. cbn in HT0, HT1, HT2.
-   subst s_globals s_mems s_funcs.
-  destruct (fold_left _ ((map _ fns) ++ _ )) eqn:HaddF.
+  subst s_globals s_mems s_funcs.
   unfold add_glob in HallocModule. cbn in HallocModule.
-  unfold store_record_eqb in HallocModule.
-  destruct (store_record_eq_dec s'); cbn in HallocModule. 2: inv HallocModule.
   repeat (apply andb_prop in HallocModule;
            destruct HallocModule as [HallocModule ?F]).
-  apply eqseq_true in F0,F1,F2,F3,F, HallocModule.
+  apply store_record_eqb_true in HallocModule.
+  apply eqseq_true in F0,F1,F2,F3,F.
   apply add_funcs_effect in HaddF. cbn in HaddF. destruct HaddF as [Hs01 [Hs02 [Hs03 Hs04]]].
-  rewrite <- Hs01 in e1, F0. rewrite <- Hs02 in e1, F1.
-  rewrite <- Hs03 in e1, F2. rewrite Hs04 in e1, F3. cbn in F0, F1, F2, F3.
-  clear Hs01 Hs02 Hs03 Hs04 s0.
-  cbn in Hinst. unfold init_tabs, init_mems, init_mem in Hinst. cbn in Hinst.
+
+  rewrite <- Hs01 in HallocModule, F0. rewrite <- Hs02 in HallocModule, F1.
+  rewrite <- Hs03 in HallocModule, F2. cbn in Hinst. subst s.
+  rewrite Hs04 in HallocModule.
+  cbn in F0, F1, F2, F3. clear Hs01 Hs02 Hs03 Hs04 s0.
   clear HboundsData HboundsElem. (* clear for now *)
-  subst.
 
   (* INV globals *)
   unfold INV_result_var_writable, INV_result_var_out_of_mem_writable, INV_global_mem_ptr_writable,
-  INV_constr_alloc_ptr_writable. unfold global_var_w, supdate_glob, supdate_glob_s. cbn.
-  rewrite F0.
+  INV_constr_alloc_ptr_writable. unfold global_var_w, supdate_glob, supdate_glob_s.
+  subst s'. cbn. rewrite F0.
   split. (* res_var_w *) eexists. reflexivity.
   split. (* res_var_M_w *) eexists. reflexivity.
   split. (* res_var_M_0 *) unfold INV_result_var_out_of_mem_is_zero. unfold sglob_val, sglob.
@@ -4264,8 +4290,8 @@ Proof.
    split. (* all locals i32 *)
    { unfold INV_locals_all_i32. intros. rewrite Hflocs in H. rewrite nth_error_nil in H. inv H. }
    split. (* num functions upper bound *)
-   { unfold INV_num_functions_upper_bound.
-     rewrite map_length. cbn. rewrite app_length. rewrite map_length. cbn.
+   { unfold INV_num_functions_upper_bound. cbn.
+     rewrite map_length. rewrite map_length.
      destruct e; try (inv HtransFns; simpl_modulus; cbn; lia).
      erewrite <- fds_length_length; eauto.
      unfold max_num_functions in HfdsLength. simpl_modulus. cbn. lia. }
