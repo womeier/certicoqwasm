@@ -4630,6 +4630,19 @@ Proof.
   now rewrite IHl.
 Qed.
 
+Lemma get_var_fname_mapping_not_in_l : forall l startidx env var idx,
+  (add_to_fname_mapping l startidx env) ! var = Some idx ->
+  ~ In var l ->
+  env ! var = Some idx.
+Proof.
+  induction l; intros; auto.
+  cbn in H0.
+  assert (~ a = var). { intro. subst. auto. }
+  assert (~ In var l). { intro. subst. auto. }
+  cbn in H.
+  rewrite M.gso in H; auto. eapply IHl; eauto.
+Qed.
+
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 Corollary LambdaANF_Codegen_related :
   forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat), (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
@@ -4643,6 +4656,8 @@ Corollary LambdaANF_Codegen_related :
   translate_function_var nenv fenv main_function_var errMsg = Ret mainidx ->
   (* constructors welformed *)
   correct_cenv_of_exp cenv e ->
+  (* function vars unique and > 100 (guaranteed by previous stage) *)
+  NoDup (collect_function_vars e) /\ (forall v, In v (collect_function_vars e) -> v > 100)%positive ->
   (* expression must be closed *)
   (~ exists x, occurs_free e x) ->
   (* instiation with the two imported functions *)
@@ -4654,7 +4669,7 @@ Corollary LambdaANF_Codegen_related :
 
        result_val_LambdaANF_Codegen fenv lenv nenv _ v sr' fr.
 Proof.
-  intros ? ? ? ? ? ? ? ? ? ? ? ? ? Hstep LANF2WASM Hmainidx Hcenv Hfreevars Hinst.
+  intros ? ? ? ? ? ? ? ? ? ? ? ? ? Hstep LANF2WASM Hmainidx Hcenv HfnVars Hfreevars Hinst.
   remember ({| f_locs := []; f_inst := f_inst fr |}) as f.
   assert (Hmaxfuns : (Z.of_nat
         match e with
@@ -4707,6 +4722,19 @@ Proof.
     destruct (fenv ! main_function_var). 2: inv Hfmain. congruence. }
   subst i. clear Hfmain.
 
+  assert (mainidx = 3). {
+    unfold create_fname_mapping in Hmapping.
+    cbn in Hmapping. inv Hmapping.
+    unfold translate_function_var in Hmainidx.
+    destruct ((add_to_fname_mapping _ 4 _) ! main_function_var) eqn:Hgetvar; inv Hmainidx.
+    apply get_var_fname_mapping_not_in_l in Hgetvar.
+    2: { unfold main_function_var. intro.
+         destruct HfnVars as [HfvarsNodup HfvarsGt100].
+         apply HfvarsGt100 in H. lia. }
+    unfold main_function_var, write_char_function_var, write_int_function_var, constr_pp_function_var in *.
+    do 3! (rewrite M.gso in Hgetvar; try lia).
+    rewrite M.gss in Hgetvar; try lia. congruence. } subst mainidx.
+
   have Heqdec := inductive_eq_dec e. destruct Heqdec.
   { (* top exp is Efun _ _ *)
     destruct e0 as [fds' [e'' He]]. subst e.
@@ -4725,7 +4753,8 @@ Proof.
     assert (Hrelm : rel_mem_LambdaANF_Codegen fenv (create_local_variable_mapping (collect_local_variables e)) nenv
             host_function e rho sr f_before_IH). {
       split.
-      { intros. inv Hfuns. exfalso. admit.
+      { intros. inv Hfuns. exfalso. cbn in HsrFuncs.
+        destruct e. admit.
         (* absurd, no functions *)
       }
       { intros. exfalso. eauto. }}
@@ -4734,7 +4763,7 @@ Proof.
     destruct HMAIN as [s' [f' [Hred [Hval Hfinst]]]]. cbn.
     exists s'. split.
     dostep'. apply r_call. cbn.
-    assert (mainidx = 3). { admit. } subst mainidx. rewrite HinstFuncs. reflexivity.
+    rewrite HinstFuncs. reflexivity.
     dostep'. eapply r_invoke_native with (ves:=[]) (vcs:=[]) (t1s:=[]) (t2s:=[])(f' := f_before_IH); eauto.
     rewrite HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst. reflexivity.
     subst f_before_IH. cbn. apply repeat0_n_zeros.

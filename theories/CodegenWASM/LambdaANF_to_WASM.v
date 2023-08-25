@@ -447,14 +447,8 @@ Fixpoint add_to_fname_mapping (names : list positive) (start_id : nat) (initial 
   | n :: names' => M.set n start_id (add_to_fname_mapping names' (1 + start_id) initial)
   end.
 
-(* maps function names to ids (id=index in function list of module) *)
-(* TODO: use reserved function ids for write_char / write_int / main / pp_constr..., don't include in mapping *)
-Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [ write_char_function_var
-                                                        ; write_int_function_var
-                                                        ; constr_pp_function_var
-                                                        ; main_function_var] 0 (M.empty _), 4) in
-  let fun_ids :=
+
+Definition collect_function_vars (e : cps.exp) : list cps.var :=
     match e with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
       (fix iter (fds : fundefs) : list cps.var :=
@@ -463,8 +457,16 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
           | Fcons x _ _ _ fds' => x :: (iter fds')
           end) fds
     | _ => []
-  end in
-  let (fname_mapping, num_fns) := (add_to_fname_mapping fun_ids num_fns fname_mapping, num_fns + length fun_ids) in
+    end.
+
+(* maps function names to ids (id=index in function list of module) *)
+Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
+  let (fname_mapping, num_fns) := (add_to_fname_mapping [ write_char_function_var
+                                                        ; write_int_function_var
+                                                        ; constr_pp_function_var
+                                                        ; main_function_var] 0 (M.empty _), 4) in
+  let fun_vars := collect_function_vars e in
+  let (fname_mapping, num_fns) := (add_to_fname_mapping fun_vars num_fns fname_mapping, num_fns + length fun_vars) in
 
   Ret fname_mapping.
 
