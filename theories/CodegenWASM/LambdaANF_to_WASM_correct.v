@@ -4252,7 +4252,6 @@ Proof.
 Qed.
 
 
-(* TODO: generalize table initialization *)
 Lemma add_tab_effect : forall l s s' f,
   fold_left
             (fun (s : datatypes.store_record host_function) '(e_ind, e) =>
@@ -4617,38 +4616,20 @@ Proof.
   (* globals red. to const *)
   unfold instantiate_globals in HinstGlobals. cbn in HinstGlobals.
   inv HinstGlobals. inv H3. inv H5. inv H6. inv H7.
-  (* data offsets of mem init. red. to const, empty list *) inv HinstData.
+  apply reduce_trans_const_eq in H1, H2, H3. subst y y0 y1.
+  (* data offsets of mem init. red. to const, empty list *)
+  inv HinstData. apply reduce_trans_const_eq in H4. subst y2.
   (* elem vals red. to const *)
-  unfold instantiate_elem in HinstElem. cbn in HinstElem. cbn in Hinst.
-  replace ([:: {| modelem_table := Mk_tableidx 0;
-                  modelem_offset := [BI_const (nat_to_value (fidx w))];
-                  modelem_init := [Mk_funcidx (fidx w)] |},
-               {| modelem_table := Mk_tableidx 0;
-                  modelem_offset := [BI_const (nat_to_value i)];
-                  modelem_init := [Mk_funcidx i] |}
-                & map (fun f : wasm_function =>
-                     {| modelem_table := Mk_tableidx 0;
-                        modelem_offset := [BI_const (nat_to_value (fidx f))];
-                        modelem_init := [Mk_funcidx (fidx f)] |}) fns])
-  with    ([{| modelem_table := Mk_tableidx 0;
-               modelem_offset := [BI_const (nat_to_value (fidx w))];
-               modelem_init := [Mk_funcidx (fidx w)] |};
-            {| modelem_table := Mk_tableidx 0;
-               modelem_offset := [BI_const (nat_to_value i)];
-               modelem_init := [Mk_funcidx i] |}] ++
-            map (fun f : wasm_function => {| modelem_table := Mk_tableidx 0;
-                                             modelem_offset := [BI_const (nat_to_value (fidx f))];
-                                             modelem_init := [Mk_funcidx (fidx f)] |}) fns)%list
-  in HinstElem by reflexivity. apply Forall2_app_inv_l in HinstElem.
-  destruct HinstElem as [l1' [l2' [HinstElem [HinstElemFns ?]]]].
-  subst e_offs. inv HinstElem. inv H7. inv H9.
-  unfold init_tabs, init_tab in Hinst. apply store_record_eqb_true in Hinst.
+  unfold instantiate_elem in HinstElem. cbn in Hinst.
+  repeat rewrite -app_assoc in HinstElem. cbn in HinstElem.
+  apply Forall2_app_inv_l in HinstElem.
 
-  apply reduce_trans_const_eq in H1, H2, H3, H4. subst y y0 y1 y2.
+  unfold init_tabs, init_tab in Hinst. apply store_record_eqb_true in Hinst.
   unfold alloc_module, alloc_funcs, alloc_globs, add_mem, alloc_Xs in HallocModule.
   cbn in HallocModule. repeat rewrite map_app in HallocModule. cbn in HallocModule.
   destruct (fold_left _ (map _ fns) _) eqn:HaddF.
   destruct (fold_left _ _) eqn:HaddTab.
+
   destruct (add_tab_effect _ _ _ _ HaddTab) as [HT0 [HT1 HT2]]. cbn in HT0, HT1, HT2.
   subst s_globals s_mems s_funcs.
   unfold add_glob in HallocModule. cbn in HallocModule.
@@ -4719,7 +4700,8 @@ Proof.
    unfold INV_inst_globs_nodup. rewrite F0.
    repeat constructor; cbn; lia.
    (* INV_table_id *)
-   cbn. admit.
+   { unfold INV_table_id, stab_addr, stab_index. rewrite F2. cbn.
+     intros. admit. }
 
   split.
   (* inst_funcs (f_inst f) *)
@@ -4957,7 +4939,7 @@ Proof.
             host_function e rho sr f_before_IH). {
       split.
       { intros. inv Hfuns. exfalso. cbn in HsrFuncs.
-        destruct e. admit.
+        admit.
         (* absurd, no functions *)
       }
       { intros. exfalso. eauto. }}
