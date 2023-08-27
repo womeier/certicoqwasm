@@ -491,8 +491,13 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
 
   constr_pp_function <- generate_constr_pp_function cenv nenv fname_mapping e;;
 
+  let top_exp := match e with
+                 | Efun _ _ => e
+                 | _ => Efun Fnil e
+                 end in
+
   fns <-
-    match e with
+    match top_exp with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
       (fix iter (fds : fundefs) : error (list wasm_function) :=
           match fds with
@@ -502,13 +507,14 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
              following <- iter fds' ;;
              Ret (fn :: following)
           end) fds
-    | _ => Ret []
+    | _ => Err "unexpected toplevel expression"
   end ;;
 
-  let main_expr := match e with
-                   | Efun _ exp => exp
-                   | _ => e
-                   end in
+  main_expr <- match top_exp with
+               | Efun _ exp => Ret exp
+               | _ => Err "unexpected toplevel expression"
+               end;;
+
   let main_vars := collect_local_variables main_expr in
   let main_lenv := create_local_variable_mapping main_vars in
 
