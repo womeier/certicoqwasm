@@ -21,7 +21,7 @@ Import MonadNotation.
 (* memory can grow to at most 64KB * max_mem_pages *)
 Definition max_mem_pages     := 5000%N.
 Definition max_constr_args   := 1024%Z.      (* TODO enforce, should be possible to vary without breaking too much *)
-Definition max_function_args := 1024%Z.      (* TODO enforce, should be possible to vary without breaking too much *)
+Definition max_function_args := 100%Z.       (* TODO enforce, should be possible to vary without breaking too much *)
 Definition max_num_functions := 1_000_000%Z. (* TODO enforce, sohuld be possible to vary without breaking too much *)
 
 (* ***** HARDCODED FUNCTION IDs ****** *)
@@ -473,7 +473,7 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
 Fixpoint list_function_types (n : nat) : list function_type :=
   match n with
   | 0 => [Tf [] []]
-  | S n' => list_function_types n' ++ [Tf (List.repeat T_i32 (S n')) []]
+  | S n' => (Tf [] []) :: map (fun t => match t with Tf args rt => Tf (T_i32 :: args) rt end) (list_function_types n')
   end.
 
 (* for indirect calls maps fun ids to themselves *)
@@ -550,8 +550,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                                         ; modfunc_body := f.(body)
                                         |}) functions in
   let module :=
-      {| mod_types := list_function_types (list_max (1 :: (map (fun f => match f.(type) with Tf t1 _ => length t1 end) functions)))
-                                                    (* 1: for imported functions *)
+      {| mod_types := list_function_types (Z.to_nat max_function_args) (* more than required, doesn't hurt*)
 
        ; mod_funcs := functions_final
        ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (2 + List.length functions)

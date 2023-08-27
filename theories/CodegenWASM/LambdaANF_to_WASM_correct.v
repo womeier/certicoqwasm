@@ -745,9 +745,9 @@ Definition stored_in_locals (x : cps.var) (v : wasm_value) (f : frame ) :=
   List.nth_error f.(f_locs) i = Some (VAL_int32 (wasm_value_to_i32 v)).
 
 Definition rel_mem_LambdaANF_Codegen (e : exp) (rho : LambdaANF.eval.env)
-                                     (sr : store_record) (fr : frame) :=
+                    (sr : store_record) (fr : frame) (fds : fundefs) :=
         (* function def is related to function index *)
-        (forall x rho' fds f v errMsg,
+        (forall x rho' f v errMsg,
             M.get x rho = Some v ->
              (* 1) arg is subval of constructor
                 2) v listed in fds -> subval *)
@@ -3498,25 +3498,25 @@ Proof.
   induction args; auto.
 Qed.
 
-Lemma fun_args_reduce {lenv} : forall state fr sr (ys : seq cps.var) rho vs f t args_instr,
+Lemma fun_args_reduce {lenv} : forall state fr sr fds (ys : seq cps.var) rho vs f t args_instr,
   INV sr fr ->
   get_list ys rho = Some vs ->
   rel_mem_LambdaANF_Codegen fenv lenv nenv
-           host_function (Eapp f t ys) rho sr fr ->
+           host_function (Eapp f t ys) rho sr fr fds ->
   repr_fun_args_Codegen fenv lenv nenv ys args_instr ->
   exists args,
     reduce_trans (state, sr, fr, map AI_basic args_instr)
                  (state, sr, fr, (map (fun a => AI_basic (BI_const (nat_to_value a))) args))
     /\ @const_val_list lenv vs sr fr args.
 Proof.
-  intros ? ? ? ? ? ? ? ? ? Hinv Hgetlist HrelM Hargs.
+  intros ? ? ? ? ? ? ? ? ? ? Hinv Hgetlist HrelM Hargs.
   generalize dependent f. generalize dependent rho. generalize dependent sr.
   revert vs t fr state. induction Hargs; intros.
   { inv Hgetlist. exists []. cbn. split. apply rt_refl. constructor. }
   { destruct vs.
     - cbn in Hgetlist. destruct (rho ! a), (get_list args rho); inv Hgetlist.
     - assert (HrelM': rel_mem_LambdaANF_Codegen fenv lenv nenv host_function
-          (Eapp f t args) rho sr fr). {
+          (Eapp f t args) rho sr fr fds). {
             destruct HrelM as [HM1 HM2]. split. assumption.
             intros. assert (Hocc : (occurs_free (Eapp f t (a :: args)) x)). {
             inv H0. constructor. constructor. right. assumption. }
@@ -3542,7 +3542,7 @@ Proof.
     { destruct vs.
     - cbn in Hgetlist. destruct (rho ! a), (get_list args rho); inv Hgetlist.
     - assert (HrelM': rel_mem_LambdaANF_Codegen fenv lenv nenv host_function
-          (Eapp f t args) rho sr fr). {
+          (Eapp f t args) rho sr fr fds). {
             destruct HrelM as [HM1 HM2]. split. assumption.
             intros. assert (Hocc : (occurs_free (Eapp f t (a :: args)) x)). {
             inv H0. constructor. constructor. right. assumption. }
@@ -3588,7 +3588,7 @@ Theorem repr_bs_LambdaANF_Codegen_related {lenv} :
       (* protected_id_not_bound_id rho e ->
       unique_bindings_env rho e -> *)
       (* functions_not_bound p rho e -> (* function names in p/rho not bound in e *) *)
-      forall (hs : host_state) (sr : store_record) (f : frame) (instructions : list basic_instruction) (*(k : cont) (max_alloc : Z) (fu : function) *),
+      forall (hs : host_state) (sr : store_record) (f : frame) (fds : fundefs) (instructions : list basic_instruction) (*(k : cont) (max_alloc : Z) (fu : function) *),
 
         (* invariants *)
         INV sr f ->
@@ -3600,14 +3600,14 @@ Theorem repr_bs_LambdaANF_Codegen_related {lenv} :
         repr_expr_LambdaANF_Codegen fenv lenv nenv e instructions ->
 
         (* relates a LambdaANF evaluation environment [rho] to a WASM environment [store/frame] (free variables in e) *)
-        rel_mem_LambdaANF_Codegen fenv lenv nenv _ e rho sr f ->
+        rel_mem_LambdaANF_Codegen fenv lenv nenv _ e rho sr f fds ->
         exists (sr' : store_record) (f' : frame),
           reduce_trans (hs, sr, f, map AI_basic instructions) (hs, sr', f', []) /\
           (* value sr'.res points to value related to v *)
           @result_val_LambdaANF_Codegen lenv v sr' f' /\ f_inst f = f_inst f'.
 Proof with eauto.
   intros HenvsDisjoint HlenvInjective rho v e n Hev.
-  induction Hev; intros state sr fr instructions Hinv HlocalBound HfnsBound Hrepr_e Hrel_m.
+  induction Hev; intros state sr fr fds instructions Hinv HlocalBound HfnsBound Hrepr_e Hrel_m.
   - (* Econstr *)
     (*  TODO. refuse to compile otherwise *)
     assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
@@ -3661,7 +3661,7 @@ Proof with eauto.
       (* prepare IH *)
 
       (* memory relation *)
-      assert (Hrel_m_v : rel_mem_LambdaANF_Codegen fenv lenv nenv host_function e rho' s_v f_before_IH).
+      assert (Hrel_m_v : rel_mem_LambdaANF_Codegen fenv lenv nenv host_function e rho' s_v f_before_IH fds).
       { (* -> rel_mem_LambdaANF_Codegen fenv lenv nenv host_function e rho' s_v
   f_before_IH *) clear IHHev Hinv Hmem1 Hmem2 Hmem3 Hmem4 Hmem1' Hmem2' Hmem3'. clear Hred Hinv' Hred_v H8.
          destruct Hrel_m as [HrelmFun HrelmVar]. unfold rel_mem_LambdaANF_Codegen. split; auto.
@@ -3692,7 +3692,7 @@ Proof with eauto.
 repr_funvar fenv nenv fvar fIdx ->
 fIdx < Datatypes.length (s_funcs s_v)). { admit. }
 
-      have IH := IHHev state _ _ _ Hinv_before_IH HlocalBound_before_IH
+      have IH := IHHev state _ _ _ _ Hinv_before_IH HlocalBound_before_IH
                    HfnsBound_before_IH Hexp Hrel_m_v.
       destruct IH as [s_final [f_final [Hred_IH [Hval Hfinst]]]]. cbn in Hfinst.
 
@@ -3771,7 +3771,7 @@ fIdx < Datatypes.length (s_funcs s_v)). { admit. }
       assert (Hrm: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function e (map_util.M.set x v rho) sr
        {| f_locs := set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32);
           f_inst := f_inst fr
-        |}). {
+        |} fds). {
         split; intros.
         { destruct (var_dec x x1).
           (* x = x1 *) subst x1. rewrite M.gss in H6. inv H6. rename v0 into v.
@@ -3781,7 +3781,7 @@ fIdx < Datatypes.length (s_funcs s_v)). { admit. }
 
             (* x not a fundef *)
           (* x <> x1*) rewrite M.gso in H6; auto.
-                       have H' := Hfun _ _ _ _ _ errMsg H6 H9.
+                       have H' := Hfun _ _ _ _  errMsg H6 H9.
                        destruct H' as [i [Htf [Hval HvalClosed]]].
                        exists i. split; auto. split; auto.
                        eapply val_relation_depends_on_finst; try eassumption.
@@ -3841,7 +3841,7 @@ fIdx < Datatypes.length (s_funcs s_v)). { admit. }
 repr_funvar fenv nenv fvar fIdx ->
 fIdx < Datatypes.length (s_funcs sr)). admit.
 
-     have IH := IHHev state sr _ e' Hinv' HlocalBound' HfnsBound' H7 Hrm. destruct IH as [sr' [f' [Hred [Hval Hfinst]]]]. cbn in Hfinst.
+     have IH := IHHev state sr _ _ e' Hinv' HlocalBound' HfnsBound' H7 Hrm. destruct IH as [sr' [f' [Hred [Hval Hfinst]]]]. cbn in Hfinst.
 
       exists sr'. exists f'. cbn. split.
       { (* take steps *)
@@ -3917,10 +3917,10 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
         have Hrepr' := Hrepr. inv Hrepr'.
         destruct Hlocal as [i [Hl1 Hl2]]. inv Hy'. rewrite Hl1 in H. inv H.
 
-      assert (Hrel: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function e rho sr fr).
+      assert (Hrel: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function e rho sr fr fds).
       { unfold rel_mem_LambdaANF_Codegen. split; intros... }
 
-      have IH := IHHev state _ _ _ Hinv HlocalBound HfnsBound H9 Hrel. destruct IH as [sr' [fr' [Hstep Hval]]].
+      have IH := IHHev state _ _ _ _ Hinv HlocalBound HfnsBound H9 Hrel. destruct IH as [sr' [fr' [Hstep Hval]]].
 
     exists sr'. exists fr'.
     split. {
@@ -3955,7 +3955,7 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
       inv H0.
       inv Hrepr_e.
 
-      assert (Hrel: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function (Ecase y cl) rho sr fr).
+      assert (Hrel: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function (Ecase y cl) rho sr fr fds).
       { unfold rel_mem_LambdaANF_Codegen. split; intros.
         destruct Hrel_m. eauto. apply Hrel_m. apply Free_Ecase3. assumption.
       }
@@ -4026,7 +4026,7 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
     + (* indirect call*)
       repeat rewrite map_cat. cbn. admit.
     + (* direct call *) inv H3. rewrite map_cat. cbn.
-       have Hfargs := fun_args_reduce state _ _ _ _ _ _ _ _ Hinv H0 Hrel_m H7.
+       have Hfargs := fun_args_reduce state _ _ _ _ _ _ _ _ _ Hinv H0 Hrel_m H7.
        destruct Hfargs as [args [HfargsRed HfargsRes]].
 
        (* prepare IH *)
@@ -4043,10 +4043,10 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
 
       assert (Hexpr: exists e', repr_expr_LambdaANF_Codegen fenv lenv nenv e e'). admit. (* from global assumption about fds *)
       destruct Hexpr as [e' Hexpr].
-      assert (Hrelm: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function e rho'' sr
-       f_before_IH). admit.
+      assert (Hrelm: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function
+                              e rho'' sr f_before_IH fds). admit.
 
-       have IH := IHHev state _ _ _ Hinv_before_IH HlocalBound_before_IH
+       have IH := IHHev state _ _ _ _ Hinv_before_IH HlocalBound_before_IH
                     HfnsBound Hexpr Hrelm.
        destruct IH as [sr_final [fr_final [Hred [Hval Hfinst]]]].
        (* execute *)
@@ -4179,6 +4179,7 @@ Import Common.Common Common.compM Common.Pipeline_utils.
 
 Import ExtLib.Structures.Monad.
 Import MonadNotation.
+Import numerics.
 
 
 Ltac simpl_modulus := unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat.
@@ -4260,7 +4261,6 @@ Proof.
     cbn. rewrite app_length. cbn. rewrite plus_comm. now rewrite <- app_assoc.
 Qed.
 
-
 Lemma add_tab_effect : forall l s s' f,
   fold_left
             (fun (s : datatypes.store_record host_function) '(e_ind, e) =>
@@ -4301,16 +4301,20 @@ Lemma add_tab_effect : forall l s s' f,
                 s_mems := datatypes.s_mems s;
                 s_globals := datatypes.s_globals s
               |}) l s = s' ->
-                s_globals s = s_globals s' /\ s_mems s = s_mems s' /\ s_funcs s = s_funcs s'.
+                s_globals s = s_globals s' /\
+                s_mems s = s_mems s' /\
+                s_funcs s = s_funcs s' /\
+                s_tables s = s_tables s'.
 Proof.
   induction l; intros.
   - cbn in H. inv H. auto.
-  - cbn in H. apply IHl in H. cbn in H. destruct H as [H1 [H2 H3]].
+  - cbn in H. destruct a. cbn in H. apply IHl in H. cbn in H. destruct H as [H1 [H2 [H3 H4]]].
     rewrite -H1 -H2 -H3. cbn.
-    destruct a. destruct (nth
+    destruct (nth
       (nth match modelem_table m with
            | Mk_tableidx i => i
-           end (inst_tab (f_inst f)) 0) (s_tables s) dummy_table). cbn. auto.
+           end (inst_tab (f_inst f)) 0) (s_tables s) dummy_table). cbn.
+    cbn in H1, H2, H3, H4. rewrite map_length in H4. auto.
 Qed.
 
 Lemma reduce_const_false : forall state s f c,
@@ -4410,143 +4414,58 @@ Proof.
   destruct (_ f0). inv H. destruct fns; inv H. cbn. now rewrite -IHf0.
 Qed.
 
-Lemma function_types_nth_1 : forall fns,
-   (nth 1 (list_function_types
-                               match
-                                 match
-                                   list_max
-                                     (map
-                                        (fun f : wasm_function =>
-                                         match type f with
-                                         | Tf t1 _ => Datatypes.length t1
-                                         end) fns)
-                                 with
-                                 | 0 => 1
-                                 | S m' => S m'
-                                 end
-                               with
-                               | 0 => 1
-                               | S m' => S m'
-                               end) (Tf [] [])) = Tf [T_i32] [].
-Proof.
-  intros.
-  destruct (list_max _). reflexivity. cbn.
-  induction n; cbn. reflexivity.
-  remember ([Tf [:: T_i32, T_i32 & repeat T_i32 n] []]) as t1s.
-  remember ([Tf (T_i32 :: repeat T_i32 n)%SEQ []]) as t2s.
-  rewrite app_nth1; auto. rewrite app_length. subst t2s. cbn.
-  clear Heqt1s IHn t1s fns.
-  induction n; cbn; try lia.
-  rewrite app_length. lia.
-Qed.
-
-Lemma function_types_nth_0 : forall fns,
-   (nth 0
-                            (list_function_types
-                               match
-                                 match
-                                   list_max
-                                     (map
-                                        (fun f : wasm_function =>
-                                         match type f with
-                                         | Tf t1 _ => Datatypes.length t1
-                                         end) fns)
-                                 with
-                                 | 0 => 1
-                                 | S m' => S m'
-                                 end
-                               with
-                               | 0 => 1
-                               | S m' => S m'
-                               end) (Tf [] [])) = Tf [] [].
-Proof.
-  intros.
-  destruct (list_max _). reflexivity. cbn.
-  induction n; cbn. reflexivity.
-  remember ([Tf [:: T_i32, T_i32 & repeat T_i32 n] []]) as t1s.
-  remember ([Tf (T_i32 :: repeat T_i32 n)%SEQ []]) as t2s.
-  rewrite app_nth1; auto. rewrite app_length. subst t2s. cbn.
-  clear Heqt1s IHn t1s fns.
-  induction n; cbn; lia.
-Qed.
-
 Require Import FunctionalExtensionality.
 
-Lemma nth_list_function_types : forall fns fr,
-    map (fun f =>
-          FC_func_native (host_function:=host_function) (f_inst fr)
-            (nth match type f with
-                 | Tf args _ => Datatypes.length args
-                 end
-               (list_function_types
-                  match
-                    match
-                      list_max
-                        (map
-                           (fun f0 : wasm_function =>
-                            match type f0 with
-                            | Tf t1 _ => Datatypes.length t1
-                            end) fns)
-                    with
-                    | 0 => 1
-                    | S m' => S m'
-                    end
-                  with
-                  | 0 => 1
-                  | S m' => S m'
-                  end) (Tf [] [])) (locals f) (body f)) fns =
-    map (fun f =>
-          FC_func_native (f_inst fr)
-            (Tf (List.repeat T_i32 (match type f with
-                                      | Tf args _ => Datatypes.length args
-                                      end)) []) (locals f) (body f)) fns.
+Lemma length_list_function_types : forall n,
+  length (list_function_types n) = S n.
 Proof.
-  (* induction fns; intros; auto. cbn. f_equal.
-  { f_equal. clear fr. induction (match type a with | Tf t1 _ => Datatypes.length t1 end).
-    - rewrite function_types_nth_0. reflexivity.
-    - cbn. admit. }
-  { rewrite -IHfns. f_equal. apply functional_extensionality. intros. f_equal.
+  induction n; cbn; auto. f_equal. now rewrite map_length.
+Qed.
 
-  intros.
-  intros. f_equal. clear fr.
-  generalize dependent fns.
-  induction (match type x with
-    | Tf args _ => Datatypes.length args
-    end); intros.
-  - now rewrite function_types_nth_0.
-  - cbn.
-  intros. induction fns; intros; first reflexivity.
-  intros. cbn. f_equal.
-  { clear IHfns. f_equal. clear fr. revert fns.
-    induction (match type a with
-             | Tf args _ => Datatypes.length args
-             end); intros.
-    - rewrite function_types_nth_0. reflexivity.
-    - cbn. admit. }
-  { rewrite -IHfns. (* list_function_types from to : *) *)
-  (*
-   2: {
+Lemma nth_list_function_types : forall m n def,
+    m <= n ->
+    nth m (list_function_types n) def =
+    Tf (List.repeat T_i32 m) [].
+Proof.
+  induction m; intros; try lia.
+  - destruct n; try lia; reflexivity.
+  - have Hlen := length_list_function_types n.
+    destruct n. lia. assert (Hlt: m <= n) by lia.
+    remember (fun t : function_type =>
+      match t with
+      | Tf args rt => Tf (T_i32 :: args)%SEQ rt
+      end) as f.
+    have Hindep := nth_indep _ _ (f def).
+    rewrite Hindep; try lia.
+       cbn. subst f. rewrite map_nth.
+    rewrite IHm; auto.
+Qed.
 
-  unfold list_max. destruct (Init.Nat.max _ _) eqn:H.
-  rewrite <- IHfns. clear IHfns.
-  assert (fold_right Init.Nat.max 0
-          (map
-            (fun f0 : wasm_function =>
-               match type f0 with
-               | Tf t1 _ => Datatypes.length t1
-               end) fns)
-        = (map
-            (fun f0 : wasm_function =>
-               match type f0 with
-               | Tf t1 _ => Datatypes.length t1
-               end) fns)).
-   reflexivity.  clear fr. revert fns H.
-  induction (match type f with
-       | Tf args _ => Datatypes.length args
-       end); intros.
-  - cbn. now rewrite function_types_nth_0.
-  - cbn. *)
-Admitted.
+Lemma nth_list_function_types_map : forall fns fr,
+  (forall f, In f fns -> match type f with
+                         | Tf args _ => (Z.of_nat (length args) <= max_function_args)%Z
+                         end) ->
+  map (fun x : wasm_function =>
+            FC_func_native (host_function:=host_function)  (f_inst fr)
+                            (nth
+                               match type x with
+                               | Tf args _ => Datatypes.length args
+                               end (list_function_types (Pos.to_nat 100))
+                               (Tf [] [])) (locals x)
+                            (body x)) fns =
+  map (fun x => FC_func_native (f_inst fr)
+                  (match type x with
+                   | Tf args _ => Tf (repeat T_i32 (length args)) []
+                   end) (locals x) (body x)) fns.
+Proof.
+  induction fns; intros; auto. cbn.
+  rewrite nth_list_function_types. 2: {
+  assert (Hargs: In a (a :: fns)). { cbn. auto. }
+  apply H in Hargs. destruct (type a). unfold max_function_args in Hargs. lia. }
+  f_equal. destruct (type a); reflexivity.
+  rewrite IHfns; auto. intros.
+  apply H. cbn. auto.
+Qed.
 
 Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num_funs module fenv main_lenv sr f exports,
   topExp = match e with | Efun _ _ => e | _ => Efun Fnil e end ->
@@ -4611,17 +4530,18 @@ Proof.
   intros e topExp fds num_funs module fenv lenv s f exports HtopExp Hnumfuns HfdsLength Hcompile Hflocs Hinst. subst num_funs topExp.
   unfold instantiate in Hinst.
   unfold LambdaANF_to_WASM in Hcompile.
-  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv Hcompile. simpl in Hcompile.
-  destruct (generate_constr_pp_function cenv nenv f0 e) eqn:HgenPP. inv Hcompile.
+  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv Hcompile.
+  remember (list_function_types (Z.to_nat max_function_args)) as types.
+   simpl in Hcompile. destruct (generate_constr_pp_function cenv nenv f0 e) eqn:HgenPP. inv Hcompile.
   destruct (match _ with | Efun fds _ => _ fds | _ => Err _ end) eqn:HtransFns. inv Hcompile.
   destruct (match e with
             | Efun _ _ => e
             | _ => Efun Fnil e
             end) eqn:HtopExp'; try (by inv Hcompile).
-
   destruct (translate_exp nenv cenv _ _ _) eqn:Hexpr. inv Hcompile. rename l0 into e'.
   destruct (translate_function_var nenv f0 main_function_var "main function") eqn:HmainFname. inv Hcompile.
-  inv Hcompile. unfold INV. unfold is_true in *.
+  inv Hcompile.
+  unfold INV. unfold is_true in *.
   destruct Hinst as [t_imps [t_exps [state [s' [ g_inits [e_offs [d_offs
       [Hmodule [Himports [HallocModule [HinstGlobals [HinstElem
          [HinstData [HboundsElem [HboundsData [_ Hinst]]]]]]]]]]]]]]]].
@@ -4644,7 +4564,7 @@ Proof.
   destruct (fold_left _ (map _ fns) _) eqn:HaddF.
   destruct (fold_left _ _) eqn:HaddTab.
 
-  destruct (add_tab_effect _ _ _ _ HaddTab) as [HT0 [HT1 HT2]]. cbn in HT0, HT1, HT2.
+  destruct (add_tab_effect _ _ _ _ HaddTab) as [HT0 [HT1 [HT2 HT3]]]. cbn in HT0, HT1, HT2.
   subst s_globals s_mems s_funcs.
   unfold add_glob in HallocModule. cbn in HallocModule.
   repeat (apply andb_prop in HallocModule;
@@ -4669,10 +4589,11 @@ Proof.
     destruct (sequence _). inv HgenPP. inv HgenPP.
     split; reflexivity. }
     destruct Hw as [Hw1 Hw2].
-  rewrite Hw1 Hw2 in HallocModule. clear Hw1 Hw2. cbn in HallocModule.
-  rewrite function_types_nth_1 function_types_nth_0 in HallocModule.
+  rewrite Hw1 Hw2 in HallocModule. clear Hw1 Hw2.
+  rewrite nth_list_function_types in HallocModule. 2: { cbn. lia. }
+  rewrite nth_list_function_types in HallocModule; try lia.
   rewrite map_map in HallocModule. cbn in HallocModule.
-  rewrite nth_list_function_types in HallocModule.
+  rewrite nth_list_function_types_map in HallocModule. 2: { admit.  (* args <= max_function_args: TODO: enforce*) }
 
   split.
   (* INV globals *)
@@ -4715,7 +4636,10 @@ Proof.
    repeat constructor; cbn; lia.
    (* INV_table_id *)
    { unfold INV_table_id, stab_addr, stab_index. rewrite F2. cbn.
-     intros. admit. }
+     intros.
+     assert (Z.of_nat i0 < Wasm_int.Int32.modulus)%Z by admit.
+     (* from translate_function_var *)
+     rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.  admit. }
 
   split.
   (* inst_funcs (f_inst f) *)
@@ -4943,7 +4867,7 @@ Proof.
 
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env
                    rep_env _ host_instance HenvsDisjoint HlenvInjective _ _ _ _ Hstep hs
-                    _ _ wasm_main_instr Hinv_before_IH HlocalBound HfnsBound.
+                    _ _ fds wasm_main_instr Hinv_before_IH HlocalBound HfnsBound.
 
     exists sr. subst. admit. }
 
@@ -4958,11 +4882,10 @@ Proof.
     eapply translate_exp_correct in Hexpr; auto.
 
     assert (Hrelm : rel_mem_LambdaANF_Codegen fenv (create_local_variable_mapping (collect_local_variables e)) nenv
-            host_function e rho sr f_before_IH). {
+            host_function e rho sr f_before_IH Fnil). {
       split.
-      { intros. exfalso. cbn in HsrFuncs. admit.
-        (* absurd, no functions *)
-      }
+      { intros. exfalso. cbn in HsrFuncs.
+        admit. (* absurd, no functions *) }
       { intros. exfalso. eauto. }}
 
    assert (HlenvInjective : map_injective (create_local_variable_mapping
@@ -4982,7 +4905,7 @@ Proof.
 
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env
                     rep_env _ host_instance HenvsDisjoint HlenvInjective rho _
-                     _ _ Hstep hs _ _ wasm_main_instr Hinv_before_IH HlocalBound HfnsBound Hexpr Hrelm.
+                     _ _ Hstep hs _ _ _ wasm_main_instr Hinv_before_IH HlocalBound HfnsBound Hexpr Hrelm.
     destruct HMAIN as [s' [f' [Hred [Hval Hfinst]]]]. cbn.
     exists s'. split.
     dostep'. apply r_call. cbn.
