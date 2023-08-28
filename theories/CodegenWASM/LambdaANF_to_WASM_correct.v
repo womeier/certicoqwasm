@@ -3571,6 +3571,42 @@ Definition maps_disjoint (m1 m2 : M.tree nat) :=
   (forall x x', m1 ! x = Some x' -> m2 ! x = None) /\
   (forall x x', m2 ! x = Some x' -> m1 ! x = None).
 
+(* the number of args may be restricted to e.g. not surpass max Int32 *)
+(*  TODO. refuse to compile otherwise or follows from previous stage  *)
+Inductive expression_restricted : cps.exp -> Prop :=
+  | ER_constr : forall x t ys e,
+      (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z ->
+      expression_restricted e ->
+      expression_restricted (Econstr x t ys e)
+  | ER_case : forall x ms,
+      Forall (fun p => (Z.of_nat (Pos.to_nat (fst p)) < Wasm_int.Int32.modulus)%Z /\
+                        expression_restricted (snd p)) ms ->
+      expression_restricted (Ecase x ms)
+  | ER_proj : forall x t n y e,
+      expression_restricted e ->
+      expression_restricted (Eproj x t n y e)
+  | ER_letapp : forall f x ft ys e,
+      expression_restricted e ->
+      expression_restricted (Eletapp x f ft ys e)
+  | ER_fun_nil : forall e,
+      expression_restricted e ->
+      expression_restricted (Efun Fnil e)
+  | ER_fun_cons : forall e f t ys body fds,
+      expression_restricted e ->
+      expression_restricted body ->
+      expression_restricted (Efun (Fcons f t ys body fds) e)
+  | ER_app : forall f ft ys,
+      expression_restricted (Eapp f ft ys)
+  | ER_prim_val : forall x p e,
+      expression_restricted e ->
+      expression_restricted (Eprim_val x p e)
+  | ER_prim : forall x p ys e,
+      expression_restricted e ->
+      expression_restricted (Eprim x p ys e)
+  | ER_halt : forall x,
+      expression_restricted (Ehalt x).
+
+
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Codegen_related {lenv} :
   maps_disjoint fenv lenv ->
@@ -3582,7 +3618,11 @@ Theorem repr_bs_LambdaANF_Codegen_related {lenv} :
   (*  program_inv p -> (* isPtr function is defined/correct /\ thread info is correct /\ gc invariant *)
     find_symbol_domain p finfo_env -> (* finfo_env [LambdaANF] contains precisely the same things as global env [Clight] *)
     finfo_env_correct fenv finfo_env -> (* everything in finfo_env is in the function environment *) *)
-    forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat), (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
+
+    (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
+    forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat),
+      (* restrict e s.t. e.g. all tags < i32.max etc *)
+      expression_restricted e ->
       bstep_e (M.empty _) cenv rho e v n ->  (* e n-steps to v *) (* for linking: environment won't be empty *)
       (* correct_envs cenv ienv rep_env rho e -> (* inductive type/constructor environments are correct/pertain to e*) *)
       (* protected_id_not_bound_id rho e ->
@@ -3606,11 +3646,10 @@ Theorem repr_bs_LambdaANF_Codegen_related {lenv} :
           (* value sr'.res points to value related to v *)
           @result_val_LambdaANF_Codegen lenv v sr' f' /\ f_inst f = f_inst f'.
 Proof with eauto.
-  intros HenvsDisjoint HlenvInjective rho v e n Hev.
+  intros HenvsDisjoint HlenvInjective rho v e n HeRestr Hev.
   induction Hev; intros state sr fr fds instructions Hinv HlocalBound HfnsBound Hrepr_e Hrel_m.
   - (* Econstr *)
-    (*  TODO. refuse to compile otherwise *)
-    assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z) by admit.
+    assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z). { now inv HeRestr. }
 
     inversion Hrepr_e. subst t0 x0 vs0 e0 sgrow. rename H5 into Hx', H10 into Hexp.
     { remember (grow_memory_if_necessary page_size) as grow.
@@ -3692,7 +3731,9 @@ Proof with eauto.
 repr_funvar fenv nenv fvar fIdx ->
 fIdx < Datatypes.length (s_funcs s_v)). { admit. }
 
-      have IH := IHHev state _ _ _ _ Hinv_before_IH HlocalBound_before_IH
+      assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
+
+      have IH := IHHev HeRestr' state _ _ _ _ Hinv_before_IH HlocalBound_before_IH
                    HfnsBound_before_IH Hexp Hrel_m_v.
       destruct IH as [s_final [f_final [Hred_IH [Hval Hfinst]]]]. cbn in Hfinst.
 
@@ -3777,9 +3818,8 @@ fIdx < Datatypes.length (s_funcs s_v)). { admit. }
           (* x = x1 *) subst x1. rewrite M.gss in H6. inv H6. rename v0 into v.
           (* inv Hbsval. (* subval constr vfun *) admit.
           eexists. split. admit. split. 2: admit.
-          econstructor; try eassumption; eauto. *) admit.
+          econstructor; try eassumption; eauto. *) admit. (* x not a fundef *)
 
-            (* x not a fundef *)
           (* x <> x1*) rewrite M.gso in H6; auto.
                        have H' := Hfun _ _ _ _  errMsg H6 H9.
                        destruct H' as [i [Htf [Hval HvalClosed]]].
@@ -3841,7 +3881,9 @@ fIdx < Datatypes.length (s_funcs s_v)). { admit. }
 repr_funvar fenv nenv fvar fIdx ->
 fIdx < Datatypes.length (s_funcs sr)). admit.
 
-     have IH := IHHev state sr _ _ e' Hinv' HlocalBound' HfnsBound' H7 Hrm. destruct IH as [sr' [f' [Hred [Hval Hfinst]]]]. cbn in Hfinst.
+    assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
+
+     have IH := IHHev HeRestr' state sr _ _ e' Hinv' HlocalBound' HfnsBound' H7 Hrm. destruct IH as [sr' [f' [Hred [Hval Hfinst]]]]. cbn in Hfinst.
 
       exists sr'. exists f'. cbn. split.
       { (* take steps *)
@@ -3861,7 +3903,6 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
       constructor. apply rs_binop_success. cbn. reflexivity.
 
       inv Hrepr.
-
       dostep. elimr_nary_instr 1.
       eapply r_load_success.
 
@@ -3871,18 +3912,16 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
       assert (Har: Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
           (nat_to_i32 ((N.to_nat n + 1) * 4))) = (N.of_nat (4 + addr) + 4 * n)%N). {
           replace (4 + addr) with (addr + 4) by lia. replace (4*n)%N with (n*4)%N by lia. cbn.
-       unfold load in Hload.
-       destruct ((N.of_nat (4 + addr) + 4 * n + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Heqn. 2: inv Hload.
-       apply N.leb_le in Heqn.
-       destruct Hlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. assert (m' = m) by congruence. subst.
-       apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
-       repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia). }
+      unfold load in Hload.
+      destruct ((N.of_nat (4 + addr) + 4 * n + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Heqn. 2: inv Hload.
+      apply N.leb_le in Heqn.
+      destruct Hlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. assert (m' = m) by congruence. subst.
+      apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
+      repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia). }
       rewrite Har. apply Hload.
 
       (* save result in x' *)
-      have Hx := H8. inv H8.
-
-      cbn.
+      have Hx := H8. inv H8. cbn.
       (* dostep' with fr *)
       eapply rt_trans with (y := (?[hs], ?[sr], {|
              f_locs :=
@@ -3920,7 +3959,9 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
       assert (Hrel: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function e rho sr fr fds).
       { unfold rel_mem_LambdaANF_Codegen. split; intros... }
 
-      have IH := IHHev state _ _ _ _ Hinv HlocalBound HfnsBound H9 Hrel. destruct IH as [sr' [fr' [Hstep Hval]]].
+      assert (HeRestr': expression_restricted e). { inv HeRestr. now inv H1. }
+
+      have IH := IHHev HeRestr' state _ _ _ _ Hinv HlocalBound HfnsBound H9 Hrel. destruct IH as [sr' [fr' [Hstep Hval]]].
 
     exists sr'. exists fr'.
     split. {
@@ -3946,26 +3987,23 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
     destruct (zeq (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (decode_int b)))
       (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (Z.of_nat (Pos.to_nat t))))) eqn:Heq. discriminate. contradiction.
 
-       dostep'. constructor. eapply rs_block with (vs := []); auto. unfold to_e_list. cbn.
-      eapply reduce_trans_label. apply Hstep. unfold load_i32 in H10. rewrite Hload in H10. inv H10. }
-       assumption. }
+    dostep'. constructor. eapply rs_block with (vs := []); auto. unfold to_e_list. cbn.
+    eapply reduce_trans_label. apply Hstep. unfold load_i32 in H10. rewrite Hload in H10. inv H10. }
+    assumption. }
 
-      (* t0 <> t *)
+    (* t0 <> t *)
+    inv H0. inv Hrepr_e.
+    assert (Hrel: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function (Ecase y cl) rho sr fr fds).
+    { unfold rel_mem_LambdaANF_Codegen. split; intros.
+      destruct Hrel_m. eauto. apply Hrel_m. apply Free_Ecase3. assumption. }
 
-      inv H0.
-      inv Hrepr_e.
+    assert (HeRestr' :expression_restricted (Ecase y cl)). { inv HeRestr. inv H3.
+                                                               now constructor. }
+    have IH := IHcl H10 H1 _ _ HeRestr' H H12 Hrel.
+    destruct IH as [sr' [f' [Hred [Hval Hfinst]]]].
 
-      assert (Hrel: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function (Ecase y cl) rho sr fr fds).
-      { unfold rel_mem_LambdaANF_Codegen. split; intros.
-        destruct Hrel_m. eauto. apply Hrel_m. apply Free_Ecase3. assumption.
-      }
-
-      have IH := IHcl H10 H1 _ _ H H12 Hrel.
-      destruct IH as [sr' [f' [Hred [Hval Hfinst]]]].
-
-      (* t <> t0 *)
-
-       assert (Hy : occurs_free (Ecase y ((t0, e0) :: cl)) y) by constructor.
+    (* t <> t0 *)
+    assert (Hy : occurs_free (Ecase y ((t0, e0) :: cl)) y) by constructor.
     have Hrel_m' := Hrel_m.
     destruct Hrel_m' as [Hfun Hvar].
     apply Hvar in Hy. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
@@ -3979,8 +4017,7 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
     inv Hlocal. destruct H3.
     rewrite H3 in H0. inv H0. rewrite H4 in H. inv H.
 
-    eexists. eexists. cbn.
-    split.
+    eexists. eexists. cbn. split.
 
     (* execute instructions *)
     dostep. elimr_nary_instr 0.
@@ -4003,18 +4040,24 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
        apply decode_int_bounds in Hload. inv H17.
        rewrite Wasm_int.Int32.Z_mod_modulus_id in H15; auto. rewrite H15.
        rewrite Wasm_int.Int32.Z_mod_modulus_id; auto.
-       admit. (* t < i32 max *) } rewrite H.
 
-       dostep. elimr_nary_instr 2.
-       constructor. apply rs_relop.
-       assert ((wasm_bool
-                 (app_relop (Relop_i ROI_eq) (VAL_int32 (tag_to_i32 t))
-                    (nat_to_value (Pos.to_nat t0)))) = nat_to_i32 0). {
-                    unfold nat_to_value, nat_to_i32, tag_to_i32.
-      unfold wasm_bool. cbn. unfold Wasm_int.Int32.eq. cbn. rewrite zeq_false; auto.
-      rewrite Wasm_int.Int32.Z_mod_modulus_id. 2: admit. (* t < i32 max *)
-      rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. admit. (* t0 < i32 max *)
-       }
+       inv HeRestr. inv H16. apply findtag_In in H1.
+       rewrite Forall_forall in H19. apply H19 in H1.
+       cbn in H1. destruct H1. lia. } rewrite H.
+
+      dostep. elimr_nary_instr 2.
+      constructor. apply rs_relop.
+      assert ((wasm_bool
+                (app_relop (Relop_i ROI_eq) (VAL_int32 (tag_to_i32 t))
+                   (nat_to_value (Pos.to_nat t0)))) = nat_to_i32 0). {
+        unfold nat_to_value, nat_to_i32, tag_to_i32.
+        unfold wasm_bool. cbn. unfold Wasm_int.Int32.eq. cbn. rewrite zeq_false; auto.
+
+        assert (HtBounds: (Z.of_nat (Pos.to_nat t) < Wasm_int.Int32.modulus /\
+                           Z.of_nat (Pos.to_nat t0) < Wasm_int.Int32.modulus)%Z). {
+          inv HeRestr. inv H16. rewrite Forall_forall in H20. apply findtag_In in H1.
+          apply H20 in H1. destruct H1. destruct H19. split; auto. } destruct HtBounds.
+        repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. }
       rewrite H0.
       dostep'. separate_instr. constructor. apply rs_if_false. reflexivity.
 
@@ -4046,15 +4089,17 @@ fIdx < Datatypes.length (s_funcs sr)). admit.
       assert (Hrelm: rel_mem_LambdaANF_Codegen fenv lenv nenv host_function
                               e rho'' sr f_before_IH fds). admit.
 
-       have IH := IHHev state _ _ _ _ Hinv_before_IH HlocalBound_before_IH
+      assert (HeRestr' : expression_restricted e). { inv HeRestr. admit. (* must follow somehow from Efun *) }
+
+      have IH := IHHev HeRestr' state _ _ _ _ Hinv_before_IH HlocalBound_before_IH
                     HfnsBound Hexpr Hrelm.
-       destruct IH as [sr_final [fr_final [Hred [Hval Hfinst]]]].
-       (* execute *)
-       eexists. eexists. split.
-       eapply rt_trans. apply app_trans. apply HfargsRed.
-       dostep. apply r_eliml. apply map_const_const_list.
-       eapply r_call_indirect_success.
-       { cbn. unfold stab_addr. unfold stab_index. admit. }
+      destruct IH as [sr_final [fr_final [Hred [Hval Hfinst]]]].
+      (* execute *)
+      eexists. eexists. split.
+      eapply rt_trans. apply app_trans. apply HfargsRed.
+      dostep. apply r_eliml. apply map_const_const_list.
+      eapply r_call_indirect_success.
+      { cbn. unfold stab_addr. unfold stab_index. admit. }
         admit. admit. admit. admit.
   - (* Eletapp *)   inv Hrepr_e. (* absurd, we require CPS *)
   - (* Efun *)      inv Hrepr_e. (* absurd, fn defs only on topmost level *)
@@ -4750,7 +4795,9 @@ Qed.
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 Corollary LambdaANF_Codegen_related :
-  forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat) (vars : list cps.var), (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
+  (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
+  forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat) (vars : list cps.var),
+  expression_restricted e ->
   forall (hs : host_state) module fenv lenv mainidx errMsg,
     forall (sr : store_record) (fr : frame) exports,
 
@@ -4775,7 +4822,7 @@ Corollary LambdaANF_Codegen_related :
 
        @result_val_LambdaANF_Codegen fenv nenv _ lenv v sr' fr.
 Proof.
-  intros ? ? ? ? ? ? ? ? ? ? ? ? ? ? Hstep LANF2WASM Hmainidx Hcenv HvarsEq Hvars Hfreevars Hinst. subst vars.
+  intros ? ? ? ? ? HeRestr ? ? ? ? ? ? ? ? ? Hstep LANF2WASM Hmainidx Hcenv HvarsEq Hvars Hfreevars Hinst. subst vars.
   remember ({| f_locs := []; f_inst := f_inst fr |}) as f.
   assert (Hmaxfuns : (Z.of_nat match match e with
                                      | Efun _ _ => e
@@ -4867,7 +4914,7 @@ Proof.
              (collect_local_variables (Efun fds e)))). admit.
 
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env
-                   rep_env _ host_instance HenvsDisjoint HlenvInjective _ _ _ _ Hstep hs
+                   rep_env _ host_instance HenvsDisjoint HlenvInjective _ _ _ _ HeRestr Hstep hs
                     _ _ fds wasm_main_instr Hinv_before_IH HlocalBound HfnsBound.
 
     exists sr. subst. admit. }
@@ -4906,7 +4953,7 @@ Proof.
 
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env
                     rep_env _ host_instance HenvsDisjoint HlenvInjective rho _
-                     _ _ Hstep hs _ _ _ wasm_main_instr Hinv_before_IH HlocalBound HfnsBound Hexpr Hrelm.
+                     _ _ HeRestr Hstep hs _ _ _ wasm_main_instr Hinv_before_IH HlocalBound HfnsBound Hexpr Hrelm.
     destruct HMAIN as [s' [f' [Hred [Hval Hfinst]]]]. cbn.
     exists s'. split.
     dostep'. apply r_call. cbn.
