@@ -4377,7 +4377,7 @@ Lemma add_tab_effect : forall l s s' f,
 Proof.
   induction l; intros.
   - cbn in H. inv H. auto.
-  - cbn in H. destruct a. cbn in H. apply IHl in H. cbn in H. destruct H as [H1 [H2 [H3 H4]]].
+  - destruct a. cbn in H. apply IHl in H. cbn in H. destruct H as [H1 [H2 [H3 H4]]].
     rewrite -H1 -H2 -H3. cbn.
     destruct (nth
       (nth match modelem_table m with
@@ -4600,16 +4600,15 @@ Proof.
   intros e topExp fds num_funs module fenv lenv s f exports HtopExp Hnumfuns HfdsLength Hcompile Hflocs Hinst. subst num_funs topExp.
   unfold instantiate in Hinst.
   unfold LambdaANF_to_WASM in Hcompile.
-  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv Hcompile.
   remember (list_function_types (Z.to_nat max_function_args)) as types.
-   simpl in Hcompile. destruct (generate_constr_pp_function cenv nenv f0 e) eqn:HgenPP. inv Hcompile.
+   simpl in Hcompile. destruct (generate_constr_pp_function cenv nenv _ e) eqn:HgenPP. inv Hcompile.
   destruct (match _ with | Efun fds _ => _ fds | _ => Err _ end) eqn:HtransFns. inv Hcompile.
   destruct (match e with
             | Efun _ _ => e
             | _ => Efun Fnil e
             end) eqn:HtopExp'; try (by inv Hcompile).
   destruct (translate_exp nenv cenv _ _ _) eqn:Hexpr. inv Hcompile. rename l0 into e'.
-  destruct (translate_function_var nenv f0 main_function_var "main function") eqn:HmainFname. inv Hcompile.
+  destruct (translate_function_var nenv _ main_function_var "main function") eqn:HmainFname. inv Hcompile.
   inv Hcompile.
   unfold INV. unfold is_true in *.
   destruct Hinst as [t_imps [t_exps [state [s' [ g_inits [e_offs [d_offs
@@ -4634,7 +4633,7 @@ Proof.
   destruct (fold_left _ (map _ fns) _) eqn:HaddF.
   destruct (fold_left _ _) eqn:HaddTab.
 
-  destruct (add_tab_effect _ _ _ _ HaddTab) as [HT0 [HT1 [HT2 HT3]]]. cbn in HT0, HT1, HT2.
+  destruct (add_tab_effect _ _ _ _ HaddTab) as [HT0 [HT1 [HT2 HT3]]]. cbn in HT0, HT1, HT2, HT3.
   subst s_globals s_mems s_funcs.
   unfold add_glob in HallocModule. cbn in HallocModule.
   repeat (apply andb_prop in HallocModule;
@@ -4714,7 +4713,8 @@ Proof.
   (* INV_var_idx_inbounds *)
   { unfold INV_var_idx_inbounds. intros. inv H. inv H0. }
   (* INV_fvar_idx_inbounds *)
-  { admit. }
+  { unfold INV_fvar_idx_inbounds. intros. inv H. cbn.
+    rewrite map_length. admit.  }
   split.
   (* inst_funcs (f_inst f) *)
   { rewrite F3. repeat f_equal.
@@ -4870,8 +4870,8 @@ Proof.
   remember (Build_frame (repeat (nat_to_value 0) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
 
   unfold LambdaANF_to_WASM in LANF2WASM.
-  destruct (create_fname_mapping nenv e) eqn:Hmapping. inv LANF2WASM. simpl in LANF2WASM. rename f0 into fname_mapping.
-  destruct (generate_constr_pp_function cenv nenv fname_mapping e) eqn:Hppconst. inv LANF2WASM.
+  simpl in LANF2WASM.
+  destruct (generate_constr_pp_function cenv nenv _ e) eqn:Hppconst. inv LANF2WASM.
   destruct (match _ with
        | Efun fds _ => _ fds
        | _ => Err _
@@ -4880,8 +4880,8 @@ Proof.
                     | Efun _ _ => e
                     | _ => Efun Fnil e
                     end) eqn:HtopExp; try (by inv LANF2WASM).
-  destruct (translate_exp nenv cenv _ fname_mapping   _) eqn:Hexpr. inv LANF2WASM. rename l into wasm_main_instr.
-  destruct (translate_function_var nenv fname_mapping main_function_var "main function") eqn:Hfmain.
+  destruct (translate_exp nenv cenv _ _ _) eqn:Hexpr. inv LANF2WASM. rename l into wasm_main_instr.
+  destruct (translate_function_var nenv _ main_function_var "main function") eqn:Hfmain.
   inv LANF2WASM. inv LANF2WASM.
 
   (* from lemma module_instantiate_INV_and_more_hold *)
@@ -4890,6 +4890,7 @@ Proof.
 
   remember (Build_frame (repeat (nat_to_value 0) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
   remember (create_local_variable_mapping (collect_local_variables e)) as lenv.
+  remember (create_fname_mapping nenv e) as fenv.
   assert (Hinv_before_IH: INV fenv nenv _ lenv sr f_before_IH). { subst.
     destruct Hinv as [? [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]].
     unfold INV. repeat (split; try assumption).
@@ -4913,10 +4914,9 @@ Proof.
   subst i. clear Hfmain.
 
   assert (mainidx = 3). {
-    unfold create_fname_mapping in Hmapping.
-    cbn in Hmapping. inv Hmapping.
     unfold translate_function_var in Hmainidx.
-    destruct ((add_to_fname_mapping _ 4 _) ! main_function_var) eqn:Hgetvar; inv Hmainidx.
+    subst fenv. unfold create_fname_mapping in Hmainidx.
+    destruct ((add_to_fname_mapping _ 4 _) ! main_function_var) eqn:Hgetvar. 2: inv Hmainidx.
     apply get_var_fname_mapping_not_in_l in Hgetvar.
     2: { unfold main_function_var. intro.
          destruct Hvars as [HfvarsNodup HfvarsGt100].
@@ -4925,7 +4925,7 @@ Proof.
          apply  HfvarsGt100 in H. lia. }
     unfold main_function_var, write_char_function_var, write_int_function_var, constr_pp_function_var in *.
     do 3! (rewrite M.gso in Hgetvar; try lia).
-    rewrite M.gss in Hgetvar; try lia. congruence. } subst mainidx.
+    rewrite M.gss in Hgetvar; cbn in Hgetvar; congruence. } subst mainidx.
 
   have Heqdec := inductive_eq_dec e. destruct Heqdec.
   { (* top exp is Efun _ _ *)
@@ -4941,16 +4941,16 @@ Proof.
    cbn in Hx, Hy.
    have H' := create_local_variable_mapping_injective _ 0 HvarsNodup _ _ _ _ Hneq Hx Hy. auto. }
 
-   assert (HenvsDisjoint:  maps_disjoint fenv
+   assert (HenvsDisjoint:  maps_disjoint (create_fname_mapping nenv e)
           (create_local_variable_mapping
              (collect_local_variables (Efun fds e)))). admit.
 
     eapply translate_exp_correct in Hexpr; auto.
 
-    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env
+    (* have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv _ nenv finfo_env
                    rep_env _ host_instance _ HenvsDisjoint HlenvInjective
                     _ _ _ _ HeRestr Hstep hs _ _ fds wasm_main_instr Hinv_before_IH.
-    (* TODO: check e vs e0 richtige Variable *)
+    TODO: check e vs e0 richtige Variable *)
 
     exists sr. subst. admit. admit. }
 

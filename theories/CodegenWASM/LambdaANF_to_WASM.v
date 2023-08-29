@@ -460,7 +460,7 @@ Definition collect_function_vars (e : cps.exp) : list cps.var :=
     end.
 
 (* maps function names to ids (id=index in function list of module) *)
-Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
+Definition create_fname_mapping (nenv : name_env) (e : exp) : fname_env :=
   let (fname_mapping, num_fns) := (add_to_fname_mapping [ write_char_function_var
                                                         ; write_int_function_var
                                                         ; constr_pp_function_var
@@ -468,7 +468,7 @@ Definition create_fname_mapping (nenv : name_env) (e : exp) : error fname_env :=
   let fun_vars := collect_function_vars e in
   let (fname_mapping, num_fns) := (add_to_fname_mapping fun_vars num_fns fname_mapping, num_fns + length fun_vars) in
 
-  Ret fname_mapping.
+  fname_mapping.
 
 Fixpoint list_function_types (n : nat) : list function_type :=
   match n with
@@ -487,7 +487,7 @@ Fixpoint table_element_mapping (n : nat) : list module_element :=
   end.
 
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
-  fname_mapping <- create_fname_mapping nenv e ;;
+  let fname_mapping := create_fname_mapping nenv e in
 
   constr_pp_function <- generate_constr_pp_function cenv nenv fname_mapping e;;
 
