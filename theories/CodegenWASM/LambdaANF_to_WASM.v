@@ -479,7 +479,7 @@ Fixpoint list_function_types (n : nat) : list function_type :=
 (* for indirect calls maps fun ids to themselves *)
 Fixpoint table_element_mapping (n : nat) : list module_element :=
   match n with
-  | 0 => []
+  | 0 | 1 => []
   | S n' => (table_element_mapping n') ++ [{| modelem_table := Mk_tableidx 0
                                             ; modelem_offset := [ BI_const (nat_to_value n) ]
                                             ; modelem_init := [ Mk_funcidx n ]
@@ -542,8 +542,8 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                      ; modexp_desc := MED_global (Mk_globalidx result_var)
                      |} :: nil in
 
-  (* 2 imported functions, -1: highest index not length *)
-  let elements := table_element_mapping (length functions + 2 - 1) in
+  (* -1: highest index not length *)
+  let elements := table_element_mapping (length functions - 1) in
 
   let functions_final := map (fun f => {| modfunc_type := Mk_typeidx (match f.(type) with Tf args _ => length args end)
                                         ; modfunc_locals := f.(locals)
