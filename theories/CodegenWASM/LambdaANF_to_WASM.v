@@ -477,13 +477,13 @@ Fixpoint list_function_types (n : nat) : list function_type :=
   end.
 
 (* for indirect calls maps fun ids to themselves *)
-Fixpoint table_element_mapping (n : nat) : list module_element :=
-  match n with
-  | 0 | 1 => []
-  | S n' => (table_element_mapping n') ++ [{| modelem_table := Mk_tableidx 0
-                                            ; modelem_offset := [ BI_const (nat_to_value n) ]
-                                            ; modelem_init := [ Mk_funcidx n ]
-                                            |}]
+Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_element :=
+  match len with
+  | 0 => []
+  | S len' => {| modelem_table := Mk_tableidx 0
+               ; modelem_offset := [ BI_const (nat_to_value startidx) ]
+               ; modelem_init := [ Mk_funcidx startidx ]
+               |} :: (table_element_mapping len' (S startidx))
   end.
 
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
@@ -542,8 +542,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                      ; modexp_desc := MED_global (Mk_globalidx result_var)
                      |} :: nil in
 
-  (* -1: highest index not length *)
-  let elements := table_element_mapping (length functions - 1) in
+  let elements := table_element_mapping (length fns + 4) 0 in
 
   let functions_final := map (fun f => {| modfunc_type := Mk_typeidx (match f.(type) with Tf args _ => length args end)
                                         ; modfunc_locals := f.(locals)
@@ -553,7 +552,7 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
       {| mod_types := list_function_types (Z.to_nat max_function_args) (* more than required, doesn't hurt*)
 
        ; mod_funcs := functions_final
-       ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (2 + List.length functions)
+       ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length fns + 4)
                                                             ; lim_max := None |}
                                             ; tt_elem_type := ELT_funcref
                                             |} |}]
