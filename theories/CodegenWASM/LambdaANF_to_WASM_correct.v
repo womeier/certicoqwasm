@@ -4255,6 +4255,7 @@ Variable finfo_env: LambdaANF_to_Clight.fun_info_env. (* map from a function nam
 Variable rep_env: M.t ctor_rep.
 
 Variable host_function : eqType.
+Variable hfn : host_function.
 Let host := host host_function.
 
 Variable host_instance : host.
@@ -4291,8 +4292,10 @@ Ltac dostep :=
 Ltac dostep' :=
    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first  apply rt_step.
 
-Definition empty_store_record : store_record := {|
-    s_funcs := nil;
+Definition initial_store  := {|
+    (* imported funcs write_int and write_char, they are not called
+       but need to be present *)
+    s_funcs := [FC_func_host (Tf [T_i32] []) hfn; FC_func_host (Tf [T_i32] []) hfn];
     s_tables := nil;
     s_mems := nil;
     s_globals := nil;
@@ -4620,11 +4623,13 @@ Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num
   (* for INV_locals_all_i32, the initial context has no local vars for simplicity *)
   (f_locs f) = [] ->
   (* instantiate with the two imported functions *)
-  instantiate host_function host_instance empty_store_record module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] (sr, (f_inst f), exports, None) ->
+  instantiate host_function host_instance initial_store module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] (sr, (f_inst f), exports, None) ->
   INV fenv nenv _ (M.empty _) sr f /\
-  inst_funcs (f_inst f) = [:: 0, 1, 0, 1 & map (fun '(Mk_funcidx i) => i) (funcidcs num_funs 2)] /\
+  inst_funcs (f_inst f) = [:: 0, 1, 2, 3 & map (fun '(Mk_funcidx i) => i) (funcidcs num_funs 4)] /\
   (* pp_fn not called, discard *)
-   exists pp_fn e' fns, s_funcs sr = [:: pp_fn,
+   exists pp_fn e' fns, s_funcs sr = [:: FC_func_host (Tf [T_i32] []) hfn,
+                                         FC_func_host (Tf [T_i32] []) hfn,
+                                         pp_fn,
                        FC_func_native (f_inst f) (Tf [] [])
                          (map (fun _ : var => T_i32)
                             (collect_local_variables
@@ -4908,7 +4913,7 @@ Corollary LambdaANF_Codegen_related :
   (* expression must be closed *)
   (~ exists x, occurs_free e x) ->
   (* instiation with the two imported functions *)
-  instantiate _ host_instance empty_store_record module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] ((sr, (f_inst fr), exports), None) ->
+  instantiate _ host_instance initial_store module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] ((sr, (f_inst fr), exports), None) ->
   (* *)
   exists (sr' : store_record),
        reduce_trans (hs, sr,  (Build_frame [] (f_inst fr)), [ AI_basic (BI_call mainidx) ])
