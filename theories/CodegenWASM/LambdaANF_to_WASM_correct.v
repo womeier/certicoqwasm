@@ -4970,15 +4970,6 @@ Proof.
     unfold INV_var_idx_inbounds. intros. rewrite repeat_length. inv H13.
     eapply local_var_mapping_list. eassumption.  }
 
-   assert (HlocalBound: (forall (loc : positive) (loc' : immediate),
-           repr_var (lenv:=create_local_variable_mapping (collect_local_variables e)) nenv loc loc' ->
-           loc' < length (f_locs f_before_IH))). { intros ? ? Hl. subst. cbn. rewrite repeat_length.
-           inv Hl.  eapply local_var_mapping_list. eassumption. }
-
-   assert (HfnsBound: (forall (fvar : positive) (fIdx : immediate),
-         repr_funvar fenv nenv fvar fIdx ->
-         fIdx < Datatypes.length (s_funcs sr))). admit.
-
   assert (mainidx = i). { unfold translate_function_var in Hfmain, Hmainidx.
     destruct (fenv ! main_function_var). 2: inv Hfmain. congruence. }
   subst i. clear Hfmain.
@@ -5065,7 +5056,7 @@ Proof.
     dostep'. apply r_call. cbn.
     rewrite HinstFuncs. reflexivity.
     dostep'. eapply r_invoke_native with (ves:=[]) (vcs:=[]) (t1s:=[]) (t2s:=[])(f' := f_before_IH); eauto.
-    rewrite HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst. reflexivity.
+    rewrite HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst.  reflexivity.
     subst f_before_IH. cbn.
     assert (HexpEq: match e with | Efun _ exp => exp
                                  | _ => e end= e).
