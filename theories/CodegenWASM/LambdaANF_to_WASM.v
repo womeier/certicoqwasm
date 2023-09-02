@@ -33,18 +33,16 @@ Definition max_num_functions := 1_000_000%Z. (* TODO enforce, sohuld be possible
  *)
 
 (* imported, for printing result *)
-Definition write_char_function_var : positive := 42.
 Definition write_char_function_idx : immediate := 0.
 Definition write_char_function_name := "$write_char".
 
-Definition write_int_function_var : positive := 43.
 Definition write_int_function_idx : immediate := 1.
 Definition write_int_function_name := "$write_int".
 
-Definition constr_pp_function_var : positive := 44.
 Definition constr_pp_function_name : string := "$pretty_print_constructor".
-Definition main_function_var : positive := 45.
+Definition constr_pp_function_idx : immediate := 2.
 Definition main_function_name := "$main_function".
+Definition main_function_idx : immediate := 3.
 
 (* ***** MAPPINGS ****** *)
 Definition localvar_env := M.tree nat. (* maps variables to their id (id=index in list of local vars) *)
@@ -134,11 +132,11 @@ Definition instr_write_string (s : string) : list basic_instruction :=
   flat_map (fun c => [BI_const (nat_to_value c); BI_call write_char_function_idx]) (to_ascii_list s).
 
 (* prints constructors as S-expressions *)
-Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (fenv : fname_env) (e : cps.exp) : error wasm_function :=
+Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : cps.exp) : error wasm_function :=
   let constr_ptr := 0 (* local var *) in
   let tmp := 1        (* local var *) in
   let tags := collect_constr_tags e in
-  self_fn_idx <- translate_function_var nenv fenv constr_pp_function_var "generate constr pp fn" ;;
+  let self_fn_idx := constr_pp_function_idx in
 
   let fix gen_rec_calls (calls : nat) (arity : nat) : list basic_instruction :=
     match calls with
@@ -461,14 +459,8 @@ Definition collect_function_vars (e : cps.exp) : list cps.var :=
 
 (* maps function names to ids (id=index in function list of module) *)
 Definition create_fname_mapping (nenv : name_env) (e : exp) : fname_env :=
-  let (fname_mapping, num_fns) := (add_to_fname_mapping [ write_char_function_var
-                                                        ; write_int_function_var
-                                                        ; constr_pp_function_var
-                                                        ; main_function_var] 0 (M.empty _), 4) in
   let fun_vars := collect_function_vars e in
-  let (fname_mapping, num_fns) := (add_to_fname_mapping fun_vars num_fns fname_mapping, num_fns + length fun_vars) in
-
-  fname_mapping.
+  add_to_fname_mapping fun_vars 4 (M.empty _).
 
 Fixpoint list_function_types (n : nat) : list function_type :=
   match n with
@@ -489,7 +481,7 @@ Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_elemen
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
   let fname_mapping := create_fname_mapping nenv e in
 
-  constr_pp_function <- generate_constr_pp_function cenv nenv fname_mapping e;;
+  constr_pp_function <- generate_constr_pp_function cenv nenv e;;
 
   let top_exp := match e with
                  | Efun _ _ => e
@@ -519,7 +511,6 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
   let main_lenv := create_local_variable_mapping main_vars in
 
   main_instr <- translate_exp nenv cenv main_lenv fname_mapping main_expr ;;
-  main_function_idx <- translate_function_var nenv fname_mapping main_function_var "main function";;
 
   let main_function := {| fidx := main_function_idx
                         ; export_name := main_function_name
