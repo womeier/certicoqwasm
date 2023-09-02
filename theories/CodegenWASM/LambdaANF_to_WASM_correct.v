@@ -3657,6 +3657,36 @@ Definition maps_disjoint (m1 m2 : M.tree nat) :=
   (forall x x', m1 ! x = Some x' -> m2 ! x = None) /\
   (forall x x', m2 ! x = Some x' -> m1 ! x = None).
 
+Fixpoint fds_length (fds : fundefs) : nat :=
+  match fds with
+  | Fnil => 0
+  | Fcons _ _ _ _ fds' => 1 + fds_length fds'
+  end.
+
+Lemma fds_length_length :
+  forall f0 fns,
+  (fix iter (fds : fundefs) : error (seq.seq wasm_function) :=
+               match fds with
+               | Fcons x _ xs e fds' =>
+                   match translate_function nenv cenv fenv x xs e with
+                   | Err t => fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
+                   | Ret a => fun m2 : wasm_function -> error (seq.seq wasm_function) => m2 a
+                   end
+                     (fun fn : wasm_function =>
+                      match iter fds' with
+                      | Err t =>
+                          fun _ : seq.seq wasm_function -> error (seq.seq wasm_function) => Err t
+                      | Ret a =>
+                          fun m2 : seq.seq wasm_function -> error (seq.seq wasm_function) => m2 a
+                      end (fun following : seq.seq wasm_function => Ret (fn :: following)%SEQ))
+               | Fnil => Ret []
+               end) f0 = Ret fns -> fds_length f0 = length fns.
+Proof.
+  induction f0; intros. 2: { now inv H. }
+  destruct (translate_function nenv cenv fenv v l e). inv H.
+  destruct (_ f0). inv H. destruct fns; inv H. cbn. now rewrite -IHf0.
+Qed.
+
 (* the number of args may be restricted to e.g. not surpass max Int32 *)
 (*  TODO. refuse to compile otherwise or follows from previous stage  *)
 Inductive expression_restricted : cps.exp -> Prop :=
@@ -3674,13 +3704,10 @@ Inductive expression_restricted : cps.exp -> Prop :=
   | ER_letapp : forall f x ft ys e,
       expression_restricted e ->
       expression_restricted (Eletapp x f ft ys e)
-  | ER_fun_nil : forall e,
+  | ER_fun_nil : forall e fds,
       expression_restricted e ->
-      expression_restricted (Efun Fnil e)
-  | ER_fun_cons : forall e f t ys body fds,
-      expression_restricted e ->
-      expression_restricted body ->
-      expression_restricted (Efun (Fcons f t ys body fds) e)
+      (Z.of_nat (fds_length fds) < max_num_functions)%Z ->
+      expression_restricted (Efun fds e)
   | ER_app : forall f ft ys,
       expression_restricted (Eapp f ft ys)
   | ER_prim_val : forall x p e,
@@ -4602,35 +4629,6 @@ Proof.
     erewrite (IHfns l'); eauto.
 Qed.
 
-Fixpoint fds_length (fds : fundefs) : nat :=
-  match fds with
-  | Fnil => 0
-  | Fcons _ _ _ _ fds' => 1 + fds_length fds'
-  end.
-
-Lemma fds_length_length :
-  forall fenv f0 fns,
-  (fix iter (fds : fundefs) : error (seq.seq wasm_function) :=
-               match fds with
-               | Fcons x _ xs e fds' =>
-                   match translate_function nenv cenv fenv x xs e with
-                   | Err t => fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
-                   | Ret a => fun m2 : wasm_function -> error (seq.seq wasm_function) => m2 a
-                   end
-                     (fun fn : wasm_function =>
-                      match iter fds' with
-                      | Err t =>
-                          fun _ : seq.seq wasm_function -> error (seq.seq wasm_function) => Err t
-                      | Ret a =>
-                          fun m2 : seq.seq wasm_function -> error (seq.seq wasm_function) => m2 a
-                      end (fun following : seq.seq wasm_function => Ret (fn :: following)%SEQ))
-               | Fnil => Ret []
-               end) f0 = Ret fns -> fds_length f0 = length fns.
-Proof.
-  intro fenv. induction f0; intros. 2: { now inv H. }
-  destruct (translate_function nenv cenv fenv v l e). inv H.
-  destruct (_ f0). inv H. destruct fns; inv H. cbn. now rewrite -IHf0.
-Qed.
 
 Require Import FunctionalExtensionality.
 
@@ -4688,7 +4686,7 @@ Qed.
 Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num_funs module fenv main_lenv sr f exports,
   topExp = match e with | Efun _ _ => e | _ => Efun Fnil e end ->
   num_funs = match topExp with | Efun fds _ => fds_length fds | _ => 42 (* unreachable*) end ->
-  (Z.of_nat num_funs + 2 < max_num_functions)%Z ->
+  (Z.of_nat num_funs < max_num_functions)%Z ->
   LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, main_lenv) ->
   (* for INV_locals_all_i32, the initial context has no local vars for simplicity *)
   (f_locs f) = [] ->
@@ -4887,12 +4885,11 @@ Proof.
   subst s'. cbn. eexists. exists e', fns. eauto. (* TODO update generated fns + exp*)
 Admitted.
 
-Lemma repeat0_n_zeros : forall e,
-   repeat (nat_to_value 0) (Datatypes.length (collect_local_variables e))
- = n_zeros (map (fun _ : var => T_i32) (collect_local_variables e)).
+Lemma repeat0_n_zeros : forall l,
+   repeat (nat_to_value 0) (Datatypes.length l)
+ = n_zeros (map (fun _ : var => T_i32) l).
 Proof.
-  intro e.
-  induction (collect_local_variables e); cbn; auto.
+  induction l; cbn; auto.
   now rewrite IHl.
 Qed.
 
@@ -4999,8 +4996,9 @@ Proof.
                                      end with
                                | Efun fds _ => fds_length fds
                                | _ => 42
-                               end + 2 < max_num_functions)%Z).
-  (* TODO: enforce fds + 2 < max_num_functions *) admit.
+                               end < max_num_functions)%Z). {
+    unfold max_num_functions. destruct e; cbn; try lia. inv HeRestr. assumption.
+  }
   assert (HflocsNil : f_locs f = []). { subst. reflexivity. }
   assert (Hfinst : f_inst f = f_inst fr) by (subst; reflexivity). rewrite -Hfinst in Hinst.
   have HI := module_instantiate_INV_and_more_hold _ _ Fnil _ _ _ _ _ _ _ Logic.eq_refl
