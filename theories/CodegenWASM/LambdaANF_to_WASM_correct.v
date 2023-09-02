@@ -3987,14 +3987,11 @@ Proof with eauto.
 
       assert (Hrm: rel_mem_LambdaANF_Codegen (lenv:=lenv) fenv nenv host_function e (map_util.M.set x v rho) sr
        {| f_locs := set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32);
-          f_inst := f_inst fr
-        |} fds). {
+          f_inst := f_inst fr |} fds). {
         split; intros.
         { destruct (var_dec x x1).
           (* x = x1 *) subst x1. rewrite M.gss in H6. inv H6. rename v0 into v.
-          (* inv Hbsval. (* subval constr vfun *) admit.
-          eexists. split. admit. split. 2: admit.
-          econstructor; try eassumption; eauto. *) admit. (* x not a fundef *)
+           admit. (* x not a fundef, das sollte wsl. anders gehen *)
 
           (* x <> x1*) rewrite M.gso in H6; auto.
                        have H' := Hfun _ _ _ _  errMsg H6 H8.
@@ -4019,7 +4016,6 @@ Proof with eauto.
           eapply set_nth_nth_error_same. eassumption.
           eapply val_relation_rho_depends_on_bound_vars. apply Hunbound. now cbn.
           eapply val_relation_depends_on_finst; try eassumption; auto. }
-
         { (* x <> x1 *)
           assert (Hocc: occurs_free (Eproj x t n y e) x1). { constructor; assumption. }
           apply Hvar in Hocc. destruct Hocc as [v6 [wal' [Henv [Hloc Hval]]]].
@@ -4052,7 +4048,7 @@ Proof with eauto.
         { subst x1. rewrite M.gss in Hfds'. inv Hfds'. inv Hbsval. now apply Hfds in H11. }
         (* x<>x1 *)
         { rewrite M.gso in Hfds'; auto. now apply Hfds in Hfds'. }
-      }
+     }
 
      assert (Hinv': INV lenv sr {| f_locs := set_nth (wasm_deserialise bs T_i32)
                                 (f_locs fr) x' (wasm_deserialise bs T_i32);
@@ -4064,12 +4060,12 @@ Proof with eauto.
      assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
      assert (Hunbound': (forall x0 : var, In x0 (collect_local_variables e) ->
                                           (map_util.M.set x v rho) ! x0 = None)). {
-        intros.
-        assert (~ In x (collect_local_variables e)). {
-          apply NoDup_app_l in Hnodup. cbn in Hnodup.
-          now apply NoDup_cons_iff in Hnodup. }
-        assert (x <> x1) by congruence. rewrite M.gso; auto.
-        apply Hunbound. now right.
+       intros.
+       assert (~ In x (collect_local_variables e)). {
+         apply NoDup_app_l in Hnodup. cbn in Hnodup.
+         now apply NoDup_cons_iff in Hnodup. }
+       assert (x <> x1) by congruence. rewrite M.gso; auto.
+       apply Hunbound. now right.
      }
 
      assert (Hnodup' : NoDup (collect_local_variables e ++
@@ -4080,55 +4076,54 @@ Proof with eauto.
      have IH := IHHev Hnodup' HeRestr' Hunbound' _ HlenvInjective state _ _ _ Hfds' Hinv' H7 Hrm.
      destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]]. cbn in Hfinst.
 
-      eexists rho', sr', f'. cbn. split.
-      { (* take steps *)
-      have Htmp := Hy'. inv Htmp.
+     eexists rho', sr', f'. cbn. split.
+     { (* take steps *)
+       have Htmp := Hy'. inv Htmp.
 
-      have I := Hinv'. destruct I as [_ [_ [_ [_ [_ [_ [Hlinmem _]]]]]]].
-      have Hly := HlocalBound _ _ Hy'.
-      have Hlx := HlocalBound _ _ Hx'.
-      rewrite H in H6. injection H6 => H6'. subst. clear H6.
+       have I := Hinv'. destruct I as [_ [_ [_ [_ [_ [_ [Hlinmem _]]]]]]].
+       have Hly := HlocalBound _ _ Hy'.
+       have Hlx := HlocalBound _ _ Hx'.
+       rewrite H in H6. injection H6 => H6'. subst. clear H6.
 
-      (* get_local y' *)
-      dostep. elimr_nary_instr 0.
-      apply r_get_local. apply H1.
+       (* get_local y' *)
+       dostep. elimr_nary_instr 0.
+       apply r_get_local. apply H1.
 
-      (* add offset n *)
-      dostep. elimr_nary_instr 2.
-      constructor. apply rs_binop_success. cbn. reflexivity.
+       (* add offset n *)
+       dostep. elimr_nary_instr 2.
+       constructor. apply rs_binop_success. cbn. reflexivity.
 
-      inv Hrepr.
-      dostep. elimr_nary_instr 1.
-      eapply r_load_success.
+       inv Hrepr.
+       dostep. elimr_nary_instr 1.
+       eapply r_load_success.
 
-      destruct Hlinmem as [Hmem1 [m' Hmem2]].
-      eassumption. apply H5.
+       destruct Hlinmem as [Hmem1 [m' Hmem2]].
+       eassumption. apply H5.
 
-      assert (Har: Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
+       assert (Har: Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
           (nat_to_i32 ((N.to_nat n + 1) * 4))) = (N.of_nat (4 + addr) + 4 * n)%N). {
           replace (4 + addr) with (addr + 4) by lia. replace (4*n)%N with (n*4)%N by lia. cbn.
-      unfold load in Hload.
-      destruct ((N.of_nat (4 + addr) + 4 * n + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Heqn. 2: inv Hload.
-      apply N.leb_le in Heqn.
-      destruct Hlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. assert (m' = m) by congruence. subst.
-      apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
-      repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia). }
-      rewrite Har. apply Hload.
+       unfold load in Hload.
+       destruct ((N.of_nat (4 + addr) + 4 * n + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Heqn. 2: inv Hload.
+       apply N.leb_le in Heqn.
+       destruct Hlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. assert (m' = m) by congruence. subst.
+       apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
+       repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia). }
+       rewrite Har. apply Hload.
 
-      (* save result in x' *)
-      (* dostep' with fr *)
-      eapply rt_trans with (y := (?[hs], ?[sr], {|
+       (* save result in x' *)
+       (* dostep' with fr *)
+       eapply rt_trans with (y := (?[hs], ?[sr], {|
              f_locs :=
                set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32);
              f_inst := f_inst fr
            |}, ?[s])); first  apply rt_step.
 
-      cbn. separate_instr. elimr_nary_instr 1.
-      apply r_set_local with (vd := (wasm_deserialise bs T_i32)). reflexivity.
-      apply /ssrnat.leP. apply HlocalBound in Hx'. assumption.
-      reflexivity. cbn. apply Hred.
-      } auto.
-    }
+       cbn. separate_instr. elimr_nary_instr 1.
+       apply r_set_local with (vd := (wasm_deserialise bs T_i32)). reflexivity.
+       apply /ssrnat.leP. apply HlocalBound in Hx'. assumption.
+       reflexivity. cbn. apply Hred.
+     } auto. }
   - (* Ecase *)
     { generalize dependent y. generalize dependent instructions. induction cl; intros; subst. inv H1. destruct a. rename c0 into t0.
 
