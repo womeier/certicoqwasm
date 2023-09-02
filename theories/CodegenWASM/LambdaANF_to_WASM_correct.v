@@ -2497,7 +2497,7 @@ Lemma memory_grow_reduce_need_grow_mem {lenv} : forall grow state s f gmp m,
    (state, s, f, [seq AI_basic i | i <- grow])
    (state, s', f, [])
   (* enough memory to alloc. constructor *)
-  /\ ((INV lenv s' f /\
+  /\ ((INV lenv s' f /\ s_funcs s = s_funcs s' /\
         (forall m v_gmp, nth_error (s_mems s') 0 = Some m ->
            sglob_val (host_function:=host_function) s' (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 v_gmp)) ->
            (Z.of_nat v_gmp < Wasm_int.Int32.modulus)%Z ->
@@ -2572,6 +2572,7 @@ Proof with eauto.
       erewrite mem_grow_increases_length; eauto. lia.
       eapply mem_grow_preserves_max_pages... exists (mem_size m + 1)%N. split.
       eapply mem_grow_increases_size in H4; auto. rewrite N.add_comm. apply H4. now apply N.leb_le. }
+    split. reflexivity.
     { (* enough memory available *)
       rename x into m''. split. intros. subst. destruct (update_list_at (s_mems sr) 0 m'') eqn:Hm'. inv H5.
       inv H5. assert (m0 = m''). { unfold update_list_at in Hm'.  rewrite take0 in Hm'. now inv Hm'. } subst m0.
@@ -2654,7 +2655,7 @@ Lemma memory_grow_reduce_already_enough_mem {lenv} : forall grow state s f gmp m
    (state, s, f, [seq AI_basic i | i <- grow])
    (state, s', f, [])
   (* enough memory to alloc. constructor *)
-  /\ ((INV lenv s' f /\
+  /\ ((INV lenv s' f /\ s_funcs s = s_funcs s' /\
         (forall m v_gmp, nth_error (s_mems s') 0 = Some m ->
            sglob_val (host_function:=host_function) s' (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 v_gmp)) ->
            (Z.of_nat v_gmp < Wasm_int.Int32.modulus)%Z ->
@@ -2705,6 +2706,7 @@ Proof with eauto.
     dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto. cbn.
     apply reduce_trans_label. apply rt_refl. left. split. assumption.
 
+    split. reflexivity.
     (* enough space *)
     { split; auto. intros. unfold max_mem_pages in *.
       rewrite H0 in Hgmp. inv Hgmp.
@@ -2769,7 +2771,7 @@ Lemma memory_grow_reduce {lenv} : forall grow state s f,
    (state, s, f, [seq AI_basic i | i <- grow])
    (state, s', f, [])
   (* enough memory to alloc. constructor *)
-  /\ ((INV lenv s' f /\
+  /\ ((INV lenv s' f /\ s_funcs s = s_funcs s' /\
         (forall m v_gmp, nth_error (s_mems s') 0 = Some m ->
            sglob_val (host_function:=host_function) s' (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 v_gmp)) ->
            (Z.of_nat v_gmp < Wasm_int.Int32.modulus)%Z ->
@@ -3396,7 +3398,7 @@ Lemma store_constr_reduce {lenv} : forall state s f rho ys (vs : list cps.val) t
       [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
       [:: AI_basic (BI_set_global global_mem_ptr)] ++
       [seq AI_basic i | i <- sargs])
-    (state, s', f, []) /\ INV lenv s' f
+    (state, s', f, []) /\ INV lenv s' f /\ s_funcs s = s_funcs s'
       (* cap points to value *)
       /\ (exists cap_v wasmval, sglob_val s' (f_inst f) constr_alloc_ptr = Some (VAL_int32 cap_v)
           /\ wasm_value_to_i32 wasmval = cap_v
@@ -3553,6 +3555,7 @@ exists (v6 : cps.val) (val : wasm_value),
   dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
   dostep. elimr_nary_instr 1. apply r_set_global. subst. rewrite HgmpEq. eassumption.
   cbn. apply Hred. split. assumption.
+  split. { apply update_glob_keeps_funcs_intact in H0, H1. subst. cbn in H1. congruence. }
   (* constr value in memory *)
   eexists. eexists. split. eassumption.
   split.
@@ -3863,7 +3866,7 @@ Proof with eauto.
       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hlinmem [_ [_ [_ [_ [_ [HlocalBound _]]]]]]]]]]]]].
       destruct Hlinmem as [Hmem1 [m [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
       have Hgrowmem := @memory_grow_reduce lenv _ state sr fr Heqgrow Hinv.
-      destruct Hgrowmem as [s' [Hred [[Hinv' [Henoughmem HpreservedVals]] | HoutofM]]].
+      destruct Hgrowmem as [s' [Hred [[Hinv' [Hfuncs [Henoughmem HpreservedVals]]] | HoutofM]]].
       have I := Hinv'. destruct I as [_ [_ [HresM0 [Hgmp [_ [Hmuti32 [Hlinmem' _]]]]]]].
       destruct Hlinmem' as [Hmem1' [m' [Hmem2' [size' [Hmem3' _]]]]].
 
@@ -3885,7 +3888,7 @@ Proof with eauto.
         exists val, wal. repeat split; auto. }
 
       have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ Hinv' _  HrelM Hmaxargs _ H.
-      edestruct Hconstr as [s_v [Hred_v [Hinv_v [cap_v [wal [? [? Hvalue]]]]]]].
+      edestruct Hconstr as [s_v [Hred_v [Hinv_v [Hfuncs' [cap_v [wal [? [? Hvalue]]]]]]]].
       { intros. assert (m' = m0) by congruence. subst m0.
         assert (gmp_v = gmp_v'). { rewrite Hgmp' in H3. inv H3.
           rewrite Wasm_int.Int32.Z_mod_modulus_id in H6; try lia.
@@ -3917,24 +3920,72 @@ Proof with eauto.
       (* memory relation *)
       assert (Hrel_m_v : rel_mem_LambdaANF_Codegen (lenv:=lenv) fenv nenv host_function e rho' s_v f_before_IH fds).
       { (* -> rel_mem_LambdaANF_Codegen fenv lenv nenv host_function e rho' s_v
-  f_before_IH *) clear IHHev Hinv Hmem1 Hmem2 Hmem3 Hmem4 Hmem1' Hmem2' Hmem3'. clear Hred Hinv' Hred_v H8.
-         destruct Hrel_m as [HrelmFun HrelmVar]. unfold rel_mem_LambdaANF_Codegen. split; auto.
-         admit. admit. } (* intros. assert (Hocc: occurs_free (Econstr x t ys e) x1). {
-           destruct (var_dec x x1).
-           (* x = x1 *) subst. apply Free_Econst1. }
-         apply HrelmVar in Hocc. destruct Hocc as [v' [w' [Hrho' [Hlocals Hval]]]].
-         split.
-         - (* fun *) intros x1 r fds f val Hrho' Hfunsub.
-            (* have Hrel_f := HrelmFun _ _ _ _ _ Hrho'. *)
-         - (* var *) intros x1 Hfree.
+  f_before_IH *) clear IHHev Hinv Hmem1 Hmem2 Hmem3 Hmem4 Hmem1' Hmem2' Hmem3'. clear Hinv' Hred_v.
+         destruct Hrel_m as [HrelmFun HrelmVar]. unfold rel_mem_LambdaANF_Codegen. split.
+         { (* fns *) intros. subst rho'.
             destruct (var_dec x x1).
-            subst x1.
-            (* x1 = x *)
-
-            (* x1 <> x*)
-
-             exists v', w'. cbn.
-           } *)
+            { (* x=x1 *) subst x1. rewrite M.gss in H3. inv H3.
+              apply subval_or_eq_fun in H4. destruct H4 as [v1 [Hr1 Hr2]].
+              have H'' := get_list_In_val _ _ _ _ H Hr2.
+              destruct H'' as [x2 [Hin Hrho]].
+              have H' := HrelmFun _ _ _ _ errMsg Hrho Hr1.
+              destruct H' as [i [Htrans [Hval Hclosed]]].
+              exists i. repeat (split; auto).
+              inv Hval.
+              assert (Hfs: s_funcs s_v = s_funcs sr) by congruence.
+              econstructor; eauto. rewrite <- H6.
+              rewrite M.gso. reflexivity. intro. subst.
+              assert (rho ! x = None). { apply Hunbound. now cbn. } congruence.
+         rewrite Hfs. eassumption. }
+            { (* x<>x1 *) rewrite M.gso in H3; auto.
+               have Hrlm := HrelmFun _ _ _ _ errMsg H3 H4.
+               destruct Hrlm as [i [Htrans [Hval Hclosed]]].
+               exists i. repeat (split; auto). subst.
+               inv Hval.
+               econstructor; eauto. rewrite <- H9.
+               rewrite M.gso. reflexivity.
+               assert (rho ! x = None). { apply Hunbound. now cbn. } congruence.
+               replace (s_funcs s_v) with (s_funcs sr) by congruence. eassumption.
+            }}
+         { (* local vars *)
+           intros. destruct (var_dec x x1).
+           { (* x = x1 *)
+             subst x1. exists (Vconstr t vs), wal.
+             subst rho'. rewrite M.gss. split; auto. split.
+             subst f_before_IH. exists x'. cbn. split.
+             inv Hx'. intro. unfold translate_var. unfold translate_var in H0.
+             destruct (lenv ! x); inv H0; reflexivity.
+             erewrite set_nth_nth_error_same; eauto.
+             subst f_before_IH.
+             eapply val_relation_rho_depends_on_bound_vars.
+             apply Hunbound. now cbn.
+             eapply val_relation_depends_on_finst; try apply Hvalue. reflexivity.
+            }
+           { (* x <> x1 *)
+             assert (Hocc: occurs_free (Econstr x t ys e) x1). { now apply Free_Econstr2. }
+             have H' := HrelmVar _ Hocc.
+             destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
+             exists val', wal'. split.
+             subst rho'. rewrite M.gso; auto. split.
+             destruct Hloc as [i [Hl1 Hl2]].
+             unfold stored_in_locals. exists i. split; auto.
+             subst f_before_IH. cbn.
+             rewrite set_nth_nth_error_other; auto.
+             intro. subst x'.
+             inv Hx'.
+             specialize Hl1 with ""%bs.
+             unfold translate_var in Hl1, H4.
+             destruct (lenv ! x1) eqn:Hlx1; inv Hl1.
+             destruct (lenv ! x) eqn:Hlx2; inv H4.
+             have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. contradiction.
+             apply nth_error_Some. congruence.
+             subst rho'. apply val_relation_rho_depends_on_bound_vars.
+             apply Hunbound. now cbn.
+             apply val_relation_depends_on_finst with (fr:=fr). subst. reflexivity.
+             eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs;
+               try apply Hval; eauto; try congruence; admit.
+             }
+        }}
 
       assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
 
