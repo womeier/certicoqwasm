@@ -3653,7 +3653,7 @@ Definition map_injective (m : M.tree nat) := forall x y x' y',
   m ! y = Some y' ->
   x' <> y'.
 
-Definition maps_disjoint (m1 m2 : M.tree nat) :=
+Definition maps_domains_disjoint (m1 m2 : M.tree nat) :=
   (forall x x', m1 ! x = Some x' -> m2 ! x = None) /\
   (forall x x', m2 ! x = Some x' -> m1 ! x = None).
 
@@ -3746,45 +3746,38 @@ Qed.
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Codegen_related :
   forall lenv,
-  maps_disjoint fenv lenv ->
+  maps_domains_disjoint fenv lenv ->
   map_injective lenv ->
 
-  (*
-  forall (rep_env : M.t ctor_rep) (cenv : ctor_env)
-         (finfo_env : M.t (positive * fun_tag)) (ienv : n_ind_env), *)
-  (*  program_inv p -> (* isPtr function is defined/correct /\ thread info is correct /\ gc invariant *)
-    find_symbol_domain p finfo_env -> (* finfo_env [LambdaANF] contains precisely the same things as global env [Clight] *)
-    finfo_env_correct fenv finfo_env -> (* everything in finfo_env is in the function environment *) *)
+  (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
+  forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat),
+    (* restrict e s.t. e.g. all tags < i32.max etc *)
+    expression_restricted e ->
+    (* SSA form, let-bound vars not assigned yet *)
+    (forall x, In x (collect_local_variables e) -> rho ! x = None) ->
+    bstep_e (M.empty _) cenv rho e v n ->  (* e n-steps to v *)
+    (* correct_envs cenv ienv rep_env rho e ->
+       inductive type/constructor environments are correct/pertain to e *)
+    forall (hs : host_state) (sr : store_record) (f : frame) (fds : fundefs)
+           (instructions : list basic_instruction),
 
-    (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
-    forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat),
-      (* restrict e s.t. e.g. all tags < i32.max etc *)
-      expression_restricted e ->
-      bstep_e (M.empty _) cenv rho e v n ->  (* e n-steps to v *) (* for linking: environment won't be empty *)
-      (* correct_envs cenv ienv rep_env rho e -> (* inductive type/constructor environments are correct/pertain to e*) *)
-      (* protected_id_not_bound_id rho e ->
-      unique_bindings_env rho e -> *)
-      (* functions_not_bound p rho e -> (* function names in p/rho not bound in e *) *)
-      forall (hs : host_state) (sr : store_record) (f : frame) (fds : fundefs)
-             (instructions : list basic_instruction),
+      (* fds only on toplevel so obtained for all funvalues *)
+      (forall x rho' fds' f', rho ! x = Some (Vfun rho' fds' f') -> fds' = fds) ->
 
-        (* fds only on toplevel*)
-        (forall x rho' fds' f', rho ! x = Some (Vfun rho' fds' f') -> fds' = fds) ->
+      (* invariants *)
+      INV lenv sr f ->
 
-        (* invariants *)
-        INV lenv sr f ->
+      (* translate_body e returns stm *)
+      repr_expr_LambdaANF_Codegen (lenv:=lenv) fenv nenv e instructions ->
 
-        (* translate_body e returns stm *)
-        repr_expr_LambdaANF_Codegen (lenv:=lenv) fenv nenv e instructions ->
-
-        (* relates a LambdaANF evaluation environment [rho] to a WASM environment [store/frame] (free variables in e) *)
-        rel_mem_LambdaANF_Codegen (lenv:=lenv) fenv nenv _ e rho sr f fds ->
-        exists rho_res (sr' : store_record) (f' : frame),
-          reduce_trans (hs, sr, f, map AI_basic instructions) (hs, sr', f', []) /\
-          (* value sr'.res points to value related to v *)
-          result_val_LambdaANF_Codegen rho_res v sr' f' /\ f_inst f = f_inst f'.
+      (* relates a LambdaANF evaluation environment [rho] to a WASM environment [store/frame] (free variables in e) *)
+      rel_mem_LambdaANF_Codegen (lenv:=lenv) fenv nenv _ e rho sr f fds ->
+      exists rho_res (sr' : store_record) (f' : frame),
+        reduce_trans (hs, sr, f, map AI_basic instructions) (hs, sr', f', []) /\
+        (* value sr'.res points to value related to v *)
+        result_val_LambdaANF_Codegen rho_res v sr' f' /\ f_inst f = f_inst f'.
 Proof with eauto.
-  intros lenv HenvsDisjoint HlenvInjective rho v e n HeRestr Hev. generalize dependent lenv.
+  intros lenv HenvsDisjoint HlenvInjective rho v e n HeRestr Hunbound Hev. generalize dependent lenv.
   induction Hev; intros lenv HenvsDisjoint HlenvInjective state sr fr fds instructions Hfds Hinv Hrepr_e Hrel_m.
   - (* Econstr *)
     assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z). { now inv HeRestr. }
@@ -3872,7 +3865,14 @@ Proof with eauto.
 
       assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
 
-      have IH := IHHev HeRestr' _ HenvsDisjoint HlenvInjective state _ _ _ _ Hfds_before_IH Hinv_before_IH Hexp Hrel_m_v.
+      assert (Hunbound' : (forall x : var,
+      In x (collect_local_variables e) ->
+      rho' ! x = None)). { intros. have H' := Hunbound x1.
+                           cbn in H'. subst rho'.
+                           assert (x <> x1). admit.
+                           rewrite M.gso; auto. }
+
+      have IH := IHHev HeRestr' Hunbound' _ HenvsDisjoint HlenvInjective state _ _ _ _ Hfds_before_IH Hinv_before_IH Hexp Hrel_m_v.
       destruct IH as [rho_final [s_final [f_final [Hred_IH [Hval Hfinst]]]]]. cbn in Hfinst.
 
       exists rho_final, s_final, f_final. split.
@@ -4023,9 +4023,12 @@ Proof with eauto.
        assumption. apply nth_error_Some. intros. apply nth_error_Some.
        eapply HlocalBound. eassumption. }
 
-    assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
+     assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
+     assert (Hunbound': (forall x0 : var,
+      In x0 (collect_local_variables e) ->
+      (map_util.M.set x v rho) ! x0 = None)). admit.
 
-     have IH := IHHev HeRestr' _ HenvsDisjoint HlenvInjective state sr _ _ e' Hfds' Hinv' H7 Hrm. destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]]. cbn in Hfinst.
+     have IH := IHHev HeRestr' Hunbound' _ HenvsDisjoint HlenvInjective state sr _ _ e' Hfds' Hinv' H7 Hrm. destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]]. cbn in Hfinst.
 
       eexists rho', sr', f'. cbn. split.
       { (* take steps *)
@@ -4100,8 +4103,11 @@ Proof with eauto.
       { unfold rel_mem_LambdaANF_Codegen. split; intros... }
 
       assert (HeRestr': expression_restricted e). { inv HeRestr. now inv H1. }
+      assert (Hbound': (forall x : var,
+      In x (collect_local_variables e) -> rho ! x = None)). admit.
 
-      have IH := IHHev HeRestr' _ HenvsDisjoint HlenvInjective state _ _ _ _ Hfds Hinv H9 Hrel. destruct IH as [rho' [sr' [fr' [Hstep Hval]]]].
+
+      have IH := IHHev HeRestr' Hbound' _ HenvsDisjoint HlenvInjective state _ _ _ _ Hfds Hinv H9 Hrel. destruct IH as [rho' [sr' [fr' [Hstep Hval]]]].
 
     exists rho', sr', fr'. split.
     { (* steps *)
@@ -4138,7 +4144,10 @@ Proof with eauto.
 
     assert (HeRestr' : expression_restricted (Ecase y cl)). { inv HeRestr. inv H3.
                                                                now constructor. }
-    have IH := IHcl H10 H1 _ _ HeRestr' H H12 Hrel.
+    assert (Hbound' : forall x : var,
+      In x (collect_local_variables (Ecase y cl)) ->
+      rho ! x = None). admit.
+    have IH := IHcl H10 H1 _ _ HeRestr' Hbound' H H12 Hrel.
     destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]].
 
     (* t <> t0 *)
@@ -4234,10 +4243,13 @@ Proof with eauto.
 
       assert (HeRestr' : expression_restricted e). { inv HeRestr. admit. (* must follow somehow from Efun *) }
 
-      assert (HenvsDisjoint': maps_disjoint fenv lenv_before_IH) by admit. (* true *)
+      assert (Hbound': (forall x : var,
+      In x (collect_local_variables e) -> rho'' ! x = None)). admit.
+
+      assert (HenvsDisjoint': maps_domains_disjoint fenv lenv_before_IH) by admit. (* true *)
       assert (HlenvInjective': map_injective lenv_before_IH ) by admit. (* true *)
 
-      have IH := IHHev HeRestr' _  HenvsDisjoint' HlenvInjective' state _ _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
+      have IH := IHHev HeRestr' Hbound' _  HenvsDisjoint' HlenvInjective' state _ _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
       destruct IH as [rho_final [sr_final [fr_final [Hred [Hval Hfinst]]]]].
       (* execute *)
       exists rho_final, sr_final, fr_final. split.
@@ -4959,7 +4971,7 @@ Proof.
 Qed.
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
-Corollary LambdaANF_Codegen_related :
+Theorem LambdaANF_Codegen_related :
   (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
   forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var),
   (* restricts the number of args a function can have etc. *)
@@ -5071,7 +5083,7 @@ Proof.
    cbn in Hx, Hy.
    have H' := create_local_variable_mapping_injective _ 0 HvarsNodup _ _ _ _ Hneq Hx Hy. auto. }
 
-   assert (HenvsDisjoint:  maps_disjoint (create_fname_mapping nenv e)
+   assert (HenvsDisjoint:  maps_domains_disjoint (create_fname_mapping nenv e)
           (create_local_variable_mapping
              (collect_local_variables (Efun fds e)))). admit.
 
@@ -5111,7 +5123,7 @@ Proof.
      cbn in Hx, Hy.
      have H' := create_local_variable_mapping_injective _ 0 HvarsNodup _ _ _ _ Hneq Hx Hy. auto. }
 
-   assert (HenvsDisjoint: maps_disjoint fenv
+   assert (HenvsDisjoint: maps_domains_disjoint fenv
           (create_local_variable_mapping
              (collect_local_variables e))). admit.
 
@@ -5120,10 +5132,14 @@ Proof.
          (M.empty _) ! x = Some (Vfun rho' fds' f') -> fds' = Fnil)). {
    intros. inv H. }
 
+    assert (Hbound : (forall x : var,
+         In x (collect_local_variables e) ->
+         (M.empty val) ! x = None)). { intros. reflexivity. }
+
     subst lenv.
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env
                     rep_env _ host_instance _ HenvsDisjoint HlenvInjective (M.empty _) _
-                     _ _ HeRestr Hstep hs _ _ _ wasm_main_instr Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
+                     _ _ HeRestr Hbound Hstep hs _ _ _ wasm_main_instr Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
     destruct HMAIN as [rho' [s' [f' [Hred [Hval Hfinst]]]]]. cbn.
     exists rho', s'. split.
     dostep'. apply r_call. cbn.
