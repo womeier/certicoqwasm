@@ -4809,6 +4809,34 @@ Proof.
   apply H. cbn. auto.
 Qed.
 
+Lemma translate_fvar_fname_mapping_aux : forall fds e f i N env,
+  (forall x j, env ! x = Some j -> j < fds_length fds + N) ->
+  (add_to_fname_mapping (collect_function_vars (Efun fds e)) N
+        env) ! f = Some i -> i < fds_length fds + N.
+Proof.
+  induction fds; intros.
+  - cbn. destruct i. lia.
+    cbn in H0. rename H0 into Hf.
+    destruct (var_dec f0 v).
+    { (* f0=v *) subst f0. rewrite M.gss in Hf. inv Hf. lia. }
+    { (* f0<>v *) cbn in Hf. rewrite M.gso in Hf; auto.
+      eapply IHfds in Hf. lia. assumption. intros.
+      apply H in H0. cbn in H0. lia. }
+  - inv H0. now apply H in H2.
+Qed.
+
+Lemma translate_fvar_fname_mapping : forall e f errMsg i,
+    translate_function_var nenv (create_fname_mapping nenv e) f errMsg = Ret i ->
+    match e with Efun fds _ => i < fds_length fds + 4 | _ => True end.
+Proof.
+  intros. unfold create_fname_mapping, translate_function_var in H.
+  destruct ((add_to_fname_mapping (collect_function_vars e) 4
+         (M.empty nat)) ! f) eqn:Hf; inv H.
+  destruct e; auto. rename f0 into fds.
+  have H' := translate_fvar_fname_mapping_aux _ _ _ _ _ _ _ Hf.
+  apply H'. intros. inv H.
+Qed.
+
 Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num_funs module fenv main_lenv sr f exports,
   topExp = match e with | Efun _ _ => e | _ => Efun Fnil e end ->
   num_funs = match topExp with | Efun fds _ => fds_length fds | _ => 42 (* unreachable*) end ->
@@ -4990,15 +5018,21 @@ Proof.
    split. (* INV_table_id *)
    { unfold INV_table_id, stab_addr, stab_index. rewrite F2. cbn.
      intros.
-     assert (Z.of_nat i < Wasm_int.Int32.modulus)%Z by admit.
+     assert (Z.of_nat i < max_num_functions + 4)%Z. {
+       destruct e; inv H. apply translate_fvar_fname_mapping in H1.
+       inv HtopExp'. lia. }
      (* from translate_function_var *)
-     rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.  admit. }
+     rewrite Wasm_int.Int32.Z_mod_modulus_id. 2: {
+      simpl_modulus; cbn. unfold max_num_functions in H0. lia. }
+      admit. (* table mapping *) }
   split.
   (* INV_var_idx_inbounds *)
   { unfold INV_var_idx_inbounds. intros. inv H. inv H0. }
   (* INV_fvar_idx_inbounds *)
   { unfold INV_fvar_idx_inbounds. intros. rewrite Hs2. inv H. cbn.
-    rewrite map_length. admit.  }
+    rewrite map_length.
+    destruct e; inv H0. apply translate_fvar_fname_mapping in H1.
+       inv HtopExp'. apply fds_length_length in HtransFns. lia. }
   split.
   (* inst_funcs (f_inst f) *)
   { rewrite F3. repeat f_equal.
