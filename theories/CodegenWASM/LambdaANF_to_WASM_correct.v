@@ -1685,7 +1685,7 @@ Lemma update_global_preserves_global_mem_ptr_in_linear_memory : forall j sr sr' 
   INV_global_mem_ptr_in_linear_memory sr' f.
 Proof.
   unfold INV_global_mem_ptr_in_linear_memory.
-  intros ? ? ? ? ? ? Hinv Hnodup Hmem Hnum Hcond Hupd ? ? Hm Hglob Hbound.
+  intros ? ? ? ? ? ? Hinv Hnodup Hmem Hnum Hcond Hupd ? ? Hm Hglob Hunbound.
   assert (m = m0). { apply update_glob_keeps_memory_intact in Hupd. congruence. } subst m0.
   destruct (Nat.eq_dec j global_mem_ptr).
   { (* g = global_mem_ptr *)
@@ -3745,12 +3745,14 @@ Qed.
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Codegen_related :
-  forall lenv,
-  maps_domains_disjoint fenv lenv ->
-  map_injective lenv ->
-
   (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
-  forall (rho : eval.env) (v : cps.val) (e : exp) (n : nat),
+  forall lenv (rho : eval.env) (v : cps.val) (e : exp) (n : nat) (vars : list cps.var) (fds : fundefs),
+    map_injective lenv ->
+    vars = ((collect_local_variables e) ++ (collect_function_vars (Efun fds e)))%list ->
+    NoDup vars ->
+    (* fenv maps f vars to their indices in the wasm module *)
+    (forall f, (exists res, find_def f fds = Some res) <-> (exists i, fenv ! f = Some i)) ->
+
     (* restrict e s.t. e.g. all tags < i32.max etc *)
     expression_restricted e ->
     (* SSA form, let-bound vars not assigned yet *)
@@ -3758,7 +3760,7 @@ Theorem repr_bs_LambdaANF_Codegen_related :
     bstep_e (M.empty _) cenv rho e v n ->  (* e n-steps to v *)
     (* correct_envs cenv ienv rep_env rho e ->
        inductive type/constructor environments are correct/pertain to e *)
-    forall (hs : host_state) (sr : store_record) (f : frame) (fds : fundefs)
+    forall (hs : host_state) (sr : store_record) (f : frame)
            (instructions : list basic_instruction),
 
       (* fds only on toplevel so obtained for all funvalues *)
@@ -3777,8 +3779,10 @@ Theorem repr_bs_LambdaANF_Codegen_related :
         (* value sr'.res points to value related to v *)
         result_val_LambdaANF_Codegen rho_res v sr' f' /\ f_inst f = f_inst f'.
 Proof with eauto.
-  intros lenv HenvsDisjoint HlenvInjective rho v e n HeRestr Hunbound Hev. generalize dependent lenv.
-  induction Hev; intros lenv HenvsDisjoint HlenvInjective state sr fr fds instructions Hfds Hinv Hrepr_e Hrel_m.
+  intros lenv rho v e n vars fds HlenvInjective Hvars Hnodup
+     HfenvWf HeRestr Hunbound Hev. subst vars.
+  generalize dependent lenv.
+  induction Hev; intros lenv HlenvInjective state sr fr instructions Hfds Hinv Hrepr_e Hrel_m.
   - (* Econstr *)
     assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z). { now inv HeRestr. }
 
@@ -3872,7 +3876,10 @@ Proof with eauto.
                            assert (x <> x1). admit.
                            rewrite M.gso; auto. }
 
-      have IH := IHHev HeRestr' Hunbound' _ HenvsDisjoint HlenvInjective state _ _ _ _ Hfds_before_IH Hinv_before_IH Hexp Hrel_m_v.
+      assert (Hnodup': NoDup
+       (collect_local_variables e ++ collect_function_vars (Efun fds e))). admit.
+
+      have IH := IHHev Hnodup' HeRestr' Hunbound' _ HlenvInjective state _ _ _ Hfds_before_IH Hinv_before_IH Hexp Hrel_m_v.
       destruct IH as [rho_final [s_final [f_final [Hred_IH [Hval Hfinst]]]]]. cbn in Hfinst.
 
       exists rho_final, s_final, f_final. split.
@@ -4028,7 +4035,12 @@ Proof with eauto.
       In x0 (collect_local_variables e) ->
       (map_util.M.set x v rho) ! x0 = None)). admit.
 
-     have IH := IHHev HeRestr' Hunbound' _ HenvsDisjoint HlenvInjective state sr _ _ e' Hfds' Hinv' H7 Hrm. destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]]. cbn in Hfinst.
+     assert (Hnodup' : NoDup
+    (collect_local_variables e ++
+     collect_function_vars (Efun fds e))). admit.
+
+     have IH := IHHev Hnodup' HeRestr' Hunbound' _ HlenvInjective state _ _ _ Hfds' Hinv' H7 Hrm.
+     destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]]. cbn in Hfinst.
 
       eexists rho', sr', f'. cbn. split.
       { (* take steps *)
@@ -4103,11 +4115,15 @@ Proof with eauto.
       { unfold rel_mem_LambdaANF_Codegen. split; intros... }
 
       assert (HeRestr': expression_restricted e). { inv HeRestr. now inv H1. }
-      assert (Hbound': (forall x : var,
+      assert (Hunbound': (forall x : var,
       In x (collect_local_variables e) -> rho ! x = None)). admit.
 
+      assert (Hnodup': NoDup
+    (collect_local_variables e ++
+     collect_function_vars (Efun fds e))). admit.
 
-      have IH := IHHev HeRestr' Hbound' _ HenvsDisjoint HlenvInjective state _ _ _ _ Hfds Hinv H9 Hrel. destruct IH as [rho' [sr' [fr' [Hstep Hval]]]].
+      have IH := IHHev Hnodup' HeRestr' Hunbound' _ HlenvInjective state _ _ _ Hfds Hinv H9 Hrel.
+      destruct IH as [rho' [sr' [fr' [Hstep Hval]]]].
 
     exists rho', sr', fr'. split.
     { (* steps *)
@@ -4144,10 +4160,16 @@ Proof with eauto.
 
     assert (HeRestr' : expression_restricted (Ecase y cl)). { inv HeRestr. inv H3.
                                                                now constructor. }
-    assert (Hbound' : forall x : var,
+    assert (Hunbound' : forall x : var,
       In x (collect_local_variables (Ecase y cl)) ->
       rho ! x = None). admit.
-    have IH := IHcl H10 H1 _ _ HeRestr' Hbound' H H12 Hrel.
+
+    assert (Hnodup' : NoDup
+       (collect_local_variables (Ecase y cl) ++
+        collect_function_vars
+          (Efun fds (Ecase y cl)))). admit.
+
+    have IH := IHcl H10 H1 _ _ Hnodup' HeRestr' Hunbound' H H12 Hrel.
     destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]].
 
     (* t <> t0 *)
@@ -4243,13 +4265,14 @@ Proof with eauto.
 
       assert (HeRestr' : expression_restricted e). { inv HeRestr. admit. (* must follow somehow from Efun *) }
 
-      assert (Hbound': (forall x : var,
+      assert (Hunbound': (forall x : var,
       In x (collect_local_variables e) -> rho'' ! x = None)). admit.
 
-      assert (HenvsDisjoint': maps_domains_disjoint fenv lenv_before_IH) by admit. (* true *)
       assert (HlenvInjective': map_injective lenv_before_IH ) by admit. (* true *)
 
-      have IH := IHHev HeRestr' Hbound' _  HenvsDisjoint' HlenvInjective' state _ _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
+      assert (Hnodup': NoDup (collect_local_variables e ++ collect_function_vars (Efun fds e))). admit.
+
+      have IH := IHHev Hnodup' HeRestr' Hunbound' _  HlenvInjective' state _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
       destruct IH as [rho_final [sr_final [fr_final [Hred [Hval Hfinst]]]]].
       (* execute *)
       exists rho_final, sr_final, fr_final. split.
@@ -4972,7 +4995,7 @@ Qed.
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 Theorem LambdaANF_Codegen_related :
-  (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
+  (* rho is environment, e is body of LambdaANF program *)
   forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var),
   (* restricts the number of args a function can have etc. *)
   expression_restricted e ->
@@ -4993,7 +5016,7 @@ Theorem LambdaANF_Codegen_related :
   (~ exists x, occurs_free e x) ->
   (* instiation with the two imported functions *)
   instantiate _ host_instance initial_store module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] ((sr, (f_inst fr), exports), None) ->
-  (* *)
+  (* reduces to some sr' that has the result variable set to the corresponding value *)
   exists rho (sr' : store_record),
        reduce_trans (hs, sr,  (Build_frame [] (f_inst fr)), [ AI_basic (BI_call mainidx) ])
                     (hs, sr', (Build_frame [] (f_inst fr)), [])    /\
@@ -5007,7 +5030,7 @@ Proof.
                                      | _ => Efun Fnil e
                                      end with
                                | Efun fds _ => fds_length fds
-                               | _ => 42
+                               | _ => 42 (* unreachable *)
                                end < max_num_functions)%Z). {
     unfold max_num_functions. destruct e; cbn; try lia. inv HeRestr. assumption.
   }
@@ -5083,18 +5106,18 @@ Proof.
    cbn in Hx, Hy.
    have H' := create_local_variable_mapping_injective _ 0 HvarsNodup _ _ _ _ Hneq Hx Hy. auto. }
 
-   assert (HenvsDisjoint:  maps_domains_disjoint (create_fname_mapping nenv e)
-          (create_local_variable_mapping
-             (collect_local_variables (Efun fds e)))). admit.
+ assert (HenvsDisjoint:  maps_domains_disjoint (create_fname_mapping nenv e)
+        (create_local_variable_mapping
+           (collect_local_variables (Efun fds e)))). admit.
 
-    eapply translate_exp_correct in Hexpr; auto.
+  eapply translate_exp_correct in Hexpr; auto.
 
-    (* have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv _ nenv finfo_env
-                   rep_env _ host_instance _ HenvsDisjoint HlenvInjective
-                    _ _ _ _ HeRestr Hstep hs _ _ fds wasm_main_instr Hinv_before_IH.
-    TODO: check e vs e0 richtige Variable *)
+  (* have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv _ nenv finfo_env
+                 rep_env _ host_instance _ HenvsDisjoint HlenvInjective
+                  _ _ _ _ HeRestr Hstep hs _ _ fds wasm_main_instr Hinv_before_IH.
+  TODO: check e vs e0 richtige Variable *)
 
-    eexists. exists sr. subst. admit. admit. }
+  eexists. exists sr. subst. admit. admit. }
 
   { (* top exp is not Efun _ _ *)
     rename f0 into fds. assert (fds = Fnil). {
@@ -5123,23 +5146,25 @@ Proof.
      cbn in Hx, Hy.
      have H' := create_local_variable_mapping_injective _ 0 HvarsNodup _ _ _ _ Hneq Hx Hy. auto. }
 
-   assert (HenvsDisjoint: maps_domains_disjoint fenv
-          (create_local_variable_mapping
-             (collect_local_variables e))). admit.
-
   assert (Hfds_before_IH: (forall (x : positive) (rho' : M.t val)
            (fds' : fundefs) (f' : var),
          (M.empty _) ! x = Some (Vfun rho' fds' f') -> fds' = Fnil)). {
    intros. inv H. }
 
-    assert (Hbound : (forall x : var,
+    assert (Hunbound : (forall x : var,
          In x (collect_local_variables e) ->
          (M.empty val) ! x = None)). { intros. reflexivity. }
 
+    assert (Hnodup: NoDup (collect_local_variables e ++ collect_function_vars (Efun Fnil e))). admit.
+
+    assert (HfenvWf: (forall f : var,
+         (exists res : fun_tag * seq.seq var * exp,
+            find_def f Fnil = Some res) <->
+         (exists i : nat, fenv ! f = Some i))). admit.
+
     subst lenv.
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env
-                    rep_env _ host_instance _ HenvsDisjoint HlenvInjective (M.empty _) _
-                     _ _ HeRestr Hbound Hstep hs _ _ _ wasm_main_instr Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
+                    rep_env _ host_instance _ (M.empty _) _ _ _ _ _ HlenvInjective Logic.eq_refl Hnodup HfenvWf HeRestr Hunbound Hstep hs _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
     destruct HMAIN as [rho' [s' [f' [Hred [Hval Hfinst]]]]]. cbn.
     exists rho', s'. split.
     dostep'. apply r_call. cbn.
