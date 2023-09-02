@@ -3743,6 +3743,32 @@ Proof.
   intros. apply local_var_mapping_list_aux in H. lia.
 Qed.
 
+(* coq 8.14 not yet in stdlib: TODO replace *)
+Lemma NoDup_app_l : forall A (a b : list A),
+  NoDup (a ++ b) -> NoDup a.
+Proof.
+  induction a; simpl; intros.
+  constructor.
+  inversion H; constructor; eauto.
+  intro; apply H2.
+  apply in_or_app; eauto.
+Qed.
+
+Lemma NoDup_app_r : forall A (a b : list A),
+  NoDup (a ++ b) -> NoDup b.
+Proof.
+  induction a; simpl; intros; auto.
+  apply NoDup_cons_iff in H. now destruct H.
+Qed.
+
+Lemma NoDup_app_middle : forall A (a b c : list A),
+  NoDup (a ++ b ++ c) -> NoDup (a ++ c).
+Proof.
+  intros. generalize dependent a. revert c.
+  induction b; intros; auto.
+  cbn in H. now apply NoDup_remove_1 in H.
+Qed.
+
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Codegen_related :
   (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
@@ -3869,15 +3895,20 @@ Proof with eauto.
 
       assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
 
-      assert (Hunbound' : (forall x : var,
-      In x (collect_local_variables e) ->
-      rho' ! x = None)). { intros. have H' := Hunbound x1.
-                           cbn in H'. subst rho'.
-                           assert (x <> x1). admit.
-                           rewrite M.gso; auto. }
+      assert (Hunbound' : (forall x : var, In x (collect_local_variables e) ->
+                                                           rho' ! x = None)). {
+        subst rho'. intros.
+        assert (~ In x (collect_local_variables e)). {
+          apply NoDup_app_l in Hnodup. cbn in Hnodup.
+          now apply NoDup_cons_iff in Hnodup. }
+        assert (x <> x1) by congruence. rewrite M.gso; auto.
+        apply Hunbound. now right.
+      }
 
-      assert (Hnodup': NoDup
-       (collect_local_variables e ++ collect_function_vars (Efun fds e))). admit.
+      assert (Hnodup': NoDup (collect_local_variables e ++
+                              collect_function_vars (Efun fds e))). {
+       cbn in Hnodup. apply NoDup_cons_iff in Hnodup.
+       now destruct Hnodup. }
 
       have IH := IHHev Hnodup' HeRestr' Hunbound' _ HlenvInjective state _ _ _ Hfds_before_IH Hinv_before_IH Hexp Hrel_m_v.
       destruct IH as [rho_final [s_final [f_final [Hred_IH [Hval Hfinst]]]]]. cbn in Hfinst.
@@ -3970,7 +4001,7 @@ Proof with eauto.
                        destruct H' as [i [Htf [Hval HvalClosed]]].
                        exists i. split; auto. split; auto.
                        apply val_relation_rho_depends_on_bound_vars.
-                       (* x not bound yet *) admit.
+                       apply Hunbound. now cbn.
                        eapply val_relation_depends_on_finst; try eassumption. reflexivity. }
 
         destruct (var_dec x x1).
@@ -3986,7 +4017,7 @@ Proof with eauto.
           have Hl := HlocalBound _ _ Hx'. apply nth_error_Some in Hl.
           apply notNone_Some in Hl. destruct Hl.
           eapply set_nth_nth_error_same. eassumption.
-          eapply val_relation_rho_depends_on_bound_vars. admit. (* x not bound yet *)
+          eapply val_relation_rho_depends_on_bound_vars. apply Hunbound. now cbn.
           eapply val_relation_depends_on_finst; try eassumption; auto. }
 
         { (* x <> x1 *)
@@ -4008,7 +4039,7 @@ Proof with eauto.
 
           exists x1'. split; auto.
           rewrite set_nth_nth_error_other; auto. eapply HlocalBound. eassumption.
-          eapply val_relation_rho_depends_on_bound_vars. (* x not bound yet *) admit.
+          eapply val_relation_rho_depends_on_bound_vars. apply Hunbound. now cbn.
           eapply val_relation_depends_on_finst; try eassumption; auto. }
      }
 
@@ -4031,13 +4062,20 @@ Proof with eauto.
        eapply HlocalBound. eassumption. }
 
      assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
-     assert (Hunbound': (forall x0 : var,
-      In x0 (collect_local_variables e) ->
-      (map_util.M.set x v rho) ! x0 = None)). admit.
+     assert (Hunbound': (forall x0 : var, In x0 (collect_local_variables e) ->
+                                          (map_util.M.set x v rho) ! x0 = None)). {
+        intros.
+        assert (~ In x (collect_local_variables e)). {
+          apply NoDup_app_l in Hnodup. cbn in Hnodup.
+          now apply NoDup_cons_iff in Hnodup. }
+        assert (x <> x1) by congruence. rewrite M.gso; auto.
+        apply Hunbound. now right.
+     }
 
-     assert (Hnodup' : NoDup
-    (collect_local_variables e ++
-     collect_function_vars (Efun fds e))). admit.
+     assert (Hnodup' : NoDup (collect_local_variables e ++
+                              collect_function_vars (Efun fds e))). {
+       cbn in Hnodup. apply NoDup_cons_iff in Hnodup.
+       now destruct Hnodup. }
 
      have IH := IHHev Hnodup' HeRestr' Hunbound' _ HlenvInjective state _ _ _ Hfds' Hinv' H7 Hrm.
      destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]]. cbn in Hfinst.
@@ -4115,12 +4153,14 @@ Proof with eauto.
       { unfold rel_mem_LambdaANF_Codegen. split; intros... }
 
       assert (HeRestr': expression_restricted e). { inv HeRestr. now inv H1. }
-      assert (Hunbound': (forall x : var,
-      In x (collect_local_variables e) -> rho ! x = None)). admit.
+      assert (Hunbound': (forall x : var, In x (collect_local_variables e) ->
+                                                  rho ! x = None)). {
+        intros. apply Hunbound. cbn. now apply in_or_app. }
 
-      assert (Hnodup': NoDup
-    (collect_local_variables e ++
-     collect_function_vars (Efun fds e))). admit.
+      assert (Hnodup': NoDup (collect_local_variables e ++ collect_function_vars (Efun fds e))). {
+        intros. cbn in Hnodup. rewrite <- app_assoc in Hnodup.
+        now apply NoDup_app_middle in Hnodup.
+      }
 
       have IH := IHHev Hnodup' HeRestr' Hunbound' _ HlenvInjective state _ _ _ Hfds Hinv H9 Hrel.
       destruct IH as [rho' [sr' [fr' [Hstep Hval]]]].
@@ -4160,14 +4200,15 @@ Proof with eauto.
 
     assert (HeRestr' : expression_restricted (Ecase y cl)). { inv HeRestr. inv H3.
                                                                now constructor. }
-    assert (Hunbound' : forall x : var,
-      In x (collect_local_variables (Ecase y cl)) ->
-      rho ! x = None). admit.
+    assert (Hunbound' : forall x : var, In x (collect_local_variables (Ecase y cl)) ->
+                                        rho ! x = None). {
+      intros. apply Hunbound. now apply in_or_app. }
 
-    assert (Hnodup' : NoDup
-       (collect_local_variables (Ecase y cl) ++
-        collect_function_vars
-          (Efun fds (Ecase y cl)))). admit.
+    assert (Hnodup' : NoDup (collect_local_variables (Ecase y cl) ++
+                             collect_function_vars (Efun fds (Ecase y cl)))). {
+      cbn in Hnodup. rewrite <- app_assoc in Hnodup.
+      now apply NoDup_app_r in Hnodup.
+    }
 
     have IH := IHcl H10 H1 _ _ Hnodup' HeRestr' Hunbound' H H12 Hrel.
     destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]].
@@ -4265,8 +4306,7 @@ Proof with eauto.
 
       assert (HeRestr' : expression_restricted e). { inv HeRestr. admit. (* must follow somehow from Efun *) }
 
-      assert (Hunbound': (forall x : var,
-      In x (collect_local_variables e) -> rho'' ! x = None)). admit.
+      assert (Hunbound': (forall x : var, In x (collect_local_variables e) -> rho'' ! x = None)). admit.
 
       assert (HlenvInjective': map_injective lenv_before_IH ) by admit. (* true *)
 
@@ -4952,17 +4992,6 @@ Definition collect_all_local_variables (e : cps.exp) : list cps.var :=
   | Efun fds e' => collect_local_variables e' ++ fds_collect_local_variables fds
   | _ => collect_local_variables e
   end.
-
-
-Lemma NoDup_app_l : forall A (a b : list A),
-  NoDup (a ++ b) -> NoDup a.
-Proof.
-  induction a; simpl; intros.
-  constructor.
-  inversion H; constructor; eauto.
-  intro; apply H2.
-  apply in_or_app; eauto.
-Qed.
 
 Lemma local_variable_mapping_gt_idx : forall l idx x x',
   (create_local_variable_mapping' idx l (M.empty nat)) ! x = Some x' -> x' >= idx.
