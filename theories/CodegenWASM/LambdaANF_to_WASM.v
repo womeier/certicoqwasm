@@ -41,6 +41,7 @@ Definition write_int_function_name := "$write_int".
 
 Definition constr_pp_function_name : string := "$pretty_print_constructor".
 Definition constr_pp_function_idx : immediate := 2.
+
 Definition main_function_name := "$main_function".
 Definition main_function_idx : immediate := 3.
 
