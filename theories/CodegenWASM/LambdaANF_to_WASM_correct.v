@@ -4124,7 +4124,7 @@ Theorem repr_bs_LambdaANF_Codegen_related :
            (instructions : list basic_instruction),
 
       (* fds only on toplevel so obtained for all funvalues *)
-      (forall x rho' fds' f', rho ! x = Some (Vfun rho' fds' f') -> fds' = fds) ->
+      (forall x rho' fds' f', rho ! x = Some (Vfun rho' fds' f') -> fds' = fds /\ rho' = M.empty _) ->
 
       (* invariants *)
       INV lenv sr f ->
@@ -4190,7 +4190,7 @@ Proof with eauto.
       f_inst := f_inst fr|}) as f_before_IH.
 
       assert (Hfds_before_IH: (forall (x : positive) (rho'0 : M.t cps.val)
-        (fds' : fundefs) (f' : var), rho' ! x = Some (Vfun rho'0 fds' f') -> fds' = fds)). {
+        (fds' : fundefs) (f' : var), rho' ! x = Some (Vfun rho'0 fds' f') -> fds' = fds /\ rho'0 = M.empty _)). {
         intros x1 rho'0 fds' f' Hfds'.
         subst rho'.
         destruct (var_dec x x1).
@@ -4437,12 +4437,15 @@ Proof with eauto.
      }}
 
      assert (Hfds': (forall (x1 : positive) (rho' : M.t cps.val) (fds' : fundefs) (f' : var),
-      (map_util.M.set x v rho) ! x1 = Some (Vfun rho' fds' f') -> fds' = fds)). {
+      (map_util.M.set x v rho) ! x1 = Some (Vfun rho' fds' f') -> fds' = fds /\ rho' = M.empty _)). {
         intros x1 rho' fds' f' Hfds'.
         destruct (var_dec x x1).
         (* x=x1 *)
         { subst x1. rewrite M.gss in Hfds'. inv Hfds'. inv Hbsval.
-          destruct (Hfds _ _ _ _ H12). subst. split; auto. }
+          destruct (Hfds _ _ _ _ H12). subst. split; auto.
+          apply nthN_In in H0.
+          generalize dependent vs.
+          Search "nthN". admit. }
         (* x<>x1 *)
         { rewrite M.gso in Hfds'; auto. now apply Hfds in Hfds'. }
      }
@@ -4732,7 +4735,7 @@ Proof with eauto.
 
        assert (Hfds_before_IH: (forall (x : positive) (rho' : M.t cps.val)
               (fds' : fundefs) (f' : var), rho'' ! x = Some (Vfun rho' fds' f') ->
-                                     fds' = fds)). {
+                                     fds' = fds /\ rho' = M.empty _)). {
          assert (fl = fds). { eapply Hfds. eassumption. } subst fl.
          intros.
          (* Check In_decidable. wsl. tricky *) admit. }
@@ -4764,7 +4767,7 @@ Proof with eauto.
           { rename x into y. destruct (In_nthN _ _ _ H5). rename x into i0.
             have H' := get_list_nth_get _ _ _ _ _ H0 H6. destruct H' as [v1 [Hnth1 Hrho1]].
             assert (v1 = val) by congruence. subst v1. clear Hrho1.
-            apply get_list_set_lists in H2. admit. }
+            apply get_list_set_lists in H2. admit. admit. }
           split.
           { clear Hlocs. (* args are already on the stack *)
             unfold stored_in_locals. subst lenv_before_IH.
@@ -5028,134 +5031,32 @@ Proof.
 Qed.
 
 
-Lemma init_tabs_effect : forall n s s' f e_offs,
-  s = init_tabs host_function s' (f_inst f)
-      [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs]
-      (table_element_mapping n 0) ->
-  s_globals s = s_globals s' /\
-  s_mems s = s_mems s'       /\
-  s_funcs s = s_funcs s'     /\
-  s_tables s = s_tables s'.
-Proof.
-  induction n; intros. cbn in H.
-  intros.
-  unfold init_tabs in *. Admitted.
-
-(* Lemma add_tab_effect : forall l s s' f length_fns,
-  fold_left
-            (fun (s : datatypes.store_record host_function) '(e_ind, e) =>
-             let
-             '{| table_data := tab_e; table_max_opt := maxo |} :=
-              nth
-                (nth match modelem_table e with
-                     | Mk_tableidx i => i
-                     end (inst_tab (f_inst f)) 0) (datatypes.s_tables s)
-                dummy_table in
-              {|
-                s_funcs := datatypes.s_funcs s;
-                s_tables :=
-                  insert_at
-                    {|
-                      table_data :=
-                        (firstn e_ind tab_e ++
-                         map
-                           (fun i : funcidx =>
-                            nth_error (inst_funcs (f_inst f))
-                              match i with
-                              | Mk_funcidx j => j
-                              end) (modelem_init e) ++
-                         skipn
-                           (ssrnat.addn_rec e_ind
-                              (Datatypes.length
-                                 (map
-                                    (fun i : funcidx =>
-                                     nth_error (inst_funcs (f_inst f))
-                                       match i with
-                                       | Mk_funcidx j => j
-                                       end) (modelem_init e)))) tab_e)%list;
-                      table_max_opt := maxo
-                    |}
-                    (nth match modelem_table e with
-                         | Mk_tableidx i => i
-                         end (inst_tab (f_inst f)) 0) (datatypes.s_tables s);
-                s_mems := datatypes.s_mems s;
-                s_globals := datatypes.s_globals s
-              |}) l s = s' ->
-  length (s_tables s) = 1 ->
-  inst_tab (f_inst f) = [0] ->
-  inst_funcs (f_inst f) = [:: 0, 1, 0, 1 & map (fun '(Mk_funcidx i) => i)
-                                               (funcidcs length_fns 2)] ->
-  Forall (fun p => (modelem_table (snd p)) =  Mk_tableidx 0) l ->
-  Forall (fun p => exists i, (modelem_init (snd p)) = [Mk_funcidx i] /\ 2 <= i < length_fns + 4) l ->
-  (forall i j, i > j -> True) ->
-  s_globals s = s_globals s' /\
-  s_mems s = s_mems s'       /\
-  s_funcs s = s_funcs s'     /\
-  s_tables s = s_tables s'.
-Proof.
-  induction l; intros s s' f length_fns H HtLen HinstTab HinstFns HTable0 Hlen Hincreasing.
-  - cbn in H. inv H. auto.
-  - destruct a. cbn in H. eapply IHl in H; eauto.
-    2: { inv Hlen. cbn. destruct (modelem_table m).
-         cbn. rewrite HinstFns HinstTab nth_0_0.
-         destruct (s_tables s). inv HtLen. destruct l0.
-         2: inv HtLen. destruct t. cbn. reflexivity. }
-    2: { now inv HTable0. }
-    2: { now inv Hlen. }
-    cbn in H. destruct H as [H1 [H2 [H3 H4]]].
-    rewrite -H1 -H2 -H3. cbn.
-    destruct (s_tables s) eqn:Hs. inv HtLen. destruct l0. 2: inv HtLen. destruct t.
-    destruct (modelem_table m).
-    cbn in H1, H2, H3, H4. rewrite HinstTab nth_0_0 in H1, H2, H3, H4.
-    repeat rewrite HinstTab nth_0_0; cbn.
-    cbn in H1, H2, H3, H4. rewrite map_length in H4. auto.
-    destruct (modelem_table m) eqn:Heqn.
-    rewrite  HinstFns in H4; auto.
-    assert (skipn 1
-           [{|
-              table_data := table_data;
-              table_max_opt := table_max_opt
-            |}] = []) as Hnil by  reflexivity.
-    rewrite Hnil in H4. clear Hnil.
-    inv Hlen. destruct H5 as [i [Hinit Hlen]]. cbn in Hinit. rewrite Hinit in H4.
-    cbn in H4. assert (nth_error
-              [:: 0, 1, 0, 1
-                & map (fun '(Mk_funcidx i) => i)
-                    (funcidcs length_fns 2)] i = Some (i - 2)) as HnthErr.
-                    admit.
-  rewrite HnthErr in H4.
-  destruct i; try lia. destruct i; try lia. cbn in H4, HnthErr.
-  assert (i < length_fns + 2) as Hlen' by lia. clear Hlen. rename Hlen' into Hlen. replace (i - 0) with i in * by lia.
-Admitted. *)
-
 Lemma reduce_const_false : forall state s f c,
   ~ exists y,
   (reduce_tuple (host_instance:=host_instance))
   (state, s, f, [AI_basic (BI_const c)]) y.
 Proof.
-  (* intros ? ? ? ? [c' Hcontra]. cbn in Hcontra.
-  remember [AI_basic (BI_const c)] as instr.
-  remember [AI_basic (BI_const c')] as instr'. revert Heqinstr Heqinstr'.
-   induction Hcontra; intros; try (by inv Heqinstr); subst.
-  { inv H. }
-  { destruct vcs; inv Heqinstr. destruct vcs; inv H2. }
-  { destruct vcs; inv Heqinstr. destruct vcs; inv H2. }
-  { unfold is_true, lfilled in H0, H.
-    destruct (lfill k lh es) eqn:Heqn. 2: inv H.
-    destruct (lfill k lh es') eqn:Heqn'. 2: inv H0.
-    apply eqseq_true in H0, H. subst l l0.
-    destruct lh.
-    { destruct k; cbn in Heqn, Heqn'. 2: inv Heqn.
-      destruct (const_list l). 2: inv Heqn.
-      destruct l. 2: { inv Heqn. destruct l, es, l0; inv H1. inv Heqn'.
-      destruct es'; inv H1. admit. (* reduces [] *)  }
-      destruct es. 2: { destruct es', es, l0; inv Heqn; inv Heqn'. destruct es'; inv H1. auto. }
-      destruct l0. inv Heqn. destruct l0; inv Heqn. destruct es'; inv Heqn'. 2: destruct es'; inv H1. admit. }
-    { destruct k; cbn in Heqn, Heqn'. inv Heqn.
-      destruct (const_list l). 2: inv Heqn.
-      destruct (lfill k lh es'). 2: inv Heqn'.
-      destruct (lfill k lh es). 2: inv Heqn.
-      destruct l; inv Heqn. destruct l; inv H1. } *)
+  intros ? ? ? ? [[[[hs' s'] f'] instr'] Hcontra]. cbn in Hcontra.
+  inv Hcontra.
+  { inv H.  admit. admit. admit. }
+  { admit. }
+  { admit. }
+  { admit. }
+  { unfold lfilled in H0, H1.
+    destruct (lfill k lh es) eqn:Heqn. 2: inv H0.
+    destruct (lfill k lh es') eqn:Heqn'. 2: inv H1.
+    apply eqseq_true in H0, H1. subst l l0.
+    destruct lh. 2: { destruct k; inv Heqn. cbn in Heqn'. destruct (const_list l). 2: inv H1.
+                      destruct (lfill k lh es). 2: inv H1. admit. }
+    destruct k; cbn in Heqn. 2: inv Heqn.
+    cbn in Heqn'. destruct (const_list l). 2: inv Heqn.
+    generalize dependent es'. revert f' s' f s state hs' instr'.
+    generalize dependent l. revert l0 c.
+    induction es; intros. { inv H. inv H0. admit. admit. admit. admit. admit. admit.
+    unfold lfilled in H1.
+     destruct (lfill k lh es). 2: inv H1. apply eqseq_true in H1. subst l1.
+     inv Heqn'.
+    admit. }
 Admitted.
 
 Lemma reduce_trans_const_eq : forall state s f c c',
@@ -5277,6 +5178,215 @@ Proof.
   apply H'. intros. inv H.
 Qed.
 
+Lemma e_offs_increasing' : forall len n i l  s fr state,
+  Forall2
+        (fun (e : module_element) (c : Wasm_int.Int32.T) =>
+         opsem.reduce_trans (host_instance:=host_instance)
+           (state, s, {| f_locs := []; f_inst := f_inst fr |},
+           to_e_list (modelem_offset e))
+           (state, s, {| f_locs := []; f_inst := f_inst fr |},
+           [AI_basic (BI_const (VAL_int32 c))]))
+        (table_element_mapping len n) l ->
+ i < len ->
+nth_error l i = Some (nat_to_i32 (n + i)).
+Proof.
+  induction len; intros; first lia.
+  inv H. apply reduce_trans_const_eq in H3. inv H3.
+  destruct i.
+  (* i=0 *) rewrite plus_0_r. reflexivity.
+  (* i=Si' *) assert (i < len) as Hi by lia. clear H0.
+  cbn. replace (n + S i) with ((S n) + i) by lia.
+  eapply IHlen; eauto.
+Qed.
+
+Lemma table_element_mapping_length : forall len i,
+  Datatypes.length (table_element_mapping len i) = len.
+Proof.
+  induction len; intros; cbn; auto.
+  now rewrite IHlen.
+Qed.
+
+Lemma e_offs_increasing : forall e_offs len state s fr,
+  Forall2  (fun (e : module_element) (c : Wasm_int.Int32.T) =>
+               opsem.reduce_trans (host_instance:=host_instance)
+                 (state, s, {| f_locs := []; f_inst := f_inst fr |}, to_e_list (modelem_offset e))
+                 (state, s, {| f_locs := []; f_inst := f_inst fr |},
+                 [AI_basic (BI_const (VAL_int32 c))]))
+   ([{| modelem_table := Mk_tableidx 0;
+       modelem_offset := [BI_const (nat_to_value 0)];
+       modelem_init := [Mk_funcidx 0]
+     |};
+    {| modelem_table := Mk_tableidx 0;
+       modelem_offset := [BI_const (nat_to_value 1)];
+       modelem_init := [Mk_funcidx 1]
+     |};
+     {| modelem_table := Mk_tableidx 0;
+        modelem_offset := [BI_const (nat_to_value 2)];
+        modelem_init := [Mk_funcidx 2]
+      |};
+     {| modelem_table := Mk_tableidx 0;
+        modelem_offset := [BI_const (nat_to_value 3)];
+        modelem_init := [Mk_funcidx 3]
+      |}] ++ (table_element_mapping len 4))%list e_offs ->
+ (forall i, i < len + 4 -> nth_error e_offs i = Some (nat_to_i32 i)) /\
+ length e_offs = len + 4.
+Proof.
+  intros.
+  apply Forall2_app_inv_l in H.
+  destruct H as [l1 [l2 [Hl1 [Hl2 Heq]]]]. subst e_offs.
+  inv Hl1. inv H3. inv H5. inv H6. inv H7.
+  apply reduce_trans_const_eq in H1, H2, H3, H4.
+  inv H1. inv H2. inv H3. inv H4.
+  split. intros.
+  destruct i. reflexivity.
+  destruct i. reflexivity.
+  destruct i. reflexivity.
+  destruct i. reflexivity. cbn.
+  assert (i < len) by lia. clear H0.
+  assert (Hi: i < len) by lia. clear H.
+  have H' := e_offs_increasing' _ _ _ _ _ _ _ Hl2 Hi. assumption.
+  apply Forall2_length in Hl2. cbn.
+  rewrite table_element_mapping_length in Hl2. lia.
+Qed.
+
+Lemma init_tabs_effect : forall e_offs s s' f startIdx,
+  (inst_tab (f_inst f)) = [0] ->
+  s = init_tabs host_function s' (f_inst f)
+          [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs]
+          (table_element_mapping (length e_offs) startIdx) ->
+  (forall i, i < (length e_offs) -> nth_error e_offs i = Some (nat_to_i32 (startIdx + i))) ->
+
+  s_globals s = s_globals s' /\
+  s_mems s = s_mems s'       /\
+  s_funcs s = s_funcs s'     /\
+  s_tables s = [{| table_max_opt := None;
+                   table_data := [None; None; None; None] ++ map (fun i => Some (Z.to_nat (Wasm_int.Int32.unsigned i))) e_offs|}].
+Proof.
+  induction e_offs; intros ? ? ? ? Hinst H Hi.
+  - inv H. cbn. auto.
+  - cbn. intros. cbn in H.
+    assert (Hi': (forall i : nat,
+      i < Datatypes.length e_offs ->
+      nth_error e_offs i = Some (nat_to_i32 (S startIdx + i)))). {
+     intros. replace (S startIdx + i ) with (startIdx + (S i)) by lia.
+     rewrite -Hi. reflexivity. cbn. lia. }
+    have IH := IHe_offs _ _ _ _ _ _ Hi'.
+    unfold init_tab in H. cbn in H.
+    rewrite Hinst in H. cbn in H. unfold dummy_table in H.
+    destruct (nth 0 (s_tables s') {| table_data := []; table_max_opt := None |}) eqn:Heqn. cbn in H.
+    unfold init_tabs in IH.
+    unfold init_tabs, init_tab in Hglobs, Hmems, Hfns.
+    cbn in Hglobs, Hmems, Hfns.
+
+    cbn in Heqn.
+
+
+
+    unfold init_tab in H. cbn in H.
+    unfold combine in H.
+
+Lemma init_tabs_effect' : forall n s s' f e_offs,
+  s = init_tabs host_function s' (f_inst f)
+      [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs]
+      (table_element_mapping n 0) ->
+  s_globals s = s_globals s' /\
+  s_mems s = s_mems s'       /\
+  s_funcs s = s_funcs s'     /\
+  s_tables s = s_tables s'.
+Proof.
+  induction n; intros. cbn in H.
+  intros.
+  unfold init_tabs in *. Admitted.
+
+(* Lemma add_tab_effect : forall l s s' f length_fns,
+  fold_left
+            (fun (s : datatypes.store_record host_function) '(e_ind, e) =>
+             let
+             '{| table_data := tab_e; table_max_opt := maxo |} :=
+              nth
+                (nth match modelem_table e with
+                     | Mk_tableidx i => i
+                     end (inst_tab (f_inst f)) 0) (datatypes.s_tables s)
+                dummy_table in
+              {|
+                s_funcs := datatypes.s_funcs s;
+                s_tables :=
+                  insert_at
+                    {|
+                      table_data :=
+                        (firstn e_ind tab_e ++
+                         map
+                           (fun i : funcidx =>
+                            nth_error (inst_funcs (f_inst f))
+                              match i with
+                              | Mk_funcidx j => j
+                              end) (modelem_init e) ++
+                         skipn
+                           (ssrnat.addn_rec e_ind
+                              (Datatypes.length
+                                 (map
+                                    (fun i : funcidx =>
+                                     nth_error (inst_funcs (f_inst f))
+                                       match i with
+                                       | Mk_funcidx j => j
+                                       end) (modelem_init e)))) tab_e)%list;
+                      table_max_opt := maxo
+                    |}
+                    (nth match modelem_table e with
+                         | Mk_tableidx i => i
+                         end (inst_tab (f_inst f)) 0) (datatypes.s_tables s);
+                s_mems := datatypes.s_mems s;
+                s_globals := datatypes.s_globals s
+              |}) l s = s' ->
+  length (s_tables s) = 1 ->
+  inst_tab (f_inst f) = [0] ->
+  inst_funcs (f_inst f) = [:: 0, 1, 0, 1 & map (fun '(Mk_funcidx i) => i)
+                                               (funcidcs length_fns 2)] ->
+  Forall (fun p => (modelem_table (snd p)) =  Mk_tableidx 0) l ->
+  Forall (fun p => exists i, (modelem_init (snd p)) = [Mk_funcidx i] /\ 2 <= i < length_fns + 4) l ->
+  (forall i j, i > j -> True) ->
+  s_globals s = s_globals s' /\
+  s_mems s = s_mems s'       /\
+  s_funcs s = s_funcs s'     /\
+  s_tables s = s_tables s'.
+Proof.
+  induction l; intros s s' f length_fns H HtLen HinstTab HinstFns HTable0 Hlen Hincreasing.
+  - cbn in H. inv H. auto.
+  - destruct a. cbn in H. eapply IHl in H; eauto.
+    2: { inv Hlen. cbn. destruct (modelem_table m).
+         cbn. rewrite HinstFns HinstTab nth_0_0.
+         destruct (s_tables s). inv HtLen. destruct l0.
+         2: inv HtLen. destruct t. cbn. reflexivity. }
+    2: { now inv HTable0. }
+    2: { now inv Hlen. }
+    cbn in H. destruct H as [H1 [H2 [H3 H4]]].
+    rewrite -H1 -H2 -H3. cbn.
+    destruct (s_tables s) eqn:Hs. inv HtLen. destruct l0. 2: inv HtLen. destruct t.
+    destruct (modelem_table m).
+    cbn in H1, H2, H3, H4. rewrite HinstTab nth_0_0 in H1, H2, H3, H4.
+    repeat rewrite HinstTab nth_0_0; cbn.
+    cbn in H1, H2, H3, H4. rewrite map_length in H4. auto.
+    destruct (modelem_table m) eqn:Heqn.
+    rewrite  HinstFns in H4; auto.
+    assert (skipn 1
+           [{|
+              table_data := table_data;
+              table_max_opt := table_max_opt
+            |}] = []) as Hnil by  reflexivity.
+    rewrite Hnil in H4. clear Hnil.
+    inv Hlen. destruct H5 as [i [Hinit Hlen]]. cbn in Hinit. rewrite Hinit in H4.
+    cbn in H4. assert (nth_error
+              [:: 0, 1, 0, 1
+                & map (fun '(Mk_funcidx i) => i)
+                    (funcidcs length_fns 2)] i = Some (i - 2)) as HnthErr.
+                    admit.
+  rewrite HnthErr in H4.
+  destruct i; try lia. destruct i; try lia. cbn in H4, HnthErr.
+  assert (i < length_fns + 2) as Hlen' by lia. clear Hlen. rename Hlen' into Hlen. replace (i - 0) with i in * by lia.
+Admitted. *)
+
+
+
 Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num_funs module fenv main_lenv sr f exports,
   topExp = match e with | Efun _ _ => e | _ => Efun Fnil e end ->
   num_funs = match topExp with | Efun fds _ => fds_length fds | _ => 42 (* unreachable*) end ->
@@ -5368,8 +5478,7 @@ Proof.
   unfold instantiate_elem in HinstElem. cbn in Hinst.
   repeat rewrite -app_assoc in HinstElem. cbn in HinstElem.
   rewrite plus_comm in HinstElem. cbn in HinstElem.
-  (* apply Forall2_app_inv_l in HinstElem.
-     destruct HinstElem as [l1 [l2 [Hl1 [Hl2 Heoffs]]]]. subst e_offs. *)
+  have H' := e_offs_increasing _ _ _ _ _ HinstElem. clear HinstElem. rename H' into HinstElem.
 
   apply store_record_eqb_true in Hinst.
   unfold alloc_module, alloc_funcs, alloc_globs, add_mem, alloc_Xs in HallocModule.
