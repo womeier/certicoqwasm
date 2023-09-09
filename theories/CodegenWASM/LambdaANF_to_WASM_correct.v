@@ -1,5 +1,4 @@
-(*
-  Proof of correctness of the WASM code generation phase of CertiCoq
+(* Proof of correctness of the WASM code generation phase of CertiCoq
   (this file is based on the proof for Clight code generation, it still contains some relicts that have not beed removed yet.)
 
   > Relates expressions to Wasm instructions (codegen relation, syntactic)
@@ -5031,33 +5030,64 @@ Proof.
 Qed.
 
 
-Lemma reduce_const_false : forall state s f c,
+Lemma reduce_nil_false : forall state s f,
   ~ exists y,
   (reduce_tuple (host_instance:=host_instance))
-  (state, s, f, [AI_basic (BI_const c)]) y.
+  (state, s, f, []) y.
 Proof.
-  intros ? ? ? ? [[[[hs' s'] f'] instr'] Hcontra]. cbn in Hcontra.
-  inv Hcontra.
-  { inv H.  admit. admit. admit. }
-  { admit. }
-  { admit. }
-  { admit. }
-  { unfold lfilled in H0, H1.
-    destruct (lfill k lh es) eqn:Heqn. 2: inv H0.
-    destruct (lfill k lh es') eqn:Heqn'. 2: inv H1.
-    apply eqseq_true in H0, H1. subst l l0.
-    destruct lh. 2: { destruct k; inv Heqn. cbn in Heqn'. destruct (const_list l). 2: inv H1.
-                      destruct (lfill k lh es). 2: inv H1. admit. }
-    destruct k; cbn in Heqn. 2: inv Heqn.
-    cbn in Heqn'. destruct (const_list l). 2: inv Heqn.
-    generalize dependent es'. revert f' s' f s state hs' instr'.
-    generalize dependent l. revert l0 c.
-    induction es; intros. { inv H. inv H0. admit. admit. admit. admit. admit. admit.
-    unfold lfilled in H1.
-     destruct (lfill k lh es). 2: inv H1. apply eqseq_true in H1. subst l1.
-     inv Heqn'.
-    admit. }
-Admitted.
+  intros ? ? ? [[[[hs' s'] f'] instr'] Hcontra]. cbn in Hcontra.
+  remember [] as l. revert Heql.
+  induction Hcontra; intros; subst; try discriminate.
+  { inv H. destruct vs; inv H0. destruct vs; inv H0.
+    unfold lfilled in H1. destruct (lfill 0 lh [AI_trap]) eqn:Heqn. 2: inv H1.
+    apply eqseq_true in H1. subst. destruct lh; inv Heqn. destruct (const_list l); inv H1.
+    destruct l; inv H2. }
+  { destruct vcs; inv Heql. }
+  { destruct vcs; inv Heql. }
+  { destruct vcs; inv Heql. }
+  { apply IHHcontra. unfold lfilled in H.
+    destruct (lfill k lh es) eqn:Heqn. 2: inv H. apply eqseq_true in H. subst.
+    destruct lh. 2: { destruct k; first inv Heqn. cbn in Heqn.
+                      destruct (const_list l). 2: inv Heqn.
+                      destruct (lfill k lh es); inv Heqn.
+                      destruct l; inv H1. }
+    destruct k; inv Heqn. destruct (const_list l); inv H1. destruct l, es, l0; inv H2.
+    reflexivity. }
+Qed.
+
+Lemma reduce_const_false : forall state s f c instr,
+  ~ (reduce_tuple (host_instance:=host_instance))
+  (state, s, f, [AI_basic (BI_const c)]) (state, s, f, instr).
+Proof.
+  intros ? ? ? ? ? Hcontra. cbn in Hcontra.
+  remember ([AI_basic (BI_const c)]) as instr'. generalize dependent c.
+  induction Hcontra; intros; try discriminate. subst.
+  { inv H. destruct vs; inv H0. destruct vs; inv H4.
+           destruct vs; inv H0. destruct vs; inv H4.
+           destruct lh; inv H1. unfold lfilled in H2.
+           destruct (lfill 0 _ _) eqn:Heqn. 2: inv H2.
+           apply eqseq_true in H2. subst.
+           cbn in Heqn. destruct (const_list l); inv Heqn.
+           destruct l; inv H1. destruct l; inv H3. }
+  { destruct ves; inv Heqinstr'. destruct ves; inv H11. }
+  { destruct ves; inv Heqinstr'. destruct ves; inv H8. }
+  { destruct ves; inv Heqinstr'. destruct ves; inv H8. }
+  { subst.
+    unfold lfilled in H, H0. destruct (lfill k lh es) eqn:Heqn. 2: inv H.
+    apply eqseq_true in H. subst.
+    destruct lh, k; inv Heqn. destruct (const_list l); inv H1.
+    destruct es.
+    { (* es = []*)
+      eapply reduce_nil_false. exists (hs', s', f', es'). eassumption.
+    }
+    { (* es = [const c] *)
+      destruct l, es; cbn in H2; inv H2; eauto.
+      destruct l; inv H3. destruct l; inv H3.
+    }
+    destruct (const_list l). 2: inv H1.
+    destruct (lfill k lh es) eqn:Heqn; inv H1.
+    destruct l; inv H2. destruct l; inv H3. }
+Qed.
 
 Lemma reduce_trans_const_eq : forall state s f c c',
    opsem.reduce_trans (host_instance:=host_instance)
@@ -5249,8 +5279,17 @@ Proof.
   rewrite table_element_mapping_length in Hl2. lia.
 Qed.
 
-Lemma init_tabs_effect : forall e_offs s s' f startIdx,
+Fixpoint increasing_nats (n : nat) : list nat :=
+  match n with
+  | 0 => []
+  | S n' => (increasing_nats n') ++ [n']
+  end.
+
+Lemma init_tabs_effect : forall startIdx e_offs s s' f,
   (inst_tab (f_inst f)) = [0] ->
+  [{| table_data := map Some (increasing_nats startIdx) ++ repeat None (length e_offs);
+      table_max_opt := None |}] = s_tables s' ->
+  startIdx < length e_offs ->
   s = init_tabs host_function s' (f_inst f)
           [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs]
           (table_element_mapping (length e_offs) startIdx) ->
@@ -5260,30 +5299,35 @@ Lemma init_tabs_effect : forall e_offs s s' f startIdx,
   s_mems s = s_mems s'       /\
   s_funcs s = s_funcs s'     /\
   s_tables s = [{| table_max_opt := None;
-                   table_data := [None; None; None; None] ++ map (fun i => Some (Z.to_nat (Wasm_int.Int32.unsigned i))) e_offs|}].
+                   table_data := map Some (increasing_nats startIdx) ++
+                                 (repeat None (length e_offs - startIdx))|}].
 Proof.
-  induction e_offs; intros ? ? ? ? Hinst H Hi.
-  - inv H. cbn. auto.
-  - cbn. intros. cbn in H.
+  induction startIdx; intros ? ? ? ? Hinst Ht Hlen Hinit Hlt.
+  { destruct e_offs. 1: { cbn in Hlen. lia. }
+    cbn. cbn in *.
+    unfold init_tab in Hinit. subst. admit. }
+  { assert (Hlen': startIdx < length e_offs) by lia. clear Hlen. rename Hlen' into Hlen.
+    have IH := IHstartIdx _ _ _ _ Hinst _ Hlen. cbn.
+    cbn in Hinit.
+
+  (* induction e_offs; intros ? ? ? ? Hinst Ht Hlen H Hi.
+  - inv H. cbn. rewrite -Ht. destruct startIdx; cbn in Hlen; try lia. auto.
+  - cbn. cbn in H.
     assert (Hi': (forall i : nat,
       i < Datatypes.length e_offs ->
       nth_error e_offs i = Some (nat_to_i32 (S startIdx + i)))). {
      intros. replace (S startIdx + i ) with (startIdx + (S i)) by lia.
      rewrite -Hi. reflexivity. cbn. lia. }
-    have IH := IHe_offs _ _ _ _ _ _ Hi'.
+    have IH := IHe_offs _ _ _ _ _ _ _ _ Hi'. clear Hi.
     unfold init_tab in H. cbn in H.
     rewrite Hinst in H. cbn in H. unfold dummy_table in H.
     destruct (nth 0 (s_tables s') {| table_data := []; table_max_opt := None |}) eqn:Heqn. cbn in H.
     unfold init_tabs in IH.
     unfold init_tabs, init_tab in Hglobs, Hmems, Hfns.
-    cbn in Hglobs, Hmems, Hfns.
+    cbn in Hglobs, Hmems, Hfns. *)
 
-    cbn in Heqn.
-
-
-
-    unfold init_tab in H. cbn in H.
-    unfold combine in H.
+    (* cbn in Heqn. *)
+Admitted.
 
 Lemma init_tabs_effect' : forall n s s' f e_offs,
   s = init_tabs host_function s' (f_inst f)
@@ -5746,7 +5790,7 @@ Proof.
 
   assert (Hfds_before_IH: (forall (x : positive) (rho' : M.t val)
            (fds' : fundefs) (f' : var),
-         (M.empty _) ! x = Some (Vfun rho' fds' f') -> fds' = Fnil)). { intros. inv H. }
+         (M.empty _) ! x = Some (Vfun rho' fds' f') -> fds' = Fnil /\ rho' = M.empty _)). { intros. inv H. }
 
     assert (Hunbound : (forall x : var,
          In x (collect_local_variables e) ->
