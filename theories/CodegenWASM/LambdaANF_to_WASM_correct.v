@@ -5531,14 +5531,14 @@ Proof.
           modelem_table := Mk_tableidx 0;
           modelem_offset := [BI_const (nat_to_value i)];
           modelem_init := [Mk_funcidx i]
-        |}) [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs]). admit.
+        |}) [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs]). { admit. }
   assert (Hnodup: NoDup [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs]). {
     admit.
   }
   assert (HoffsLeLen: (forall i : nat,
       In i [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs] ->
       i < Datatypes.length (table_data t))). {
-   intros. }
+   intros. admit. }
   have H' := init_tabs_effect_general _ _ _ _ _ _ HinstF Ht Hmapping Hnodup HoffsLeLen HtNone Hinit HinstT.
   destruct H' as [t' [HtVals [_ [Hnone Ht']]]].
   assert (Hlen: length [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs] =
@@ -5666,11 +5666,25 @@ Proof.
   rewrite rev_involutive in F3.
   rewrite F4 in HallocModule. cbn in HallocModule.
 
+  remember (s_tables s') as ts. rewrite HallocModule in Heqts.
+  destruct ts. inv Heqts. destruct ts. 2: inv Heqts.
+  symmetry in Heqts. rewrite -HallocModule in Heqts.
+
+  assert (Hnone: table_max_opt t = None). { subst s'. now inv Heqts. }
+  assert (Hlen: (length (table_data t) - 4) = length fns). {
+    subst s'. inv Heqts. cbn. rewrite repeat_length. cbn.
+    replace (ssrnat.nat_of_bin (N.of_nat (Datatypes.length fns + 4))) with
+      (Z.to_nat (Z.of_nat (ssrnat.nat_of_bin (N.of_nat (Datatypes.length fns + 4))))) by lia.
+    rewrite Z_nat_bin. lia.
+  } rewrite -Hlen in F3.
+
+  have H' := init_tabs_effect s' _ _ _ _ Heqts Hnone F2 F3 Logic.eq_refl.
+  edestruct H' as [t' [Ht' [HtVal' [NtNone' [Htables [Hfuncs [Hmems Hglobals]]]]]]]. clear H'.
+
   assert (Hw: type w = Tf [T_i32] [] /\ locals w = [T_i32]). {
     unfold generate_constr_pp_function in HgenPP. cbn in HgenPP.
     destruct (sequence _). inv HgenPP. inv HgenPP.
-    split; reflexivity. }
-    destruct Hw as [Hw1 Hw2].
+    split; reflexivity. } destruct Hw as [Hw1 Hw2].
   rewrite Hw1 Hw2 in HallocModule. clear Hw1 Hw2.
   rewrite nth_list_function_types in HallocModule. 2: { cbn. lia. }
   rewrite nth_list_function_types in HallocModule; try lia.
@@ -5679,7 +5693,8 @@ Proof.
 
   (* inv Himports. inv H3. inv H1. inv H2. cbn. exfalso. *)
 
-  assert (Hs1: s_globals s = s_globals s'). { admit. (* easy: from add table*) }
+  assert (Hs1: s_globals s = s_globals s'). { admit. }
+   reflexivity. reflexivity. (* easy: from add table*) }
   assert (Hs2: s_funcs s = s_funcs s'). { admit. (* easy from add table *) }
   assert (Hs3: s_mems s = s_mems s'). { admit. (* easy from add table *) }
 
@@ -5688,7 +5703,7 @@ Proof.
   unfold INV_result_var_writable, INV_result_var_out_of_mem_writable, INV_global_mem_ptr_writable,
   INV_constr_alloc_ptr_writable. unfold global_var_w, supdate_glob, supdate_glob_s.
   subst s'. cbn. rewrite F0. cbn.
-  split. (* res_var_w *) eexists. rewrite Hs1. reflexivity.
+  split. (* res_var_w *) eexists. rewrite <- Hglobals. reflexivity.
   split. (* res_var_M_w *) eexists. rewrite Hs1. reflexivity.
   split. (* res_var_M_0 *) unfold INV_result_var_out_of_mem_is_zero. unfold sglob_val, sglob.
   cbn. rewrite F0. rewrite Hs1. reflexivity.
@@ -5726,7 +5741,8 @@ Proof.
    unfold INV_inst_globs_nodup. rewrite F0.
    repeat constructor; cbn; lia.
    split. (* INV_table_id *)
-   { unfold INV_table_id, stab_addr, stab_index. rewrite F2. cbn.
+   { unfold INV_table_id. intros.
+     unfold stab_addr, stab_index. rewrite F2. cbn.
      intros.
      assert (Z.of_nat i < max_num_functions + 4)%Z. {
        destruct e; inv H. apply translate_fvar_fname_mapping in H1.
