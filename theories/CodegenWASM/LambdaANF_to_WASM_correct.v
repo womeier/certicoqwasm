@@ -527,7 +527,7 @@ Inductive repr_val_LambdaANF_Codegen: LambdaANF.eval.env -> (* rho *)
       repr_val_LambdaANF_Codegen rho (LambdaANF.cps.Vfun env fds f) sr fr (Val_funidx idx)
 
 with repr_val_constr_args_LambdaANF_Codegen : LambdaANF.eval.env -> list LambdaANF.cps.val -> store_record -> frame -> immediate -> Prop :=
-     | Rnil_l_after_cons : forall rho sr fr addr,
+     | Rnil_l: forall rho sr fr (addr : nat),
         repr_val_constr_args_LambdaANF_Codegen rho nil sr fr addr
 
      | Rcons_l: forall rho v wal vs sr fr m addr gmp,
