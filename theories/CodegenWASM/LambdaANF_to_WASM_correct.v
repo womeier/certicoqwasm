@@ -527,7 +527,7 @@ Inductive repr_val_LambdaANF_Codegen: LambdaANF.eval.env -> (* rho *)
       repr_val_LambdaANF_Codegen rho (LambdaANF.cps.Vfun env fds f) sr fr (Val_funidx idx)
 
 with repr_val_constr_args_LambdaANF_Codegen : LambdaANF.eval.env -> list LambdaANF.cps.val -> store_record -> frame -> immediate -> Prop :=
-     | Rnil_l_after_cons : forall rho sr fr addr,
+     | Rnil_l: forall rho sr fr addr,
         repr_val_constr_args_LambdaANF_Codegen rho nil sr fr addr
 
      | Rcons_l: forall rho v wal vs sr fr m addr gmp,
@@ -5486,7 +5486,7 @@ Proof.
    }}
 Qed.
 
-Lemma init_tabs_preserves_only_changes_tables : forall s s' f l1 l2,
+Lemma init_tabs_only_changes_tables : forall s s' f l1 l2,
   length l1 = length l2 ->
   s' = init_tabs host_function s (f_inst f) l1 l2 ->
      s_funcs s = s_funcs s'
@@ -5504,6 +5504,86 @@ Proof.
   now destruct (nth _ _ _).
 Qed.
 
+Lemma eoffs_nodup : forall e_offs,
+  (Z.of_nat (Datatypes.length e_offs) < Wasm_int.Int32.modulus)%Z ->
+  (forall i, i < Datatypes.length e_offs ->
+             nth_error e_offs i = Some (nat_to_i32 i)) ->
+  NoDup [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs].
+Proof.
+  intros ? HmaxLen Hvals.
+  apply NoDup_nth_error. intros ? ? Hlen Hsame.
+  do 2! rewrite nth_error_map in Hsame.
+  rewrite map_length in Hlen.
+  rewrite Hvals in Hsame; auto.
+  destruct (Nat.ltb_spec j (length e_offs)).
+  { (* j < length e_offs *)
+    rewrite Hvals in Hsame; auto. inv Hsame.
+    repeat rewrite Wasm_int.Int32.Z_mod_modulus_id in H1; try lia.
+  }
+  { (* j >= length e_offs *)
+    cbn in Hsame.
+    apply nth_error_None in H.
+    rewrite H in Hsame. inv Hsame.
+  }
+Qed.
+
+(* TODO use from stdlib List.v (not yet in Coq 8.14?) *)
+Lemma nth_error_ext {A} (l l' : list A):
+  (forall n, nth_error l n = nth_error l' n) -> l = l'.
+Proof.
+  revert l'. induction l as [|a l IHl];
+    intros l' Hnth; destruct l'.
+  - reflexivity.
+  - discriminate (Hnth 0).
+  - discriminate (Hnth 0).
+  - injection (Hnth 0) as ->. f_equal. apply IHl.
+    intro n. exact (Hnth (S n)).
+Qed.
+
+
+Lemma table_element_mapping_nth: forall len n startIdx,
+  n < len ->
+  nth_error (table_element_mapping len startIdx) n =
+  Some {| modelem_table := Mk_tableidx 0;
+          modelem_offset := [BI_const (nat_to_value (n + startIdx))];
+          modelem_init := [Mk_funcidx (n + startIdx)] |}.
+Proof.
+  induction len; intros; first lia.
+  destruct n.
+  - (* n=0 *) reflexivity.
+  - (* n=Sn'*) cbn. replace (S (n + startIdx)) with (n + (S startIdx)) by lia.
+               now apply IHlen.
+Qed.
+
+Lemma table_element_mapping_alternative : forall e_offs,
+  (forall i : nat,
+            i < Datatypes.length e_offs ->
+            nth_error e_offs i = Some (nat_to_i32 i)) ->
+  (Z.of_nat (Datatypes.length e_offs) < Wasm_int.Int32.modulus)%Z ->
+  table_element_mapping (Datatypes.length e_offs) 0 = map
+  (fun i : nat =>
+   {|
+     modelem_table := Mk_tableidx 0;
+     modelem_offset := [BI_const (nat_to_value i)];
+     modelem_init := [Mk_funcidx i]
+   |}) [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs].
+Proof.
+  intros.
+  apply nth_error_ext. intros.
+  destruct (Nat.ltb_spec n (length e_offs)).
+  { (* n < length e_offs *)
+    do 2! rewrite nth_error_map. rewrite H; auto. cbn.
+    repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
+    rewrite table_element_mapping_nth; auto. repeat f_equal; try lia.
+  }
+  { (* n >= length e_offs *)
+    have H' := H1. apply nth_error_None in H1.
+    do 2! rewrite nth_error_map. rewrite H1. cbn.
+    apply nth_error_None. now rewrite table_element_mapping_length.
+  }
+Qed.
+
+
 Lemma init_tabs_effect : forall s s' f e_offs t,
   s_tables s = [t] ->
   table_max_opt t = None ->
@@ -5518,6 +5598,8 @@ Lemma init_tabs_effect : forall s s' f e_offs t,
   (forall i : nat,
              i < Datatypes.length e_offs ->
              nth_error e_offs i = Some (nat_to_i32 i)) ->
+  (Z.of_nat (Datatypes.length e_offs) < Wasm_int.Int32.modulus)%Z ->
+  length e_offs = length (table_data t) ->
   exists t, s_tables s' = [t]
          /\ (forall i : nat, In i [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs] ->
              nth_error (table_data t) i = Some (Some i))
@@ -5527,32 +5609,35 @@ Lemma init_tabs_effect : forall s s' f e_offs t,
          /\ s_mems s' = s_mems s
          /\ s_globals s' = s_globals s.
 Proof.
-  intros ? ? ? ? ? Ht HtNone HinstT HinstF Hinit HeoffsVal.
-  assert (Hmapping: table_element_mapping (Datatypes.length e_offs) 0 =
-     map
-       (fun i : nat =>
-        {|
-          modelem_table := Mk_tableidx 0;
-          modelem_offset := [BI_const (nat_to_value i)];
-          modelem_init := [Mk_funcidx i]
-        |}) [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs]). { admit. }
+  intros ? ? ? ? ? Ht HtNone HinstT HinstF Hinit HeoffsVal HeoffsMaxLen HlenEq.
+  have Hmapping := table_element_mapping_alternative _ HeoffsVal HeoffsMaxLen.
   assert (Hnodup: NoDup [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs]). {
-    admit.
+    apply eoffs_nodup; auto.
   }
   assert (HoffsLeLen: (forall i : nat,
       In i [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs] ->
       i < Datatypes.length (table_data t))). {
-   intros. admit. }
+   intros. apply In_nth_error in H.
+   destruct H as [idx H].
+   assert (idx < length e_offs). {
+     apply nth_error_Some.
+     rewrite nth_error_map in H. intro. rewrite H0 in H. inv H.
+   }
+   rewrite nth_error_map in H.
+   rewrite HeoffsVal in H; auto. cbn in H. inv H; auto.
+   rewrite Wasm_int.Int32.Z_mod_modulus_id; lia.
+  }
   have H' := init_tabs_effect_general _ _ _ _ _ _ HinstF Ht Hmapping Hnodup HoffsLeLen HtNone Hinit HinstT.
   destruct H' as [t' [HtVals [_ [Hnone Ht']]]].
   assert (Hlen: length [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs] =
                 length (table_element_mapping (Datatypes.length e_offs) 0)). {
     rewrite length_is_size size_map -length_is_size.
-    now rewrite table_element_mapping_length. }
-  have H' := init_tabs_preserves_only_changes_tables _ _ _ _ _ Hlen Hinit.
+    now rewrite table_element_mapping_length.
+  }
+  have H' := init_tabs_only_changes_tables _ _ _ _ _ Hlen Hinit.
   destruct H' as [H1' [H2' H3']].
   exists t'. repeat (split; auto).
-Admitted.
+Qed.
 
 Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num_funs module fenv main_lenv sr f exports,
   topExp = match e with | Efun _ _ => e | _ => Efun Fnil e end ->
@@ -5675,15 +5760,19 @@ Proof.
   symmetry in Heqts. rewrite -HallocModule in Heqts.
 
   assert (Hnone: table_max_opt t = None). { subst s'. now inv Heqts. }
-  assert (Hlen: (length (table_data t) - 4) = length fns). {
+  assert (Hlen: (length (table_data t) - 4) = length fns /\ length (table_data t) >= 4). {
     subst s'. inv Heqts. cbn. rewrite repeat_length. cbn.
     replace (ssrnat.nat_of_bin (N.of_nat (Datatypes.length fns + 4))) with
       (Z.to_nat (Z.of_nat (ssrnat.nat_of_bin (N.of_nat (Datatypes.length fns + 4))))) by lia.
     rewrite Z_nat_bin. lia.
-  } rewrite -Hlen in F3.
+  } destruct Hlen as [Hlen HminLen]. rewrite -Hlen in F3.
   assert (Hlen': length e_offs = length fns + 4). { now rewrite HeoffsLen -Hlen. }
   rewrite -Hlen' in HeoffsVals.
-  have H' := init_tabs_effect s' _ _ e_offs _ Heqts Hnone F2 F3 Logic.eq_refl HeoffsVals.
+  assert (HlenMax: (Z.of_nat (Datatypes.length e_offs) < Wasm_int.Int32.modulus)%Z). {
+  apply fds_length_length in HtransFns.
+  unfold max_num_functions in HfdsLength. simpl_modulus; cbn. lia. }
+  assert (Hlen'': Datatypes.length e_offs = Datatypes.length (table_data t)) by lia.
+  have H' := init_tabs_effect s' _ _ e_offs _ Heqts Hnone F2 F3 Logic.eq_refl HeoffsVals HlenMax Hlen''.
   rewrite Hlen' in H'.
   destruct H' as [t' [Ht' [HtVal' [NtNone' [Htables [Hfuncs [Hmems Hglobals]]]]]]].
   rewrite -Hinst in Hglobals, Hmems, Hfuncs.
@@ -5691,7 +5780,8 @@ Proof.
   assert (Hw: type w = Tf [T_i32] [] /\ locals w = [T_i32]). {
     unfold generate_constr_pp_function in HgenPP. cbn in HgenPP.
     destruct (sequence _). inv HgenPP. inv HgenPP.
-    split; reflexivity. } destruct Hw as [Hw1 Hw2].
+    split; reflexivity.
+  } destruct Hw as [Hw1 Hw2].
   rewrite Hw1 Hw2 in HallocModule. clear Hw1 Hw2.
   rewrite nth_list_function_types in HallocModule. 2: { cbn. lia. }
   rewrite nth_list_function_types in HallocModule; try lia.
