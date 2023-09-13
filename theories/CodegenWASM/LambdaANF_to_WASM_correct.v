@@ -5840,7 +5840,16 @@ Proof.
      (* from translate_function_var *)
      rewrite Wasm_int.Int32.Z_mod_modulus_id. 2: {
       simpl_modulus; cbn. unfold max_num_functions in H0. lia. }
-      admit. (* table mapping *) }
+      subst s. rewrite Ht'. cbn.
+      rewrite HtVal'. cbn. f_equal. lia.
+      have H' := H.
+      apply translate_fvar_fname_mapping in H'.
+      destruct e; inv H. symmetry in HtopExp'; inv HtopExp'.
+      apply fds_length_length in HtransFns. rewrite HtransFns in H'.
+      apply nth_error_In with (n:=i). rewrite nth_error_map.
+      rewrite HeoffsVals; try lia. cbn. f_equal.
+      rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
+  }
   split.
   (* INV_var_idx_inbounds *)
   { unfold INV_var_idx_inbounds. intros. inv H. inv H0. }
