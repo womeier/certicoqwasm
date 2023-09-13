@@ -5678,8 +5678,11 @@ Proof.
     rewrite Z_nat_bin. lia.
   } rewrite -Hlen in F3.
 
-  have H' := init_tabs_effect s' _ _ _ _ Heqts Hnone F2 F3 Logic.eq_refl.
-  edestruct H' as [t' [Ht' [HtVal' [NtNone' [Htables [Hfuncs [Hmems Hglobals]]]]]]]. clear H'.
+  have H' := init_tabs_effect s' _ _ e_offs _ Heqts Hnone F2 F3 Logic.eq_refl.
+  destruct H' as [t' [Ht' [HtVal' [NtNone' [Htables [Hfuncs [Hmems Hglobals]]]]]]].
+  assert (Hlen': length e_offs = length fns + 4). { now rewrite HeoffsLen -Hlen. }
+  rewrite Hlen' in Hglobals, Hmems, Hfuncs.
+  rewrite -Hinst in Hglobals, Hmems, Hfuncs.
 
   assert (Hw: type w = Tf [T_i32] [] /\ locals w = [T_i32]). {
     unfold generate_constr_pp_function in HgenPP. cbn in HgenPP.
@@ -5691,27 +5694,20 @@ Proof.
   rewrite map_map in HallocModule. cbn in HallocModule.
   rewrite nth_list_function_types_map in HallocModule. 2: { admit.  (* args <= max_function_args: TODO: enforce*) } cbn.
 
-  (* inv Himports. inv H3. inv H1. inv H2. cbn. exfalso. *)
-
-  assert (Hs1: s_globals s = s_globals s'). { admit. }
-   reflexivity. reflexivity. (* easy: from add table*) }
-  assert (Hs2: s_funcs s = s_funcs s'). { admit. (* easy from add table *) }
-  assert (Hs3: s_mems s = s_mems s'). { admit. (* easy from add table *) }
-
   split.
   (* INV globals *)
   unfold INV_result_var_writable, INV_result_var_out_of_mem_writable, INV_global_mem_ptr_writable,
   INV_constr_alloc_ptr_writable. unfold global_var_w, supdate_glob, supdate_glob_s.
-  subst s'. cbn. rewrite F0. cbn.
-  split. (* res_var_w *) eexists. rewrite <- Hglobals. reflexivity.
-  split. (* res_var_M_w *) eexists. rewrite Hs1. reflexivity.
+  subst s'; cbn; cbn in Hglobals, Hfuncs, Hmems. rewrite F0. cbn.
+  split. (* res_var_w *) eexists. Check Hglobals. cbn. rewrite Hglobals. reflexivity.
+  split. (* res_var_M_w *) eexists. rewrite Hglobals. reflexivity.
   split. (* res_var_M_0 *) unfold INV_result_var_out_of_mem_is_zero. unfold sglob_val, sglob.
-  cbn. rewrite F0. rewrite Hs1. reflexivity.
-  split. (* gmp_w *) eexists. rewrite Hs1. reflexivity.
-  split. (* cap_w *) eexists. rewrite Hs1. reflexivity.
+  cbn. rewrite F0. rewrite Hglobals. reflexivity.
+  split. (* gmp_w *) eexists. rewrite Hglobals. reflexivity.
+  split. (* cap_w *) eexists. rewrite Hglobals. reflexivity.
   (* globals mut i32 *)
   split. unfold INV_globals_all_mut_i32, globals_all_mut_i32. intros. cbn. cbn in H. subst s.
-  { rewrite Hs1 in H. cbn in H.
+  { rewrite Hglobals in H. cbn in H.
     destruct g. inv H. eexists. reflexivity.
     destruct g. inv H. eexists. reflexivity.
     destruct g. inv H. eexists. reflexivity.
@@ -5719,20 +5715,20 @@ Proof.
     destruct g; inv H. }
   split. (* linmem *)
   { unfold INV_linear_memory. unfold smem_ind. cbn. rewrite F1.
-    split; auto. eexists; auto. split. rewrite Hs3. reflexivity. unfold mem_mk. cbn. unfold mem_size, mem_length, memory_list.mem_length. cbn. eexists. split. reflexivity.
+    split; auto. eexists; auto. split. rewrite Hmems. reflexivity. unfold mem_mk. cbn. unfold mem_size, mem_length, memory_list.mem_length. cbn. eexists. split. reflexivity.
     split; auto. unfold max_mem_pages. rewrite repeat_length. cbn.
     replace (N.of_nat (Pos.to_nat 65536)) with 65536%N by lia. cbn. lia. }
    split. (* gmp in linmem *)
    { unfold INV_global_mem_ptr_in_linear_memory.
    unfold sglob_val, sglob. cbn. intros. rewrite F0 in H0. inv H0.
-   rewrite Hs3 in H. rewrite Hs1 in H3. inv H. cbn.
+   rewrite Hmems in H. rewrite Hglobals in H3. inv H. cbn.
    unfold mem_mk, mem_length, memory_list.mem_length. rewrite repeat_length. cbn.
    inv H3. rewrite Wasm_int.Int32.Z_mod_modulus_id in H0; try lia. }
    split. (* all locals i32 *)
    { unfold INV_locals_all_i32. intros. rewrite Hflocs in H. rewrite nth_error_nil in H. inv H. }
    split. (* num functions upper bound *)
    { unfold INV_num_functions_upper_bound. cbn.
-     rewrite Hs2. cbn.
+     rewrite Hfuncs. cbn.
      rewrite map_length.
      destruct e; inv HtopExp'; try (inv HtransFns; simpl_modulus; cbn; lia).
      erewrite <- fds_length_length; eauto.
@@ -5755,7 +5751,7 @@ Proof.
   (* INV_var_idx_inbounds *)
   { unfold INV_var_idx_inbounds. intros. inv H. inv H0. }
   split. (* INV_fvar_idx_inbounds *)
-  { unfold INV_fvar_idx_inbounds. intros. rewrite Hs2. inv H. cbn.
+  { unfold INV_fvar_idx_inbounds. intros. rewrite Hfuncs. inv H. cbn.
     rewrite map_length.
     destruct e; inv H0. apply translate_fvar_fname_mapping in H1.
        inv HtopExp'. apply fds_length_length in HtransFns. lia. }
@@ -5765,10 +5761,40 @@ Proof.
   (* inst_funcs (f_inst f) *)
   { rewrite F3. repeat f_equal.
     destruct e; inv HtopExp'; inv HtransFns; auto.
-    symmetry. eapply fds_length_length. eassumption. }
+    symmetry. rewrite Hlen. eapply fds_length_length. eassumption. }
+    exists (FC_func_native (f_inst f) (Tf [T_i32] []) [T_i32] (body w)), e', fns.
+    subst s'; cbn; cbn in Hglobals, Hfuncs, Hmems. rewrite Hfuncs.
 
-  rewrite Hs2.
-  subst s'. cbn. eexists. exists e', fns. eauto. (* TODO update generated fns + exp*)
+    assert (HfRepeat: (fun x : wasm_function =>
+       FC_func_native (host_function:=host_function) (f_inst f)
+         match type x with
+         | Tf args _ => Tf (repeat T_i32 (Datatypes.length args)) []
+         end (locals x) (body x)) = (fun x : wasm_function =>
+       FC_func_native (f_inst f)
+         (Tf (repeat T_i32
+               match type x with
+               | Tf args _ => Datatypes.length args
+               end) []) (locals x) (body x))). {
+      apply functional_extensionality. intros.
+      now destruct (type x).
+    }
+    rewrite HfRepeat.
+    replace (collect_local_variables
+              match e with
+              | Efun _ exp => exp
+              | _ => e
+              end) with
+            (collect_local_variables
+	            match e with
+	            | Efun _ _ => e
+	            | _ => Efun Fnil e
+	            end) by now destruct e.
+	  rewrite HtopExp'. split. reflexivity.
+	  split. rewrite -Hexpr.
+	  replace (match e with | Efun _ exp => exp
+                          | _ => e end) with e0 by now destruct e.
+    reflexivity.
+    rewrite -HtransFns. destruct e; inv HtopExp'; auto.
 Admitted.
 
 Lemma repeat0_n_zeros : forall l,
