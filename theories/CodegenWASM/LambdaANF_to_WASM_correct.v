@@ -527,7 +527,7 @@ Inductive repr_val_LambdaANF_Codegen: LambdaANF.eval.env -> (* rho *)
       repr_val_LambdaANF_Codegen rho (LambdaANF.cps.Vfun env fds f) sr fr (Val_funidx idx)
 
 with repr_val_constr_args_LambdaANF_Codegen : LambdaANF.eval.env -> list LambdaANF.cps.val -> store_record -> frame -> immediate -> Prop :=
-     | Rnil_l: forall rho sr fr (addr : nat),
+     | Rnil_l_after_cons : forall rho sr fr addr,
         repr_val_constr_args_LambdaANF_Codegen rho nil sr fr addr
 
      | Rcons_l: forall rho v wal vs sr fr m addr gmp,
@@ -5055,11 +5055,11 @@ Proof.
     reflexivity. }
 Qed.
 
-Lemma reduce_const_false : forall state s f c instr,
+Lemma reduce_const_false : forall state state' s s' f f' c instr,
   ~ (reduce_tuple (host_instance:=host_instance))
-  (state, s, f, [AI_basic (BI_const c)]) (state, s, f, instr).
+  (state, s, f, [AI_basic (BI_const c)]) (state', s', f', instr).
 Proof.
-  intros ? ? ? ? ? Hcontra. cbn in Hcontra.
+  intros ? ? ? ? ? ? ? ? Hcontra. cbn in Hcontra.
   remember ([AI_basic (BI_const c)]) as instr'. generalize dependent c.
   induction Hcontra; intros; try discriminate. subst.
   { inv H. destruct vs; inv H0. destruct vs; inv H4.
@@ -5100,7 +5100,8 @@ Proof.
   generalize dependent c. generalize dependent c'. revert f s state.
   apply clos_rt_rt1n in H. induction H; intros; subst; try inv Heqx; auto.
   apply clos_rt1n_rt in H0.
-  exfalso. eapply reduce_const_false. eauto.
+  destruct y as [[[hs' s'] f'] instr'].
+  exfalso. eapply reduce_const_false. eassumption.
 Qed.
 
 
@@ -5514,6 +5515,9 @@ Lemma init_tabs_effect : forall s s' f e_offs t,
   s' = init_tabs host_function s (f_inst f)
           [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs]
           (table_element_mapping (length e_offs) 0) ->
+  (forall i : nat,
+             i < Datatypes.length e_offs ->
+             nth_error e_offs i = Some (nat_to_i32 i)) ->
   exists t, s_tables s' = [t]
          /\ (forall i : nat, In i [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs] ->
              nth_error (table_data t) i = Some (Some i))
@@ -5523,7 +5527,7 @@ Lemma init_tabs_effect : forall s s' f e_offs t,
          /\ s_mems s' = s_mems s
          /\ s_globals s' = s_globals s.
 Proof.
-  intros ? ? ? ? ? Ht HtNone HinstT HinstF Hinit.
+  intros ? ? ? ? ? Ht HtNone HinstT HinstF Hinit HeoffsVal.
   assert (Hmapping: table_element_mapping (Datatypes.length e_offs) 0 =
      map
        (fun i : nat =>
@@ -5677,11 +5681,11 @@ Proof.
       (Z.to_nat (Z.of_nat (ssrnat.nat_of_bin (N.of_nat (Datatypes.length fns + 4))))) by lia.
     rewrite Z_nat_bin. lia.
   } rewrite -Hlen in F3.
-
-  have H' := init_tabs_effect s' _ _ e_offs _ Heqts Hnone F2 F3 Logic.eq_refl.
-  destruct H' as [t' [Ht' [HtVal' [NtNone' [Htables [Hfuncs [Hmems Hglobals]]]]]]].
   assert (Hlen': length e_offs = length fns + 4). { now rewrite HeoffsLen -Hlen. }
-  rewrite Hlen' in Hglobals, Hmems, Hfuncs.
+  rewrite -Hlen' in HeoffsVals.
+  have H' := init_tabs_effect s' _ _ e_offs _ Heqts Hnone F2 F3 Logic.eq_refl HeoffsVals.
+  rewrite Hlen' in H'.
+  destruct H' as [t' [Ht' [HtVal' [NtNone' [Htables [Hfuncs [Hmems Hglobals]]]]]]].
   rewrite -Hinst in Hglobals, Hmems, Hfuncs.
 
   assert (Hw: type w = Tf [T_i32] [] /\ locals w = [T_i32]). {
