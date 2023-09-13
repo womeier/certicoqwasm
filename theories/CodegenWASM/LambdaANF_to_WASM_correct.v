@@ -3949,8 +3949,10 @@ Inductive expression_restricted : cps.exp -> Prop :=
   | ER_letapp : forall f x ft ys e,
       expression_restricted e ->
       expression_restricted (Eletapp x f ft ys e)
-  | ER_fun_nil : forall e fds,
+  | ER_fun : forall e fds,
       expression_restricted e ->
+      (forall f t ys e', find_def f fds = Some (t, ys, e') ->
+                   Z.of_nat (length ys) < max_function_args)%Z ->
       (Z.of_nat (fds_length fds) < max_num_functions)%Z ->
       expression_restricted (Efun fds e)
   | ER_app : forall f ft ys,
@@ -5639,7 +5641,107 @@ Proof.
   exists t'. repeat (split; auto).
 Qed.
 
+Lemma list_function_types_nth_error : forall i maxargs,
+  i <= maxargs ->
+  nth_error (list_function_types maxargs) i =
+    Some (Tf (repeat T_i32 i) []).
+Proof.
+  intros. generalize dependent i.
+  induction maxargs; intros; destruct i; cbn; auto.
+  inv H. cbn.
+  rewrite nth_error_map. rewrite IHmaxargs; try lia.
+  reflexivity.
+Qed.
+
+Lemma find_def_in_collection_function_vars : forall fds f t ys e,
+  find_def f fds = Some (t, ys, e) ->
+  In f (collect_function_vars (Efun fds e)).
+Proof.
+  induction fds; intros.
+  { cbn in H.
+    destruct (M.elt_eq f0 v).
+    (* v=f0*) subst. now cbn.
+    (* v<>f0*) right. eapply IHfds. eassumption.
+  }
+  inv H.
+Qed.
+
+Lemma translate_functions_exists_original_fun : forall f0 fns wasmFun e,
+  NoDup (collect_function_vars (Efun f0 e)) ->
+  (fix iter (fds : fundefs) : error (seq.seq wasm_function) :=
+               match fds with
+               | Fcons x _ xs e fds' =>
+                   match
+                     translate_function nenv cenv (create_fname_mapping nenv (Efun f0 e)) x
+                       xs e
+                   with
+                   | Err t => fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
+                   | Ret a => fun m2 : wasm_function -> error (seq.seq wasm_function) => m2 a
+                   end
+                     (fun fn : wasm_function =>
+                      match iter fds' with
+                      | Err t =>
+                          fun _ : seq.seq wasm_function -> error (seq.seq wasm_function) =>
+                          Err t
+                      | Ret a =>
+                          fun m2 : seq.seq wasm_function -> error (seq.seq wasm_function) =>
+                          m2 a
+                      end (fun following : seq.seq wasm_function => Ret (fn :: following)%SEQ))
+               | Fnil => Ret []
+               end) f0 = Ret fns ->
+   In wasmFun fns ->
+   exists f t ys e, find_def f f0 = Some (t, ys, e) /\ match wasmFun.(type) with
+                                                              | Tf args _ => length ys = length args
+                                                              end.
+Proof.
+  induction f0; intros fns wasmFun e' Hnodup Htrans Hin. 2: { inv Htrans. inv Hin. }
+  destruct (translate_function nenv cenv
+        (create_fname_mapping nenv (Efun (Fcons v f l e f0) e)) v l
+        e) eqn:transF. inv Htrans. cbn.
+  destruct ((fix iter (fds : fundefs) : error (seq.seq wasm_function) :=
+              match fds with
+              | Fcons x _ xs e0 fds' =>
+                  match
+                    translate_function nenv cenv
+                      (create_fname_mapping nenv (Efun (Fcons v f l e f0) e0)) x xs e0
+                  with
+                  | Err t =>
+                      fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
+                  | Ret a =>
+                      fun m2 : wasm_function -> error (seq.seq wasm_function) => m2 a
+                  end
+                    (fun fn : wasm_function =>
+                     match iter fds' with
+                     | Err t =>
+                         fun _ : seq.seq wasm_function ->
+                               error (seq.seq wasm_function) => Err t
+                     | Ret a => fun m2 : seq.seq wasm_function ->
+                                error (seq.seq wasm_function) => m2 a
+                     end
+                       (fun following : seq.seq wasm_function =>
+                        Ret (fn :: following)%SEQ))
+              | Fnil => Ret []
+              end) f0) eqn:Htra; inv Htrans. destruct Hin.
+  { (* wasmFun is first fn *) subst w.
+    exists v, f, l, e. destruct (M.elt_eq); last contradiction.
+    split; auto.
+    unfold translate_function in transF.
+    destruct (translate_exp _ _ _ _) eqn:HtransE. inv transF.
+    destruct (translate_function_var _ _ _ _) eqn:HtransFvar. inv transF.
+    inv transF. cbn. now rewrite map_length. }
+  { (* wasmFun is not first fn *)
+    eapply IHf0 in H; auto. 2: { now inv Hnodup. }
+    { destruct H as [f' [t' [ys' [e'' [Hfdef Hty]]]]].
+      exists f', t', ys', e''. split; auto. rewrite -Hfdef.
+      destruct (M.elt_eq f' v); auto. subst v. exfalso.
+      inv Hnodup. apply H1. clear H2. cbn.
+      eapply find_def_in_collection_function_vars. eassumption.
+    }
+    { rewrite -Htra. Admitted.
+
 Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num_funs module fenv main_lenv sr f exports,
+  NoDup (collect_function_vars topExp) ->
+  expression_restricted e ->
   topExp = match e with | Efun _ _ => e | _ => Efun Fnil e end ->
   num_funs = match topExp with | Efun fds _ => fds_length fds | _ => 42 (* unreachable*) end ->
   (Z.of_nat num_funs < max_num_functions)%Z ->
@@ -5701,7 +5803,7 @@ Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num
   | _ => Ret []
   end = Ret fns.
 Proof.
-  intros e topExp fds num_funs module fenv lenv s f exports HtopExp Hnumfuns HfdsLength Hcompile Hflocs Hinst. subst num_funs topExp.
+  intros e topExp fds num_funs module fenv lenv s f exports Hnodup HeRestr HtopExp Hnumfuns HfdsLength Hcompile Hflocs Hinst. subst num_funs topExp.
   unfold instantiate in Hinst.
   unfold LambdaANF_to_WASM in Hcompile.
   remember (list_function_types (Z.to_nat max_function_args)) as types.
@@ -5786,14 +5888,18 @@ Proof.
   rewrite nth_list_function_types in HallocModule. 2: { cbn. lia. }
   rewrite nth_list_function_types in HallocModule; try lia.
   rewrite map_map in HallocModule. cbn in HallocModule.
-  rewrite nth_list_function_types_map in HallocModule. 2: { admit.  (* args <= max_function_args: TODO: enforce*) } cbn.
-
+  rewrite nth_list_function_types_map in HallocModule. 2: {
+    intros wFun Hin. destruct e; inv HtopExp'; try by (inv HtransFns; inv Hin).
+    have H' := translate_functions_exists_original_fun _ _ _ _ Hnodup HtransFns Hin.
+    destruct H' as [f'' [t'' [ys'' [e'' [Hdef Hty]]]]].
+    destruct (type wFun).
+    inv HeRestr. apply H2 in Hdef. lia. }
   split.
   (* INV globals *)
   unfold INV_result_var_writable, INV_result_var_out_of_mem_writable, INV_global_mem_ptr_writable,
   INV_constr_alloc_ptr_writable. unfold global_var_w, supdate_glob, supdate_glob_s.
   subst s'; cbn; cbn in Hglobals, Hfuncs, Hmems. rewrite F0. cbn.
-  split. (* res_var_w *) eexists. Check Hglobals. cbn. rewrite Hglobals. reflexivity.
+  split. (* res_var_w *) eexists. cbn. rewrite Hglobals. reflexivity.
   split. (* res_var_M_w *) eexists. rewrite Hglobals. reflexivity.
   split. (* res_var_M_0 *) unfold INV_result_var_out_of_mem_is_zero. unfold sglob_val, sglob.
   cbn. rewrite F0. rewrite Hglobals. reflexivity.
@@ -5859,7 +5965,8 @@ Proof.
     destruct e; inv H0. apply translate_fvar_fname_mapping in H1.
        inv HtopExp'. apply fds_length_length in HtransFns. lia. }
   (* types *)
-  { unfold INV_types. admit. }
+  { unfold INV_types. intros. unfold stypes. cbn. unfold max_function_args in H.
+   rewrite F4. apply list_function_types_nth_error. lia. }
   split.
   (* inst_funcs (f_inst f) *)
   { rewrite F3. repeat f_equal.
@@ -5898,7 +6005,7 @@ Proof.
                           | _ => e end) with e0 by now destruct e.
     reflexivity.
     rewrite -HtransFns. destruct e; inv HtopExp'; auto.
-Admitted.
+Qed.
 
 Lemma repeat0_n_zeros : forall l,
    repeat (nat_to_value 0) (Datatypes.length l)
@@ -5965,7 +6072,11 @@ Proof.
   }
   assert (HflocsNil : f_locs f = []). { subst. reflexivity. }
   assert (Hfinst : f_inst f = f_inst fr) by (subst; reflexivity). rewrite -Hfinst in Hinst.
-  have HI := module_instantiate_INV_and_more_hold _ _ Fnil _ _ _ _ _ _ _ Logic.eq_refl
+  assert (Hnodup: NoDup (collect_function_vars match e with
+                                               | Efun _ _ => e
+                                               | _ => Efun Fnil e
+                                               end)). admit.
+  have HI := module_instantiate_INV_and_more_hold _ _ Fnil _ _ _ _ _ _ _ Hnodup HeRestr Logic.eq_refl
                                Logic.eq_refl Hmaxfuns LANF2WASM HflocsNil Hinst. clear Hfinst.
   destruct HI as [Hinv [HinstFuncs [pp_fn [e' [fns' [HsrFuncs [Hexpr' Hfns']]]]]]].
 
@@ -6058,7 +6169,7 @@ Proof.
          In x (collect_local_variables e) ->
          (M.empty val) ! x = None)). { intros. reflexivity. }
 
-    assert (Hnodup: NoDup (collect_local_variables e ++
+    assert (Hnodup': NoDup (collect_local_variables e ++
                            collect_function_vars (Efun Fnil e) ++
                            fds_collect_local_variables Fnil)). {
       cbn. rewrite cats0.
@@ -6078,7 +6189,7 @@ Proof.
     (* coq bug? HMAIN in 2 steps *)
     have HMAIN' := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env
                     rep_env _ host_instance _ (M.empty _) _ _ _ _ _ HlenvInjective Logic.eq_refl _ HfenvWf HeRestr Hunbound Hstep hs _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
-    have HMAIN := HMAIN' Hnodup.
+    have HMAIN := HMAIN' Hnodup'.
     destruct HMAIN as [rho' [s' [f' [Hred [Hval Hfinst]]]]]. cbn.
     exists rho', s'. split.
     dostep'. apply r_call. cbn.
