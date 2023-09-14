@@ -27,9 +27,9 @@ cd submodules
 # make install
 # cd ..
 
-cd wasmcert
-echo "Building wasmcert"
-clean
-make
-make install
-cd ..
+#cd wasmcert
+#echo "Building wasmcert"
+#clean
+#make
+#make install
+#cd ..

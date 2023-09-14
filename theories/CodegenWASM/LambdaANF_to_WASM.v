@@ -5,7 +5,7 @@ From Wasm Require Import datatypes operations.
 From CertiCoq Require Import LambdaANF.toplevel.
 From CertiCoq Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import ExtLib.Structures.Monad.
-From MetaCoq.Template Require Import bytestring MCString.
+From MetaCoq.Utils Require Import bytestring MCString.
 From Coq Require Import ZArith List.
 
 Require Import MSets.MSetAVL.

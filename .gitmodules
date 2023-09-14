@@ -1,6 +1,3 @@
 [submodule "submodules/metacoq"]
 	path = submodules/metacoq
 	url = https://github.com/MetaCoq/metacoq.git
-[submodule "submodules/wasmcert"]
-	path = submodules/wasmcert
-	url = https://github.com/womeier/WasmCert-Coq
