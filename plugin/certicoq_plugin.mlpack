@@ -247,6 +247,8 @@ Clight
 PrintAST
 PrintCsyntax
 PrintClight
+OptionMonad
+
 LambdaANF_to_Clight
 LambdaANF_to_Clight_stack
 Toplevel
@@ -270,7 +272,6 @@ Toplevel3
 Glue_utils
 Glue
 Ffi
-OptionMonad
 Pipeline
 Plugin_utils
 Certicoq

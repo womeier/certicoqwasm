@@ -43,14 +43,14 @@ let global_registers_input =
   let open Libobject in
   declare_object
     (global_object_nodischarge global_registers_name
-    ~cache:(fun (_, r) -> cache_registers r)
+    ~cache:(fun r -> cache_registers r)
     ~subst:None) (*(fun (msub, r) -> r)) *)
 
 let register (prims : prim list) (imports : string list) : unit =
   let curlib = Sys.getcwd () in
   let newr = (prims, List.map (Filename.concat curlib) imports) in
   (* Feedback.msg_debug Pp.(str"Prims: " ++ prlist_with_sep spc (fun ((x, y), wt) -> str (string_of_bytestring y)) (fst newr)); *)
-  Lib.add_anonymous_leaf (global_registers_input newr)
+  Lib.add_leaf (global_registers_input newr)
 
 let get_global_prims () = fst !global_registers
 let get_global_includes () = snd !global_registers
@@ -172,7 +172,7 @@ let quote opts gr =
   let bypass = opts.bypass_qed in
   let env = Global.env () in
   let sigma = Evd.from_env env in
-  let sigma, c = Evarutil.new_global sigma gr in
+  let sigma, c = Evd.fresh_global env sigma gr in
   debug_msg debug "Quoting";
   let time = Unix.gettimeofday() in
   let term = Metacoq_template_plugin.Ast_quoter.quote_term_rec ~bypass env (EConstr.to_constr sigma c) in
@@ -286,11 +286,11 @@ module CompileFunctor (CI : CompilerInterface) = struct
   let generate_glue_only opts gr =
     let term = quote opts gr in
     generate_glue true opts (Ast0.Env.declarations (fst (Obj.magic term)))
-
-  let compiler_executable debug =
-    let whichcmd = Unix.open_process_in "which gcc || which clang" in
-    let result =
-      try Stdlib.input_line whichcmd
+    
+  let compiler_executable debug = 
+    let whichcmd = Unix.open_process_in "which gcc || which clang-11" in
+    let result = 
+      try Stdlib.input_line whichcmd 
       with End_of_file -> ""
     in
     let status = Unix.close_process_in whichcmd in
@@ -321,12 +321,13 @@ module CompileFunctor (CI : CompilerInterface) = struct
       | Error s -> Feedback.msg_warning Pp.(str prog ++ str": " ++ str s)
     done
 
-  let runtime_dir () =
-    let lib = Envars.coqlib () in
-    Filename.concat (Filename.concat (Filename.concat (Filename.concat lib "user-contrib") "CertiCoq") "Plugin") "runtime"
+  let runtime_dir () = 
+    let open Boot in
+    let env = Env.init () in
+    Path.relative (Path.relative (Path.relative (Env.user_contrib env) "CertiCoq") "Plugin") "runtime"
 
   let make_rt_file na =
-    Filename.concat (runtime_dir ()) na
+    Boot.Env.Path.(to_string (relative (runtime_dir ()) na))
 
   let compile_C opts gr imports =
     let () = compile_with_glue opts gr imports in
@@ -338,8 +339,8 @@ module CompileFunctor (CI : CompilerInterface) = struct
     let compiler = compiler_executable debug in
     let rt_dir = runtime_dir () in
     let cmd =
-        Printf.sprintf "%s -Wno-everything -g -I %s -I %s -c -o %s %s"
-          compiler opts.build_dir rt_dir (name ^ ".o") (name ^ ".c")
+        Printf.sprintf "%s -Wno-everything -g -I %s -I %s -c -o %s %s" 
+          compiler opts.build_dir (Boot.Env.Path.to_string rt_dir) (name ^ ".o") (name ^ ".c") 
     in
     let importso =
       let oname s =
@@ -354,8 +355,8 @@ module CompileFunctor (CI : CompilerInterface) = struct
     match Unix.system cmd with
     | Unix.WEXITED 0 ->
       let linkcmd =
-        Printf.sprintf "%s -Wno-everything -g -L %s -L %s -o %s %s %s %s"
-          compiler opts.build_dir rt_dir name gc_stack_o (name ^ ".o") importso
+        Printf.sprintf "%s -Wno-everything -g -L %s -L %s -o %s %s %s %s" 
+          compiler opts.build_dir (Boot.Env.Path.to_string rt_dir) name gc_stack_o (name ^ ".o") importso
       in
       debug_msg debug (Printf.sprintf "Executing command: %s" linkcmd);
       (match Unix.system linkcmd with
@@ -427,7 +428,7 @@ module CompileFunctor (CI : CompilerInterface) = struct
     let debug = opts.debug in
     let env = Global.env () in
     let sigma = Evd.from_env env in
-    let sigma, c = Evarutil.new_global sigma gr in
+    let sigma, c = Evd.fresh_global env sigma gr in
     let name = match gr with
       | Names.GlobRef.IndRef i ->
           let (mut, _) = i in
