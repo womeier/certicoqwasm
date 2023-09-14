@@ -3899,7 +3899,7 @@ Proof.
       destruct H0. subst v. econstructor; eauto.
 
       (* assert (Hsubval : subval_or_eq (Vfun rho fl f')). *)
-      Print name_in_fundefs.
+      (* Print name_in_fundefs. *)
 Admitted.
 
 Fixpoint fds_length (fds : fundefs) : nat :=
@@ -4446,7 +4446,7 @@ Proof with eauto.
           destruct (Hfds _ _ _ _ H12). subst. split; auto.
           apply nthN_In in H0.
           generalize dependent vs.
-          Search "nthN". admit. }
+          (* Search "nthN". *) admit. }
         (* x<>x1 *)
         { rewrite M.gso in Hfds'; auto. now apply Hfds in Hfds'. }
      }
