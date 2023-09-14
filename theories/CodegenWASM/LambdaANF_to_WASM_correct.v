@@ -5666,13 +5666,13 @@ Proof.
   inv H.
 Qed.
 
-Lemma translate_functions_exists_original_fun : forall f0 fns wasmFun e,
-  NoDup (collect_function_vars (Efun f0 e)) ->
+Lemma translate_functions_exists_original_fun : forall fds fds'' fns wasmFun e,
+  NoDup (collect_function_vars (Efun fds e)) ->
   (fix iter (fds : fundefs) : error (seq.seq wasm_function) :=
                match fds with
                | Fcons x _ xs e fds' =>
                    match
-                     translate_function nenv cenv (create_fname_mapping nenv (Efun f0 e)) x
+                     translate_function nenv cenv (create_fname_mapping nenv (Efun fds'' e)) x
                        xs e
                    with
                    | Err t => fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
@@ -5688,22 +5688,22 @@ Lemma translate_functions_exists_original_fun : forall f0 fns wasmFun e,
                           m2 a
                       end (fun following : seq.seq wasm_function => Ret (fn :: following)%SEQ))
                | Fnil => Ret []
-               end) f0 = Ret fns ->
+               end) fds = Ret fns ->
    In wasmFun fns ->
-   exists f t ys e, find_def f f0 = Some (t, ys, e) /\ match wasmFun.(type) with
+   exists f t ys e, find_def f fds = Some (t, ys, e) /\ match wasmFun.(type) with
                                                               | Tf args _ => length ys = length args
                                                               end.
 Proof.
-  induction f0; intros fns wasmFun e' Hnodup Htrans Hin. 2: { inv Htrans. inv Hin. }
+  induction fds; intros fds'' fns wasmFun e' Hnodup Htrans Hin. 2: { inv Htrans. inv Hin. }
   destruct (translate_function nenv cenv
-        (create_fname_mapping nenv (Efun (Fcons v f l e f0) e)) v l
+        (create_fname_mapping nenv (Efun _ e)) v l
         e) eqn:transF. inv Htrans. cbn.
   destruct ((fix iter (fds : fundefs) : error (seq.seq wasm_function) :=
               match fds with
               | Fcons x _ xs e0 fds' =>
                   match
                     translate_function nenv cenv
-                      (create_fname_mapping nenv (Efun (Fcons v f l e f0) e0)) x xs e0
+                      (create_fname_mapping nenv (Efun _ e0)) x xs e0
                   with
                   | Err t =>
                       fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
@@ -5721,7 +5721,7 @@ Proof.
                        (fun following : seq.seq wasm_function =>
                         Ret (fn :: following)%SEQ))
               | Fnil => Ret []
-              end) f0) eqn:Htra; inv Htrans. destruct Hin.
+              end) fds) eqn:Htra; inv Htrans. destruct Hin.
   { (* wasmFun is first fn *) subst w.
     exists v, f, l, e. destruct (M.elt_eq); last contradiction.
     split; auto.
@@ -5730,14 +5730,17 @@ Proof.
     destruct (translate_function_var _ _ _ _) eqn:HtransFvar. inv transF.
     inv transF. cbn. now rewrite map_length. }
   { (* wasmFun is not first fn *)
-    eapply IHf0 in H; auto. 2: { now inv Hnodup. }
+    eapply IHfds in H; auto. 2: { now inv Hnodup. }
     { destruct H as [f' [t' [ys' [e'' [Hfdef Hty]]]]].
       exists f', t', ys', e''. split; auto. rewrite -Hfdef.
       destruct (M.elt_eq f' v); auto. subst v. exfalso.
       inv Hnodup. apply H1. clear H2. cbn.
       eapply find_def_in_collection_function_vars. eassumption.
     }
-    { rewrite -Htra. Admitted.
+    eassumption.
+  }
+  Unshelve. assumption.
+Qed.
 
 Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num_funs module fenv main_lenv sr f exports,
   NoDup (collect_function_vars topExp) ->
@@ -5890,7 +5893,7 @@ Proof.
   rewrite map_map in HallocModule. cbn in HallocModule.
   rewrite nth_list_function_types_map in HallocModule. 2: {
     intros wFun Hin. destruct e; inv HtopExp'; try by (inv HtransFns; inv Hin).
-    have H' := translate_functions_exists_original_fun _ _ _ _ Hnodup HtransFns Hin.
+    have H' := translate_functions_exists_original_fun _ _ _ _ _ Hnodup HtransFns Hin.
     destruct H' as [f'' [t'' [ys'' [e'' [Hdef Hty]]]]].
     destruct (type wFun).
     inv HeRestr. apply H2 in Hdef. lia. }
