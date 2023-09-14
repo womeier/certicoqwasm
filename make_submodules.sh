@@ -27,12 +27,6 @@ cd submodules
 # make install
 # cd ..
 
-cd strong-induction
-echo "Building Strong-Induction"
-make
-make install
-cd ..
-
 cd wasmcert
 echo "Building wasmcert"
 clean

@@ -4,6 +4,3 @@
 [submodule "submodules/wasmcert"]
 	path = submodules/wasmcert
 	url = https://github.com/womeier/WasmCert-Coq
-[submodule "submodules/strong-induction"]
-	path = submodules/strong-induction
-	url = https://github.com/womeier/strong-induction
