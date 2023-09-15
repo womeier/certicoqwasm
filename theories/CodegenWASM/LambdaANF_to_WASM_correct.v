@@ -4156,7 +4156,7 @@ Proof.
   induction l; cbn; auto. f_equal. assumption.
 Qed.
 
-Lemma app_app {A B C}: forall (l:seq A) (f: A -> B) (g : B -> C),
+Lemma map_map_seq {A B C}: forall (l:seq A) (f: A -> B) (g : B -> C),
    [seq g (f a) | a <- l] = [seq (g v) | v <- [seq f a | a <- l]].
 Proof.
   induction l; intros; cbn; auto. f_equal. now apply IHl.
@@ -4771,7 +4771,7 @@ Proof with eauto.
        now rewrite types_map_repeat_eq. }
      dostep'. eapply r_invoke_native with (vcs:= map (fun a => (nat_to_value a)) args)
                                           (f':=f_before_IH); try eassumption.
-     reflexivity. unfold v_to_e_list. now rewrite -app_app.
+     reflexivity. unfold v_to_e_list. now rewrite -map_map_seq.
      reflexivity. reflexivity.
      { rewrite map_length length_is_size length_is_size size_map
                 -length_is_size -length_is_size.
@@ -5785,12 +5785,6 @@ Proof.
   Unshelve. assumption.
 Qed.
 
-Lemma map_map_seq {A B C} : forall (l : list A) (f : A -> B) (g : B -> C),
-  [seq (g b) | b <- [seq (f a) | a <- l]] = [seq (g (f a)) | a <- l].
-Proof.
-  induction l; intros; auto. cbn. now rewrite IHl.
-Qed.
-
 Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num_funs module fenv main_lenv sr f exports,
   NoDup (collect_function_vars topExp) ->
   expression_restricted e ->
@@ -5939,7 +5933,7 @@ Proof.
   rewrite Hw1 Hw2 in HallocModule. clear Hw1 Hw2.
   rewrite nth_list_function_types in HallocModule. 2: { cbn. lia. }
   rewrite nth_list_function_types in HallocModule; try lia.
-  rewrite map_map_seq in HallocModule. cbn in HallocModule.
+  rewrite -map_map_seq in HallocModule. cbn in HallocModule.
   rewrite nth_list_function_types_map in HallocModule. 2: {
     intros wFun Hin. destruct e; inv HtopExp'; try by (inv HtransFns; inv Hin).
     have H' := translate_functions_exists_original_fun _ _ _ _ _ Hnodup HtransFns Hin.
