@@ -39,7 +39,7 @@ depends: [
 # for wasmcert (not packaged for opam yet)
   "coq-itree" {= "5.1.1" }
   "coq-parseque" {= "0.1.0" }
-  "lineoise" {>= "1.4.0"}
+  "linenoise" {>= "1.4.0"}
   "cmdliner" {>= "1.1.0"}
   "mdx" {>= "1.9.0"}
 ]
