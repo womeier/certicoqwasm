@@ -79,8 +79,8 @@ jobs:
 
               cd wasmcert
               echo "Building wasmcert"
-              make
-              make install
+              dune build
+              dune install
               cd ..
 
               cd ..
