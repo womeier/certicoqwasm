@@ -19,7 +19,7 @@ jobs:
         opam_file:
           - 'coq-certicoq.opam'
         image:
-          - 'ghcr.io/womeier/certicoqwasm:5.0'
+          - 'ghcr.io/womeier/certicoqwasm:7.0'
       fail-fast: true
 
     # for gh pages
