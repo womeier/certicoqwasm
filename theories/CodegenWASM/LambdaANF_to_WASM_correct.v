@@ -3956,6 +3956,7 @@ Proof.
       econstructor; auto.
       assert (exists rho', v = Vfun rho' fds a). admit.
       destruct H0. subst v. econstructor; eauto.
+      4: reflexivity.
 
       (* assert (Hsubval : subval_or_eq (Vfun rho fl f')). *)
       (* Print name_in_fundefs. *)
@@ -4504,7 +4505,8 @@ Proof with eauto.
         { subst x1. rewrite M.gss in Hfds'. inv Hfds'. inv Hbsval.
           destruct (Hfds _ _ _ _ H12). subst. split; auto.
           apply nthN_In in H0.
-          generalize dependent vs.
+          generalize dependent vs. intros.
+
           (* Search "nthN". *) admit. }
         (* x<>x1 *)
         { rewrite M.gso in Hfds'; auto. now apply Hfds in Hfds'. }
@@ -4813,7 +4815,7 @@ Proof with eauto.
       assert (Hrelm: rel_mem_LambdaANF_Codegen (lenv:=lenv_before_IH) fenv nenv host_function
                               e rho'' sr f_before_IH fds). {
         unfold rel_mem_LambdaANF_Codegen. split.
-        { (* funs *) admit. }
+        { (* funs *) intros. admit. }
         { (* vars *)
           intros. destruct Hrel_m as [_ HrelVars].
           assert (In x ys). {(*
@@ -4968,11 +4970,25 @@ Definition interp_instantiate_wrapper (m : module)
   interp_instantiate empty_store_record m nil.
  *)
 
+
+Section MAIN.
+
 Import host.
 Import eqtype.
 Import Lia.
 Import Relations.Relation_Operators.
 Import ssreflect seq.
+
+From compcert Require Import Maps.
+
+Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show.
+Import Common.compM Common.Pipeline_utils.
+From Wasm Require Import instantiation_spec.
+
+Import ExtLib.Structures.Monad.
+Import MonadNotation.
+Import numerics.
+
 Variable cenv:LambdaANF.cps.ctor_env.
 Variable funenv:LambdaANF.cps.fun_env.
 Variable nenv : LambdaANF.cps_show.name_env.
@@ -4992,16 +5008,6 @@ Let host_state := host_state host_instance.
 
 Let reduce_trans := @reduce_trans host_function host_instance.
 
-
-From compcert Require Import Maps.
-
-Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show.
-Import Common.compM Common.Pipeline_utils.
-From Wasm Require Import instantiation_spec.
-
-Import ExtLib.Structures.Monad.
-Import MonadNotation.
-Import numerics.
 
 
 Ltac simpl_modulus := unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat.
@@ -5550,7 +5556,7 @@ Lemma init_tabs_only_changes_tables : forall s s' f l1 l2,
   s' = init_tabs host_function s (f_inst f) l1 l2 ->
      s_funcs s = s_funcs s'
   /\ s_mems s = s_mems s'
-  /\ s_globals s = s_globals s'. 
+  /\ s_globals s = s_globals s'.
 Proof.
   intros. subst. revert s f l2 H.
   induction l1; intros; cbn; auto.
@@ -6122,7 +6128,10 @@ Proof.
   assert (Hnodup: NoDup (collect_function_vars match e with
                                                | Efun _ _ => e
                                                | _ => Efun Fnil e
-                                               end)). admit.
+                                               end)). {
+    eapply NoDup_app_r in HvarsNodup. destruct e; try (by constructor).
+    assumption. eassumption.
+  }
   have HI := module_instantiate_INV_and_more_hold _ _ Fnil _ _ _ _ _ _ _ Hnodup HeRestr Logic.eq_refl
                                Logic.eq_refl Hmaxfuns LANF2WASM HflocsNil Hinst. clear Hfinst.
   destruct HI as [Hinv [HinstFuncs [pp_fn [e' [fns' [HsrFuncs [Hexpr' Hfns']]]]]]].
@@ -6181,7 +6190,9 @@ Proof.
                   _ _ _ _ HeRestr Hstep hs _ _ fds wasm_main_instr Hinv_before_IH.
   TODO: check e vs e0 richtige Variable *)
 
-  eexists. exists sr. subst. admit. admit. }
+  eexists. exists sr. subst. admit.
+  { eapply Forall_constructors_subterm. eassumption. constructor.
+    apply dsubterm_fds2. }}
 
   { (* top exp is not Efun _ _ *)
     rename f0 into fds. assert (fds = Fnil). {
@@ -6253,9 +6264,4 @@ Proof.
     eapply result_val_LambdaANF_Codegen_depends_on_finst; try eassumption. subst. cbn in Hfinst. congruence. Unshelve. apply (M.empty _).
 Admitted.
 
-(*
-Goal True.
-idtac "Assumptions:".
-Abort.
-Print Assumptions LambdaANF_Codegen_related.
- *)
+End MAIN.
