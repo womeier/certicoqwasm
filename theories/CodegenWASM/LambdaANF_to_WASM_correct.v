@@ -1425,62 +1425,83 @@ Definition map_injective (m : M.tree nat) := forall x y x' y',
   m ! y = Some y' ->
   x' <> y'.
 
+Definition domains_disjoint (m1 m2 : M.tree nat) := forall x,
+  (forall v1, m1 ! x = Some v1 -> m2 ! x = None) /\
+  (forall v2, m2 ! x = Some v2 -> m1 ! x = None).
+
+Lemma var_either_funvar_or_var : forall lenv v v' v'',
+  domains_disjoint lenv fenv ->
+  repr_var (lenv := lenv) nenv v v' ->
+  repr_funvar fenv nenv v v'' -> False.
+Proof.
+  intros.
+  inv H0. inv H1.
+  unfold translate_var in *. unfold translate_function_var in *.
+  destruct (lenv ! v) eqn:Heqn, (fenv ! v) eqn:Heqn'; inv H0; inv H2.
+  now apply H in Heqn.
+Qed.
+
 Lemma set_nth_constr_arg_deterministic : forall lenv y n instr instr',
+  domains_disjoint lenv fenv ->
   set_nth_constr_arg (lenv:=lenv) fenv nenv n y instr ->
   set_nth_constr_arg (lenv:=lenv) fenv nenv n y instr' -> instr = instr'.
 Proof.
-  intros ? ? ? ? ? H H0. generalize dependent instr'.
+  intros ? ? ? ? ? Hdisj H H0. generalize dependent instr'.
   induction H; intros. inv H0. repeat f_equal.
   inv H; inv H1.
   { f_equal. eapply repr_var_deterministic; eassumption. }
-  { admit. (* lenv fenv disjoint *) }
-  { admit. (* lenv fenv disjoint *) }
+  { exfalso. eapply var_either_funvar_or_var; eauto. }
+  { exfalso. eapply var_either_funvar_or_var; eauto. }
   { now have H' := repr_funvar_deterministic _ _ _ H0 H. }
-Admitted.
+Qed.
 
 Lemma Forall_statements_in_seq_deterministic : forall vs lenv instr instr' n,
+  domains_disjoint lenv fenv ->
   Forall_statements_in_seq' (set_nth_constr_arg (lenv:=lenv) fenv nenv) vs instr n ->
   Forall_statements_in_seq' (set_nth_constr_arg (lenv:=lenv) fenv nenv) vs instr' n -> instr = instr'.
 Proof.
-  induction vs; intros.
+  induction vs; intros ? ? ? ? Hdisj H H0.
   - inv H. now inv H0.
   - inv H. inv H0. assert (s' = s'0) by eauto. subst s'0.
-    now have H' := set_nth_constr_arg_deterministic _ _ _ _ _ H7 H8.
+    now have H' := set_nth_constr_arg_deterministic _ _ _ _ _ Hdisj H7 H8.
 Qed.
 
 Lemma repr_read_var_or_funvar_deterministic : forall x instr instr' lenv,
+  domains_disjoint lenv fenv ->
   repr_read_var_or_funvar (lenv:=lenv) fenv nenv x instr ->
   repr_read_var_or_funvar (lenv:=lenv) fenv nenv x instr' ->
   instr = instr'.
 Proof.
-  intros ? ? ? ? H H0. generalize dependent instr'.
+  intros ? ? ? ? Hdisj H H0. generalize dependent instr'.
   induction H; intros; inv H0; repeat f_equal.
   { now eapply repr_var_deterministic. }
-  { admit. (* lenv fenv disjoint *) }
-  { admit. (* lenv fenv disjoint *) }
+  { exfalso. eapply var_either_funvar_or_var; eauto. }
+  { exfalso. eapply var_either_funvar_or_var; eauto. }
   { now eapply repr_funvar_deterministic. }
-Admitted.
+Qed.
 
 Lemma repr_fun_args_Codegen_deterministic : forall lenv ys instr instr',
+  domains_disjoint lenv fenv ->
   repr_fun_args_Codegen (lenv:=lenv) fenv nenv ys instr ->
   repr_fun_args_Codegen (lenv:=lenv) fenv nenv ys instr' -> instr = instr'.
 Proof.
-  induction ys; intros.
+  induction ys; intros ? ? Hdisj H H0.
   - inv H. now inv H0.
   - inv H; inv H0.
     { assert (instr0 = instr) by eauto. subst.
       now have H' := repr_var_deterministic _ _ _ _ H2 H3. }
-    { admit. (* lenv fenv disjoint *) }
-    { admit. (* lenv fenv disjoint *) }
+    { exfalso. eapply var_either_funvar_or_var; eauto. }
+    { exfalso. eapply var_either_funvar_or_var; eauto. }
     { assert (instr0 = instr) by auto. subst.
       now have H' := repr_funvar_deterministic _ _ _  H3 H2. }
-Admitted.
+Qed.
 
 Lemma repr_expr_LambdaANF_Codegen_deterministic : forall lenv e e' e'',
+  domains_disjoint lenv fenv ->
   @repr_expr_LambdaANF_Codegen fenv nenv lenv e e' ->
   @repr_expr_LambdaANF_Codegen fenv nenv lenv e e'' -> e' = e''.
 Proof.
-  intros. generalize dependent e''.
+  intros ? ? ? ? Hdisj H H0. generalize dependent e''.
   induction H; intros; auto.
   { inv H0. now have H' := repr_var_deterministic _ _ _ _ H H2. }
   { inv H2. apply IHrepr_expr_LambdaANF_Codegen in H9.
@@ -1488,13 +1509,13 @@ Proof.
     now have H'' := repr_var_deterministic _ _ _ _ H10 H0. }
   { inv H4. apply IHrepr_expr_LambdaANF_Codegen in H14.
     have H' := repr_var_deterministic _ _ _ _ H H9. subst.
-    now have H' := Forall_statements_in_seq_deterministic _ _ _ _ _ H1 H12. }
+    now have H' := Forall_statements_in_seq_deterministic _ _ _ _ _ Hdisj H1 H12. }
   { now inv H0. }
   { inv H2. have H' := repr_var_deterministic _ _ _ _ H8 H. subst v'0.
     apply IHrepr_expr_LambdaANF_Codegen2 in H10. subst e'0.
     now apply IHrepr_expr_LambdaANF_Codegen1 in H9. }
-  { inv H1. have H' := repr_read_var_or_funvar_deterministic _ _ _ _ H7 H0. subst.
-    now have H' := repr_fun_args_Codegen_deterministic _ _ _ _ H6 H. }
+  { inv H1. have H' := repr_read_var_or_funvar_deterministic _ _ _ _ Hdisj H7 H0. subst.
+    now have H' := repr_fun_args_Codegen_deterministic _ _ _ _ Hdisj H6 H. }
 Qed.
 
 Lemma val_relation_wasm_representation_unique : forall rho v s f w w0,
