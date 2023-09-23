@@ -77,6 +77,9 @@ Fixpoint arg_list (n : nat) : list (immediate * value_type) :=
 Definition nat_to_i32 (n : nat) :=
   Wasm_int.Int32.repr (BinInt.Z.of_nat n).
 
+Definition N_to_i32 (n : N) :=
+  Wasm_int.Int32.repr (Z.of_N n).
+
 Definition nat_to_value (n : nat) :=
   VAL_int32 (nat_to_i32 n).
 
