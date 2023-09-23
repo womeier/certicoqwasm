@@ -2785,7 +2785,6 @@ Proof with eauto.
     right. intros. eapply global_var_write_read_same. eassumption. }
 Qed.
 
-
 Lemma memory_grow_reduce_already_enough_mem {lenv} : forall grow state s f gmp m,
   grow = grow_memory_if_necessary page_size ->
   INV lenv s f ->
@@ -2797,7 +2796,7 @@ Lemma memory_grow_reduce_already_enough_mem {lenv} : forall grow state s f gmp m
                  (Wasm_int.Int32.repr
                     (Wasm_int.Int32.signed
                        (Wasm_int.Int32.iadd (nat_to_i32 gmp)
-                          (nat_to_i32 (N.to_nat page_size))) ÷ 65536))
+                          (N_to_i32 page_size)) ÷ 65536))
                  (Wasm_int.Int32.repr (Z.of_nat (ssrnat.nat_of_bin (mem_size m)))) =
                false ->
   exists s', reduce_trans
@@ -2864,15 +2863,15 @@ Proof with eauto.
       unfold Wasm_int.Int32.lt in HenoughMem.
       destruct (zlt _ _) as [Ha|Ha]. 2: inv HenoughMem. clear HenoughMem.
       unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in Ha. cbn in Ha.
+
       rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: { unfold  Wasm_int.Int32.modulus,
        two_power_nat. cbn. apply mem_length_upper_bound in Hm5; cbn in Hm5. lia. }
-      rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: { simpl_modulus. cbn. lia. }
-      remember ( (Wasm_int.Int32.signed
-              (Wasm_int.Int32.repr
-                 (Z.of_nat v_gmp + Z.of_nat (Pos.to_nat 65536))) ÷ 65536))%Z as y.
+
+      remember (Wasm_int.Int32.signed (Wasm_int.Int32.repr (Z.of_nat v_gmp + 65536)) ÷ 65536)%Z as y.
       unfold Wasm_int.Int32.signed, Wasm_int.Int32.unsigned in Heqy.
       rewrite Z_nat_bin in Ha.
-      have Hlength := mem_length_upper_bound _ Hm5. unfold page_size, max_mem_pages in Hlength. cbn in Hlength.
+      have Hlength := mem_length_upper_bound _ Hm5.
+      unfold page_size, max_mem_pages in Hlength. cbn in Hlength.
       rewrite zlt_true in Heqy. 2: { cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. lia. simpl_modulus. cbn. lia. }
       { unfold Wasm_int.Int32.signed in Heqy. cbn in Heqy.
         rewrite Wasm_int.Int32.Z_mod_modulus_id in Heqy. 2: { simpl_modulus. cbn. lia. }
