@@ -92,13 +92,7 @@ Definition N_to_value (n : N) :=
 Definition translate_var (nenv : name_env) (lenv : localvar_env) (v : cps.var) (err : string): error immediate :=
   match M.get v lenv with
   | Some n => Ret n
-  | None => Err ("expected to find id for variable " ++ (show_tree (show_var nenv v)) ++ " in var mapping: " ++ err)
-  end.
-
-Definition translate_function_var (nenv : name_env) (fenv : fname_env) (v : cps.var) (err : string) : error immediate :=
-  match M.get v fenv with
-  | Some n => Ret n
-  | None => Err ("expected to find id for variable " ++ (show_tree (show_var nenv v)) ++ " in function mapping: " ++ err)
+  | None => Err ("expected to find id for variable " ++ (show_tree (show_var nenv v)) ++ " in var/fvar mapping: " ++ err)
   end.
 
 (* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)
@@ -203,7 +197,7 @@ Definition is_function_var (fenv : fname_env) (v : cps.var) : bool :=
 
 Definition instr_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (v : cps.var) : error basic_instruction :=
   if is_function_var fenv v
-    then fidx <- translate_function_var nenv fenv v "translate local var read: obtaining function id" ;;
+    then fidx <- translate_var nenv fenv v "translate local var read: obtaining function id" ;;
          Ret (BI_const (nat_to_value fidx)) (* passing id of function <var_name> *)
 
     else var <- translate_var nenv lenv v "instr_local_var_read: normal var";;
@@ -410,16 +404,16 @@ Fixpoint collect_local_variables (e : exp) : list cps.var :=
   | Ehalt _ => []
   end.
 
-(* locals U params are expected to be unique *)
-Fixpoint create_local_variable_mapping' (start_id : nat) (vars : list cps.var) (lenv : localvar_env) : localvar_env :=
+(* create mapping from vars to nats counting up from start_id, used for both fns and vars *)
+Fixpoint create_var_mapping (start_id : nat) (vars : list cps.var) (env : M.tree nat) : M.tree nat :=
    match vars with
-   | [] => lenv
-   | v :: l' => let mapping := create_local_variable_mapping' (1 + start_id) l' lenv in
+   | [] => env
+   | v :: l' => let mapping := create_var_mapping (1 + start_id) l' env in
                 M.set v start_id mapping
    end.
 
 Definition create_local_variable_mapping (vars : list cps.var) : localvar_env :=
-  create_local_variable_mapping' 0 vars (M.empty _).
+  create_var_mapping 0 vars (M.empty _).
 
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
@@ -431,7 +425,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   body_res <- translate_exp nenv cenv lenv fenv body ;;
 
   let arg_types := map (fun _ => T_i32) args in
-  fn_var <- translate_function_var nenv fenv name "translate function" ;;
+  fn_var <- translate_var nenv fenv name "translate function" ;;
 
   Ret
   {| fidx := fn_var
@@ -442,13 +436,6 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
    |}.
 
 (* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
-
-Fixpoint add_to_fname_mapping (names : list positive) (start_id : nat) (initial : fname_env) : fname_env :=
-  match names with
-  | [] => initial
-  | n :: names' => M.set n start_id (add_to_fname_mapping names' (1 + start_id) initial)
-  end.
-
 
 Definition collect_function_vars (e : cps.exp) : list cps.var :=
     match e with
@@ -464,7 +451,7 @@ Definition collect_function_vars (e : cps.exp) : list cps.var :=
 (* maps function names to ids (id=index in function list of module) *)
 Definition create_fname_mapping (nenv : name_env) (e : exp) : fname_env :=
   let fun_vars := collect_function_vars e in
-  add_to_fname_mapping fun_vars 4 (M.empty _).
+  create_var_mapping 4 fun_vars (M.empty _).
 
 Fixpoint list_function_types (n : nat) : list function_type :=
   match n with
