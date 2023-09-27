@@ -4578,7 +4578,11 @@ Proof with eauto.
               (map_util.M.set x v rho) ! a = Some v0 ->
               find_def a fds <> None ->
               v0 = Vfun (M.empty cps.val) fds a). {
-       intros. admit. }
+       intros. apply HfenvRho; auto.
+       rewrite M.gso in H6; auto. intro Hcontra. subst a.
+       apply notNone_Some in H8. apply HfenvWf in H8. destruct H8.
+       inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
+       apply Hd2 in H6. unfold translate_var in H8. now rewrite H6 in H8. }
 
      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint state _ _ _ Hfds' Hinv' H7 Hrm.
      destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]]. cbn in Hfinst.
@@ -4783,10 +4787,6 @@ Proof with eauto.
   - (* Eapp *)
     inv Hrepr_e. rename args' into args_instr. inv H8.
     { (* indirect call*)
-     assert (HfenvRho' : (forall (a : positive) (v : cps.val),
-          rho ! a = Some v ->
-          find_def a fds <> None ->
-          v = Vfun (M.empty cps.val) fds a)). admit.
       repeat rewrite map_cat. cbn.
       have Hrel := Hrel_m. destruct Hrel as [_ Hlocals].
       assert (Hocc: occurs_free (Eapp f t ys) f) by constructor.
