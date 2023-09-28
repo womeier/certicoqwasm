@@ -3971,7 +3971,7 @@ Inductive expression_restricted : cps.exp -> Prop :=
   | ER_fun : forall e fds,
       expression_restricted e ->
       (forall f t ys e', find_def f fds = Some (t, ys, e') ->
-                   Z.of_nat (length ys) < max_function_args)%Z ->
+                   Z.of_nat (length ys) < max_function_args /\ expression_restricted e')%Z ->
       (Z.of_nat (fds_length fds) < max_num_functions)%Z ->
       expression_restricted (Efun fds e)
   | ER_app : forall f ft ys,
@@ -4204,7 +4204,7 @@ Theorem repr_bs_LambdaANF_Codegen_related :
     (forall (a : positive) (v : cps.val), rho ! a = Some v -> find_def a fds <> None ->
              v = Vfun (M.empty cps.val) fds a) ->
 
-    (* restrict e s.t. e.g. all tags < i32.max etc *)
+    (* restricts e w.r.t. to size s.t. all vars fit in i32s *)
     expression_restricted e ->
     (* SSA form, let-bound vars not assigned yet *)
     (forall x, In x (collect_local_variables e) -> rho ! x = None) ->
@@ -4214,9 +4214,13 @@ Theorem repr_bs_LambdaANF_Codegen_related :
     forall (hs : host_state) (sr : store_record) (f : frame)
            (instructions : list basic_instruction),
 
-      (* fds only on toplevel so obtained for all funvalues *)
+      (* fds only on toplevel so obtained for all funvalues, obtained rho = M.empty *)
       (forall x rho' fds' f', rho ! x = Some (Vfun rho' fds' f') -> fds' = fds /\ rho' = M.empty _) ->
-
+      (forall a t ys e, find_def a fds = Some (t, ys, e) ->
+          expression_restricted e /\ (forall x, ~ occurs_free e x) /\ NoDup ys /\
+          (* TODO: bundle in sth. like mem_rel holds for functions *)
+          (exists e', repr_expr_LambdaANF_Codegen (lenv:=create_local_variable_mapping
+                      (ys ++ collect_local_variables e)) fenv nenv e e')) ->
       (* invariants *)
       INV lenv sr f ->
 
@@ -4233,7 +4237,7 @@ Proof with eauto.
   intros lenv rho v e n vars fds HlenvInjective HenvsDisjoint Hvars Hnodup
      HfenvWf HfenvRho HeRestr Hunbound Hev. subst vars.
   generalize dependent lenv.
-  induction Hev; intros lenv HlenvInjective HenvsDisjoint state sr fr instructions Hfds Hinv Hrepr_e Hrel_m.
+  induction Hev; intros lenv HlenvInjective HenvsDisjoint state sr fr instructions HfdsEqRhoEmpty Hfds Hinv Hrepr_e Hrel_m.
   - (* Econstr *)
     assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z). { now inv HeRestr. }
 
@@ -4280,7 +4284,7 @@ Proof with eauto.
       remember ({|f_locs := set_nth (VAL_int32 (wasm_value_to_i32 wal)) (f_locs fr) x' (VAL_int32 (wasm_value_to_i32 wal));
       f_inst := f_inst fr|}) as f_before_IH.
 
-      assert (Hfds_before_IH: (forall (x : positive) (rho'0 : M.t cps.val)
+      assert (HfdsEqRhoEmpty_before_IH: (forall (x : positive) (rho'0 : M.t cps.val)
         (fds' : fundefs) (f' : var), rho' ! x = Some (Vfun rho'0 fds' f') -> fds' = fds /\ rho'0 = M.empty _)). {
         intros x1 rho'0 fds' f' Hfds'.
         subst rho'.
@@ -4288,7 +4292,7 @@ Proof with eauto.
         (* x=x1 *)
         { subst x1. rewrite M.gss in Hfds'. inv Hfds'. }
         (* x<>x1 *)
-        { rewrite M.gso in Hfds'; auto. now apply Hfds in Hfds'. }
+        { rewrite M.gso in Hfds'; auto. now apply HfdsEqRhoEmpty in Hfds'. }
       }
 
       assert (Hinv_before_IH: INV lenv s_v f_before_IH). {
@@ -4392,7 +4396,7 @@ Proof with eauto.
           inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
           apply Hd2 in H0. unfold translate_var in H3. now rewrite H0 in H3. }
 
-      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint state _ _ _ Hfds_before_IH Hinv_before_IH Hexp Hrel_m_v.
+      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint state _ _ _ HfdsEqRhoEmpty_before_IH Hfds Hinv_before_IH Hexp Hrel_m_v.
       destruct IH as [rho_final [s_final [f_final [Hred_IH [Hval Hfinst]]]]]. cbn in Hfinst.
 
       exists rho_final, s_final, f_final. split.
@@ -4535,19 +4539,19 @@ Proof with eauto.
         }
      }}
 
-     assert (Hfds': (forall (x1 : positive) (rho' : M.t cps.val) (fds' : fundefs) (f' : var),
+     assert (HfdsEqRhoEmpty': (forall (x1 : positive) (rho' : M.t cps.val) (fds' : fundefs) (f' : var),
       (map_util.M.set x v rho) ! x1 = Some (Vfun rho' fds' f') -> fds' = fds /\ rho' = M.empty _)). {
         intros x1 rho' fds' f' Hfds'.
         destruct (var_dec x x1).
         (* x=x1 *)
         { subst x1. rewrite M.gss in Hfds'. inv Hfds'. inv Hbsval.
-          destruct (Hfds _ _ _ _ H12). subst. split; auto.
+          destruct (HfdsEqRhoEmpty _ _ _ _ H12). subst. split; auto.
           apply nthN_In in H0.
           generalize dependent vs. intros.
 
           (* Search "nthN". *) admit. }
         (* x<>x1 *)
-        { rewrite M.gso in Hfds'; auto. now apply Hfds in Hfds'. }
+        { rewrite M.gso in Hfds'; auto. now apply HfdsEqRhoEmpty in Hfds'. }
      }
 
      assert (Hinv': INV lenv sr {| f_locs := set_nth (wasm_deserialise bs T_i32)
@@ -4584,7 +4588,7 @@ Proof with eauto.
        inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
        apply Hd2 in H6. unfold translate_var in H8. now rewrite H6 in H8. }
 
-     have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint state _ _ _ Hfds' Hinv' H7 Hrm.
+     have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint state _ _ _ HfdsEqRhoEmpty' Hfds Hinv' H7 Hrm.
      destruct IH as [rho' [sr' [f' [Hred [Hval Hfinst]]]]]. cbn in Hfinst.
 
      eexists rho', sr', f'. cbn. split.
@@ -4670,7 +4674,7 @@ Proof with eauto.
         now apply NoDup_app_middle in Hnodup.
       }
 
-      have IH := IHHev Hnodup' HfenvRho HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint state _ _ _ Hfds Hinv H9 Hrel.
+      have IH := IHHev Hnodup' HfenvRho HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint state _ _ _ HfdsEqRhoEmpty Hfds Hinv H9 Hrel.
       destruct IH as [rho' [sr' [fr' [Hstep Hval]]]].
 
     exists rho', sr', fr'. split.
@@ -4835,7 +4839,7 @@ Proof with eauto.
        have Hfargs := fun_args_reduce state _ _ _ _ _ _ _ _ _ Hinv H0 HfenvWf HfenvRho Hrel_m H7.
        destruct Hfargs as [args [HfargsRed HfargsRes]].
 
-       remember (create_local_variable_mapping (ys ++(collect_local_variables e))) as lenv_before_IH.
+       remember (create_local_variable_mapping (xs ++(collect_local_variables e))) as lenv_before_IH.
 
        (* prepare IH *)
        remember (Build_frame
@@ -4846,7 +4850,7 @@ Proof with eauto.
        assert (Hfds_before_IH: (forall (x : positive) (rho' : M.t cps.val)
               (fds' : fundefs) (f' : var), rho'' ! x = Some (Vfun rho' fds' f') ->
                                      fds' = fds /\ rho' = M.empty _)). {
-         assert (fl = fds). { eapply Hfds. eassumption. } subst fl.
+         assert (fl = fds). { eapply HfdsEqRhoEmpty. eassumption. } subst fl.
          intros.
          (* Check In_decidable. wsl. tricky *) admit. }
 
@@ -4855,10 +4859,13 @@ Proof with eauto.
           intros. inv H3. apply var_mapping_list_lt_length in H5.
           rewrite app_length in H5.
           apply const_val_list_length_eq in HfargsRes.
-          apply get_list_length_eq in H0. rewrite <- HfargsRes.
-          rewrite <- H0. assumption. }
+          rewrite <- HfargsRes.
+          apply set_lists_length_eq in H2. rewrite <- H2. assumption. }
 
-      assert (Hexpr: exists e', repr_expr_LambdaANF_Codegen (lenv:=lenv_before_IH) fenv nenv e e'). { admit. (* from global assumption about fds *) }
+      assert (Hexpr: exists e', repr_expr_LambdaANF_Codegen (lenv:=lenv_before_IH) fenv nenv e e'). {
+        assert (fds = fl). { apply HfdsEqRhoEmpty in H. now destruct H. } subst fl.
+        apply Hfds in H1. destruct H1 as [? [? [? ?]]].
+        destruct H6 as [e' He']. exists e'. subst. assumption. }
       destruct Hexpr as [e' Hexpr].
       assert (Hrelm: rel_mem_LambdaANF_Codegen (lenv:=lenv_before_IH) fenv nenv host_function
                               e rho'' sr f_before_IH fds). {
@@ -4877,14 +4884,21 @@ Proof with eauto.
           { rename x into y. destruct (In_nthN _ _ _ H5). rename x into i0.
             have H' := get_list_nth_get _ _ _ _ _ H0 H6. destruct H' as [v1 [Hnth1 Hrho1]].
             assert (v1 = val) by congruence. subst v1. clear Hrho1.
-            apply get_list_set_lists in H2. admit. admit. }
+            apply get_list_set_lists in H2. admit.
+            { assert (fl = fds). { apply HfdsEqRhoEmpty in H. now destruct H. }
+              subst fl. apply Hfds in H1. now destruct H1 as [? [? ?]]. } }
           split.
           { clear Hlocs. (* args are already on the stack *)
             unfold stored_in_locals. subst lenv_before_IH.
             destruct (In_nth_error _ _ H5) as [j Hj].
             exists j. split.
+
             intro. eapply var_mapping_list_lt_length_nth_error_idx with (n := 0). (* nodup *) admit.
-            rewrite nth_error_app1; auto. apply nth_error_Some. congruence.
+            rewrite nth_error_app1; auto. admit. (* false: need to make leap from passing xs to ys *)
+            apply nth_error_Some. { assert (length xs = length ys).
+              apply set_lists_length_eq in H2. apply get_list_length_eq in H0.
+              now rewrite H2 H0. intro Hcontra. apply nth_error_Some in Hcontra; auto.
+              rewrite H6. apply nth_error_Some. congruence. }
             subst f_before_IH. cbn.
             rewrite nth_error_app1. 2: {
               rewrite length_is_size size_map -length_is_size.
@@ -4901,7 +4915,9 @@ Proof with eauto.
           admit.
       }}
 
-      assert (HeRestr' : expression_restricted e). { inv HeRestr. admit. (* must follow somehow from Efun *) }
+      assert (HeRestr' : expression_restricted e). {
+        assert (fl = fds). { apply HfdsEqRhoEmpty in H. now destruct H. }
+        subst fl. apply Hfds in H1. now destruct H1. }
 
       assert (Hunbound': (forall x : var, In x (collect_local_variables e) -> rho'' ! x = None)). admit.
 
@@ -4920,7 +4936,7 @@ Proof with eauto.
   rho'' ! a = Some v ->
   find_def a fds <> None -> v = Vfun (M.empty cps.val) fds a). admit.
 
-      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _  HlenvInjective' HenvsDisjoint' state _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
+      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _  HlenvInjective' HenvsDisjoint' state _ _ _ Hfds_before_IH Hfds Hinv_before_IH Hexpr Hrelm.
       destruct IH as [rho_final [sr_final [fr_final [Hred [Hval Hfinst]]]]].
       (* execute *)
       exists rho_final, sr_final, fr_final. split.
@@ -5247,9 +5263,6 @@ Proof.
   - cbn in H. inv H. cbn in H2. apply reduce_trans_const_eq in H2. cbn. inv H2.
     erewrite (IHfns l'); eauto.
 Qed.
-
-
-Require Import FunctionalExtensionality.
 
 Lemma length_list_function_types : forall n,
   length (list_function_types n) = S n.
@@ -6136,7 +6149,7 @@ Theorem LambdaANF_Codegen_related :
   bstep_e (M.empty _) cenv (M.empty _) e v n ->
   (* compilation function *)
   LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, lenv) ->
-  (* constructors welformed *)
+  (* constructors wellformed *)
   correct_cenv_of_exp cenv e ->
   (* vars unique (guaranteed by previous stage) *)
   vars = ((collect_all_local_variables e) ++ (collect_function_vars e))%list ->
@@ -6270,10 +6283,17 @@ Proof.
       rewrite <- app_assoc in HvarsNodup. now eapply NoDup_app_middle in HvarsNodup.
     }
 
-    assert (Hfds_before_IH: (forall (x : positive) (rho' : M.t val)
+    assert (HfdsEqRhoEmpty_before_IH: (forall (x : positive) (rho' : M.t val)
            (fds' : fundefs) (f' : var),
            (M.empty _) ! x = Some (Vfun rho' fds' f') -> fds' = Fnil
                                                       /\ rho' = M.empty _)). { intros. inv H. }
+
+    assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e : exp),
+      find_def a Fnil = Some (t, ys, e) ->
+      expression_restricted e /\ (forall x : var, ~ occurs_free e x) /\ NoDup ys /\
+      (exists e' : seq basic_instruction, repr_expr_LambdaANF_Codegen
+        (lenv:=create_local_variable_mapping (ys ++ collect_local_variables e)) fenv nenv e e')). {
+        intros ? ? ? ? Hcontra. inv Hcontra. }
 
     assert (Hunbound : (forall x : var,
          In x (collect_local_variables e) ->
@@ -6304,8 +6324,8 @@ Proof.
     (* coq bug? HMAIN in 2 steps *)
     have HMAIN' := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env
                     rep_env _ host_instance _ (M.empty _) _ _ _ _ _ HlenvInjective HenvsDisjoint
-                     Logic.eq_refl _ HfenvWf HfenvRho HeRestr Hunbound Hstep hs _ _ _ Hfds_before_IH
-                      Hinv_before_IH Hexpr Hrelm.
+                     Logic.eq_refl _ HfenvWf HfenvRho HeRestr Hunbound Hstep hs _ _ _
+                      HfdsEqRhoEmpty_before_IH Hfds Hinv_before_IH Hexpr Hrelm.
     have HMAIN := HMAIN' Hnodup'.
     destruct HMAIN as [rho' [s' [f' [Hred [Hval Hfinst]]]]]. cbn.
     exists rho', s'. split.
