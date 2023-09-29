@@ -1403,63 +1403,6 @@ Proof.
   { right. congruence. }
 Qed.
 
-
-Lemma repr_var_deterministic : forall lenv v v' v'',
-  repr_var (lenv:=lenv) nenv v v' ->
-  repr_var (lenv:=lenv) nenv v v'' -> v' = v''.
-Proof.
-  intros ? ? ? ? Hv1 Hv2.
-  inv Hv1. inv Hv2. unfold translate_var in H, H0.
-  destruct (lenv ! v); inv H; inv H0. reflexivity.
-Qed.
-
-Lemma repr_funvar_deterministic : forall v v' v'',
-  repr_funvar fenv nenv v v' ->
-  repr_funvar fenv nenv v v'' -> v' = v''.
-Proof.
-  intros ? ? ? Hv1 Hv2.
-  inv Hv1. inv Hv2. unfold translate_var in H, H0.
-  destruct (fenv ! v); inv H; inv H0. reflexivity.
-Qed.
-
-Definition map_injective (m : M.tree nat) := forall x y x' y',
-  x <> y ->
-  m ! x = Some x' ->
-  m ! y = Some y' ->
-  x' <> y'.
-
-Lemma val_relation_wasm_representation_unique : forall rho v s f w w0,
-  repr_val_LambdaANF_Codegen fenv nenv host_function rho v s f w ->
-  repr_val_LambdaANF_Codegen fenv nenv host_function rho v s f w0 -> w = w0.
-Proof.
-  intros. inv H.
-  { (* val_ptr *)
-    have indPrinciple := repr_val_constr_args_LambdaANF_Codegen_mut fenv nenv host_function
-    (fun (rho : LambdaANF.eval.env) (v : cps.val) (s : datatypes.store_record host_function)
-     (f : frame) (w : wasm_value) (H: repr_val_LambdaANF_Codegen fenv nenv host_function rho v s f w) =>
-         (forall w',
-             repr_val_LambdaANF_Codegen fenv nenv host_function rho v s f w' -> w = w')
-    )
-    (fun (rho : LambdaANF.eval.env) (l : seq cps.val) (s : datatypes.store_record host_function) (f : frame) (i : immediate)
-                       (H: repr_val_constr_args_LambdaANF_Codegen fenv nenv host_function rho l s f i) =>
-         (forall w' a,
-             repr_val_constr_args_LambdaANF_Codegen fenv nenv host_function rho l s f a -> a = i)
-    ).
-    eapply indPrinciple in H7; intros; clear indPrinciple.
-    { assert (Hnoinfo: 4 + addr = 4 + (wasm_value_to_immediate w0)) by apply H7. clear Hnoinfo.
-      inv H0. cbn in H7. f_equal. lia. }
-    { inv H5; eauto. apply H in H20. f_equal. lia. eassumption. }
-    { inv H. now have H' := repr_funvar_deterministic _ _ _ r H10. }
-    { admit. }
-    { inv H8. apply H5 in H21. lia. assumption. }
-    { inv H0. assumption. }
-    { assumption. } }
-  { (* val_funidx *)
-    inv H0. rewrite H10 in H3. inv H3.
-    now have H' := repr_funvar_deterministic _ _ _ H1 H7. }
-Admitted.
-
-(* TODO: remove duplicate *)
 Lemma update_glob_keeps_memory_intact : forall sr sr' fr v j,
   supdate_glob (host_function:=host_function) sr (f_inst fr) j v = Some sr' ->
     sr.(s_mems) = sr'.(s_mems).
@@ -3832,11 +3775,11 @@ Proof.
   - cbn. inv H. erewrite IHvs; eauto. reflexivity.
 Qed.
 
-Lemma const_val_list_nth_error : forall rho vs s f ns v j w,
+Lemma const_val_list_nth_error : forall rho vs s f ns v j,
   const_val_list rho vs s f ns ->
   nth_error vs j = Some v ->
-  repr_val_LambdaANF_Codegen fenv nenv host_function rho v s f w ->
-  nth_error [seq nat_to_value i | i <- ns] j =
+  exists w, repr_val_LambdaANF_Codegen fenv nenv host_function rho v s f w /\
+            nth_error [seq nat_to_value i | i <- ns] j =
                Some (VAL_int32 (wasm_value_to_i32 w)).
 Proof.
   induction vs; intros.
@@ -3844,9 +3787,7 @@ Proof.
   - inv H. destruct j.
     { (* j=0*)
       inv H0. cbn.
-      intros.
-      assert (w = w0). { eapply val_relation_wasm_representation_unique; eauto. }
-      subst w0. reflexivity. }
+      intros. exists w. eauto. }
     { (* j=S j'*)
       cbn. eapply IHvs; eauto. }
 Qed.
@@ -4043,6 +3984,12 @@ Proof.
   { (* a<>x *) rewrite M.gso in H; auto.
     apply IHl in H. lia. }
 Qed.
+
+Definition map_injective (m : M.tree nat) := forall x y x' y',
+  x <> y ->
+  m ! x = Some x' ->
+  m ! y = Some y' ->
+  x' <> y'.
 
 Definition domains_disjoint (m1 m2: M.tree nat) :=
   (forall x v1, m1 ! x = Some v1 -> m2 ! x = None) /\
@@ -4243,6 +4190,27 @@ Proof.
   (* x=v *) subst. eauto.
   (* x<>v *) rewrite M.gso in H; auto. now eapply IHfds.
 Qed.
+
+Lemma set_lists_nth_error {A} : forall xs (vs : list A) rho rho' x v,
+  set_lists xs vs rho = Some rho' ->
+  In x xs ->
+  rho' ! x = Some v ->
+  exists k, nth_error vs k = Some v /\ nth_error xs k = Some x.
+Proof.
+  induction xs; intros.
+  - inv H0.
+  - destruct H0.
+    { (* a=v *)
+      subst a. destruct vs. inv H. cbn in H. destruct (set_lists xs vs rho) eqn:Heqn; inv H.
+      rewrite M.gss in H1. inv H1. exists 0. now cbn. }
+    { (* a<>v *)
+      destruct vs. inv H. cbn in H. destruct (set_lists xs vs rho) eqn:Heqn; inv H.
+      destruct (var_dec a x). subst.
+      - rewrite M.gss in H1; inv H1. exists 0; now cbn. rewrite M.gso in H1; auto.
+        destruct (IHxs _ _ _ _ _ Heqn H0 H1) as [k [Hk1 Hk2]]. exists (S k). now cbn.
+     }
+Qed.
+
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Codegen_related :
@@ -4601,7 +4569,6 @@ Proof with eauto.
         { subst x1. rewrite M.gss in Hfds'. inv Hfds'. inv Hbsval.
           destruct (HfdsEqRhoEmpty _ _ _ _ H12). subst. split; auto.
           apply nthN_In in H0.
-          generalize dependent vs. intros.
           (* Search "nthN". *) admit. }
         (* x<>x1 *)
         { rewrite M.gso in Hfds'; auto. now apply HfdsEqRhoEmpty in Hfds'. }
@@ -4932,54 +4899,37 @@ Proof with eauto.
       assert (Hrelm: rel_mem_LambdaANF_Codegen (lenv:=lenv_before_IH) fenv nenv host_function
                               e rho'' sr f_before_IH fds). {
         unfold rel_mem_LambdaANF_Codegen. split.
-        { (* funs *) intros. admit. }
+        { (* funs *) intros.
+          assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. }
+          subst rho'. admit. }
         { (* vars *)
           intros. destruct Hrel_m as [_ HrelVars].
           assert (In x xs). {
             apply Hfds in H1. now destruct H1 as [? [Hxxs ?]]. }
-            destruct (get_set_lists_In_xs _ _ _ _ _ H5 H2) as [v' Hv'].
-            have H' := set_lists_In _ _ _ _ _ _ H5 Hv' H2. exists v'.
-            destruct (get_list_In_val _ _ _ _ H0 H') as [y [HyIn Hyval]].
-            apply In_nth_error in H'. destruct H' as [k H'].
-            have H'' := const_val_list_nth_error _ _ _ _ _ _ _ _ HfargsRes H'.
-            admit. }}
-          (* assert (Hocc: occurs_free (Eapp f t ys) x). { constructor. }
-          apply HrelVars in Hocc.
-          destruct Hocc as [val [wal [Hrho [Hlocs Hval]]]].
-          exists val, wal. split.
-          { rename x into y. destruct (In_nthN _ _ _ H5). rename x into i0.
-            have H' := get_list_nth_get _ _ _ _ _ H0 H6. destruct H' as [v1 [Hnth1 Hrho1]].
-            assert (v1 = val) by congruence. subst v1. clear Hrho1.
-            apply get_list_set_lists in H2. admit.
-            { assert (fl = fds). { apply HfdsEqRhoEmpty in H. now destruct H. }
-              subst fl. apply Hfds in H1. now destruct H1 as [? [? ?]]. } }
-          split.
-          { clear Hlocs. (* args are already on the stack *)
-            unfold stored_in_locals. subst lenv_before_IH.
-            destruct (In_nth_error _ _ H5) as [j Hj].
-            exists j. split.
+          destruct (get_set_lists_In_xs _ _ _ _ _ H5 H2) as [v' Hv'].
+          have H' := set_lists_nth_error _ _ _ _ _ _ H2 H5 Hv'.
+          destruct H' as [k [Hvk Hxk]].
+          have H'' := const_val_list_nth_error _ _ _ _ _ _ _ HfargsRes Hvk.
+          destruct H'' as [w [Hw Hnth]].
+          exists v', w. split; auto. split; auto.
 
-            intro. eapply var_mapping_list_lt_length_nth_error_idx with (n := 0). (* nodup *) admit.
-            rewrite nth_error_app1; auto. admit. (* false: need to make leap from passing xs to ys *)
-            apply nth_error_Some. { assert (length xs = length ys).
-              apply set_lists_length_eq in H2. apply get_list_length_eq in H0.
-              now rewrite H2 H0. intro Hcontra. apply nth_error_Some in Hcontra; auto.
-              rewrite H6. apply nth_error_Some. congruence. }
-            subst f_before_IH. cbn.
-            rewrite nth_error_app1. 2: {
-              rewrite length_is_size size_map -length_is_size.
-              apply get_list_length_eq in H0.
-              apply const_val_list_length_eq in HfargsRes.
-              rewrite -HfargsRes -H0.
-              apply nth_error_Some. intro. now rewrite H6 in Hj. }
-            eapply const_val_list_nth_error; eauto.
-            rewrite <- nthN_nth_error in Hj.
-            destruct (get_list_nth_get _ _ _ _ _ H0 Hj) as [v' [Hv1 Hv2]].
-            rewrite nthN_nth_error in Hv1.
-            assert (v' = val) by congruence. subst v'. assumption.
-          }
+          unfold stored_in_locals. subst lenv_before_IH f_before_IH. exists k.
+          split. {
+            intros. unfold create_local_variable_mapping.
+            rewrite (var_mapping_list_lt_length_nth_error_idx _ k); auto.
+            apply Hfds in H1. destruct H1 as [_ [_ [HnodupE _]]].
+            rewrite catA in HnodupE. apply NoDup_app_l in HnodupE. assumption.
+            rewrite nth_error_app1; auto. apply nth_error_Some. intro.
+            rewrite H6 in Hxk. inv Hxk. }
+          cbn.
+          rewrite nth_error_app1. 2: {
+            rewrite length_is_size size_map -length_is_size.
+            apply const_val_list_length_eq in HfargsRes.
+            rewrite -HfargsRes.
+            apply nth_error_Some. congruence. } assumption.
+          subst f_before_IH.
           admit.
-      }} *)
+          }}
 
       assert (HeRestr' : expression_restricted e). {
         apply Hfds in H1. now destruct H1. }
