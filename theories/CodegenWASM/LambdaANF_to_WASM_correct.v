@@ -4191,6 +4191,7 @@ Proof.
   induction l; intros; cbn; auto. f_equal. now apply IHl.
 Qed.
 
+(* TODO: consider using def_funs_eq, def_funs_neq *)
 Lemma def_funs_find_def : forall fds fds' rho f,
   find_def f fds <> None ->
     (def_funs fds' fds rho rho) ! f = Some (Vfun rho fds' f).
@@ -4198,6 +4199,16 @@ Proof.
   induction fds; intros; last contradiction.
   cbn in H. destruct (M.elt_eq f0 v).
   (* f0 = v *) subst. cbn. now rewrite M.gss.
+  (* f0 <> v *) cbn. now rewrite M.gso.
+Qed.
+
+Lemma def_funs_not_find_def : forall fds fds' rho f,
+  find_def f fds = None ->
+    (def_funs fds' fds rho rho) ! f = rho ! f.
+Proof.
+  induction fds; intros ? ? ? H; auto.
+  cbn in H. destruct (M.elt_eq f0 v).
+  (* f0 = v *) inv H.
   (* f0 <> v *) cbn. now rewrite M.gso.
 Qed.
 
@@ -4210,6 +4221,27 @@ Proof.
   destruct (M.elt_eq f0 v).
   (* f0=v *) subst. now left.
   (* f0<>v *) right. apply IHfds; auto.
+Qed.
+
+Lemma find_def_not_in_collect_function_vars : forall fds f e,
+  find_def f fds = None ->
+  ~ In f (collect_function_vars (Efun fds e)).
+Proof.
+  induction fds; intros ? ? Hfd Hcontra; last auto.
+  cbn in Hfd. destruct (M.elt_eq f0 v).
+  (* f0=v *) subst. inv Hfd.
+  (* f0<>v *) destruct Hcontra; auto. eapply IHfds; eauto.
+  Unshelve. auto.
+Qed.
+
+Lemma def_funs_find_def' : forall fds fds' x v rho,
+ (def_funs fds' fds rho rho) ! x = Some v ->
+  (exists f, find_def x fds = Some f) \/ rho ! x = Some v.
+Proof.
+  induction fds; intros; last auto. cbn in H. cbn.
+  destruct (M.elt_eq x v).
+  (* x=v *) subst. eauto.
+  (* x<>v *) rewrite M.gso in H; auto. now eapply IHfds.
 Qed.
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
@@ -4570,7 +4602,6 @@ Proof with eauto.
           destruct (HfdsEqRhoEmpty _ _ _ _ H12). subst. split; auto.
           apply nthN_In in H0.
           generalize dependent vs. intros.
-
           (* Search "nthN". *) admit. }
         (* x<>x1 *)
         { rewrite M.gso in Hfds'; auto. now apply HfdsEqRhoEmpty in Hfds'. }
@@ -4869,7 +4900,22 @@ Proof with eauto.
        assert (Hfds_before_IH: (forall (x : positive) (rho' : M.t cps.val)
               (fds' : fundefs) (f' : var), rho'' ! x = Some (Vfun rho' fds' f') ->
                                      fds' = fds /\ rho' = M.empty _)). {
-         intros. (* Check In_decidable. wsl. tricky *) admit. }
+         intros.
+         assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. } subst rho'.
+         assert (Hdec: decidable_eq var). {
+           intros n m. unfold Decidable.decidable. now destruct (var_dec n m). }
+         have H' := In_decidable Hdec x xs. clear Hdec. destruct H'.
+         { (* In x xs *)
+           have H' := set_lists_In _ _ _ _ _ _ H5 H3 H2.
+           destruct (get_list_In_val _ _ _ _ H0 H') as [y [Hin Hrho]].
+           apply HfdsEqRhoEmpty in Hrho. now destruct Hrho. }
+         { (* ~In x xs *)
+           have H' := set_lists_not_In _ _ _ _ _ H2 H5. rewrite H3 in H'.
+           erewrite def_funs_find_def in H'. now inv H'.
+           intro Hcontra.
+           apply def_funs_find_def' in H'. destruct H'.
+           now destruct H6. inv H6. }
+       }
 
        assert (Hinv_before_IH : INV lenv_before_IH sr f_before_IH). {
           subst. eapply init_local_preserves_INV; try eassumption; try reflexivity.
@@ -4938,7 +4984,26 @@ Proof with eauto.
       assert (HeRestr' : expression_restricted e). {
         apply Hfds in H1. now destruct H1. }
 
-      assert (Hunbound': (forall x : var, In x (collect_local_variables e) -> rho'' ! x = None)). admit.
+      assert (Hunbound': (forall x : var, In x (collect_local_variables e) -> rho'' ! x = None)). {
+        intros.
+        assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. } subst rho'.
+        assert (~ exists v, find_def x fds = Some v). {
+          intro Hcontra. destruct Hcontra as [? Hfd].
+          assert (Hfd': find_def x fds <> None) by congruence.
+          clear Hfd. rename Hfd' into Hfd.
+          eapply find_def_in_collect_function_vars in Hfd.
+          apply Hfds in H1. destruct H1 as [_ [_ [HnodupE _]]].
+          apply NoDup_app_r in HnodupE.
+          eapply NoDup_app_In in HnodupE; eauto. }
+        assert (Hfd: find_def x fds = None). { destruct (find_def x fds); eauto. exfalso. eauto. } clear H5.
+       apply def_funs_not_find_def with (fds':=fds) (rho:=M.empty _) in Hfd.
+       assert (HxIn: ~ In x xs). {
+         intro Hcontra. apply Hfds in H1. destruct H1 as [_ [_ [HnodupE _]]].
+         rewrite catA in HnodupE. apply NoDup_app_l in HnodupE.
+         eapply NoDup_app_In in HnodupE; eauto. }
+       have H'' := set_lists_not_In _ _ _ _ _ H2 HxIn. rewrite <- H''.
+       now rewrite Hfd.
+      }
 
       assert (HlenvInjective': map_injective lenv_before_IH). {
         subst lenv_before_IH.
