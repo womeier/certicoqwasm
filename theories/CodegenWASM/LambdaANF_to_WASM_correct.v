@@ -449,18 +449,18 @@ Inductive repr_val_LambdaANF_Codegen: LambdaANF.eval.env -> (* rho *)
     (* arguments are set properly *)
     repr_val_constr_args_LambdaANF_Codegen rho vs sr fr (4 + addr) ->
     repr_val_LambdaANF_Codegen rho (LambdaANF.cps.Vconstr t vs) sr fr (Val_ptr addr)
-| Rfunction_v : forall x rho rho' env fds f sr fr tag vs e e' idx ftype ts body,
+| Rfunction_v : forall x rho rho' env fds f sr fr tag xs e e' idx ftype ts body,
       repr_funvar f idx ->
       M.get x rho = Some (Vfun rho' fds f) ->
-      find_def f fds = Some (tag, vs, e) ->
+      find_def f fds = Some (tag, xs, e) ->
       (* types of local vars: all i32 *)
       ts = repeat T_i32 (length (collect_local_variables e)) ->
       (* find runtime representation of function *)
       List.nth_error sr.(s_funcs) idx = Some (FC_func_native (f_inst fr) ftype ts body) ->
-      ftype = Tf (List.map (fun _ => T_i32) vs) [] ->
+      ftype = Tf (List.map (fun _ => T_i32) xs) [] ->
       body = e' ->
       repr_expr_LambdaANF_Codegen e e'
-        (lenv:=create_local_variable_mapping (collect_local_variables e)) ->
+        (lenv:=create_local_variable_mapping (xs ++ collect_local_variables e)) ->
       repr_val_LambdaANF_Codegen rho (LambdaANF.cps.Vfun env fds f) sr fr (Val_funidx idx)
 
 with repr_val_constr_args_LambdaANF_Codegen : LambdaANF.eval.env -> list LambdaANF.cps.val -> store_record -> frame -> immediate -> Prop :=
@@ -4576,217 +4576,219 @@ Proof with eauto.
       eapply reduce_trans_label. unfold to_e_list. apply Hred.
      } unfold load_i32 in H18. rewrite Hload in H18. inv H18. split; eassumption. }
   - (* Eapp *)
-    inv Hrepr_e. rename args' into args_instr. inv H8.
-    { (* indirect call*)
-      repeat rewrite map_cat. cbn.
-      have Hrel := Hrel_m. destruct Hrel as [_ Hlocals].
-      assert (Hocc: occurs_free (Eapp f t ys) f) by constructor.
-      apply Hlocals in Hocc. destruct Hocc as [val [wal [Hrho [[j [Htrans Hwal]] Hval]]]].
-      inv H3. rewrite Htrans in H4. inv H4.
-      rewrite H in Hrho. inv Hrho. inv Hval.
-      rewrite H1 in H9. symmetry in H9. inv H9. (* same e from find_def! *)
-      rename i into locIdx.
-      have Hfargs := fun_args_reduce state _ _ _ _ _ _ _ _ _ Hinv H0 HfenvWf HfenvRho Hrel_m H7.
-     destruct Hfargs as [args [HfargsRed HfargsRes]].
+    { inv Hrepr_e. rename args' into args_instr.
+      (* treat direct + indirect calls in one *)
+      assert (Hval: exists fidx,
+        reduce_trans (state, sr, fr, [AI_basic instr])
+                     (state, sr, fr, [AI_basic (BI_const (nat_to_value fidx))])
+     /\ repr_val_LambdaANF_Codegen fenv nenv _ rho (Vfun rho fds f') sr fr (Val_funidx fidx)). {
+      inv H8.
+      { (* indirect call *)
+        assert (Hocc: occurs_free (Eapp f t ys) f) by constructor.
+        have Hrel := Hrel_m. destruct Hrel as [_ Hlocals].
+        apply Hlocals in Hocc. destruct Hocc as [val [wal [Hrho [[j [Htrans Hwal]] Hval]]]].
+        inv H3. rewrite Htrans in H4. inv H4.
+        rewrite H in Hrho. inv Hrho. inv Hval.
+        rewrite H1 in H9. symmetry in H9. inv H9.
+        rename i into locIdx.
+        assert (fl = fds). { apply HfdsEqRhoEmpty in H. now destruct H. } subst fl.
+        exists idx. split.
+        dostep'. apply r_get_local. eassumption. apply rt_refl.
+        econstructor; eauto. }
+      { (* direct call *) admit. (* repr_funvar -> repr_val_relation *) }
+    }
+    destruct Hval as [fidx [HredF Hval]]. inv Hval.
+    assert (fl = fds). { apply HfdsEqRhoEmpty in H. now destruct H. } subst fl.
+    rewrite H11 in H1. inv H1. rename H19 into Hexpr.
 
-     remember {| f_locs := [seq nat_to_value a | a <- args] ++
-                       n_zeros (repeat T_i32 (Datatypes.length (collect_local_variables e)));
-                 f_inst := f_inst fr |} as f_before_IH.
+    repeat rewrite map_cat. cbn.
+    have Hfargs := fun_args_reduce state _ _ _ _ _ _ _ _ _ Hinv H0 HfenvWf HfenvRho Hrel_m H7.
+    destruct Hfargs as [args [HfargsRed HfargsRes]].
 
-     eexists. eexists. eexists. split.
-     eapply rt_trans. apply app_trans. apply HfargsRed.
-     dostep. apply r_eliml. apply map_const_const_list.
-     elimr_nary_instr 0. apply r_get_local. eassumption. cbn.
-     dostep. apply r_eliml. apply map_const_const_list.
+    remember {| f_locs := [seq nat_to_value a | a <- args] ++
+                     n_zeros (repeat T_i32 (Datatypes.length (collect_local_variables e)));
+               f_inst := f_inst fr |} as f_before_IH.
 
-     eapply r_call_indirect_success; eauto.
-     { (* table identity map *)
-       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [Htableid _]]]]]]]]]]]].
-       inv H6. eapply Htableid. eassumption. }
-     { (* type *)
-       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Htype]]]]]]]]]]]]]].
-       assert (Hlen: length xs = length ys). {
-         apply set_lists_length_eq in H2.
-         apply get_list_length_eq in H0. rewrite H2 H0. reflexivity. }
-       rewrite Htype. 2: { inv HeRestr. congruence. } rewrite -Hlen.
-       now rewrite types_map_repeat_eq. }
-     dostep'. eapply r_invoke_native with (vcs:= map (fun a => (nat_to_value a)) args)
-                                          (f':=f_before_IH); try eassumption.
-     reflexivity. unfold v_to_e_list. now rewrite -map_map_seq.
-     reflexivity. reflexivity.
-     { rewrite map_length length_is_size length_is_size size_map
-                -length_is_size -length_is_size.
-     apply const_val_list_length_eq in HfargsRes.
-     apply set_lists_length_eq in H2. rewrite H2. assumption. }
-     reflexivity. reflexivity. subst; reflexivity. subst; reflexivity.
-     eapply reduce_trans_local.
-     dostep'. constructor. eapply rs_block with (vs:=[]); auto. cbn.
-     eapply reduce_trans_label. (* apply IH *) admit. admit. }
-    { (* direct call *) inv H3. rewrite map_cat. cbn.
-       have Hfargs := fun_args_reduce state _ _ _ _ _ _ _ _ _ Hinv H0 HfenvWf HfenvRho Hrel_m H7.
-       destruct Hfargs as [args [HfargsRed HfargsRes]].
-       assert (fl = fds). { apply HfdsEqRhoEmpty in H. now destruct H. } subst fl.
-
-       remember (create_local_variable_mapping (xs ++(collect_local_variables e))) as lenv_before_IH.
-
-       (* prepare IH *)
-       remember (Build_frame
-                  (map nat_to_value args ++
-                     (repeat (nat_to_value 0) (length (collect_local_variables e))))
-                  (f_inst fr)) as f_before_IH.
-
-       assert (Hfds_before_IH: (forall (x : positive) (rho' : M.t cps.val)
-              (fds' : fundefs) (f' : var), rho'' ! x = Some (Vfun rho' fds' f') ->
+    (* prepare IH *)
+    remember (create_local_variable_mapping (xs ++(collect_local_variables e))) as lenv_before_IH.
+    assert (Hfds_before_IH: (forall (x : positive) (rho' : M.t cps.val)
+            (fds' : fundefs) (f' : var), rho'' ! x = Some (Vfun rho' fds' f') ->
                                      fds' = fds /\ rho' = M.empty _)). {
-         intros.
-         assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. } subst rho'.
-         assert (Hdec: decidable_eq var). {
-           intros n m. unfold Decidable.decidable. now destruct (var_dec n m). }
-         have H' := In_decidable Hdec x xs. clear Hdec. destruct H'.
-         { (* In x xs *)
-           have H' := set_lists_In _ _ _ _ _ _ H5 H3 H2.
-           destruct (get_list_In_val _ _ _ _ H0 H') as [y [Hin Hrho]].
-           apply HfdsEqRhoEmpty in Hrho. now destruct Hrho. }
-         { (* ~In x xs *)
-           have H' := set_lists_not_In _ _ _ _ _ H2 H5. rewrite H3 in H'.
-           erewrite def_funs_find_def in H'. now inv H'.
-           intro Hcontra.
-           apply def_funs_find_def' in H'. destruct H'.
-           now destruct H6. inv H6. }
-       }
+      intros.
+      assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. } subst rho'.
+      assert (Hdec: decidable_eq var). {
+        intros n m. unfold Decidable.decidable. now destruct (var_dec n m). }
+      have H' := In_decidable Hdec x0 xs. clear Hdec. destruct H'.
+      { (* In x0 xs *)
+        have H' := set_lists_In _ _ _ _ _ _ H3 H1 H2.
+        destruct (get_list_In_val _ _ _ _ H0 H') as [y [Hin Hrho]].
+        apply HfdsEqRhoEmpty in Hrho. now destruct Hrho. }
+      { (* ~In x0 xs *)
+        have H' := set_lists_not_In _ _ _ _ _ H2 H3. rewrite H1 in H'.
+        erewrite def_funs_find_def in H'. now inv H'.
+        intro Hcontra.
+        apply def_funs_find_def' in H'. destruct H'.
+        now destruct H4. inv H4. }
+    }
 
-       assert (Hinv_before_IH : INV lenv_before_IH sr f_before_IH). {
-          subst. eapply init_local_preserves_INV; try eassumption; try reflexivity.
-          intros. inv H3. apply var_mapping_list_lt_length in H5.
-          rewrite app_length in H5.
-          apply const_val_list_length_eq in HfargsRes.
-          rewrite <- HfargsRes.
-          apply set_lists_length_eq in H2. rewrite <- H2. assumption. }
+    assert (Hinv_before_IH : INV lenv_before_IH sr f_before_IH). {
+       subst. eapply init_local_preserves_INV; try eassumption; try reflexivity.
+       intros. inv H1. apply var_mapping_list_lt_length in H3.
+       rewrite app_length in H3.
+       apply const_val_list_length_eq in HfargsRes.
+       rewrite <- HfargsRes.
+       apply set_lists_length_eq in H2. rewrite <- H2. eassumption.
+       repeat f_equal. unfold n_zeros. rewrite types_map_repeat_eq.
+       rewrite <- map_map_seq. cbn. admit. (* easy *) }
 
-      assert (Hexpr: exists e', repr_expr_LambdaANF_Codegen (lenv:=lenv_before_IH) fenv nenv e e'). {
-        apply Hfds in H1. destruct H1 as [? [? [? ?]]].
-        destruct H6 as [e' He']. exists e'. subst. assumption. }
-      destruct Hexpr as [e' Hexpr].
-      assert (Hrelm: rel_mem_LambdaANF_Codegen (lenv:=lenv_before_IH) fenv nenv host_function
+    assert (Hrelm: rel_mem_LambdaANF_Codegen (lenv:=lenv_before_IH) fenv nenv host_function
                               e rho'' sr f_before_IH fds). {
-        unfold rel_mem_LambdaANF_Codegen. split.
-        { (* funs *) intros.
-          assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. }
-          subst rho'. admit. }
-        { (* vars *)
-          intros. destruct Hrel_m as [_ HrelVars].
-          assert (In x xs). {
-            apply Hfds in H1. now destruct H1 as [? [Hxxs ?]]. }
-          destruct (get_set_lists_In_xs _ _ _ _ _ H5 H2) as [v' Hv'].
-          have H' := set_lists_nth_error _ _ _ _ _ _ H2 H5 Hv'.
-          destruct H' as [k [Hvk Hxk]].
-          have H'' := const_val_list_nth_error _ _ _ _ _ _ _ HfargsRes Hvk.
-          destruct H'' as [w [Hw Hnth]].
-          exists v', w. split; auto. split; auto.
-
-          unfold stored_in_locals. subst lenv_before_IH f_before_IH. exists k.
-          split. {
-            intros. unfold create_local_variable_mapping.
-            rewrite (var_mapping_list_lt_length_nth_error_idx _ k); auto.
-            apply Hfds in H1. destruct H1 as [_ [_ [HnodupE _]]].
-            rewrite catA in HnodupE. apply NoDup_app_l in HnodupE. assumption.
-            rewrite nth_error_app1; auto. apply nth_error_Some. intro.
-            rewrite H6 in Hxk. inv Hxk. }
-          cbn.
-          rewrite nth_error_app1. 2: {
-            rewrite length_is_size size_map -length_is_size.
-            apply const_val_list_length_eq in HfargsRes.
-            rewrite -HfargsRes.
-            apply nth_error_Some. congruence. } assumption.
-          subst f_before_IH.
-          admit.
-          }}
-
-      assert (HeRestr' : expression_restricted e). {
-        apply Hfds in H1. now destruct H1. }
-
-      assert (Hunbound': (forall x : var, In x (collect_local_variables e) -> rho'' ! x = None)). {
-        intros.
-        assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. } subst rho'.
-        assert (~ exists v, find_def x fds = Some v). {
-          intro Hcontra. destruct Hcontra as [? Hfd].
-          assert (Hfd': find_def x fds <> None) by congruence.
-          clear Hfd. rename Hfd' into Hfd.
-          eapply find_def_in_collect_function_vars in Hfd.
-          apply Hfds in H1. destruct H1 as [_ [_ [HnodupE _]]].
-          apply NoDup_app_r in HnodupE.
-          eapply NoDup_app_In in HnodupE; eauto. }
-        assert (Hfd: find_def x fds = None). { destruct (find_def x fds); eauto. exfalso. eauto. } clear H5.
-       apply def_funs_not_find_def with (fds':=fds) (rho:=M.empty _) in Hfd.
-       assert (HxIn: ~ In x xs). {
-         intro Hcontra. apply Hfds in H1. destruct H1 as [_ [_ [HnodupE _]]].
-         rewrite catA in HnodupE. apply NoDup_app_l in HnodupE.
-         eapply NoDup_app_In in HnodupE; eauto. }
-       have H'' := set_lists_not_In _ _ _ _ _ H2 HxIn. rewrite <- H''.
-       now rewrite Hfd.
-      }
-
-      assert (HlenvInjective': map_injective lenv_before_IH). {
-        subst lenv_before_IH.
-        apply create_local_variable_mapping_injective. {
-        apply Hfds in H1. destruct H1 as [_ [_ [HnodupE _]]].
-        rewrite catA in HnodupE. now apply NoDup_app_l in HnodupE.
-      }}
-
-      assert (HenvsDisjoint': domains_disjoint lenv_before_IH fenv). {
-        apply Hfds in H1. destruct H1 as [_ [_ [HnodupE _]]].
-        subst lenv_before_IH. unfold domains_disjoint. split; intros.
-        { (* -> *)
-          apply variable_mapping_Some_In in H1; auto.
-          assert (~ exists v, fenv ! x = Some v). {
-            intro Hcontra. apply HfenvWf in Hcontra.
-            apply notNone_Some in Hcontra.
-            eapply find_def_in_collect_function_vars in Hcontra.
-            rewrite catA in HnodupE. eapply NoDup_app_In in HnodupE; eauto. }
-            destruct (fenv ! x); auto. exfalso. eauto. }
-        { (* <- *)
-           assert (exists res : fun_tag * seq var * exp, find_def x fds = Some res).
-             apply HfenvWf; eauto.
-           apply notNone_Some in H3.
-           eapply find_def_in_collect_function_vars in H3.
-           apply variable_mapping_NotIn_None; auto.
-           rewrite catA in HnodupE. intro Hcontra.
-           eapply NoDup_app_In in HnodupE; eauto. }}
-
-      assert (Hnodup': NoDup (collect_local_variables e ++
-                              collect_function_vars (Efun fds e))). {
-        apply Hfds in H1. destruct H1 as [_ [_ [HnodupE _]]].
-        apply NoDup_app_r in HnodupE.
-        assumption. }
-
-      assert (HfenvRho': forall (a : positive) (v : cps.val),
-        rho'' ! a = Some v ->
-        find_def a fds <> None -> v = Vfun (M.empty _) fds a). {
-        intros.
-        assert (HaXs: ~ In a xs). {
-          apply Hfds in H1. destruct H1 as [_ [_ [HnodupE _]]].
-          apply NoDup_app_middle in HnodupE.
-          intro Hcontra. eapply find_def_in_collect_function_vars in H5.
-          eapply NoDup_app_In in HnodupE; eauto. }
-
-        have H' := set_lists_not_In _ _ _ _ _ H2 HaXs.
-        rewrite <- H' in H3.
+      unfold rel_mem_LambdaANF_Codegen. split.
+      { (* funs *) intros.
         assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. }
-        subst rho'.
-        eapply def_funs_find_def in H5. now erewrite H' in H5. }
+        subst rho'. admit. }
+      { (* vars *)
+        intros. destruct Hrel_m as [_ HrelVars].
+        assert (In x0 xs). {
+          apply Hfds in H11. now destruct H11 as [? [Hxxs ?]]. }
+        destruct (get_set_lists_In_xs _ _ _ _ _ H3 H2) as [v' Hv'].
+        have H' := set_lists_nth_error _ _ _ _ _ _ H2 H3 Hv'.
+        destruct H' as [k [Hvk Hxk]].
+        have H'' := const_val_list_nth_error _ _ _ _ _ _ _ HfargsRes Hvk.
+        destruct H'' as [w [Hw Hnth]].
+        exists v', w. split; auto. split; auto.
 
-      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _  HlenvInjective' HenvsDisjoint' state _ _ _ Hfds_before_IH Hfds Hinv_before_IH Hexpr Hrelm.
-      destruct IH as [rho_final [sr_final [fr_final [Hred [Hval Hfinst]]]]].
-      (* execute *)
-      exists rho_final, sr_final, fr_final. split.
-      eapply rt_trans. apply app_trans. apply HfargsRed.
-      dostep. apply r_eliml. apply map_const_const_list.
-      eapply r_call_indirect_success.
-      { (* table identity map *)
-       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [Htableid _]]]]]]]]]]]].
-       eapply Htableid. eassumption. }
+        unfold stored_in_locals. subst lenv_before_IH f_before_IH. exists k.
+        split. {
+          intros. unfold create_local_variable_mapping.
+          rewrite (var_mapping_list_lt_length_nth_error_idx _ k); auto.
+          apply Hfds in H11. destruct H11 as [_ [_ [HnodupE _]]].
+          rewrite catA in HnodupE. apply NoDup_app_l in HnodupE. assumption.
+          rewrite nth_error_app1; auto. apply nth_error_Some. intro.
+          rewrite H4 in Hxk. inv Hxk. }
+        cbn.
+        rewrite nth_error_app1. 2: {
+          rewrite length_is_size size_map -length_is_size.
+          apply const_val_list_length_eq in HfargsRes.
+          rewrite -HfargsRes.
+          apply nth_error_Some. congruence. } assumption.
+        subst f_before_IH.
+        admit. }
+    }
+    assert (HeRestr' : expression_restricted e). {
+        apply Hfds in H11. now destruct H11. }
 
-        admit. admit. admit. subst. cbn in Hfinst. split; auto. }
+    assert (Hunbound': (forall x : var, In x (collect_local_variables e) -> rho'' ! x = None)). {
+      intros.
+      assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. } subst rho'.
+      assert (~ exists v, find_def x0 fds = Some v). {
+        intro Hcontra. destruct Hcontra as [? Hfd].
+        assert (Hfd': find_def x0 fds <> None) by congruence.
+        clear Hfd. rename Hfd' into Hfd.
+        eapply find_def_in_collect_function_vars in Hfd.
+        apply Hfds in H11. destruct H11 as [_ [_ [HnodupE _]]].
+        apply NoDup_app_r in HnodupE.
+        eapply NoDup_app_In in HnodupE; eauto. }
+      assert (Hfd: find_def x0 fds = None). { destruct (find_def x0 fds); eauto. exfalso. eauto. }
+      apply def_funs_not_find_def with (fds':=fds) (rho:=M.empty _) in Hfd.
+      assert (HxIn: ~ In x0 xs). {
+        intro Hcontra. apply Hfds in H11. destruct H11 as [_ [_ [HnodupE _]]].
+        rewrite catA in HnodupE. apply NoDup_app_l in HnodupE.
+        eapply NoDup_app_In in HnodupE; eauto. }
+      have H'' := set_lists_not_In _ _ _ _ _ H2 HxIn. rewrite <- H''.
+      now rewrite Hfd.
+    }
+
+    assert (HlenvInjective': map_injective lenv_before_IH). {
+      subst lenv_before_IH.
+      apply create_local_variable_mapping_injective. {
+      apply Hfds in H11. destruct H11 as [_ [_ [HnodupE _]]].
+      rewrite catA in HnodupE. now apply NoDup_app_l in HnodupE.
+    }}
+
+    assert (HenvsDisjoint': domains_disjoint lenv_before_IH fenv). {
+      apply Hfds in H11. destruct H11 as [_ [_ [HnodupE _]]].
+      subst lenv_before_IH. unfold domains_disjoint. split; intros.
+      { (* -> *)
+        apply variable_mapping_Some_In in H1; auto.
+        assert (~ exists v, fenv ! x0 = Some v). {
+          intro Hcontra. apply HfenvWf in Hcontra.
+          apply notNone_Some in Hcontra.
+          eapply find_def_in_collect_function_vars in Hcontra.
+          rewrite catA in HnodupE. eapply NoDup_app_In in HnodupE; eauto. }
+          destruct (fenv ! x0); auto. exfalso. eauto. }
+      { (* <- *)
+         assert (exists res : fun_tag * seq var * exp, find_def x0 fds = Some res).
+           apply HfenvWf; eauto.
+         apply notNone_Some in H3.
+         eapply find_def_in_collect_function_vars in H3.
+         apply variable_mapping_NotIn_None; auto.
+         rewrite catA in HnodupE. intro Hcontra.
+         eapply NoDup_app_In in HnodupE; eauto. }
+    }
+
+    assert (Hnodup': NoDup (collect_local_variables e ++
+                            collect_function_vars (Efun fds e))). {
+      apply Hfds in H11. destruct H11 as [_ [_ [HnodupE _]]].
+      apply NoDup_app_r in HnodupE.
+      assumption. }
+
+    assert (HfenvRho': forall (a : positive) (v : cps.val),
+      rho'' ! a = Some v ->
+      find_def a fds <> None -> v = Vfun (M.empty _) fds a). {
+      intros.
+      assert (HaXs: ~ In a xs). {
+        apply Hfds in H11. destruct H11 as [_ [_ [HnodupE _]]].
+        apply NoDup_app_middle in HnodupE.
+        intro Hcontra. eapply find_def_in_collect_function_vars in H3.
+        eapply NoDup_app_In in HnodupE; eauto. }
+
+    have H' := set_lists_not_In _ _ _ _ _ H2 HaXs.
+    rewrite <- H' in H1.
+    assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. }
+    subst rho'.
+    eapply def_funs_find_def in H3. now erewrite H' in H3. }
+
+    subst lenv_before_IH.
+    have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _  HlenvInjective' HenvsDisjoint'
+                   state _ _ _ Hfds_before_IH Hfds Hinv_before_IH Hexpr Hrelm.
+
+    destruct IH as [rho_final [sr_final [fr_final [Hred [Hval Hfinst]]]]].
+
+    (* start execution *)
+    eexists. eexists. eexists. split.
+    eapply rt_trans. apply app_trans. apply HfargsRed.
+    eapply rt_trans. apply app_trans_const. apply map_const_const_list.
+    separate_instr. apply app_trans. apply HredF.
+    eapply rt_trans. apply app_trans_const. apply map_const_const_list.
+    dostep'. eapply r_call_indirect_success; eauto.
+    { (* table identity map *)
+      have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [Htableid _]]]]]]]]]]]].
+      inv H9. eapply Htableid. eassumption. }
+    { (* type *)
+      have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Htype]]]]]]]]]]]]]].
+      assert (Hlen: length xs = length ys). {
+        apply set_lists_length_eq in H2.
+        apply get_list_length_eq in H0. rewrite H2 H0. reflexivity. }
+      rewrite Htype. 2: { inv HeRestr. congruence. } rewrite -Hlen. cbn. inv H11.
+      now rewrite types_map_repeat_eq. } apply rt_refl.
+    dostep'. eapply r_invoke_native with (vcs:= map (fun a => (nat_to_value a)) args)
+                                        (f':=f_before_IH); try eassumption.
+    rewrite -Hfinst. subst f_before_IH.
+    reflexivity. unfold v_to_e_list. now rewrite -map_map_seq.
+    reflexivity. reflexivity.
+    { rewrite map_length length_is_size length_is_size size_map
+              -length_is_size -length_is_size.
+    apply const_val_list_length_eq in HfargsRes.
+    apply set_lists_length_eq in H2. rewrite H2. assumption. }
+    reflexivity. reflexivity. subst; reflexivity. cbn.
+    eapply reduce_trans_local.
+    dostep'. constructor. eapply rs_block with (vs:=[]); auto. cbn.
+    (* apply IH *)
+    eapply reduce_trans_label. eassumption. split.
+    eapply result_val_LambdaANF_Codegen_depends_on_finst; try apply Hval.
+    subst f_before_IH. now rewrite -Hfinst. reflexivity.
+    }
   - (* Eletapp *)   inv Hrepr_e. (* absurd, we require CPS *)
   - (* Efun *)      inv Hrepr_e. (* absurd, fn defs only on topmost level *)
   - (* Eprim_val *) inv Hrepr_e. (* absurd, primitives not supported *)
