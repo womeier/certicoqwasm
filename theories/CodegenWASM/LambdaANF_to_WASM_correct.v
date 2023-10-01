@@ -52,19 +52,6 @@ Open Scope list.
 Import ListNotations.
 
 
- (* TODO: move to identifiers *)
-Inductive bound_var_val: LambdaANF.cps.val -> Ensemble cps.var :=
-| Bound_Vconstr :
-    forall c vs v x,
-    bound_var_val v x ->
-    List.In v vs ->
-    bound_var_val (Vconstr c vs) x
-| Bound_Vfun:
-    forall fds rho x f,
-    bound_var_fundefs fds x ->
-    bound_var_val (Vfun rho fds f) x.
-
-
 Inductive occurs_free_val: LambdaANF.cps.val -> Ensemble cps.var :=
 | OF_Vconstr :
     forall c vs v x,
@@ -205,40 +192,6 @@ Proof.
 Qed.
 
 
-Theorem bound_var_subval:
-  forall x v v',
-  bound_var_val v x ->
-  subval_or_eq v v' ->
-  bound_var_val v' x.
-Proof.
-  intros. induction H0.
-  - inv H0. econstructor; eauto.
-    inv H. constructor. auto.
-  - auto.
-  - apply   IHclos_refl_trans2.
-    apply   IHclos_refl_trans1.
-    auto.
-Qed.
-
-
-(* bound_var_val - name_in_fds *)
-Inductive bound_subvar_val : cps.val -> Ensemble cps.var :=
-    Bound_SVconstr : forall (c : ctor_tag) (vs : list cps.val) (v : cps.val) (x : cps.var),
-                    bound_var_val (Vconstr c vs) x -> bound_subvar_val (Vconstr c vs) x
-  | Bound_SVfun : forall (fds : fundefs) (rho : cps.M.t cps.val) (x f : cps.var),
-      bound_var_val (Vfun rho fds f) x -> ~name_in_fundefs fds x -> bound_subvar_val (Vfun rho fds f) x.
-
-
-(* deep version of bound_subvar_val, likely what is needed for functions_not_bound inv *)
-Inductive bound_notfun_val: cps.val -> Ensemble cps.var :=
-  Bound_FVconstr : forall (c : ctor_tag) (vs : list cps.val)
-                         (v : cps.val) (x : cps.var),
-                    bound_notfun_val v x ->
-                    List.In v vs -> bound_notfun_val (Vconstr c vs) x
-| Bound_FVfun : forall (e:exp) (fds : fundefs) (rho : cps.M.t cps.val) ys (x f f' : cps.var) t,
-    Ensembles.In _ (Ensembles.Union _ (FromList ys) (bound_var e)) x ->  find_def f' fds = Some (t, ys, e) ->  bound_notfun_val (Vfun rho fds f) x.
-
-
 Theorem find_dsubterm:
   forall x t ys e fl,
 find_def x fl = Some (t, ys, e) -> dsubterm_fds_e e fl.
@@ -248,25 +201,6 @@ Proof.
     constructor 2. eapply IHfl; eauto.
   - inv H.
 Qed.
-
-Theorem bound_subvar_var: forall v x,
-  bound_subvar_val v x -> bound_var_val v x.
-Proof.
-  intros. inv H; auto.
-Qed.
-
-Theorem bound_notfun_var: forall v x,
-  bound_notfun_val v x -> bound_var_val v x.
-Proof.
-  intros. induction H.
-  - econstructor; eauto.
-  -  constructor. induction fds. simpl in H0.
-     destruct  (cps.M.elt_eq f' v). inv H0. inv H. constructor; auto.
-     constructor 3; auto.
-     constructor 2. auto.
-     inv H0.
-Qed.
-
 
 Theorem set_lists_In:
   forall {A} x xs (v:A) vs rho rho' ,
@@ -555,169 +489,6 @@ Scheme repr_val_LambdaANF_Codegen_mut := Induction for repr_val_LambdaANF_Codege
 (*
 Check repr_val_LambdaANF_Codegen_ind.
 Check repr_val_LambdaANF_Codegen_mut. *)
-
-Inductive Forall_fundefs: (LambdaANF.cps.var -> fun_tag -> list LambdaANF.cps.var -> exp -> Prop) -> fundefs -> Prop :=
-| Ff_cons : forall (P:(LambdaANF.cps.var -> fun_tag -> list LambdaANF.cps.var -> exp -> Prop)) f t vs e fds,
-         P f t vs e ->
-         Forall_fundefs P fds ->
-         Forall_fundefs P (Fcons f t vs e fds)
-| Ff_nil: forall P, Forall_fundefs P Fnil.
-
-
-Theorem Forall_fundefs_In:
-  forall P f t vs e fds,
-  Forall_fundefs P fds ->
-  fun_in_fundefs fds (f,t,vs,e) ->
-  P f t vs e.
-Proof.
-  induction fds; intros.
-  - inv H; inv H0; subst.
-    + inv H; auto.
-    +  apply IHfds; auto.
-  - inv H0.
-Qed.
-
-(* END TODO move *)
-
-(*
-(* 1) finfo_env has the correct finfo
-   2) fenv is consistent with the info
-   3) global env holds a correct Codegen representation of the function *)
-Definition correct_environments_for_function:
-  genv -> fun_env -> M.t positive -> mem -> fundefs ->  LambdaANF.cps.var ->
-  fun_tag -> list LambdaANF.cps.var -> exp ->  Prop
-  := fun ge fenv finfo_env m fds f t vs e =>
-       exists l locs finfo b,
-         (*1*)
-         M.get f finfo_env = Some finfo /\
-         correct_fundef_info m f t vs e finfo  /\
-         (*2*)
-         M.get t fenv = Some (l, locs) /\
-         l = N.of_nat (length vs) /\
-         (* may want to check that locs are distinct and same as in finfo? *)
-         (*3*)
-         Genv.find_symbol (globalenv p) f = Some b /\
-         (* TODO: change this to repr_val_LambdaANF_Codegen *)
-         repr_val_LambdaANF_Codegen (cps.Vfun (M.empty cps.val) fds f) m (Vptr b Ptrofs.zero).
-
-
-Definition correct_environments_for_functions: fundefs -> genv -> fun_env -> M.t positive -> mem ->  Prop := fun fds ge fenv finfo_env m =>
-                                                                                                            Forall_fundefs (correct_environments_for_function ge fenv finfo_env m fds) fds.
- *)
-
-
-Inductive unique_bindings_val: LambdaANF.cps.val -> Prop :=
-| UB_Vfun: forall rho fds f,
-    unique_bindings_fundefs fds ->
-    unique_bindings_val (Vfun rho fds f)
-| UB_Vconstr: forall c vs,
-    Forall unique_bindings_val vs ->
-    unique_bindings_val (Vconstr c vs)
-|UB_VInt: forall z,
-    unique_bindings_val (cps.Vint z)
-.
-
-
-(* UB + disjoint bound and in env *)
-Definition unique_bindings_env (rho:LambdaANF.eval.env) (e:exp) : Prop :=
-      unique_bindings e  /\
-      (forall x v,
-        M.get x rho = Some v ->
-    ~ bound_var e x /\ unique_bindings_val v).
-
-
-Definition prefix_ctx {A:Type} rho' rho :=
-  forall x v, M.get x rho' = Some v -> @M.get A x rho = Some v.
-
-
-Theorem unique_bindings_env_prefix:
-  forall e rho,
-    unique_bindings_env rho e ->
-    forall rho',
-  prefix_ctx rho' rho ->
-  unique_bindings_env rho' e.
-Proof.
-  intros.
-  inv H.
-  split; auto.
-Qed.
-
-Theorem find_def_bound_in_bundle:
-  forall e y t xs f fds,
-  bound_var e y ->
-  find_def f fds = Some (t, xs, e) ->
-  bound_var_fundefs fds y.
-Proof.
-  induction fds; intros.
-  simpl in H0. destruct (cps.M.elt_eq f v). inv H0. constructor 3; auto.
-  constructor 2. apply IHfds; auto.
-  inv H0.
-Qed.
-
-
-Definition map_get_r_l: forall t l, relation (M.t t) :=
-  fun t l => fun sub sub' => forall v,
-               List.In v l ->
-               M.get v sub = M.get v sub'.
-
-(* lenv' is lenv after binding xs->vs with NoDup xs *)
-Definition lenv_param_asgn (lenv lenv':temp_env) (xs:list positive) (vs:list Values.val): Prop :=
-  forall i, (forall z, nthN xs z  = Some i ->  M.get i lenv' = nthN vs z)
-            /\
-            (~ List.In i xs -> M.get i lenv' = M.get i lenv).
-
-
-Theorem lenv_param_refl :
-  forall lenv lenv' vs,
-  lenv_param_asgn lenv lenv' [] vs
-  -> map_get_r _ lenv lenv'.
-Proof.
-  intros.
-  intro.
-  specialize (H v).
-  destruct H.
-  symmetry.
-  apply H0.
-  intro.
-  inv H1.
-Qed.
-
-Theorem lenv_param_asgn_not_in:
-  forall lenv lenv' b ofs x (L:positive -> Prop) xs vs7,
-M.get x lenv = Some (Vptr b ofs) ->
-  L x ->
-  (forall x6 : positive, List.In x6 xs -> ~ L x6) ->
-  lenv_param_asgn lenv lenv' xs vs7 ->
-  M.get x lenv' = Some (Vptr b ofs).
-Proof.
-  intros.
-  specialize (H2 x).
-  destruct H2.
-  rewrite H3.
-  auto.
-  intro.
-  eapply H1; eauto.
-Qed.
-
-
-Theorem lenv_param_asgn_map:
-  forall lenv lenv' xs vs7 l,
-  lenv_param_asgn lenv lenv' xs vs7 ->
-  Disjoint _ (FromList xs) (FromList l) ->
-  map_get_r_l _ l lenv lenv'.
-Proof.
-  intros.
-  intro.
-  intro.
-  specialize (H v); destruct H.
-  rewrite H2.
-  auto.
-  inv H0. specialize (H3 v).
-  intro.
-  apply H3.
-  auto.
-Qed.
-
 
 (* MEMORY RELATION *)
 
