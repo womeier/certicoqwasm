@@ -3897,10 +3897,10 @@ Proof.
     replace (N.pos (Pos.succ p)~0 - 1)%N with (N.pos p~1)%N by lia. reflexivity.
 Qed.
 
-Lemma types_map_repeat_eq {A} : forall (l : list A), repeat T_i32 (Datatypes.length l) =
-                                      map (fun => T_i32) l.
+Lemma map_repeat_eq {A} {B} : forall (l : list A) (v : B),
+  repeat v (Datatypes.length l) = map (fun => v) l.
 Proof.
-  induction l; cbn; auto. f_equal. assumption.
+  induction l; cbn; intros; auto. f_equal. apply IHl.
 Qed.
 
 Lemma map_map_seq {A B C}: forall (l:seq A) (f: A -> B) (g : B -> C),
@@ -4638,8 +4638,8 @@ Proof with eauto.
        apply const_val_list_length_eq in HfargsRes.
        rewrite <- HfargsRes.
        apply set_lists_length_eq in H2. rewrite <- H2. eassumption.
-       repeat f_equal. unfold n_zeros. rewrite types_map_repeat_eq.
-       rewrite <- map_map_seq. cbn. admit. (* easy *) }
+       repeat f_equal. unfold n_zeros. rewrite map_repeat_eq.
+       rewrite <- map_map_seq. cbn. now rewrite map_repeat_eq. }
 
     assert (Hrelm: rel_mem_LambdaANF_Codegen (lenv:=lenv_before_IH) fenv nenv host_function
                               e rho'' sr f_before_IH fds). {
@@ -4771,7 +4771,7 @@ Proof with eauto.
         apply set_lists_length_eq in H2.
         apply get_list_length_eq in H0. rewrite H2 H0. reflexivity. }
       rewrite Htype. 2: { inv HeRestr. congruence. } rewrite -Hlen. cbn. inv H11.
-      now rewrite types_map_repeat_eq. } apply rt_refl.
+      now rewrite map_repeat_eq. } apply rt_refl.
     dostep'. eapply r_invoke_native with (vcs:= map (fun a => (nat_to_value a)) args)
                                         (f':=f_before_IH); try eassumption.
     rewrite -Hfinst. subst f_before_IH.
