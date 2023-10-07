@@ -1073,6 +1073,16 @@ Proof.
     rewrite M.gso; auto. congruence. } econstructor; eauto. }
 Qed.
 
+
+Lemma val_relation_func_depends_on_funcs : forall rho val s s' f i,
+  s_funcs s = s_funcs s' ->
+  repr_val_LambdaANF_Codegen fenv nenv host_function rho val s f (Val_funidx i) ->
+  repr_val_LambdaANF_Codegen fenv nenv host_function rho val s' f (Val_funidx i).
+Proof.
+  intros ? ? ? ? ? ? Hfuncs Hval.
+  inv Hval. now econstructor; eauto.
+Qed.
+
 Lemma val_relation_depends_on_mem_smaller_than_gmp_and_funcs : forall rho v sr sr' m m' fr fr' gmp gmp' value,
     f_inst fr = f_inst fr' ->
     sr.(s_funcs) = sr'.(s_funcs) ->
@@ -2989,6 +2999,9 @@ Lemma store_constr_args_reduce {lenv} : forall ys offset vs sargs state rho s f 
   (forall y, In y ys -> (exists v6 val, M.get y rho = Some v6
                                      /\ stored_in_locals (lenv:=lenv) nenv y val f
                                      /\ repr_val_LambdaANF_Codegen fenv nenv _ rho v6 s f val)) ->
+  (* correspondence of fenv and fds *)
+  (forall y y' v, rho ! y = Some v -> repr_funvar fenv nenv y y' ->
+         repr_val_LambdaANF_Codegen fenv nenv host_function rho v s f (Val_funidx y')) ->
   exists s', reduce_trans
                   (state, s, f, [seq AI_basic i | i <- sargs])
                   (state, s', f, [])
@@ -3009,7 +3022,7 @@ Lemma store_constr_args_reduce {lenv} : forall ys offset vs sargs state rho s f 
                        /\ mem_length m = mem_length m'
                        /\ forall a, N.to_nat a <= v_cap + 4 * offset -> load_i32 m a = load_i32 m' a.
 Proof.
-  induction ys; intros offset vs sargs state rho s f m v_cap Hinv Hm Hcap Hlen Hargs Hoffset Hgmp H Hvs HmemR.
+  induction ys; intros offset vs sargs state rho s f m v_cap Hinv Hm Hcap Hlen Hargs Hoffset Hgmp H Hvs HmemR HfVal.
   { inv H. inv Hvs. exists s. split. apply rt_refl. split. assumption.
     have I := Hinv. destruct I as [_ [_ [_ [Hgmp_r [Hcap_r [Hmut _]]]]]].
     apply global_var_w_implies_global_var_r in Hcap_r; auto.
@@ -3051,7 +3064,9 @@ Proof.
         split; auto.
         constructor. apply r_get_local; eassumption.
       }
-      { (* fun idx *) admit. }
+      { (* fun idx *)
+        eapply HfVal in Hrhoy; eauto. exists (Val_funidx i). split. apply rt_refl. eassumption.
+      }
     }
     destruct Hinstr as [wal [HinstrRed HinstrVal]].
     {
@@ -3186,15 +3201,25 @@ Proof.
      apply mem_store_preserves_length in Hm0.
      apply mem_length_upper_bound in Hmem5. cbn in Hmem5. simpl_modulus. cbn. lia. }
 
-      have IH := IHys _ _ _ state _ _ _ _ _ Hinv_before_IH Hmem_before_IH Hcap_before_IH Hlen_m0 Hmaxargs Hoffset Hgmp_before_IH H3 Hvs HrelM_before_IH.
+     assert (HfVal_before_IH: (forall (y : positive) (y' : immediate) (v : cps.val),
+       rho ! y = Some v -> repr_funvar fenv nenv y y' ->
+       repr_val_LambdaANF_Codegen fenv nenv host_function rho v s_before_IH f (Val_funidx y'))).
+     { intros. have H' := HfVal _ _ _ H7 H8.
+       eapply val_relation_func_depends_on_funcs; last apply H'. subst.
+       now apply update_glob_keeps_funcs_intact in H6. }
+
+      have IH := IHys _ _ _ state _ _ _ _ _ Hinv_before_IH Hmem_before_IH Hcap_before_IH Hlen_m0 Hmaxargs Hoffset Hgmp_before_IH H3 Hvs HrelM_before_IH HfVal_before_IH.
       clear IHys Hmem_before_IH Hinv_before_IH HrelM_before_IH Hcap_before_IH.
       destruct IH as [sr [Hred [Hinv'' [Hv1 [? [Hv2 [? [? [? [m1 [Hm1 [? ?]]]]]]]]]]]].
       assert (sglob_val (host_function:=host_function) s (f_inst f) constr_alloc_ptr
             = sglob_val (host_function:=host_function) (upd_s_mem (host_function:=host_function) s
                        (set_nth m0 (s_mems s) 0 m0)) (f_inst f) constr_alloc_ptr) as Hglob_cap by reflexivity.
       have HlenBound := mem_length_upper_bound _ Hmem5. cbn in HlenBound.
-      assert (cap = v_cap). { rewrite H0 in Hcap. inv Hcap.
-        rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; try lia. rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; lia. } subst v_cap.
+      assert (cap = v_cap). {
+        rewrite H0 in Hcap. inv Hcap.
+        rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; try lia.
+        rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; lia.
+      } subst v_cap.
 
       eexists. split.
       (* reduce *)
@@ -3306,6 +3331,7 @@ Proof.
           symmetry. erewrite load_store_load; try apply Hm0; eauto.
           remember (S (S (S (S (offset * 4))))) as n.
           cbn. repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia.  }}}
+(* hangs *)
 Admitted.
 
 Lemma store_constr_reduce {lenv} : forall state s f rho ys (vs : list cps.val) t sargs,
@@ -3325,6 +3351,13 @@ Lemma store_constr_reduce {lenv} : forall state s f rho ys (vs : list cps.val) t
   (Z.of_nat (length ys) <= max_constr_args)%Z ->
   Forall_statements_in_seq (set_nth_constr_arg (lenv:=lenv) fenv nenv) ys sargs ->
   get_list ys rho = Some vs ->
+
+  (* function indices: value relation *)
+  (forall (y : positive) (y' : immediate) (v : cps.val),
+         rho ! y = Some v ->
+         repr_funvar fenv nenv y y' ->
+         repr_val_LambdaANF_Codegen fenv nenv host_function
+           rho v s f (Val_funidx y')) ->
 
   exists s', reduce_trans
     (state, s, f,
@@ -3348,7 +3381,7 @@ Lemma store_constr_reduce {lenv} : forall state s f rho ys (vs : list cps.val) t
           /\ wasm_value_to_i32 wasmval = cap_v
           /\ repr_val_LambdaANF_Codegen fenv nenv  _ rho (Vconstr t vs) s' f wasmval).
 Proof.
-  intros ? ? ? ? ? ? ? ? Hinv HenoughM HmemR Hmaxargs Hsetargs Hrho.
+  intros ? ? ? ? ? ? ? ? Hinv HenoughM HmemR Hmaxargs Hsetargs Hrho HfVal.
 
   have I := Hinv. destruct I as [_ [_ [_ [INVgmp_w [INVcap_w [INVmuti32 [INVmem [_ [_ [_ [INV_instglobs _]]]]]]]]]]].
   destruct INVmem as [_ [m [Hm _]]].
@@ -3474,7 +3507,19 @@ exists (v6 : cps.val) (val : wasm_value),
           (f_inst f) global_mem_ptr =
         Some (VAL_int32 (nat_to_i32 (4 + gmp_v)))). { apply global_var_write_read_same in H1. rewrite H1. do 3! f_equal. lia. }
 
-  have Hargs := store_constr_args_reduce _ _ _ _ state _ _ _ _ _ Hinv_before_args Hmem Hglob_cap HenoughM' Hmaxargs HlenBound Hgmp_before_args Hsetargs Hrho HrelM'.
+  assert (HfVal_before_args: (forall (y : positive) (y' : immediate) (v : cps.val),
+         rho ! y = Some v ->
+         repr_funvar fenv nenv y y' ->
+         repr_val_LambdaANF_Codegen fenv nenv host_function
+           rho v s_before_args f (Val_funidx y'))).
+  { intros. have H' := HfVal _ _ _ H2 H3.
+    eapply val_relation_func_depends_on_funcs; last eassumption.
+    apply update_glob_keeps_funcs_intact in H0, H1. subst. now cbn in H1.
+  }
+
+  have Hargs := store_constr_args_reduce _ _ _ _ state _ _ _ _ _ Hinv_before_args Hmem
+                  Hglob_cap HenoughM' Hmaxargs HlenBound Hgmp_before_args Hsetargs Hrho
+                    HrelM' HfVal_before_args.
   destruct Hargs as [s_final [Hred [Hinv_final [Hcap_v [? [Hargs_val [Hglobsame [Hfuncs [HvalPreserved [m'' [Hm' [Hmemlen Hmemsame]]]]]]]]]]]].
   {
   cbn in Hargs_val. clear Hsetargs Hrho HenoughM' HlenBound.
@@ -4073,14 +4118,32 @@ Proof with eauto.
         apply Hvar in Hocc. destruct Hocc as [val [wal [Hrho [Hloc Hval]]]].
         exists val, wal. repeat split; auto. }
 
-      have Hconstr := store_constr_reduce state _ _ _ _ _ _ _ Hinv' _  HrelM Hmaxargs _ H.
-      edestruct Hconstr as [s_v [Hred_v [Hinv_v [Hfuncs' [HvalPreserved' [cap_v [wal [? [? Hvalue]]]]]]]]].
+      assert (HenoughM': (forall (m : memory) (gmp_v : nat),
+        nth_error (s_mems s') 0 = Some m ->
+        sglob_val (host_function:=host_function) s' (f_inst fr) global_mem_ptr =
+                                              Some (VAL_int32 (nat_to_i32 gmp_v)) ->
+        (-1 < Z.of_nat gmp_v < Wasm_int.Int32.modulus)%Z ->
+        (Z.of_nat gmp_v + Z.of_N page_size < Z.of_N (mem_length m))%Z)).
       { intros. assert (m' = m0) by congruence. subst m0.
         assert (gmp_v = gmp_v'). { rewrite Hgmp' in H3. inv H3.
           rewrite Wasm_int.Int32.Z_mod_modulus_id in H6; try lia.
-          rewrite Wasm_int.Int32.Z_mod_modulus_id in H6; try lia. } subst gmp_v'. lia. }
-     eassumption.
-     { clear Hconstr. subst cap_v.
+          rewrite Wasm_int.Int32.Z_mod_modulus_id in H6; try lia. }
+        subst gmp_v'. lia. }
+
+     assert (HfVal' : (forall (y : positive) (y' : immediate) (v : cps.val),
+           rho ! y = Some v ->
+           repr_funvar fenv nenv y y' ->
+           repr_val_LambdaANF_Codegen fenv nenv host_function rho v s' fr
+             (Val_funidx y'))).
+     { intros. destruct Hrel_m as [HrelF _].
+       assert (Hfd: find_def y fds <> None). admit.
+       have H' := HfenvRho _ _ H2 Hfd. subst v0. admit.
+              }
+
+      have Hconstr := store_constr_reduce state _ _ _ _ _ t _ Hinv' HenoughM' HrelM Hmaxargs H8 H HfVal'.
+      destruct Hconstr as [s_v [Hred_v [Hinv_v [Hfuncs' [HvalPreserved' [cap_v [wal [? [? Hvalue]]]]]]]]].
+
+    { subst cap_v.
       have Hl := HlocalBound _ _ Hx'. apply nth_error_Some in Hl.
       apply notNone_Some in Hl. destruct Hl as [? Hlx].
 
@@ -5708,10 +5771,83 @@ Proof.
   Unshelve. assumption.
 Qed.
 
-Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num_funs module fenv main_lenv sr f exports,
-  NoDup (collect_function_vars topExp) ->
+Lemma translate_funcs_find_def : forall fds f fns t ys e fenv,
+  NoDup (collect_function_vars (Efun fds e)) ->
+  (fix iter (fds : fundefs) :  error (seq wasm_function) :=
+               match fds with
+               | Fcons x _ xs e0 fds' =>
+                   match
+                     translate_function nenv cenv fenv x xs e0
+                   with
+                   | Err t => fun _ : wasm_function -> error (seq wasm_function) => Err t
+                   | Ret a => fun m2 : wasm_function -> error (seq wasm_function) => m2 a
+                   end
+                     (fun fn : wasm_function =>
+                      match iter fds' with
+                      | Err t => fun _ : seq wasm_function -> error (seq wasm_function) => Err t
+                      | Ret a => fun m2 : seq wasm_function -> error (seq wasm_function) => m2 a
+                      end
+                        (fun following : seq wasm_function =>
+                         Ret (fn :: following)))
+               | Fnil => Ret [::]
+               end) fds = Ret fns ->
+  find_def f fds = Some (t, ys, e) ->
+  (forall f t ys e, find_def f fds = Some (t, ys, e) -> correct_cenv_of_exp cenv e) ->
+  exists idx e' locs ftype func, repr_funvar fenv nenv f idx /\
+    locs = repeat T_i32 (length (collect_local_variables e)) /\
+    ftype = Tf (List.map (fun _ => T_i32) ys) [] /\
+    In func fns /\
+    func.(fidx) = idx /\ func.(type) = ftype /\ func.(locals) = locs /\ func.(body) = e' /\
+    repr_expr_LambdaANF_Codegen fenv nenv e e'
+     (lenv := create_local_variable_mapping (ys ++ collect_local_variables e)).
+Proof.
+  induction fds; intros ? ? ? ? ? ? Hnodup HtransFns HfDef HcorrCenv. 2: inv HfDef.
+  destruct (translate_function _ _ _ _ _ _) eqn:Hf. inv HtransFns.
+  destruct (_ fds) eqn:Hfns; inv HtransFns.
+  cbn in HfDef. destruct (M.elt_eq f0 v).
+  { (* f0=v *)
+    inv HfDef.
+    unfold translate_function in Hf.
+    destruct (translate_exp _ _ _ _ _) eqn:Hexp. inv Hf.
+    destruct (translate_var _ _ _ _) eqn:Hvar; inv Hf.
+    exists i, l. eexists. eexists. eexists.
+    split. { econstructor. eassumption. }
+    do 2! (split; try reflexivity).
+    split. now left.
+    cbn. rewrite map_repeat_eq.
+    repeat (split; first reflexivity).
+
+    apply translate_exp_correct in Hexp; eauto. eapply HcorrCenv with (f:=v). cbn.
+      destruct (M.elt_eq v v); try contradiction. reflexivity.
+  }
+  { (* f0<>v *)
+    assert (Hnodup': NoDup (collect_function_vars (Efun fds e0))). {
+      now inv Hnodup. }
+    assert (HcorrCenv': (forall (f : var) (t : fun_tag) (ys : seq var) (e : exp),
+      find_def f fds = Some (t, ys, e) ->
+      correct_cenv_of_exp cenv e)). {
+    intros. have H' := HcorrCenv f1 t0 ys0 e1. apply H'. cbn.
+    assert (f1 <> v). {
+      inv Hnodup. intro. subst. apply H2.
+      apply find_def_in_collect_function_vars; auto. congruence. }
+    destruct (M.elt_eq f1 v); auto; congruence. }
+    have IH := IHfds _ _ _ _ _ _ Hnodup' Hfns HfDef HcorrCenv'.
+    destruct IH as [idx [e' [locs [type [func [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]].
+    inversion H.
+    repeat eexists.
+    repeat (split; eauto).
+    rewrite -H3 in H8. eassumption.
+    now right. all: congruence. }
+Qed.
+
+
+Lemma module_instantiate_INV_and_more_hold : forall e eAny topExp fds num_funs module fenv main_lenv sr f exports,
+  NoDup (collect_function_vars (Efun fds eAny)) ->
   expression_restricted e ->
   topExp = match e with | Efun _ _ => e | _ => Efun Fnil e end ->
+  (match topExp with Efun fds' _ => fds' | _ => Fnil end) = fds ->
+  (forall (f : var) (t : fun_tag) (ys : seq var) (e : exp),
+      find_def f fds = Some (t, ys, e) -> correct_cenv_of_exp cenv e) ->
   num_funs = match topExp with | Efun fds _ => fds_length fds | _ => 42 (* unreachable*) end ->
   (Z.of_nat num_funs < max_num_functions)%Z ->
   LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, main_lenv) ->
@@ -5721,6 +5857,10 @@ Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num
   instantiate host_function host_instance initial_store module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] (sr, (f_inst f), exports, None) ->
   INV fenv nenv _ (M.empty _) sr f /\
   inst_funcs (f_inst f) = [:: 0, 1, 2, 3 & map (fun '(Mk_funcidx i) => i) (funcidcs num_funs 4)] /\
+  (forall f t ys e, find_def f fds = Some (t, ys, e) ->
+   exists e', repr_expr_LambdaANF_Codegen
+     (lenv:=create_local_variable_mapping (ys ++ collect_local_variables e)) fenv nenv e e'
+    /\ True) /\
   (* pp_fn not called, discard *)
    exists pp_fn e' fns, s_funcs sr = [:: FC_func_host (Tf [T_i32] []) hfn,
                                          FC_func_host (Tf [T_i32] []) hfn,
@@ -5772,7 +5912,8 @@ Lemma module_instantiate_INV_and_more_hold : forall e topExp (fds : fundefs) num
   | _ => Ret []
   end = Ret fns.
 Proof.
-  intros e topExp fds num_funs module fenv lenv s f exports Hnodup HeRestr HtopExp Hnumfuns HfdsLength Hcompile Hflocs Hinst. subst num_funs topExp.
+  intros e eAny topExp fds num_funs module fenv lenv s f exports Hnodup HeRestr HtopExp Hfds HcenvCorrect Hnumfuns
+    HfdsLength Hcompile Hflocs Hinst. subst num_funs topExp.
   unfold instantiate in Hinst.
   unfold LambdaANF_to_WASM in Hcompile.
   remember (list_function_types (Z.to_nat max_function_args)) as types.
@@ -5942,24 +6083,34 @@ Proof.
   { rewrite F3. repeat f_equal. intros. rewrite H2. reflexivity.
     destruct e; inv HtopExp'; inv HtransFns; auto.
     symmetry. rewrite Hlen. cbn. eapply fds_length_length. eassumption. }
-    exists (FC_func_native (f_inst f) (Tf [T_i32] []) [T_i32] (body w)), e', fns.
-    subst s'; cbn; cbn in Hglobals, Hfuncs, Hmems. rewrite Hfuncs.
+  split.
+  { intros.
+    assert (Hnodup' : NoDup (collect_function_vars (Efun fds e1))). {
+      replace (collect_function_vars (Efun fds e1)) with
+              (collect_function_vars (Efun fds e0)) by reflexivity. assumption. }
 
-    assert (HfRepeat: (fun x : wasm_function =>
-       FC_func_native (host_function:=host_function) (f_inst f)
+    have H' := translate_funcs_find_def _ _ _ _ _ _ _ Hnodup' HtransFns H HcenvCorrect.
+    destruct H' as [fidx [e'' [? [? [func [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]].
+    subst. eauto.
+    }
+  exists (FC_func_native (f_inst f) (Tf [T_i32] []) [T_i32] (body w)), e', fns.
+  subst s'; cbn; cbn in Hglobals, Hfuncs, Hmems. rewrite Hfuncs.
+
+  assert (HfRepeat: (fun x : wasm_function =>
+     FC_func_native (host_function:=host_function) (f_inst f)
          match type x with
          | Tf args _ => Tf (repeat T_i32 (Datatypes.length args)) []
          end (locals x) (body x)) = (fun x : wasm_function =>
-       FC_func_native (f_inst f)
+     FC_func_native (f_inst f)
          (Tf (repeat T_i32
                match type x with
                | Tf args _ => Datatypes.length args
                end) []) (locals x) (body x))). {
       apply functional_extensionality. intros.
       now destruct (type x).
-    }
-    rewrite HfRepeat.
-    replace (collect_local_variables
+  }
+  rewrite HfRepeat.
+  replace (collect_local_variables
               match e with
               | Efun _ exp => exp
               | _ => e
@@ -5969,12 +6120,12 @@ Proof.
 	            | Efun _ _ => e
 	            | _ => Efun Fnil e
 	            end) by now destruct e.
-	  rewrite HtopExp'. split. reflexivity.
-	  split. rewrite -Hexpr.
-	  replace (match e with | Efun _ exp => exp
-                          | _ => e end) with e0 by now destruct e.
-    reflexivity.
-    rewrite -HtransFns. destruct e; inv HtopExp'; auto.
+	rewrite HtopExp'. split. reflexivity.
+	split. rewrite -Hexpr.
+	replace (match e with | Efun _ exp => exp
+                        | _ => e end) with e0 by now destruct e.
+  reflexivity.
+  rewrite -HtransFns. destruct e; inv HtopExp'; auto.
 Qed.
 
 Lemma repeat0_n_zeros : forall l,
@@ -6029,16 +6180,39 @@ Proof.
   }
   assert (HflocsNil : f_locs f = []). { subst. reflexivity. }
   assert (Hfinst : f_inst f = f_inst fr) by (subst; reflexivity). rewrite -Hfinst in Hinst.
-  assert (Hnodup: NoDup (collect_function_vars match e with
-                                               | Efun _ _ => e
-                                               | _ => Efun Fnil e
-                                               end)). {
-    eapply NoDup_app_r in HvarsNodup. destruct e; try (by constructor).
-    assumption. eassumption.
-  }
-  have HI := module_instantiate_INV_and_more_hold _ _ Fnil _ _ _ _ _ _ _ Hnodup HeRestr Logic.eq_refl
-                               Logic.eq_refl Hmaxfuns LANF2WASM HflocsNil Hinst. clear Hfinst.
-  destruct HI as [Hinv [HinstFuncs [pp_fn [e' [fns' [HsrFuncs [Hexpr' Hfns']]]]]]].
+  assert (Hnodup: NoDup (collect_function_vars (Efun Fnil e))) by constructor.
+
+  assert (Hcenv' : (forall (f : var) (t : fun_tag) (ys : seq var) (e1 : exp),
+      find_def f match
+          match e with
+          | Efun _ _ => e
+          | _ => Efun Fnil e
+          end
+        with
+        | Efun fds' _ => fds'
+        | _ => Fnil
+        end = Some (t, ys, e1) ->
+      correct_cenv_of_exp cenv e1)). { intros. destruct e; try discriminate. cbn in Hcenv.
+      eapply Forall_constructors_subterm; try apply Hcenv. constructor. apply dsubterm_fds.
+      now eapply find_dsubterm. }
+
+  assert (Hnodup': NoDup
+       (collect_function_vars
+          (Efun match
+               match e with
+               | Efun _ _ => e
+               | _ => Efun Fnil e
+               end
+             with
+             | Efun fds' _ => fds'
+             | _ => Fnil
+             end e))). { destruct e; cbn; auto.
+                         now eapply NoDup_app_r in HvarsNodup. }
+
+  have HI := module_instantiate_INV_and_more_hold _ _ _ _ _ _ _ _ _ _ _ Hnodup' HeRestr
+               Logic.eq_refl Logic.eq_refl Hcenv' Logic.eq_refl Hmaxfuns LANF2WASM HflocsNil Hinst.
+  clear Hfinst Hnodup' Hcenv'.
+  destruct HI as [Hinv [HinstFuncs [HfVal [pp_fn [e' [fns' [HsrFuncs [Hexpr' Hfns']]]]]]]].
 
   remember (Build_frame (repeat (nat_to_value 0) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
 
