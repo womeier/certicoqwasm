@@ -958,23 +958,6 @@ Proof.
     injection H => instr'. subst. constructor. econstructor. eauto.
 Qed.
 
-(*
-Definition program_inv := fun (x : nat) => I.
-(* The full the domain of map is exactly the symbols of globalenv *)
-Definition find_symbol_domain {A} (map:M.t A):=
-   forall (x:positive), (exists V1, M.get x map = Some V1) <-> (exists b, Genv.find_symbol (Genv.globalenv p) x = Some b).
-
-Definition finfo_env_correct :=
-   forall (x:positive) i t, M.get x finfo_env = Some (i , t) -> (exists finfo, M.get t fenv = Some finfo).
-*)
-(*       M.get tinfIdent lenv = Some (Vptr tinf_b tinf_ofs) /\
-      deref_loc (Tarray uval maxArgs noattr) m tinf_b (Ptrofs.add tinf_ofs (Ptrofs.repr 12)) (Vptr args_b args_ofs) /\ *)
-(*
-                                  Mem.load int_chunk m args_b (Ptrofs.unsigned (Ptrofs.add args_ofs (Ptrofs.repr int_size))) = Some Codegenv /\
-                                  repr_val_L_LambdaANF_Codegen_id fenv finfo_env p rep_env v m L Codegenv.
-
-*)
-
 Definition result_val_LambdaANF_Codegen (val : LambdaANF.cps.val)
                                         (sr : store_record) (fr : frame) : Prop :=
 
