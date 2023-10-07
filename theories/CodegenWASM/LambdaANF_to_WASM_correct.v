@@ -4136,7 +4136,10 @@ Proof with eauto.
            repr_val_LambdaANF_Codegen fenv nenv host_function rho v s' fr
              (Val_funidx y'))).
      { intros. destruct Hrel_m as [HrelF _].
-       assert (Hfd: find_def y fds <> None). admit.
+      assert (Hfd: (exists i : nat, fenv ! y = Some i)). {
+        inv H3. unfold translate_var in H4. now destruct (fenv ! y) eqn:Hy. }
+      apply HfenvWf in Hfd. apply notNone_Some in Hfd.
+
        have H' := HfenvRho _ _ H2 Hfd. subst v0. admit.
               }
 
