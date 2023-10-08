@@ -4008,7 +4008,7 @@ Theorem repr_bs_LambdaANF_Codegen_related :
            (instructions : list basic_instruction),
 
       (* fds only on toplevel so obtained for all funvalues, obtained rho = M.empty *)
-      (forall x rho' fds' f', rho ! x = Some (Vfun rho' fds' f') -> fds' = fds /\ rho' = M.empty _) ->
+      (forall x rho' fds' f' v, rho ! x = Some v -> subval_or_eq (Vfun rho' fds' f') v -> fds' = fds /\ rho' = M.empty _) ->
       (forall a t ys e, find_def a fds = Some (t, ys, e) ->
           expression_restricted e /\ (forall x, occurs_free e x -> In x ys) /\
           NoDup (ys ++ collect_local_variables e ++ collect_function_vars (Efun fds e)) /\
@@ -4109,14 +4109,17 @@ Proof with eauto.
       f_inst := f_inst fr|}) as f_before_IH.
 
       assert (HfdsEqRhoEmpty_before_IH: (forall (x : positive) (rho'0 : M.t cps.val)
-        (fds' : fundefs) (f' : var), rho' ! x = Some (Vfun rho'0 fds' f') -> fds' = fds /\ rho'0 = M.empty _)). {
-        intros x1 rho'0 fds' f' Hfds'.
+        (fds' : fundefs) (f' : var) v, rho' ! x = Some v -> subval_or_eq (Vfun rho'0 fds' f') v -> fds' = fds /\ rho'0 = M.empty _)). {
+        intros x1 rho'0 fds' f' v0 Hrho' Hval'.
         subst rho'.
         destruct (var_dec x x1).
         (* x=x1 *)
-        { subst x1. rewrite M.gss in Hfds'. inv Hfds'. }
+        { subst x1. rewrite M.gss in Hrho'. inv Hrho'.
+          apply subval_or_eq_fun in Hval'. destruct Hval' as [v' [Hval' Hin]].
+          destruct (get_list_In_val _ _ _ _ H Hin) as [y [Hiny Hrho']].
+          now eapply HfdsEqRhoEmpty. }
         (* x<>x1 *)
-        { rewrite M.gso in Hfds'; auto. now apply HfdsEqRhoEmpty in Hfds'. }
+        { rewrite M.gso in Hrho'; auto. now eapply HfdsEqRhoEmpty in Hrho'. }
       }
 
       assert (Hinv_before_IH: INV lenv s_v f_before_IH). {
@@ -4346,16 +4349,19 @@ Proof with eauto.
         }
      }}
 
-     assert (HfdsEqRhoEmpty': (forall (x1 : positive) (rho' : M.t cps.val) (fds' : fundefs) (f' : var),
-      (map_util.M.set x v rho) ! x1 = Some (Vfun rho' fds' f') -> fds' = fds /\ rho' = M.empty _)). {
-        intros x1 rho' fds' f' Hfds'.
+     assert (HfdsEqRhoEmpty': (forall (x1 : positive) (rho' : M.t cps.val) (fds' : fundefs) (f' : var) v0,
+      (map_util.M.set x v rho) ! x1 = Some v0 -> subval_or_eq (Vfun rho' fds' f') v0 -> fds' = fds /\ rho' = M.empty _)). {
+        intros x1 rho' fds' f' v0 Hrho' Hval.
         destruct (var_dec x x1).
         (* x=x1 *)
-        { subst x1. rewrite M.gss in Hfds'. inv Hfds'. inv Hbsval.
-          split; auto.
-          admit. }
+        { subst x1. rewrite M.gss in Hrho'. inv Hrho'.
+          assert (In v0 vs). { now eapply nthN_In. }
+          assert (Hsub: subval_or_eq (Vfun rho' fds' f') (Vconstr t vs)).
+          { now eapply subval_or_eq_constr. }
+          have H' := HfdsEqRhoEmpty _ _ _ _ _ Hrho Hsub. now destruct H'. }
         (* x<>x1 *)
-        { rewrite M.gso in Hfds'; auto. now apply HfdsEqRhoEmpty in Hfds'. }
+        { rewrite M.gso in Hrho'; auto. eapply HfdsEqRhoEmpty in Hrho'.
+          eassumption. eassumption. }
      }
 
      assert (Hinv': INV lenv sr {| f_locs := set_nth (wasm_deserialise bs T_i32)
@@ -4604,7 +4610,7 @@ Proof with eauto.
         rewrite H in Hrho. inv Hrho. inv Hval.
         rewrite H1 in H8. symmetry in H8. inv H8.
         rename i into locIdx.
-        assert (fl = fds). { apply HfdsEqRhoEmpty in H. now destruct H. } subst fl.
+        assert (fl = fds). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst fl.
         exists idx. split.
         dostep'. apply r_get_local. eassumption. apply rt_refl.
         econstructor; eauto. }
@@ -4627,7 +4633,7 @@ Proof with eauto.
       }
     }
     destruct Hval as [fidx [HredF Hval]]. inv Hval.
-    assert (fl = fds). { apply HfdsEqRhoEmpty in H. now destruct H. } subst fl.
+    assert (fl = fds). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst fl.
     rewrite H9 in H1. inv H1. rename H16 into Hexpr.
 
     repeat rewrite map_cat. cbn.
@@ -4640,24 +4646,25 @@ Proof with eauto.
 
     (* prepare IH *)
     remember (create_local_variable_mapping (xs ++(collect_local_variables e))) as lenv_before_IH.
-    assert (Hfds_before_IH: (forall (x : positive) (rho' : M.t cps.val)
-            (fds' : fundefs) (f' : var), rho'' ! x = Some (Vfun rho' fds' f') ->
+    assert (Hfds_before_IH: (forall (x : positive) (rho' : M.t cps.val) (fds' : fundefs) (f' : var) v,
+      rho'' ! x = Some v -> subval_or_eq (Vfun rho' fds' f') v ->
                                      fds' = fds /\ rho' = M.empty _)). {
       intros.
-      assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. } subst rho'.
+      assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst rho'.
       assert (Hdec: decidable_eq var). {
         intros n m. unfold Decidable.decidable. now destruct (var_dec n m). }
       have H' := In_decidable Hdec x xs. clear Hdec. destruct H'.
       { (* In x xs *)
-        have H' := set_lists_In _ _ _ _ _ _ H3 H1 H2.
+        have H' := set_lists_In _ _ _ _ _ _ H4 H1 H2.
         destruct (get_list_In_val _ _ _ _ H0 H') as [y [Hin Hrho]].
-        apply HfdsEqRhoEmpty in Hrho. now destruct Hrho. }
+        eapply HfdsEqRhoEmpty in Hrho. now destruct Hrho. eassumption. }
       { (* ~In x xs *)
-        have H' := set_lists_not_In _ _ _ _ _ H2 H3. rewrite H1 in H'.
-        erewrite def_funs_find_def in H'. now inv H'.
+        have H' := set_lists_not_In _ _ _ _ _ H2 H4. rewrite H1 in H'.
+        erewrite def_funs_find_def in H'. inv H'.
+        { admit. }
         intro Hcontra.
         apply def_funs_find_def' in H'. destruct H'.
-        now destruct H4. inv H4. }
+        now destruct H5. inv H5. }
     }
 
     assert (Hinv_before_IH : INV lenv_before_IH sr f_before_IH). {
@@ -4674,8 +4681,9 @@ Proof with eauto.
                               e rho'' sr f_before_IH fds). {
       unfold rel_mem_LambdaANF_Codegen. split.
       { (* funs *) intros.
-        assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. }
-        subst. admit. }
+        assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. }
+        subst rho'.
+        admit. }
       { (* vars *)
         intros. destruct Hrel_m as [_ HrelVars].
         assert (In x xs). {
@@ -4709,7 +4717,7 @@ Proof with eauto.
 
     assert (Hunbound': (forall x : var, In x (collect_local_variables e) -> rho'' ! x = None)). {
       intros.
-      assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. } subst rho'.
+      assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst rho'.
       assert (~ exists v, find_def x fds = Some v). {
         intro Hcontra. destruct Hcontra as [? Hfd].
         assert (Hfd': find_def x fds <> None) by congruence.
@@ -4774,7 +4782,7 @@ Proof with eauto.
 
     have H' := set_lists_not_In _ _ _ _ _ H2 HaXs.
     rewrite <- H' in H1.
-    assert (rho' = M.empty _). { apply HfdsEqRhoEmpty in H. now destruct H. }
+    assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. }
     subst rho'.
     eapply def_funs_find_def in H3. now erewrite H' in H3. }
 
@@ -6265,9 +6273,9 @@ Proof.
     }
 
     assert (HfdsEqRhoEmpty_before_IH: (forall (x : positive) (rho' : M.t val)
-           (fds' : fundefs) (f' : var),
-           (M.empty _) ! x = Some (Vfun rho' fds' f') -> fds' = Fnil
-                                                      /\ rho' = M.empty _)). { intros. inv H. }
+           (fds' : fundefs) (f' : var) v,
+           (M.empty _) ! x = Some v -> subval_or_eq (Vfun rho' fds' f') v ->
+             fds' = Fnil /\ rho' = M.empty _)). { intros. inv H. }
 
     assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e : exp),
       find_def a Fnil = Some (t, ys, e) ->
