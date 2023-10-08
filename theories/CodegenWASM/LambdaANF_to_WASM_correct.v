@@ -4661,7 +4661,15 @@ Proof with eauto.
       { (* ~In x xs *)
         have H' := set_lists_not_In _ _ _ _ _ H2 H4. rewrite H1 in H'.
         erewrite def_funs_find_def in H'. inv H'.
-        { admit. }
+        { apply subval_fun in H3. now destruct H3 as [? [? ?]].
+          assert (Hfd: find_def x fds <> None). {
+            have H' := set_lists_not_In _ _ _ _ _ H2 H4.
+            rewrite H1 in H'. inv H'. intro Hcontra.
+            eapply def_funs_not_find_def in Hcontra. erewrite Hcontra in H10.
+            discriminate.
+          }
+          apply notNone_Some in Hfd. destruct Hfd.
+          now eapply find_def_name_in_fundefs. }
         intro Hcontra.
         apply def_funs_find_def' in H'. destruct H'.
         now destruct H5. inv H5. }
