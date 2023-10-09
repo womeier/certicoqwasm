@@ -3790,7 +3790,7 @@ Proof.
   rewrite M.gso; auto.
 Qed.
 
-(* Lemma variable_mapping_In_Some : forall l x idx lenv,
+Lemma variable_mapping_In_Some : forall l x idx lenv,
   NoDup l ->
   In x l ->
   (create_var_mapping idx l lenv) ! x <> None.
@@ -3800,7 +3800,7 @@ Proof.
   - cbn in H0. destruct H0.
     (* a = x*) subst. cbn. intro. now rewrite M.gss in H0.
     (* In x l *) cbn. inv H. rewrite M.gso; auto. intro. now subst.
-Qed. *)
+Qed.
 
 Lemma NoDup_app_In {A} : forall l1 l2 (x:A),
   NoDup (l1 ++ l2) ->
@@ -5761,17 +5761,25 @@ Proof.
   reflexivity.
 Qed.
 
-Lemma find_def_in_collection_function_vars : forall fds f t ys e,
-  find_def f fds = Some (t, ys, e) ->
+Lemma find_def_in_collection_function_vars : forall fds f e,
+  find_def f fds <> None <->
   In f (collect_function_vars (Efun fds e)).
 Proof.
-  induction fds; intros.
-  { cbn in H.
+  induction fds; intros; split.
+  { intro H. cbn in H.
     destruct (M.elt_eq f0 v).
     (* v=f0*) subst. now cbn.
     (* v<>f0*) right. eapply IHfds. eassumption.
   }
-  inv H.
+  { intros H Hcontra. cbn in H. cbn in Hcontra.
+    destruct (M.elt_eq f0 v).
+    (* v=f0*) subst. now cbn.
+    (* v<>f0*) destruct H as [H | H]. now subst.
+               eapply IHfds. eassumption. assumption.
+  }
+  { intro H. contradiction. }
+  { intro H. inv H. }
+  Unshelve. all: auto.
 Qed.
 
 Lemma translate_functions_exists_original_fun : forall fds fds'' fns wasmFun e,
@@ -5843,11 +5851,11 @@ Proof.
       exists f', t', ys', e''. split; auto. rewrite -Hfdef.
       destruct (M.elt_eq f' v); auto. subst v. exfalso.
       inv Hnodup. apply H1. clear H2. cbn.
-      eapply find_def_in_collection_function_vars. eassumption.
+      eapply find_def_in_collection_function_vars. apply notNone_Some. eauto.
     }
     eassumption.
   }
-  Unshelve. assumption.
+  Unshelve. all: assumption.
 Qed.
 
 Lemma translate_funcs_find_def : forall fds f fns t ys e fenv,
@@ -6354,13 +6362,26 @@ Proof.
     }
 
     assert (Hnodup': NoDup (collect_local_variables e ++
-                            collect_function_vars (Efun fds e))). admit.
+                            collect_function_vars (Efun fds e))). {
+      cbn in HvarsNodup. rewrite <-catA in HvarsNodup.
+      now eapply NoDup_app_middle in HvarsNodup.
+    }
 
     assert (HfenvWf: (forall f : var,
          (exists res : fun_tag * seq var * exp,
             find_def f fds = Some res) <->
          (exists i : nat,
-            fenv ! f = Some i))). admit.
+            fenv ! f = Some i))). {
+      subst fenv. intros; split; intros.
+      - apply notNone_Some in H.
+        rewrite find_def_in_collection_function_vars in H.
+        apply notNone_Some. apply variable_mapping_In_Some.
+        + now eapply NoDup_app_r in HvarsNodup.
+        + assumption.
+      - destruct H as [i H]. apply variable_mapping_Some_In in H; auto.
+        rewrite <- find_def_in_collection_function_vars in H.
+        now apply notNone_Some.
+    }
 
     assert (HfenvRho: (forall (a : positive) (v0 : val),
          (def_funs fds fds (M.empty val) (M.empty val)) ! a = Some v0 ->
