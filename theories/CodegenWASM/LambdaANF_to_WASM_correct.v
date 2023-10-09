@@ -4691,7 +4691,31 @@ Proof with eauto.
       { (* funs *) intros.
         assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. }
         subst rho'.
-        admit. }
+        assert (Hdec: decidable_eq var). {
+          intros n m. unfold Decidable.decidable. now destruct (var_dec n m). }
+       have H' := In_decidable Hdec x xs. clear Hdec. destruct H'.
+       { (* In x xs *)
+         have H' := set_lists_In _ _ _ _ _ _ H4 H1 H2.
+         destruct (get_list_In_val _ _ _ _ H0 H') as [y [Hiny HyRho]].
+         destruct Hrel_m as [HrelF _].
+         have H'' := HrelF _ _ _ errMsg HyRho H3.
+         destruct H'' as [i [HtransF [Hval Hclosed]]].
+         exists i. split. assumption. split; last assumption.
+         eapply val_relation_depends_on_finst; last apply Hval.
+         now subst. }
+       { (* ~In x xs *)
+         have H' := set_lists_not_In _ _ _ _ _ H2 H4. rewrite H1 in H'.
+         erewrite def_funs_find_def in H'.
+         2:{ intro Hcontra. eapply def_funs_not_find_def in Hcontra.
+             rewrite Hcontra in H'. inv H'. } inv H'.
+         have H' := set_lists_not_In _ _ _ _ _ H2 H4.
+         rewrite H1 in H'.
+         apply def_funs_find_def' in H'.
+         destruct H'. 2: inv H5.
+         apply subval_fun in H3. 2:{ destruct H5. now eapply find_def_name_in_fundefs. }
+         destruct H3 as [f1 [?H ?H]]. inv H3. clear H5.
+         apply name_in_fundefs_find_def_is_Some in H10.
+         assert (find_def f1 fds <> None) by now destruct H10 as [? [? [? ?]]]. admit. } }
       { (* vars *)
         intros. destruct Hrel_m as [_ HrelVars].
         assert (In x xs). {
