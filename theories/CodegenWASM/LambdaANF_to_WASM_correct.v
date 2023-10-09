@@ -6226,13 +6226,11 @@ Qed.
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 Theorem LambdaANF_Codegen_related :
-  (* rho is environment, e is body of LambdaANF program *)
-  forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var),
+  forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var)
+         (hs : host_state) module fenv lenv
+         (sr : store_record) (fr : frame) exports,
   (* restricts the number of args a function can have etc. *)
   expression_restricted e ->
-  forall (hs : host_state) module fenv lenv,
-    forall (sr : store_record) (fr : frame) exports,
-
   (* evaluation of LambdaANF expression *)
   bstep_e (M.empty _) cenv (M.empty _) e v n ->
   (* compilation function *)
@@ -6253,7 +6251,7 @@ Theorem LambdaANF_Codegen_related :
 
        result_val_LambdaANF_Codegen fenv nenv _ v sr' fr.
 Proof.
-  intros ? ? ? ? HeRestr ? ? ? ? ? ? ? Hstep LANF2WASM Hcenv HvarsEq HvarsNodup Hfreevars Hinst.
+  intros ? ? ? ? ? ? ? ? ? ? ? HeRestr Hstep LANF2WASM Hcenv HvarsEq HvarsNodup Hfreevars Hinst.
   subst vars.
   remember ({| f_locs := []; f_inst := f_inst fr |}) as f.
   assert (Hmaxfuns : (Z.of_nat match match e with
@@ -6387,7 +6385,7 @@ Proof.
          (def_funs fds fds (M.empty val) (M.empty val)) ! a = Some v0 ->
          find_def a fds <> None -> v0 = Vfun (M.empty val) fds a)). admit.
 
-    assert (HeRestr' : expression_restricted e). admit.
+    assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
     assert (Hunbound: (forall x : var,
          In x (collect_local_variables e) ->
          (def_funs fds fds (M.empty val) (M.empty val)) ! x = None)). admit.
