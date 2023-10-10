@@ -6241,7 +6241,7 @@ Theorem LambdaANF_Codegen_related :
   vars = ((collect_all_local_variables e) ++ (collect_function_vars e))%list ->
   NoDup vars ->
   (* expression must be closed *)
-  (~ exists x, occurs_free e x) ->
+  (~ exists x, occurs_free e x ) ->
   (* instiation with the two imported functions *)
   instantiate _ host_instance initial_store module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] ((sr, (f_inst fr), exports), None) ->
   (* reduces to some sr' that has the result variable set to the corresponding value *)
@@ -6383,18 +6383,36 @@ Proof.
 
     assert (HfenvRho: (forall (a : positive) (v0 : val),
          (def_funs fds fds (M.empty val) (M.empty val)) ! a = Some v0 ->
-         find_def a fds <> None -> v0 = Vfun (M.empty val) fds a)). admit.
+         find_def a fds <> None -> v0 = Vfun (M.empty val) fds a)). {
+      intros ? ? H H0. eapply def_funs_find_def in H0. erewrite H in H0.
+      now inv H0. eassumption. }
 
     assert (HeRestr' : expression_restricted e). { now inv HeRestr. }
     assert (Hunbound: (forall x : var,
          In x (collect_local_variables e) ->
-         (def_funs fds fds (M.empty val) (M.empty val)) ! x = None)). admit.
+         (def_funs fds fds (M.empty val) (M.empty val)) ! x = None)). {
+      intros. eapply def_funs_not_find_def. eassumption.
+      destruct (find_def x fds) eqn:Hdec; auto. exfalso.
+      assert (Hdec': find_def x fds <> None) by congruence. clear Hdec p.
+      apply find_def_in_collect_function_vars with (e:=e) in Hdec'.
+      cbn in HvarsNodup. rewrite <- catA in HvarsNodup.
+      eapply NoDup_app_middle in HvarsNodup; last eassumption.
+      have H' := NoDup_app_In _ _ _ _ _ HvarsNodup H.
+      now eapply H'.
+    }
 
     assert (HfdsEqRhoEmpty_before_IH: (forall (x : positive) (rho' : M.t val)
            (fds' : fundefs) (f' : var) v,
            (def_funs fds fds (M.empty val) (M.empty val)) ! x = Some v ->
              subval_or_eq (Vfun rho' fds' f') v ->
-             fds' = fds /\ rho' = M.empty _)). { intros. inv H. admit. }
+             fds' = fds /\ rho' = M.empty _)). {
+       intros. have H' := H.
+       eapply def_funs_find_def' in H; last eassumption.
+       destruct H as [H | H]. 2: inv H. rewrite def_funs_eq in H'.
+       { inv H'. apply subval_fun in H0. destruct H0 as [? [Hval Hfd]].
+         now inv Hval. destruct H. now eapply find_def_name_in_fundefs. }
+       { destruct H. now eapply find_def_name_in_fundefs. }
+     }
 
      assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e0 : exp) errMsg,
         find_def a fds = Some (t, ys, e0) ->
@@ -6415,10 +6433,23 @@ Proof.
     assert (Hrelm : rel_mem_LambdaANF_Codegen fenv
        (lenv:=create_local_variable_mapping (collect_local_variables e))
          nenv host_function e (def_funs fds fds (M.empty val) (M.empty val))
-          sr f_before_IH fds). { admit. }
-    (* split.
-    { intros. exfalso. cbn in HsrFuncs. inv H. }
-    { intros. exfalso. eauto. }} *)
+          sr f_before_IH fds). {
+      split.
+      { (* funs (follows from previous Hfds) *)
+        intros ? ? ? ? Hdf Hval. have H' := Hdf.
+        eapply def_funs_find_def' in Hdf. 2: eassumption.
+        destruct Hdf as [H | H]. 2: inv H. destruct H as [[[? ?] ?] ?].
+        rewrite def_funs_eq in H'. 2: now eapply find_def_name_in_fundefs.
+        inv H'. apply subval_fun in Hval. 2: now eapply find_def_name_in_fundefs.
+        destruct Hval as [? [Hval ?]]. inv Hval.
+        eapply name_in_fundefs_find_def_is_Some in H0. destruct H0 as [? [? [? ?]]].
+        now eapply Hfds.
+      }
+      { (* vars *)
+        intros x Hocc. exfalso. apply Hfreevars. exists x. constructor; auto.
+        intro Hcontra. admit. }
+    }
+
     subst lenv.
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv _ nenv _
                     host_instance _ _ _ _ _ _ _ HlenvInjective
