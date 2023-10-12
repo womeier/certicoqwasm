@@ -6472,7 +6472,7 @@ Proof.
        { destruct H. now eapply find_def_name_in_fundefs. }
      }
 
-     assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e0 : exp) errMsg,
+    assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e0 : exp) errMsg,
         find_def a fds = Some (t, ys, e0) ->
         expression_restricted e0 /\
         (forall x : var, occurs_free e0 x -> In x ys \/ find_def x fds <> None) /\
@@ -6486,32 +6486,20 @@ Proof.
              host_function (Vfun (M.empty val) fds a)
              sr f_before_IH (Val_funidx fidx) /\
            closed_val (Vfun (M.empty val) fds a))). {
-        intros ? ? ? ? ? Hcontra. inv Hcontra.
-        split. inv HeRestr. eapply H3. eassumption.
-        split. intros x Hocc.
-        assert (Hdec: decidable_eq var). {
+      intros ? ? ? ? ? Hcontra.
+      split. { inv HeRestr. eapply H2. eassumption. }
+      split. { intros x Hocc.
+      assert (Hdec: decidable_eq var). {
         intros n' m'. unfold Decidable.decidable. now destruct (var_dec n' m'). }
-      have H' := In_decidable Hdec x ys. destruct H'; auto.
+      have H' := In_decidable Hdec x ys. destruct H'. now left.
+      right. intro Hcontra'.
       exfalso. apply Hfreevars. exists x. apply Free_Efun2.
       eapply find_def_is_Some_occurs_free_fundefs; eauto.
-      intro Hfd. assert (Hfd': find_def x fds <> None). {
-        apply name_in_fundefs_find_def_is_Some in Hfd.
-        now destruct Hfd as [? [? [? ?]]]. } clear Hfd. rename Hfd' into Hfd.
-      apply find_def_in_collect_function_vars with (e:=e) in Hfd.
-      assert (forall e', subterm_e e' (Efun fds e) -> ~exists fds' e'', e' = Efun fds' e'' ). admit.
-      admit.
-      split.
-      { (* have H' := find_def_collect_all_local_variables _ _ _ _ _ e H0.
-        apply NoDup_incl_NoDup with (l:= (collect_all_local_variables (Efun fds e))
-                              ++ collect_function_vars (Efun fds e0)).
-        assumption.
-        repeat rewrite app_length. admit.
-        intros x Hxin.
-        apply in_app_or in Hxin. destruct Hxin as [Hxin | Hxin].
-        - rewrite catA. apply in_or_app. left. admit.
-        - apply in_or_app. right. now apply in_or_app. *) admit.
-       }
-       admit.
+      intro Hfd. revert Hcontra'.
+      apply name_in_fundefs_find_def_is_Some in Hfd.
+      now destruct Hfd as [? [? [? ?]]]. }
+      split. { admit.  (* nodup *) }
+      (* exists fun values *) admit.
     }
 
     assert (Hrelm : rel_mem_LambdaANF_Codegen fenv
@@ -6526,12 +6514,13 @@ Proof.
         rewrite def_funs_eq in H'. 2: now eapply find_def_name_in_fundefs.
         inv H'. apply subval_fun in Hval. 2: now eapply find_def_name_in_fundefs.
         destruct Hval as [? [Hval ?]]. inv Hval.
-        eapply name_in_fundefs_find_def_is_Some in H0. destruct H0 as [? [? [? ?]]].
+        apply name_in_fundefs_find_def_is_Some in H0. destruct H0 as [? [? [? ?]]].
         now eapply Hfds.
       }
       { (* vars *)
-        intros x Hocc. exfalso. apply Hfreevars. exists x. constructor; auto.
-        intro Hcontra. admit. }
+        intros x Hocc Hfd. exfalso. apply Hfreevars. exists x. constructor; auto.
+        intro Hcontra. apply name_in_fundefs_find_def_is_Some in Hcontra.
+        now destruct Hcontra as [? [? [? ?H]]]. }
     }
 
     subst lenv.
