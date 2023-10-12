@@ -51,23 +51,6 @@ Open Scope list.
 
 Import ListNotations.
 
-
-Inductive occurs_free_val: LambdaANF.cps.val -> Ensemble cps.var :=
-| OF_Vconstr :
-    forall c vs v x,
-    occurs_free_val v x ->
-    List.In v vs ->
-    occurs_free_val (Vconstr c vs) x
-| OF_Vfun:
-    forall fds rho x f,
-      occurs_free_fundefs fds x ->
-      M.get x rho = None ->
-      occurs_free_val (Vfun rho fds f) x.
-
-
-Definition closed_val (v : LambdaANF.cps.val) : Prop :=
-  Same_set cps.var (occurs_free_val v) (Empty_set cps.var).
-
 Inductive dsubval_v: LambdaANF.cps.val -> LambdaANF.cps.val -> Prop :=
 | dsubval_constr: forall v vs c,
   List.In v vs ->
@@ -532,8 +515,7 @@ Definition rel_mem_LambdaANF_Codegen {lenv} (e : exp) (rho : LambdaANF.eval.env)
             subval_or_eq (Vfun (M.empty _) fds f) v ->
             (* i is index of function f *)
             exists i, translate_var nenv fenv f errMsg = Ret i /\
-            repr_val_LambdaANF_Codegen (Vfun (M.empty _) fds f) sr fr (Val_funidx i) /\
-            closed_val (Vfun (M.empty _) fds f))
+            repr_val_LambdaANF_Codegen (Vfun (M.empty _) fds f) sr fr (Val_funidx i))
         /\
         (* free variables are related to local var containing a memory pointer or a function index *)
         (forall x,
@@ -3674,7 +3656,7 @@ Proof.
       subst v.
       destruct HrelM as [HrelM _]. inv H.
       eapply HrelM with (errMsg:=errMsg) in Ha. 2:apply rt_refl.
-      destruct Ha as [a'' [HtransF [Hrepr Hclosed]]]. econstructor; eauto.
+      destruct Ha as [a'' [HtransF Hrepr]]. econstructor; eauto.
       cbn. congruence.
    }
 Qed.
@@ -4110,8 +4092,7 @@ Theorem repr_bs_LambdaANF_Codegen_related :
           NoDup (ys ++ collect_local_variables e ++ collect_function_vars (Efun fds e)) /\
           (exists fidx : immediate, translate_var nenv fenv a errMsg = Ret fidx /\
                        repr_val_LambdaANF_Codegen fenv nenv host_function
-                        (Vfun (M.empty cps.val) fds a) sr f (Val_funidx fidx) /\
-                         closed_val (Vfun (M.empty cps.val) fds a))) ->
+                        (Vfun (M.empty cps.val) fds a) sr f (Val_funidx fidx))) ->
       (* invariants *)
       INV lenv sr f ->
 
@@ -4192,7 +4173,7 @@ Proof with eauto.
         (Vfun (M.empty cps.val) fds y)) by constructor.
 
        inv H3.
-       destruct (HrelF _ _ _ errMsg H2 Hsubval) as [i [HvarI [Hval Hclosed]]].
+       destruct (HrelF _ _ _ errMsg H2 Hsubval) as [i [HvarI Hval]].
        assert (i = y') by congruence. subst i.
        eapply val_relation_func_depends_on_funcs; try apply Hval. auto.
      }
@@ -4232,13 +4213,11 @@ Proof with eauto.
              translate_var nenv fenv a errMsg = Ret fidx /\
              repr_val_LambdaANF_Codegen fenv nenv host_function
                (Vfun (M.empty cps.val) fds a) s_v f_before_IH
-               (Val_funidx fidx) /\
-          closed_val (Vfun (M.empty cps.val) fds a))). {
+               (Val_funidx fidx))). {
         intros ? ? ? ? ? Hfd. eapply Hfds in Hfd.
-        destruct Hfd as [? [? [? [idx [HtransF [Hval Hclosed]]]]]].
+        destruct Hfd as [? [? [? [idx [HtransF Hval]]]]].
         repeat (split; try assumption).
         exists idx. split. eassumption.
-        split; auto.
         eapply val_relation_func_depends_on_funcs.
         2:{ eapply val_relation_depends_on_finst; last apply Hval. now subst. }
         congruence.
@@ -4261,14 +4240,14 @@ Proof with eauto.
               have H'' := get_list_In_val _ _ _ _ H Hr2.
               destruct H'' as [x2 [Hin Hrho]].
               have H' := HrelmFun _ _ _ errMsg Hrho Hr1.
-              destruct H' as [i [Htrans [Hval Hclosed]]].
+              destruct H' as [i [Htrans Hval]].
               exists i. repeat (split; auto).
               inv Hval.
               assert (Hfs: s_funcs s_v = s_funcs sr) by congruence.
               econstructor; eauto. cbn. congruence. }
             { (* x<>x1 *) rewrite M.gso in H3; auto.
                have Hrlm := HrelmFun _ _ _ errMsg H3 H4.
-               destruct Hrlm as [i [Htrans [Hval Hclosed]]].
+               destruct Hrlm as [i [Htrans Hval]].
                exists i. repeat (split; auto). subst.
                inv Hval.
                econstructor; eauto. cbn. congruence. }
@@ -4424,7 +4403,7 @@ Proof with eauto.
             apply nthN_In in H0.
             have H' := subval_or_eq_constr _ _ _ t H9 H0.
             have HF := Hfun _ _ _ errMsg Hrho H'.
-            destruct HF as [i [Htrans [Hval Hclosed]]].
+            destruct HF as [i [Htrans Hval]].
 
             exists i. repeat (split; auto).
             eapply val_relation_depends_on_finst; try eassumption. reflexivity.
@@ -4432,8 +4411,8 @@ Proof with eauto.
           { (* x <> x1*)
             rewrite M.gso in H6; auto.
             have H' := Hfun _ _ _ errMsg H6 H9.
-            destruct H' as [i [Htf [Hval HvalClosed]]].
-            exists i. split; auto. split; auto.
+            destruct H' as [i [Htf Hval]].
+            exists i. split; auto.
             eapply val_relation_depends_on_finst; try eassumption. reflexivity.
            }
         }
@@ -4507,13 +4486,11 @@ Proof with eauto.
                  set_nth (wasm_deserialise bs T_i32)
                    (f_locs fr) x' (wasm_deserialise bs T_i32);
                f_inst := f_inst fr
-             |} (Val_funidx fidx) /\
-           closed_val (Vfun (M.empty cps.val) fds a)))). {
+             |} (Val_funidx fidx)))). {
          intros ? ? ? ? ? Hfd. eapply Hfds in Hfd.
-         destruct Hfd as [? [? [? [idx [HtransF [Hval Hclosed]]]]]].
+         destruct Hfd as [? [? [? [idx [HtransF Hval]]]]].
          repeat (split; try assumption).
          exists idx. split. eassumption.
-         split; auto.
          eapply val_relation_func_depends_on_funcs.
          2:{ eapply val_relation_depends_on_finst; last apply Hval. now subst. }
          congruence.
@@ -4793,7 +4770,7 @@ Proof with eauto.
         assert (Hsubval: subval_or_eq (Vfun (M.empty cps.val) fds f)
                                       (Vfun (M.empty cps.val) fds f)) by constructor.
         have H' := HrelF _ _ _ errMsg H Hsubval.
-        destruct H' as [idx [HtransF [Hval Hclosed]]].
+        destruct H' as [idx [HtransF Hval]].
         assert (idx = i). { unfold translate_var in HtransF. now rewrite Hf in HtransF. }
         subst idx. exists i. split. apply rt_refl.
         assumption.
@@ -4855,13 +4832,11 @@ Proof with eauto.
            repr_val_LambdaANF_Codegen fenv nenv
              host_function
              (Vfun (M.empty cps.val) fds a) sr
-             f_before_IH (Val_funidx fidx) /\
-           closed_val (Vfun (M.empty cps.val) fds a)))). {
+             f_before_IH (Val_funidx fidx)))). {
          intros ? ? ? ? ? Hfd. eapply Hfds in Hfd.
-         destruct Hfd as [? [? [? [idx [HtransF [Hval Hclosed]]]]]].
+         destruct Hfd as [? [? [? [idx [HtransF Hval]]]]].
          repeat (split; try assumption).
          exists idx. split. eassumption.
-         split; auto.
          eapply val_relation_func_depends_on_funcs.
          2:{ eapply val_relation_depends_on_finst; last apply Hval. now subst. }
          congruence.
@@ -4891,8 +4866,8 @@ Proof with eauto.
          destruct (get_list_In_val _ _ _ _ H0 H') as [y [Hiny HyRho]].
          destruct Hrel_m as [HrelF _].
          have H'' := HrelF _ _ _ errMsg HyRho H3.
-         destruct H'' as [i [HtransF [Hval Hclosed]]].
-         exists i. split. assumption. split; last assumption.
+         destruct H'' as [i [HtransF Hval]].
+         exists i. split. assumption.
          eapply val_relation_depends_on_finst; last apply Hval.
          now subst. }
        { (* ~In x xs *)
@@ -4908,9 +4883,9 @@ Proof with eauto.
          destruct H3 as [f1 [?H ?H]]. inv H3. clear H5.
          apply name_in_fundefs_find_def_is_Some in H10.
          destruct H10 as [? [? [? ?]]].
-         eapply Hfds in H3. destruct H3 as [_ [_ [_ [fidx' [HtransF [Hval Hclosed]]]]]].
+         eapply Hfds in H3. destruct H3 as [_ [_ [_ [fidx' [HtransF Hval]]]]].
          exists fidx'. split. eassumption.
-         split; auto. eapply val_relation_depends_on_finst; try apply Hval. now subst. } }
+         eapply val_relation_depends_on_finst; try apply Hval. now subst. } }
       { (* vars *)
         intros. destruct Hrel_m as [_ HrelVars].
         assert (In x xs). {
@@ -6066,8 +6041,7 @@ Lemma module_instantiate_INV_and_more_hold : forall e eAny topExp fds num_funs m
 	exists fidx : immediate,
 	  translate_var nenv fenv a errMsg = Ret fidx /\
 	  repr_val_LambdaANF_Codegen fenv nenv host_function
-	    (Vfun (M.empty val) fds a) sr f (Val_funidx fidx) /\
-	 closed_val (Vfun (M.empty val) fds a)) /\
+	    (Vfun (M.empty val) fds a) sr f (Val_funidx fidx)) /\
   (* pp_fn not called, discard *)
    exists pp_fn e' fns, s_funcs sr = [:: FC_func_host (Tf [T_i32] []) hfn,
                                          FC_func_host (Tf [T_i32] []) hfn,
@@ -6302,7 +6276,7 @@ Proof.
     exists (fidx func).
     split. { inv H. unfold translate_var. unfold translate_var in H0.
       destruct ((create_fname_mapping nenv e) ! a); auto. inv H0. }
-    split. 2: { admit. } admit.
+    admit.
   }
   exists (FC_func_native (f_inst f) (Tf [T_i32] []) [T_i32] (body w)), e', fns.
   subst s'; cbn; cbn in Hglobals, Hfuncs, Hmems. rewrite Hfuncs.
@@ -6337,7 +6311,7 @@ Proof.
                         | _ => e end) with e0 by now destruct e.
   reflexivity.
   rewrite -HtransFns. destruct e; inv HtopExp'; auto.
-Qed.
+Admitted.
 
 Lemma repeat0_n_zeros : forall l,
    repeat (nat_to_value 0) (Datatypes.length l)
@@ -6550,8 +6524,7 @@ Proof.
            translate_var nenv fenv a errMsg = Ret fidx /\
            repr_val_LambdaANF_Codegen fenv nenv
              host_function (Vfun (M.empty val) fds a)
-             sr f_before_IH (Val_funidx fidx) /\
-           closed_val (Vfun (M.empty val) fds a))). {
+             sr f_before_IH (Val_funidx fidx))). {
       intros ? ? ? ? ? Hcontra.
       split. { inv HeRestr. eapply H2. eassumption. }
       split. { intros x Hocc.
@@ -6663,8 +6636,7 @@ Proof.
            translate_var nenv fenv a errMsg = Ret fidx /\
            repr_val_LambdaANF_Codegen fenv nenv
              host_function (Vfun (M.empty val) Fnil a)
-             sr f_before_IH (Val_funidx fidx) /\
-           closed_val (Vfun (M.empty val) Fnil a))). {
+             sr f_before_IH (Val_funidx fidx))). {
         intros ? ? ? ? ? Hcontra. inv Hcontra. }
 
     assert (Hunbound : (forall x : var,
