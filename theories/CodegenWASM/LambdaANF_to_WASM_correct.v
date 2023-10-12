@@ -205,21 +205,6 @@ Proof.
       eapply IHxs; eauto.
 Qed.
 
-Ltac inList := repeat (try (left; reflexivity); right).
-
-
-Ltac solve_nodup :=
-  let hxy := fresh "Hxy" in
-  intro hxy; subst; try (clear hxy);
-repeat (match goal with
-        | [H: NoDup _ |- _] => let h2 := fresh "Hnd" in
-                               let h1 := fresh "HinList" in
-                               let x := fresh "x" in
-                               let l := fresh "l" in
-                               inversion H as [h1 | x l h1 h2];
-                               subst; clear H;
-                               try (solve [apply h1; inList])
-        end).
 
 (**** Representation relation for LambdaANF values, expressions and functions ****)
 Section RELATION.
@@ -1853,9 +1838,6 @@ Proof.
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])). eapply rt_step. eapply r_local. apply H.
     now eapply IHclos_refl_trans_1n.
 Qed.
-
-Ltac dostep_no_separate :=
-  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])); first apply rt_step.
 
 Ltac dostep :=
   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])); first apply rt_step; separate_instr.
