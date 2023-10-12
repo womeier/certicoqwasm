@@ -6002,7 +6002,6 @@ Proof.
     now right. all: congruence. }
 Qed.
 
-
 Lemma module_instantiate_INV_and_more_hold : forall e eAny topExp fds num_funs module fenv main_lenv sr f exports,
   NoDup (collect_function_vars (Efun fds eAny)) ->
   expression_restricted e ->
@@ -6258,7 +6257,7 @@ Proof.
     exists (fidx func).
     split. { inv H. unfold translate_var. unfold translate_var in H0.
       destruct ((create_fname_mapping nenv e) ! a); auto. inv H0. }
-    admit.
+    econstructor; eauto. rewrite Hfuncs. cbn. admit.
   }
   exists (FC_func_native (f_inst f) (Tf [T_i32] []) [T_i32] (body w)), e', fns.
   subst s'; cbn; cbn in Hglobals, Hfuncs, Hmems. rewrite Hfuncs.
@@ -6520,8 +6519,13 @@ Proof.
       apply name_in_fundefs_find_def_is_Some in Hfd.
       now destruct Hfd as [? [? [? ?]]]. }
       split. { rewrite catA. eapply NoDup_collect_all_local_variables_find_def; eauto. }
-
-      (* exists fun values *) admit.
+      (* exists fun values *)
+      { assert (Hc: find_def a fds <> None) by congruence.
+        apply HfVal with (errMsg:=errMsg) in Hc; auto.
+        destruct Hc as [fidx [HtransF Hval]].
+        exists fidx. split. assumption.
+        eapply val_relation_depends_on_finst; last apply Hval.
+        subst f_before_IH. reflexivity. }
     }
 
     assert (Hrelm : rel_mem_LambdaANF_Codegen fenv
@@ -6663,7 +6667,7 @@ Proof.
     eapply reduce_trans_local.
     dostep'. constructor. eapply rs_block with (vs:=[]); eauto. cbn.
     apply reduce_trans_label. apply Hred.
-    eapply result_val_LambdaANF_Codegen_depends_on_finst; try eassumption. subst. cbn in Hfinst. congruence. Unshelve. auto.
-Admitted.
+    eapply result_val_LambdaANF_Codegen_depends_on_finst; try eassumption. subst. cbn in Hfinst. congruence. Unshelve. all: auto. }
+Qed.
 
 End MAIN.
