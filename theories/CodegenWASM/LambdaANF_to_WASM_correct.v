@@ -6062,10 +6062,12 @@ Lemma module_instantiate_INV_and_more_hold : forall e eAny topExp fds num_funs m
   instantiate host_function host_instance initial_store module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] (sr, (f_inst f), exports, None) ->
   INV fenv nenv _ (M.empty _) sr f /\
   inst_funcs (f_inst f) = [:: 0, 1, 2, 3 & map (fun '(Mk_funcidx i) => i) (funcidcs num_funs 4)] /\
-  (forall f t ys e, find_def f fds = Some (t, ys, e) ->
-   exists e', repr_expr_LambdaANF_Codegen
-     (lenv:=create_local_variable_mapping (ys ++ collect_local_variables e)) fenv nenv e e'
-    /\ True) /\
+  (forall a errMsg, find_def a fds <> None ->
+	exists fidx : immediate,
+	  translate_var nenv fenv a errMsg = Ret fidx /\
+	  repr_val_LambdaANF_Codegen fenv nenv host_function
+	    (Vfun (M.empty val) fds a) sr f (Val_funidx fidx) /\
+	 closed_val (Vfun (M.empty val) fds a)) /\
   (* pp_fn not called, discard *)
    exists pp_fn e' fns, s_funcs sr = [:: FC_func_host (Tf [T_i32] []) hfn,
                                          FC_func_host (Tf [T_i32] []) hfn,
@@ -6288,16 +6290,20 @@ Proof.
   { rewrite F3. repeat f_equal. intros. rewrite H2. reflexivity.
     destruct e; inv HtopExp'; inv HtransFns; auto.
     symmetry. rewrite Hlen. cbn. eapply fds_length_length. eassumption. }
-  split.
-  { intros.
-    assert (Hnodup' : NoDup (collect_function_vars (Efun fds e1))). {
-      replace (collect_function_vars (Efun fds e1)) with
+  split. (* val relation holds for functions *)
+  { intros. apply notNone_Some in H. destruct H as [[[v' ys'] e''] Hfd].
+    assert (Hnodup' : NoDup (collect_function_vars (Efun fds e))). {
+      replace (collect_function_vars (Efun fds e'')) with
               (collect_function_vars (Efun fds e0)) by reflexivity. assumption. }
 
-    have H' := translate_funcs_find_def _ _ _ _ _ _ _ Hnodup' HtransFns H HcenvCorrect.
-    destruct H' as [fidx [e'' [? [? [func [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]].
+    have H' := translate_funcs_find_def _ _ _ _ _ e'' _ Hnodup' HtransFns Hfd HcenvCorrect.
+    destruct H' as [fidx [e''' [? [? [func [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]].
     subst. eauto.
-    }
+    exists (fidx func).
+    split. { inv H. unfold translate_var. unfold translate_var in H0.
+      destruct ((create_fname_mapping nenv e) ! a); auto. inv H0. }
+    split. 2: { admit. } admit.
+  }
   exists (FC_func_native (f_inst f) (Tf [T_i32] []) [T_i32] (body w)), e', fns.
   subst s'; cbn; cbn in Hglobals, Hfuncs, Hmems. rewrite Hfuncs.
 
@@ -6559,6 +6565,7 @@ Proof.
       apply name_in_fundefs_find_def_is_Some in Hfd.
       now destruct Hfd as [? [? [? ?]]]. }
       split. { rewrite catA. eapply NoDup_collect_all_local_variables_find_def; eauto. }
+
       (* exists fun values *) admit.
     }
 
