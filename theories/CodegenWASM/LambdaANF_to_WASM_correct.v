@@ -538,6 +538,8 @@ Definition rel_mem_LambdaANF_Codegen {lenv} (e : exp) (rho : LambdaANF.eval.env)
         (* free variables are related to local var containing a memory pointer or a function index *)
         (forall x,
             occurs_free e x ->
+            (* not a function var *)
+            find_def x fds = None ->
             (exists v6 val,
                M.get x rho = Some v6 /\
                stored_in_locals (lenv:=lenv) x val fr /\
@@ -3563,9 +3565,41 @@ Proof.
       cbn. eapply IHvs; eauto. }
 Qed.
 
+
+Definition map_injective (m : M.tree nat) := forall x y x' y',
+  x <> y ->
+  m ! x = Some x' ->
+  m ! y = Some y' ->
+  x' <> y'.
+
+Definition domains_disjoint (m1 m2: M.tree nat) :=
+  (forall x v1, m1 ! x = Some v1 -> m2 ! x = None) /\
+  (forall x v2, m2 ! x = Some v2 -> m1 ! x = None).
+
+
+
+Lemma HfenvWf_None : forall fds,
+   (forall f : var,
+          (exists res : fun_tag * seq var * exp,
+             find_def f fds = Some res) <->
+          (exists i : nat, fenv ! f = Some i)) ->
+
+  (forall f, find_def f fds = None <-> fenv ! f = None).
+Proof.
+  intros. split; intros; specialize H with f.
+  - assert (~ exists p, fenv ! f = Some p). {
+      intro Hcontra. rewrite <- H in Hcontra. now destruct Hcontra. }
+    destruct (fenv ! f); auto. exfalso. now apply H1.
+  - assert (~ exists p, find_def f fds = Some p). {
+      intro Hcontra. rewrite H in Hcontra. now destruct Hcontra. }
+    destruct (find_def f fds); auto. exfalso. now apply H1.
+Qed.
+
+
 Lemma fun_args_reduce {lenv} : forall state fr sr fds (ys : seq cps.var) rho vs f t args_instr,
   INV lenv sr fr ->
   get_list ys rho = Some vs ->
+  domains_disjoint lenv fenv ->
   (forall f, (exists res, find_def f fds = Some res) <-> (exists i, fenv ! f = Some i)) ->
   (forall a v, rho ! a = Some v -> find_def a fds <> None -> v = Vfun (M.empty cps.val) fds a) ->
   rel_mem_LambdaANF_Codegen (lenv:=lenv) fenv nenv
@@ -3576,7 +3610,7 @@ Lemma fun_args_reduce {lenv} : forall state fr sr fds (ys : seq cps.var) rho vs 
                  (state, sr, fr, (map (fun a => AI_basic (BI_const (nat_to_value a))) args))
     /\ const_val_list vs sr fr args.
 Proof.
-  intros ? ? ? ? ? ? ? ? ? ? Hinv Hgetlist HfenvWf HfenvRho HrelM Hargs.
+  intros ? ? ? ? ? ? ? ? ? ? Hinv Hgetlist HenvsDisjoint HfenvWf HfenvRho HrelM Hargs.
   generalize dependent f. generalize dependent rho. generalize dependent sr.
   revert vs t fr state. induction Hargs; intros.
   { inv Hgetlist. exists []. cbn. split. apply rt_refl. constructor. }
@@ -3586,9 +3620,8 @@ Proof.
           (Eapp f t args) rho sr fr fds). {
             destruct HrelM as [HM1 HM2]. split. assumption.
             intros. assert (Hocc : (occurs_free (Eapp f t (a :: args)) x)). {
-            inv H0. constructor. constructor. right. assumption. }
-             destruct (HM2 _ Hocc) as [val [wal [Hrho' [Hlocals Hval]]]].
-            exists val, wal. eauto. }
+            inv H0. constructor. constructor. right. assumption.  }
+             destruct (HM2 _ Hocc) as [val [wal [Hrho' [Hlocals Hval]]]]; auto. }
       assert (Hgetlist': get_list args rho = Some vs). {
         cbn in Hgetlist. destruct (rho ! a), (get_list args rho); inv Hgetlist; auto. }
       assert (Ha: rho ! a = Some v). { cbn in Hgetlist. destruct (rho ! a), (get_list args rho); inv Hgetlist; auto. }
@@ -3598,7 +3631,10 @@ Proof.
 
     destruct HrelM as [_ Hvar].
     assert (Hocc: occurs_free (Eapp f t (a :: args)) a). { constructor. cbn. auto. }
-    destruct (Hvar _ Hocc) as [val [wal [Hrho' [Hlocs Hval]]]].
+    assert (Hf: find_def a fds = None). { apply HfenvWf_None with (f:=a) in HfenvWf.
+      rewrite HfenvWf. inv H. unfold translate_var in H0. destruct (lenv ! a) eqn:Ha'; inv H0.
+      now apply HenvsDisjoint in Ha'. }
+    destruct (Hvar _ Hocc Hf) as [val [wal [Hrho' [Hlocs Hval]]]].
     assert (v = val) by congruence. subst val.
     destruct Hlocs as [a'' [Ha'' HlVar]]. destruct H. rewrite Ha'' in H. inv H.
 
@@ -3613,8 +3649,7 @@ Proof.
             destruct HrelM as [HM1 HM2]. split. assumption.
             intros. assert (Hocc : (occurs_free (Eapp f t (a :: args)) x)). {
             inv H0. constructor. constructor. right. assumption. }
-             destruct (HM2 _ Hocc) as [val [wal [Hrho' [Hlocals Hval]]]].
-            exists val, wal. eauto. }
+             destruct (HM2 _ Hocc) as [val [wal [Hrho' [Hlocals Hval]]]]; auto. }
         assert (Hgetlist': get_list args rho = Some vs). {
           cbn in Hgetlist. destruct (rho ! a), (get_list args rho); inv Hgetlist; auto. }
         assert (Ha: rho ! a = Some v). { cbn in Hgetlist. destruct (rho ! a), (get_list args rho); inv Hgetlist; auto. }
@@ -3756,16 +3791,6 @@ Proof.
     apply IHl in H. lia. }
 Qed.
 
-Definition map_injective (m : M.tree nat) := forall x y x' y',
-  x <> y ->
-  m ! x = Some x' ->
-  m ! y = Some y' ->
-  x' <> y'.
-
-Definition domains_disjoint (m1 m2: M.tree nat) :=
-  (forall x v1, m1 ! x = Some v1 -> m2 ! x = None) /\
-  (forall x v2, m2 ! x = Some v2 -> m1 ! x = None).
-
 Lemma variable_mapping_Some_In : forall l x v idx lenv,
   lenv ! x = None ->
   (create_var_mapping idx l lenv) ! x = Some v ->
@@ -3857,6 +3882,20 @@ Definition collect_all_local_variables (e : cps.exp) : list cps.var :=
   | Efun fds e' => collect_local_variables e' ++ fds_collect_local_variables fds
   | _ => collect_local_variables e
   end.
+
+
+Lemma find_def_collect_all_local_variables : forall fds f t ys e e',
+  find_def f fds = Some (t, ys, e) ->
+  incl (ys ++ collect_local_variables e) (collect_all_local_variables (Efun fds e')).
+Proof.
+  unfold incl.
+  induction fds; intros. 2: inv H.
+  cbn in H. destruct (M.elt_eq f0 v).
+  { (* f0=v *) subst v. inv H. cbn. apply in_or_app. right. apply in_or_app. now left. }
+  { (* f0<>v *) have H' := IHfds _ _ _ _ e H _ H0. cbn. cbn in H'.
+    apply in_or_app. right. rewrite <-app_assoc. apply in_or_app. now right. }
+Qed.
+
 
 (* coq 8.14 not yet in stdlib: TODO replace *)
 Lemma NoDup_app_l : forall A (a b : list A),
@@ -4010,7 +4049,7 @@ Theorem repr_bs_LambdaANF_Codegen_related :
       (* fds only on toplevel so obtained for all funvalues, obtained rho = M.empty *)
       (forall x rho' fds' f' v, rho ! x = Some v -> subval_or_eq (Vfun rho' fds' f') v -> fds' = fds /\ rho' = M.empty _) ->
       (forall a t ys e errMsg, find_def a fds = Some (t, ys, e) ->
-          expression_restricted e /\ (forall x, occurs_free e x -> In x ys) /\
+          expression_restricted e /\ (forall x, occurs_free e x -> In x ys \/ find_def x fds <> None) /\
           NoDup (ys ++ collect_local_variables e ++ collect_function_vars (Efun fds e)) /\
           (exists fidx : immediate, translate_var nenv fenv a errMsg = Ret fidx /\
                        repr_val_LambdaANF_Codegen fenv nenv host_function
@@ -4063,7 +4102,7 @@ Proof with eauto.
               destruct Hrel_m as [_ Hvar]. intros.
         assert (Hocc: occurs_free (Econstr x t ys e) y) by (constructor; auto).
         apply Hvar in Hocc. destruct Hocc as [val [wal [Hrho [Hloc Hval]]]].
-        exists val, wal. repeat split; auto. }
+        exists val, wal. repeat split; auto. admit. (* from Hnodup *) }
 
       assert (HenoughM': (forall (m : memory) (gmp_v : nat),
         nth_error (s_mems s') 0 = Some m ->
@@ -4125,7 +4164,7 @@ Proof with eauto.
 
       assert (Hfds': forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) (errMsg : bytestring.String.t),
         find_def a fds = Some (t, ys, e) ->
-          expression_restricted e /\ (forall x : var, occurs_free e x -> In x ys) /\
+          expression_restricted e /\ (forall x : var, occurs_free e x -> In x ys \/ find_def x fds <> None) /\
           NoDup
             (ys ++
              collect_local_variables e ++
@@ -4189,7 +4228,7 @@ Proof with eauto.
             }
            { (* x <> x1 *)
              assert (Hocc: occurs_free (Econstr x t ys e) x1). { now apply Free_Econstr2. }
-             have H' := HrelmVar _ Hocc.
+             have H' := HrelmVar _ Hocc H4.
              destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
              exists val', wal'. split.
              subst rho'. rewrite M.gso; auto. split.
@@ -4200,9 +4239,9 @@ Proof with eauto.
              intro. subst x'.
              inv Hx'.
              specialize Hl1 with err_str.
-             unfold translate_var in Hl1, H4.
+             unfold translate_var in Hl1, H5.
              destruct (lenv ! x1) eqn:Hlx1; inv Hl1.
-             destruct (lenv ! x) eqn:Hlx2; inv H4.
+             destruct (lenv ! x) eqn:Hlx2; inv H5.
              have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. contradiction.
              apply nth_error_Some. congruence.
              apply val_relation_depends_on_finst with (fr:=fr). subst. reflexivity.
@@ -4301,7 +4340,11 @@ Proof with eauto.
       assert (Hy : occurs_free (Eproj x t n y e) y) by constructor.
       have Hrel_m' := Hrel_m.
       destruct Hrel_m' as [Hfun Hvar].
-      apply Hvar in Hy. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
+      assert (HfdNone: find_def y fds = None). {
+        apply HfenvWf_None with (f:=y) in HfenvWf. rewrite HfenvWf.
+        inv Hy'. unfold translate_var in H1.
+        destruct (lenv ! y) eqn:Hy'; inv H1. now apply HenvsDisjoint in Hy'. }
+      apply Hvar in Hy; auto. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
       rewrite Hrho in H. inv H.
       have Hrepr' := Hrepr. inv Hrepr'.
 
@@ -4343,8 +4386,8 @@ Proof with eauto.
             rewrite map_util.M.gsspec.
             apply peq_true.
             split. exists x'. split. inv Hx'. intro.
-            unfold translate_var in H9. unfold translate_var.
-            destruct (lenv ! x); auto. inv H9. cbn.
+            unfold translate_var in H10. unfold translate_var.
+            destruct (lenv ! x); auto. inv H10. cbn.
             unfold wasm_deserialise in Heq. rewrite -Heq.
             have Hl := HlocalBound _ _ Hx'. apply nth_error_Some in Hl.
             apply notNone_Some in Hl. destruct Hl.
@@ -4352,7 +4395,7 @@ Proof with eauto.
             eapply val_relation_depends_on_finst; try eassumption; auto. }
           { (* x <> x1 *)
             assert (Hocc: occurs_free (Eproj x t n y e) x1). { constructor; assumption. }
-            apply Hvar in Hocc. destruct Hocc as [v6 [wal' [Henv [Hloc Hval]]]].
+            apply Hvar in Hocc; auto. destruct Hocc as [v6 [wal' [Henv [Hloc Hval]]]].
             exists v6. exists wal'. repeat split; auto.
             rewrite map_util.M.gsspec.
             rewrite peq_false. assumption. auto.
@@ -4360,10 +4403,10 @@ Proof with eauto.
             unfold stored_in_locals. cbn.
 
             assert (x1' <> x'). { intro. subst x1'.
-              inv Hx'. unfold translate_var in H11.
-              destruct (lenv ! x) eqn:Heqn; inv H11.
-              specialize H9 with err_str. unfold translate_var in H9.
-              destruct (lenv ! x1) eqn:Heqn'; inv H9.
+              inv Hx'. unfold translate_var in H13.
+              destruct (lenv ! x) eqn:Heqn; inv H13.
+              specialize H10 with err_str. unfold translate_var in H10.
+              destruct (lenv ! x1) eqn:Heqn'; inv H10.
               have Hcontra := HlenvInjective _ _ _ _ n0 Heqn Heqn'.
               now apply Hcontra. }
 
@@ -4391,7 +4434,7 @@ Proof with eauto.
      assert (Hfds': (forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) errMsg,
       find_def a fds = Some (t, ys, e) ->
         expression_restricted e /\
-        (forall x : var, occurs_free e x -> In x ys) /\
+        (forall x : var, occurs_free e x -> In x ys \/ find_def x fds <> None) /\
         NoDup
           (ys ++
            collect_local_variables e ++
@@ -4516,7 +4559,11 @@ Proof with eauto.
         assert (Hy : occurs_free (Ecase y ((t, e) :: cl)) y) by constructor.
         have Hrel_m' := Hrel_m.
         destruct Hrel_m' as [Hfun Hvar].
-        apply Hvar in Hy. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
+        assert (HfdNone: find_def y fds = None). {
+          apply HfenvWf_None with (f:=y) in HfenvWf. rewrite HfenvWf.
+          inv Hy'. unfold translate_var in H1. destruct (lenv ! y) eqn:Hy'; inv H1.
+          now apply HenvsDisjoint in Hy'. }
+        apply Hvar in Hy; auto. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
         rewrite Hrho in H. inv H.
         have Hrepr' := Hrepr. inv Hrepr'.
         destruct Hlocal as [i [Hl1 Hl2]]. inv Hy'. rewrite Hl1 in H. inv H.
@@ -4569,7 +4616,7 @@ Proof with eauto.
     inv H0. inv Hrepr_e.
     assert (Hrel: rel_mem_LambdaANF_Codegen (lenv:=lenv) fenv nenv host_function (Ecase y cl) rho sr fr fds).
     { unfold rel_mem_LambdaANF_Codegen. split; intros.
-      destruct Hrel_m. eauto. apply Hrel_m. apply Free_Ecase3. assumption. }
+      destruct Hrel_m. eauto. apply Hrel_m; auto. }
 
     assert (HeRestr' : expression_restricted (Ecase y cl)). { inv HeRestr. inv H3.
                                                                now constructor. }
@@ -4589,7 +4636,11 @@ Proof with eauto.
     assert (Hy : occurs_free (Ecase y ((t0, e0) :: cl)) y) by constructor.
     have Hrel_m' := Hrel_m.
     destruct Hrel_m' as [Hfun Hvar].
-    apply Hvar in Hy. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
+    assert (HfNone: find_def y fds = None). {
+      apply HfenvWf_None with (f:=y) in HfenvWf. rewrite HfenvWf. inv H11.
+      unfold translate_var in H0. destruct (lenv ! y) eqn:Hy'; inv H0.
+      now apply HenvsDisjoint in Hy'. }
+    apply Hvar in Hy; auto. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
     rewrite Hrho in H. inv H.
 
     have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hlinmem [_ [_ [_ [_ [_ [HlocalBound _]]]]]]]]]]]]].
@@ -4658,7 +4709,11 @@ Proof with eauto.
       { (* indirect call *)
         assert (Hocc: occurs_free (Eapp f t ys) f) by constructor.
         have Hrel := Hrel_m. destruct Hrel as [_ Hlocals].
-        apply Hlocals in Hocc. destruct Hocc as [val [wal [Hrho [[j [Htrans Hwal]] Hval]]]].
+        assert (HfNone: find_def f fds = None). {
+          apply HfenvWf_None with (f:=f) in HfenvWf. rewrite HfenvWf.
+          inv H3. unfold translate_var in H4. destruct (lenv ! f) eqn:Hf'; inv H4.
+          now apply HenvsDisjoint in Hf'. }
+        apply Hlocals in Hocc; auto. destruct Hocc as [val [wal [Hrho [[j [Htrans Hwal]] Hval]]]].
         inv H3. rewrite Htrans in H4. inv H4.
         rewrite H in Hrho. inv Hrho. inv Hval.
         rewrite H1 in H8. symmetry in H8. inv H8.
@@ -4690,7 +4745,7 @@ Proof with eauto.
     rewrite H9 in H1. inv H1. rename H16 into Hexpr.
 
     repeat rewrite map_cat. cbn.
-    have Hfargs := fun_args_reduce state _ _ _ _ _ _ _ _ _ Hinv H0 HfenvWf HfenvRho Hrel_m H7.
+    have Hfargs := fun_args_reduce state _ _ _ _ _ _ _ _ _ Hinv H0 HenvsDisjoint HfenvWf HfenvRho Hrel_m H7.
     destruct Hfargs as [args [HfargsRed HfargsRes]].
 
     remember {| f_locs := [seq nat_to_value a | a <- args] ++
@@ -4731,7 +4786,7 @@ Proof with eauto.
     assert (Hfds_before_IH: (forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) errMsg,
       find_def a fds = Some (t, ys, e) ->
         expression_restricted e /\
-        (forall x : var, occurs_free e x -> In x ys) /\
+        (forall x : var, occurs_free e x -> In x ys \/ find_def x fds <> None) /\
         NoDup
           (ys ++
            collect_local_variables e ++
@@ -4800,9 +4855,10 @@ Proof with eauto.
       { (* vars *)
         intros. destruct Hrel_m as [_ HrelVars].
         assert (In x xs). {
-          eapply Hfds in H9; auto. now destruct H9 as [? [Hxxs ?]]. }
-        destruct (get_set_lists_In_xs _ _ _ _ _ H3 H2) as [v' Hv'].
-        have H' := set_lists_nth_error _ _ _ _ _ _ H2 H3 Hv'.
+          eapply Hfds in H9; auto. destruct H9 as [? [Hxxs ?]].
+          have H' := Hxxs _ H1. now destruct H'. }
+        destruct (get_set_lists_In_xs _ _ _ _ _ H4 H2) as [v' Hv'].
+        have H' := set_lists_nth_error _ _ _ _ _ _ H2 H4 Hv'.
         destruct H' as [k [Hvk Hxk]].
         have H'' := const_val_list_nth_error _ _ _ _ _ _ HfargsRes Hvk.
         destruct H'' as [w [Hw Hnth]].
@@ -4815,7 +4871,7 @@ Proof with eauto.
           eapply Hfds in H9. destruct H9 as [_ [_ [HnodupE _]]].
           rewrite catA in HnodupE. apply NoDup_app_l in HnodupE. assumption.
           rewrite nth_error_app1; auto. apply nth_error_Some. intro.
-          rewrite H4 in Hxk. inv Hxk. }
+          rewrite H5 in Hxk. inv Hxk. }
         cbn.
         rewrite nth_error_app1. 2: {
           rewrite length_is_size size_map -length_is_size.
@@ -4944,7 +5000,9 @@ Proof with eauto.
   - (* Eprim_val *) inv Hrepr_e. (* absurd, primitives not supported *)
   - (* Eprim *)     inv Hrepr_e. (* absurd, primitives not supported *)
   - (* Ehalt *)
-    cbn. destruct Hrel_m. destruct (H1 x) as [v6 [wal [Henv [Hloc Hrepr]]]]. constructor.
+    cbn. destruct Hrel_m.
+    assert (HfNone: find_def x fds = None). { admit. (* from Hnodup *) }
+     destruct (H1 x) as [v6 [wal [Henv [Hloc Hrepr]]]]; auto.
     rewrite Henv in H. inv H. inv Hrepr_e.
 
     have I := Hinv. destruct I as [INVres [_ [_ [Hgmp_r [_ [Hmuti32 [Hlinmem [HgmpInMem [_ [_ [Hinstglobs _]]]]]]]]]]].
@@ -6417,7 +6475,7 @@ Proof.
      assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e0 : exp) errMsg,
         find_def a fds = Some (t, ys, e0) ->
         expression_restricted e0 /\
-        (forall x : var, occurs_free e0 x -> In x ys) /\
+        (forall x : var, occurs_free e0 x -> In x ys \/ find_def x fds <> None) /\
         NoDup
           (ys ++
            collect_local_variables e0 ++
@@ -6428,7 +6486,33 @@ Proof.
              host_function (Vfun (M.empty val) fds a)
              sr f_before_IH (Val_funidx fidx) /\
            closed_val (Vfun (M.empty val) fds a))). {
-        intros ? ? ? ? ? Hcontra. inv Hcontra. admit. }
+        intros ? ? ? ? ? Hcontra. inv Hcontra.
+        split. inv HeRestr. eapply H3. eassumption.
+        split. intros x Hocc.
+        assert (Hdec: decidable_eq var). {
+        intros n' m'. unfold Decidable.decidable. now destruct (var_dec n' m'). }
+      have H' := In_decidable Hdec x ys. destruct H'; auto.
+      exfalso. apply Hfreevars. exists x. apply Free_Efun2.
+      eapply find_def_is_Some_occurs_free_fundefs; eauto.
+      intro Hfd. assert (Hfd': find_def x fds <> None). {
+        apply name_in_fundefs_find_def_is_Some in Hfd.
+        now destruct Hfd as [? [? [? ?]]]. } clear Hfd. rename Hfd' into Hfd.
+      apply find_def_in_collect_function_vars with (e:=e) in Hfd.
+      assert (forall e', subterm_e e' (Efun fds e) -> ~exists fds' e'', e' = Efun fds' e'' ). admit.
+      admit.
+      split.
+      { (* have H' := find_def_collect_all_local_variables _ _ _ _ _ e H0.
+        apply NoDup_incl_NoDup with (l:= (collect_all_local_variables (Efun fds e))
+                              ++ collect_function_vars (Efun fds e0)).
+        assumption.
+        repeat rewrite app_length. admit.
+        intros x Hxin.
+        apply in_app_or in Hxin. destruct Hxin as [Hxin | Hxin].
+        - rewrite catA. apply in_or_app. left. admit.
+        - apply in_or_app. right. now apply in_or_app. *) admit.
+       }
+       admit.
+    }
 
     assert (Hrelm : rel_mem_LambdaANF_Codegen fenv
        (lenv:=create_local_variable_mapping (collect_local_variables e))
@@ -6451,8 +6535,8 @@ Proof.
     }
 
     subst lenv.
-    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv _ nenv _
-                    host_instance _ _ _ _ _ _ _ HlenvInjective
+    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env rep_env _ host_instance
+                    _ _ _ _ _ _ _ HlenvInjective
                      HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
                       HeRestr' Hunbound Hstep hs _ _ _
                         HfdsEqRhoEmpty_before_IH Hfds Hinv_before_IH Hexpr Hrelm.
@@ -6514,7 +6598,7 @@ Proof.
     assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e0 : exp) errMsg,
         find_def a Fnil = Some (t, ys, e0) ->
         expression_restricted e0 /\
-        (forall x : var, occurs_free e0 x -> In x ys) /\
+        (forall x : var, occurs_free e0 x -> In x ys \/ find_def x Fnil <> None) /\
         NoDup
           (ys ++
            collect_local_variables e0 ++
@@ -6552,7 +6636,7 @@ Proof.
       intros. discriminate. }
 
     subst lenv.
-    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv fenv nenv _ host_instance _ (M.empty _)
+    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv finfo_env rep_env _ host_instance _ (M.empty _)
                     _ _ _ _ _ HlenvInjective HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf
                       HfenvRho HeRestr Hunbound Hstep hs _ _ _ HfdsEqRhoEmpty_before_IH Hfds
                         Hinv_before_IH Hexpr Hrelm.
