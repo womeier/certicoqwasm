@@ -3892,19 +3892,6 @@ Definition collect_all_local_variables (e : cps.exp) : list cps.var :=
   end.
 
 
-Lemma find_def_collect_all_local_variables : forall fds f t ys e e',
-  find_def f fds = Some (t, ys, e) ->
-  incl (ys ++ collect_local_variables e) (collect_all_local_variables (Efun fds e')).
-Proof.
-  unfold incl.
-  induction fds; intros. 2: inv H.
-  cbn in H. destruct (M.elt_eq f0 v).
-  { (* f0=v *) subst v. inv H. cbn. apply in_or_app. right. apply in_or_app. now left. }
-  { (* f0<>v *) have H' := IHfds _ _ _ _ e H _ H0. cbn. cbn in H'.
-    apply in_or_app. right. rewrite <-app_assoc. apply in_or_app. now right. }
-Qed.
-
-
 (* coq 8.14 not yet in stdlib: TODO replace *)
 Lemma NoDup_app_l : forall A (a b : list A),
   NoDup (a ++ b) -> NoDup a.
@@ -3930,6 +3917,68 @@ Proof.
   induction b; intros; auto.
   cbn in H. now apply NoDup_remove_1 in H.
 Qed.
+
+Lemma NoDup_incl_NoDup' {A} : forall (l1' l1 l2 : list A),
+  NoDup (l1 ++ l2) -> NoDup l1' -> incl l1' l1 -> NoDup (l1' ++ l2).
+Proof.
+  induction l1'; intros.
+  - destruct l1. assumption. cbn. inv H. now apply NoDup_app_r in H5.
+  - cbn. inv H0.
+    assert (Hincl: incl l1' l1). { intros a' Hain'. apply H1. now right. }
+    constructor. intro Hcontra. apply in_app_or in Hcontra. destruct Hcontra; auto.
+    assert (In a l1). apply H1. now left. now eapply NoDup_app_In in H.
+    now eapply IHl1'.
+Qed.
+
+Lemma find_def_collect_all_local_variables : forall fds f t ys e e',
+  find_def f fds = Some (t, ys, e) ->
+  incl (ys ++ collect_local_variables e) (collect_all_local_variables (Efun fds e')).
+Proof.
+  unfold incl.
+  induction fds; intros. 2: inv H.
+  cbn in H. destruct (M.elt_eq f0 v).
+  { (* f0=v *) subst v. inv H. cbn. apply in_or_app. right. apply in_or_app. now left. }
+  { (* f0<>v *) have H' := IHfds _ _ _ _ e H _ H0. cbn. cbn in H'.
+    apply in_or_app. right. rewrite <-app_assoc. apply in_or_app. now right. }
+Qed.
+
+
+Lemma NoDup_collect_all_local_variables_find_def : forall fds e f t ys e0,
+ NoDup
+   (collect_all_local_variables (Efun fds e) ++
+    collect_function_vars (Efun fds e))%list ->
+  find_def f fds = Some (t, ys, e0) ->
+ NoDup
+  ((ys ++ collect_local_variables e0) ++
+   collect_function_vars (Efun fds e0)).
+Proof.
+  intros.
+  assert (Hnodup: NoDup (ys ++ collect_local_variables e0)). {
+    generalize dependent e. generalize dependent e0. revert f t ys.
+    induction fds; intros. 2: inv H0. cbn in H0. destruct (M.elt_eq f0 v).
+    { (* v=f0 *) inv H0. cbn in H. rewrite <- catA in H. apply NoDup_app_r in H.
+      apply NoDup_app_l in H. now apply NoDup_app_l in H. }
+    { (* v<>f0 *)
+      eapply IHfds with (e:=e1); eauto. cbn in H. cbn.
+      rewrite <- catA. repeat rewrite <- catA in H. apply NoDup_app_middle in H.
+      apply NoDup_app_middle in H. rewrite catA in H.
+      replace (v
+       :: (fix iter (fds : fundefs) : seq var :=
+             match fds with
+             | Fcons x _ _ _ fds' => x :: iter fds'
+             | Fnil => [::]
+             end) fds) with ([v] ++
+       (fix iter (fds : fundefs) : seq var :=
+             match fds with
+             | Fcons x _ _ _ fds' => x :: iter fds'
+             | Fnil => [::]
+             end) fds) in H by reflexivity.
+      apply NoDup_app_middle in H. rewrite <- catA in H. assumption.
+    }}
+  have Hincl := find_def_collect_all_local_variables _ _ _ _ _ e H0.
+  now eapply NoDup_incl_NoDup'.
+Qed.
+
 
 Lemma nthN_nth_error {A} : forall (l : list A) i,
   nthN l (N.of_nat i) = nth_error l i.
@@ -6509,7 +6558,7 @@ Proof.
       intro Hfd. revert Hcontra'.
       apply name_in_fundefs_find_def_is_Some in Hfd.
       now destruct Hfd as [? [? [? ?]]]. }
-      split. { admit.  (* nodup *) }
+      split. { rewrite catA. eapply NoDup_collect_all_local_variables_find_def; eauto. }
       (* exists fun values *) admit.
     }
 
