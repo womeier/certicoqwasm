@@ -4102,7 +4102,8 @@ Proof with eauto.
               destruct Hrel_m as [_ Hvar]. intros.
         assert (Hocc: occurs_free (Econstr x t ys e) y) by (constructor; auto).
         apply Hvar in Hocc. destruct Hocc as [val [wal [Hrho [Hloc Hval]]]].
-        exists val, wal. repeat split; auto. admit. (* from Hnodup *) }
+        exists val, wal. repeat split; auto. admit.
+         }
 
       assert (HenoughM': (forall (m : memory) (gmp_v : nat),
         nth_error (s_mems s') 0 = Some m ->
@@ -5000,10 +5001,12 @@ Proof with eauto.
   - (* Eprim_val *) inv Hrepr_e. (* absurd, primitives not supported *)
   - (* Eprim *)     inv Hrepr_e. (* absurd, primitives not supported *)
   - (* Ehalt *)
-    cbn. destruct Hrel_m.
-    assert (HfNone: find_def x fds = None). { admit. (* from Hnodup *) }
-     destruct (H1 x) as [v6 [wal [Henv [Hloc Hrepr]]]]; auto.
-    rewrite Henv in H. inv H. inv Hrepr_e.
+    cbn. inv Hrepr_e. destruct Hrel_m.
+    assert (HfNone: find_def x fds = None). {
+      apply HfenvWf_None with (f:=x) in HfenvWf. rewrite HfenvWf.
+      inv H1. unfold translate_var in H3. destruct (lenv ! x) eqn:Hx; inv H3. now apply HenvsDisjoint in Hx. }
+     destruct (H2 x) as [v6 [wal [Henv [Hloc Hrepr]]]]; auto.
+    rewrite Henv in H. inv H.
 
     have I := Hinv. destruct I as [INVres [_ [_ [Hgmp_r [_ [Hmuti32 [Hlinmem [HgmpInMem [_ [_ [Hinstglobs _]]]]]]]]]]].
     apply global_var_w_implies_global_var_r in Hgmp_r; auto. destruct Hgmp_r.
@@ -5018,8 +5021,7 @@ Proof with eauto.
     destruct INVres as [s' Hs].
 
     exists s', fr. cbn. split.
-    destruct H2.
-    destruct Hloc as [ilocal [H4 Hilocal]]. erewrite H4 in H2. injection H2 => H'. subst. clear H2.
+    destruct Hloc as [ilocal [H4 Hilocal]]. inv H1. erewrite H4 in H5. injection H5 => H'. subst.
     (* execute wasm instructions *)
     dostep. separate_instr. apply r_elimr. eapply r_get_local. eassumption.
     dostep'. apply r_set_global. eassumption.
