@@ -29,13 +29,16 @@ Definition max_num_functions := 1_000_000%Z. (* TODO enforce, sohuld be possible
     _var  : cps.var
     _name : export name
 
-    fun vars 0-100 are reserved
+    first 4 functions hardcoded:
+    1,2) imported: print char/int to stdout
+      3) debug: write S-expr of constr to stdout
+      4) main function: contains the translated main expression
+     ... then follow the translated functions
  *)
 
 (* imported, for printing result *)
 Definition write_char_function_idx : immediate := 0.
 Definition write_char_function_name := "$write_char".
-
 Definition write_int_function_idx : immediate := 1.
 Definition write_int_function_name := "$write_int".
 
@@ -469,6 +472,7 @@ Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_elemen
                |} :: (table_element_mapping len' (S startidx))
   end.
 
+
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
   let fname_mapping := create_fname_mapping nenv e in
 
@@ -490,12 +494,12 @@ Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : err
              following <- iter fds' ;;
              Ret (fn :: following)
           end) fds
-    | _ => Err "unexpected toplevel expression"
+    | _ => Err "unreachable"
   end ;;
 
   main_expr <- match top_exp with
                | Efun _ exp => Ret exp
-               | _ => Err "unexpected toplevel expression"
+               | _ => Err "unreachable"
                end;;
 
   let main_vars := collect_local_variables main_expr in
