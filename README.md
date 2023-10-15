@@ -1,4 +1,4 @@
-Extension: backend for WebAssembly (https://github.com/womeier/WasmCert-Coq)
+Extension: backend for WebAssembly (https://github.com/WasmCert/WasmCert-Coq)
 
 
 original README:
