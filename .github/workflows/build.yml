@@ -86,9 +86,6 @@ jobs:
             startGroup "List installed packages"
               opam list
             endGroup
-            startGroup "List number of admits"
-              python3 ~/repo/theories/CodegenWASM/count-admitted.py
-            endGroup
             startGroup "Run benchmarks"
               sudo apt-get install --yes wabt nodejs python3-tqdm
               ulimit -s unlimited
