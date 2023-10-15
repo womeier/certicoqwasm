@@ -25,14 +25,16 @@ Definition max_function_args := 100%Z.       (* TODO enforce, should be possible
 Definition max_num_functions := 1_000_000%Z. (* TODO enforce, sohuld be possible to vary without breaking too much *)
 
 (* ***** HARDCODED FUNCTION IDs ****** *)
-(*  _idx  : idx in list of wasm functions
+(*  In Wasm, functions are referred to by their index (in the list of functions of a module).
+
+    _idx  : idx in list of wasm functions
     _var  : cps.var
     _name : export name
 
     first 4 functions hardcoded:
-    1,2) imported: print char/int to stdout
-      3) debug: write S-expr of constr to stdout
-      4) main function: contains the translated main expression
+    0,1) imported: print char/int to stdout
+      2) debug: write S-expr of constr to stdout
+      3) main function: contains the translated main expression
      ... then follow the translated functions
  *)
 
@@ -319,10 +321,6 @@ Fixpoint create_case_nested_if_chain (v : immediate) (es : list (ctor_tag * list
 
 (* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
 
-(* the result of every expression is written to the global var result_var,
-e.g. for let x := Eproj ... in (halt x)
-halt x expects the previous result in this var.
-*)
 Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (e : exp) : error (list basic_instruction) :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
@@ -393,7 +391,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
 
 (* ***** TRANSLATE FUNCTIONS ****** *)
 
-(* unique, vars are only assign once *)
+(* unique, vars are only assigned once *)
 Fixpoint collect_local_variables (e : exp) : list cps.var :=
   match e with
   | Efun _ e' => collect_local_variables e'
