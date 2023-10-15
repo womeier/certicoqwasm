@@ -518,7 +518,7 @@ Section THEOREM.
 
 Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show.
 Import Common.compM Common.Pipeline_utils.
-
+Import bytestring.
 Import ExtLib.Structures.Monad.
 Import MonadNotation.
 
@@ -4252,10 +4252,10 @@ Proof with eauto.
              repr_val_LambdaANF_Codegen fenv nenv host_function
                (Vfun (M.empty cps.val) fds a) s_v f_before_IH
                (Val_funidx fidx))). {
-        intros ? ? ? ? ? Hfd. eapply Hfds in Hfd.
+        intros ? ? ? ? ? Hfd. apply Hfds with (errMsg:=errMsg) in Hfd.
         destruct Hfd as [? [? [? [idx [HtransF Hval]]]]].
         repeat (split; try assumption).
-        exists idx. split. eassumption.
+        exists idx. split. assumption.
         eapply val_relation_func_depends_on_funcs.
         2:{ eapply val_relation_depends_on_finst; last apply Hval. now subst. }
         congruence.
@@ -4525,10 +4525,10 @@ Proof with eauto.
                    (f_locs fr) x' (wasm_deserialise bs T_i32);
                f_inst := f_inst fr
              |} (Val_funidx fidx)))). {
-         intros ? ? ? ? ? Hfd. eapply Hfds in Hfd.
+         intros ? ? ? ? ? Hfd. apply Hfds with (errMsg:=errMsg) in Hfd.
          destruct Hfd as [? [? [? [idx [HtransF Hval]]]]].
          repeat (split; try assumption).
-         exists idx. split. eassumption.
+         exists idx. split. assumption.
          eapply val_relation_func_depends_on_funcs.
          2:{ eapply val_relation_depends_on_finst; last apply Hval. now subst. }
          congruence.
@@ -4772,6 +4772,7 @@ Proof with eauto.
       dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn.
       eapply reduce_trans_label. unfold to_e_list. apply Hred.
      } unfold load_i32 in H17. rewrite Hload in H17. inv H17. split; eassumption. }
+
   - (* Eapp *)
     { inv Hrepr_e. rename args' into args_instr.
       (* treat direct + indirect calls in one *)
@@ -4871,14 +4872,14 @@ Proof with eauto.
              host_function
              (Vfun (M.empty cps.val) fds a) sr
              f_before_IH (Val_funidx fidx)))). {
-         intros ? ? ? ? ? Hfd. eapply Hfds in Hfd.
+         intros ? ? ? ? ? Hfd. eapply Hfds with (errMsg:=errMsg) in Hfd.
          destruct Hfd as [? [? [? [idx [HtransF Hval]]]]].
          repeat (split; try assumption).
-         exists idx. split. eassumption.
+         exists idx. split. assumption.
          eapply val_relation_func_depends_on_funcs.
          2:{ eapply val_relation_depends_on_finst; last apply Hval. now subst. }
          congruence.
-      }
+    }
 
     assert (Hinv_before_IH : INV lenv_before_IH sr f_before_IH). {
        subst. eapply init_local_preserves_INV; try eassumption; try reflexivity.
@@ -4921,13 +4922,13 @@ Proof with eauto.
          destruct H3 as [f1 [?H ?H]]. inv H3. clear H5.
          apply name_in_fundefs_find_def_is_Some in H10.
          destruct H10 as [? [? [? ?]]].
-         eapply Hfds in H3. destruct H3 as [_ [_ [_ [fidx' [HtransF Hval]]]]].
-         exists fidx'. split. eassumption.
+         apply Hfds with (errMsg:=errMsg) in H3. destruct H3 as [_ [_ [_ [fidx' [HtransF Hval]]]]].
+         exists fidx'. split. assumption.
          eapply val_relation_depends_on_finst; try apply Hval. now subst. } }
       { (* vars *)
         intros. destruct Hrel_m as [_ HrelVars].
         assert (In x xs). {
-          eapply Hfds in H9; auto. destruct H9 as [? [Hxxs ?]].
+          apply Hfds with (errMsg:=""%bs) in H9; auto. destruct H9 as [? [Hxxs ?]].
           have H' := Hxxs _ H1. now destruct H'. }
         destruct (get_set_lists_In_xs _ _ _ _ _ H4 H2) as [v' Hv'].
         have H' := set_lists_nth_error _ _ _ _ _ _ H2 H4 Hv'.
@@ -4940,7 +4941,7 @@ Proof with eauto.
         split. {
           intros. unfold create_local_variable_mapping.
           rewrite (var_mapping_list_lt_length_nth_error_idx _ k); auto.
-          eapply Hfds in H9. destruct H9 as [_ [_ [HnodupE _]]].
+          apply Hfds with (errMsg:=""%bs) in H9. destruct H9 as [_ [_ [HnodupE _]]].
           rewrite catA in HnodupE. apply NoDup_app_l in HnodupE. assumption.
           rewrite nth_error_app1; auto. apply nth_error_Some. intro.
           rewrite H5 in Hxk. inv Hxk. }
@@ -4954,7 +4955,7 @@ Proof with eauto.
         reflexivity. }
     }
     assert (HeRestr' : expression_restricted e). {
-        eapply Hfds in H9. now destruct H9. }
+        apply Hfds with (errMsg:=""%bs) in H9. now destruct H9. }
 
     assert (Hunbound': (forall x : var, In x (collect_local_variables e) -> rho'' ! x = None)). {
       intros.
@@ -4964,13 +4965,13 @@ Proof with eauto.
         assert (Hfd': find_def x fds <> None) by congruence.
         clear Hfd. rename Hfd' into Hfd.
         eapply find_def_in_collect_function_vars in Hfd.
-        eapply Hfds in H9. destruct H9 as [_ [_ [HnodupE _]]].
+        apply Hfds with (errMsg:=""%bs) in H9. destruct H9 as [_ [_ [HnodupE _]]].
         apply NoDup_app_r in HnodupE.
         eapply NoDup_app_In in HnodupE; eauto. }
       assert (Hfd: find_def x fds = None). { destruct (find_def x fds); eauto. exfalso. eauto. }
       apply def_funs_not_find_def with (fds':=fds) (rho:=M.empty _) in Hfd.
       assert (HxIn: ~ In x xs). {
-        intro Hcontra. eapply Hfds in H9. destruct H9 as [_ [_ [HnodupE _]]].
+        intro Hcontra. apply Hfds with (errMsg:=""%bs) in H9. destruct H9 as [_ [_ [HnodupE _]]].
         rewrite catA in HnodupE. apply NoDup_app_l in HnodupE.
         eapply NoDup_app_In in HnodupE; eauto. }
       have H'' := set_lists_not_In _ _ _ _ _ H2 HxIn. rewrite <- H''.
@@ -4980,12 +4981,12 @@ Proof with eauto.
     assert (HlenvInjective': map_injective lenv_before_IH). {
       subst lenv_before_IH.
       apply create_local_variable_mapping_injective. {
-      eapply Hfds in H9. destruct H9 as [_ [_ [HnodupE _]]].
+      apply Hfds with (errMsg:=""%bs) in H9. destruct H9 as [_ [_ [HnodupE _]]].
       rewrite catA in HnodupE. now apply NoDup_app_l in HnodupE.
     }}
 
     assert (HenvsDisjoint': domains_disjoint lenv_before_IH fenv). {
-      eapply Hfds in H9. destruct H9 as [_ [_ [HnodupE _]]].
+      apply Hfds with (errMsg:=""%bs) in H9. destruct H9 as [_ [_ [HnodupE _]]].
       subst lenv_before_IH. unfold domains_disjoint. split; intros.
       { (* -> *)
         apply variable_mapping_Some_In in H1; auto.
@@ -5007,7 +5008,7 @@ Proof with eauto.
 
     assert (Hnodup': NoDup (collect_local_variables e ++
                             collect_function_vars (Efun fds e))). {
-      eapply Hfds in H9. destruct H9 as [_ [_ [HnodupE _]]].
+      apply Hfds with (errMsg:=""%bs) in H9. destruct H9 as [_ [_ [HnodupE _]]].
       apply NoDup_app_r in HnodupE.
       assumption. }
 
@@ -5067,6 +5068,7 @@ Proof with eauto.
     eapply result_val_LambdaANF_Codegen_depends_on_finst; try apply Hval.
     subst f_before_IH. now rewrite -Hfinst. reflexivity.
     }
+
   - (* Eletapp *)   inv Hrepr_e. (* absurd, we require CPS *)
   - (* Efun *)      inv Hrepr_e. (* absurd, fn defs only on topmost level *)
   - (* Eprim_val *) inv Hrepr_e. (* absurd, primitives not supported *)
