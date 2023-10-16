@@ -33,9 +33,7 @@ Require Import compcert.common.AST
         compcert.common.Globalenvs
         compcert.common.Memory.
 
-Require Import (* CodegenWASM.tactics *)
-               Codegen.LambdaANF_to_Clight
-               CodegenWASM.LambdaANF_to_WASM.
+Require Import CodegenWASM.LambdaANF_to_WASM.
 
 From Wasm Require Import datatypes datatypes_properties operations host type_preservation
                          binary_format_printer check_toks memory_list
@@ -70,7 +68,6 @@ Proof.
   eapply rt_trans; eauto.
 Qed.
 
-
 Theorem rt_then_t_or_eq:
   forall A R (v v':A),
     clos_refl_trans _ R v v' ->
@@ -95,8 +92,6 @@ Proof.
   right; eauto.
 Qed.
 
-
-
 Theorem subterm_case:
 forall v l e',
   subterm_e e' (Ecase v l) ->
@@ -108,7 +103,6 @@ Proof.
   - intros. apply IHclos_trans2 in Heqy.
     eapply t_trans. apply H. eauto.
 Qed.
-
 
 Theorem subval_fun: forall v rho fl x,
     name_in_fundefs fl x ->
@@ -137,8 +131,6 @@ Proof.
   eapply rt_trans; eauto.
   apply rt_step. constructor; auto.
 Qed.
-
-
 
 Theorem subval_v_constr:
   forall v vs t,
@@ -170,7 +162,6 @@ Proof.
   inv H.
   eapply subval_v_constr; eauto.
 Qed.
-
 
 Theorem find_dsubterm:
   forall x t ys e fl,
@@ -205,16 +196,10 @@ Qed.
 
 (**** Representation relation for LambdaANF values, expressions and functions ****)
 Section RELATION.
-  Variable cenv:LambdaANF.cps.ctor_env.
-  Variable funenv:LambdaANF.cps.fun_env.
-  Variable fenv : CodegenWASM.LambdaANF_to_WASM.fname_env.
-  Variable nenv : LambdaANF.cps_show.name_env.
-  Variable finfo_env: LambdaANF_to_Clight.fun_info_env. (* map from a function name to its type info *)
-
-  (* This should be a definition rather than a parameter, computed once and for all from cenv *)
-  Variable rep_env: M.t ctor_rep.
-
-
+Variable cenv:LambdaANF.cps.ctor_env.
+Variable funenv:LambdaANF.cps.fun_env.
+Variable fenv : CodegenWASM.LambdaANF_to_WASM.fname_env.
+Variable nenv : LambdaANF.cps_show.name_env.
 
 Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show.
 Import Common.compM Common.Pipeline_utils.
@@ -449,25 +434,8 @@ with repr_val_constr_args_LambdaANF_Codegen : list LambdaANF.cps.val -> store_re
 Scheme repr_val_LambdaANF_Codegen_mut := Induction for repr_val_LambdaANF_Codegen Sort Prop
   with repr_val_constr_args_LambdaANF_Codegen_mut := Induction for repr_val_constr_args_LambdaANF_Codegen Sort Prop.
 
-(*
-Check repr_val_LambdaANF_Codegen_ind.
-Check repr_val_LambdaANF_Codegen_mut. *)
 
 (* MEMORY RELATION *)
-
-(* relates a LambdaANF evaluation environment to a Clight memory up to the free variables in e *)
-
-(* ORIGINAL pasted from C backend TODO update
-
-If x is a free variable of e, then it might be in the generated code:
-   1) a function in the global environment, evaluates to a location related to f by repr_val_ptr_LambdaANF_Codegen
-   2) a local variable in le related to (rho x) according to repr_val_LambdaANF_Codegen
-
-TODO: second section needs that for any such f s.t. find_def f fl = Some (t, vs4, e),  e is closed by  var (FromList vsm4 :|: name_in_fundefs fl)
- may want something about functions in rho, i.e. that they don't need to be free to be repr_val_id, since they are the only thing that may appear free in other functions body (and not bound in the opening
-may need rho' also has the Vfun
- *)
-
 
 (* wasm values can be stored in memory, local or global variables *)
 Definition stored_in_mem (v : wasm_value) (sr : store_record) :=
@@ -492,8 +460,7 @@ Definition rel_mem_LambdaANF_Codegen {lenv} (e : exp) (rho : LambdaANF.eval.env)
         (* function def is related to function index *)
         (forall x f v errMsg,
             M.get x rho = Some v ->
-             (* 1) arg is subval of constructor
-                2) v listed in fds -> subval *)
+             (* f is var in fds, v is either a Vfun or Vconstr value *)
             subval_or_eq (Vfun (M.empty _) fds f) v ->
             (* i is index of function f *)
             exists i, translate_var nenv fenv f errMsg = Ret i /\
@@ -516,24 +483,14 @@ Section THEOREM.
 Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show.
 Import Common.compM Common.Pipeline_utils.
 Import bytestring.
-Import ExtLib.Structures.Monad.
-Import MonadNotation.
-
-
-  (* same as LambdaANF_to_Clight *)
-
-  Variable cenv:LambdaANF.cps.ctor_env.
-  Variable funenv:LambdaANF.cps.fun_env.
-  Variable fenv : CodegenWASM.LambdaANF_to_WASM.fname_env.
-  Variable nenv : LambdaANF.cps_show.name_env.
-  Variable finfo_env: LambdaANF_to_Clight.fun_info_env. (* map from a function name to its type info *)
-
-
-  (* This should be a definition rather than a parameter, computed once and for all from cenv *)
-  Variable rep_env: M.t ctor_rep.
-
+Import ExtLib.Structures.Monad MonadNotation.
 Import eqtype.
 Import host.
+
+Variable cenv:LambdaANF.cps.ctor_env.
+Variable funenv:LambdaANF.cps.fun_env.
+Variable fenv : CodegenWASM.LambdaANF_to_WASM.fname_env.
+Variable nenv : LambdaANF.cps_show.name_env.
 
 Variable host_function : eqType.
 Let host := host host_function.
@@ -543,90 +500,58 @@ Variable host_instance : host.
 Let store_record := store_record host_function.
 (*Let administrative_instruction := administrative_instruction host_function.*)
 Let host_state := host_state host_instance.
-
-
 Let reduce_trans := @reduce_trans host_function host_instance.
-(* Let reduce := @reduce host_function host_instance. *)
 
 
+(* TODO: move this to cps_util *)
+Definition Forall_constructors_in_e (P: var -> ctor_tag -> list var -> Prop) (e:exp) :=
+  forall x t  ys e',
+    subterm_or_eq (Econstr x t ys e') e -> P x t ys.
 
 
- Inductive correct_crep (cenv:ctor_env): ctor_tag -> ctor_rep -> Prop :=
-  (*| rep_enum :
-      forall c name namei it  n,
-        M.get c cenv = Some (Build_ctor_ty_info name namei it 0%N n) ->
-        (* there should not be more than 2^(intsize - 1) unboxed constructors *)
-        (0 <= (Z.of_N n) <   Ptrofs.half_modulus)%Z ->
-      correct_crep cenv c (enum n) *)
-  | rep_boxed:
-      forall c name namei it a n,
-        M.get c cenv = Some (Build_ctor_ty_info name namei it (Npos a%N) n) ->
-        (* there should not be more than 2^8 - 1 boxed constructors *)
-        (0 <= (Z.of_N n) <  Zpower.two_p 8)%Z ->
-        (* arity shouldn't be higher than 2^54 - 1  *)
-        (0 <= Z.of_N (Npos a) <  Zpower.two_power_nat (Ptrofs.wordsize - 10))%Z ->
-      correct_crep cenv c (boxed n (Npos a)).
+Definition Forall_projections_in_e (P: var -> ctor_tag -> N -> var -> Prop) (e:exp) :=
+  forall x t n v e',
+    subterm_or_eq (Eproj x t n v e') e -> P x t n v.
 
-  (* crep <-> make_ctor_rep cenv *)
-  Definition correct_crep_of_env: LambdaANF.cps.ctor_env -> M.t ctor_rep -> Prop :=
-    fun cenv crep_env =>
-      (forall c name namei it a n,
-        M.get c cenv = Some (Build_ctor_ty_info name namei it a n) ->
-        exists crep, M.get c crep_env = Some crep /\
-                     correct_crep cenv c crep) /\
-      (forall c crep, M.get c crep_env = Some crep ->
-                     correct_crep cenv c crep).
+(* Note: the fundefs in P is the whole bundle, not the rest of the list *)
+Definition Forall_functions_in_e (P: var -> fun_tag -> list var -> exp ->  fundefs -> Prop) (e:exp) :=
+  forall fds e' f t xs e'',  subterm_or_eq (Efun fds e') e ->
+                             fun_in_fundefs fds (f, t, xs, e'') ->
+                             P f t xs e'' fds.
 
 
-  (* TODO: move this to cps_util *)
-  Definition Forall_constructors_in_e (P: var -> ctor_tag -> list var -> Prop) (e:exp) :=
-    forall x t  ys e',
-      subterm_or_eq (Econstr x t ys e') e -> P x t ys.
+Definition Forall_exp_in_caselist (P: exp -> Prop) (cl:list (ctor_tag * exp)) :=
+  forall g e, List.In (g, e) cl -> P e.
 
-
-  Definition Forall_projections_in_e (P: var -> ctor_tag -> N -> var -> Prop) (e:exp) :=
-    forall x t n v e',
-      subterm_or_eq (Eproj x t n v e') e -> P x t n v.
-
-  (* Note: the fundefs in P is the whole bundle, not the rest of the list *)
-  Definition Forall_functions_in_e (P: var -> fun_tag -> list var -> exp ->  fundefs -> Prop) (e:exp) :=
-    forall fds e' f t xs e'',  subterm_or_eq (Efun fds e') e ->
-                               fun_in_fundefs fds (f, t, xs, e'') ->
-                               P f t xs e'' fds.
-
-
-  Definition Forall_exp_in_caselist (P: exp -> Prop) (cl:list (ctor_tag * exp)) :=
-    forall g e, List.In (g, e) cl -> P e.
-
-  Theorem crt_incl_ct:
+Theorem crt_incl_ct:
           forall T P e e',
           clos_trans T P e e' ->
           clos_refl_trans T P e e'.
-  Proof.
-    intros. induction H. constructor; auto.
-    eapply rt_trans; eauto.
-  Qed.
+Proof.
+  intros. induction H. constructor; auto.
+  eapply rt_trans; eauto.
+Qed.
 
-  Theorem Forall_constructors_subterm:
-    forall P e e' ,
-    Forall_constructors_in_e P e ->
-    subterm_e e' e ->
-    Forall_constructors_in_e P e'.
-  Proof.
-    intros. intro; intros.
-    eapply H.
-    assert (subterm_or_eq e' e).
-    apply crt_incl_ct.
-    apply H0.
-    eapply rt_trans; eauto.
-  Qed.
+Theorem Forall_constructors_subterm:
+  forall P e e' ,
+  Forall_constructors_in_e P e ->
+  subterm_e e' e ->
+  Forall_constructors_in_e P e'.
+Proof.
+  intros. intro; intros.
+  eapply H.
+  assert (subterm_or_eq e' e).
+  apply crt_incl_ct.
+  apply H0.
+  eapply rt_trans; eauto.
+Qed.
 
 
-  (* END TODO move *)
+(* END TODO move *)
 
-  (* all constructors in the exp exists in cenv and are applied to the right number of arguments
-    May want to have "exists in cenv" also true for constructors in rho *)
-  Definition correct_cenv_of_exp: LambdaANF.cps.ctor_env -> exp -> Prop :=
+(* all constructors in the exp exists in cenv and are applied to the right number of arguments
+  May want to have "exists in cenv" also true for constructors in rho *)
+Definition correct_cenv_of_exp: LambdaANF.cps.ctor_env -> exp -> Prop :=
     fun cenv e =>
       Forall_constructors_in_e (fun x t ys =>
                                   match (M.get t cenv) with
@@ -635,59 +560,60 @@ Let reduce_trans := @reduce_trans host_function host_instance.
                                   | None => False
                                   end) e.
 
-  Definition correct_cenv_of_caselist: LambdaANF.cps.ctor_env -> list (ctor_tag * exp) -> Prop :=
-    fun cenv cl =>
-      Forall_exp_in_caselist (correct_cenv_of_exp cenv) cl.
+Definition correct_cenv_of_caselist: LambdaANF.cps.ctor_env -> list (ctor_tag * exp) -> Prop :=
+  fun cenv cl =>
+    Forall_exp_in_caselist (correct_cenv_of_exp cenv) cl.
 
-  Theorem correct_cenv_of_case:
-    forall cenv v l,
-      correct_cenv_of_exp cenv (Ecase v l) ->
-      correct_cenv_of_caselist cenv l.
-  Proof.
-    intros; intro; intros.
-    eapply Forall_constructors_subterm. apply H.
-    constructor. econstructor. eauto.
-  Qed.
+Theorem correct_cenv_of_case:
+  forall cenv v l,
+    correct_cenv_of_exp cenv (Ecase v l) ->
+     correct_cenv_of_caselist cenv l.
+Proof.
+  intros; intro; intros.
+  eapply Forall_constructors_subterm. apply H.
+  constructor. econstructor. eauto.
+Qed.
 
 
-  Lemma subterm_exists_witness : forall x t ys e v l, subterm_or_eq (Econstr x t ys e)  (Ecase v l) ->
-      exists a b, In (a, b) l /\ subterm_or_eq (Econstr x t ys e) b.
-  Proof.
-    intros.
-    apply clos_rt_rtn1 in H. inv H. inv H0. eexists. exists y. split. eassumption.
-    unfold subterm_or_eq. eapply clos_rtn1_rt. assumption.
-  Qed.
+Lemma subterm_exists_witness : forall x t ys e v l, subterm_or_eq (Econstr x t ys e)  (Ecase v l) ->
+    exists a b, In (a, b) l /\ subterm_or_eq (Econstr x t ys e) b.
+Proof.
+  intros.
+  apply clos_rt_rtn1 in H. inv H. inv H0. eexists. exists y. split. eassumption.
+  unfold subterm_or_eq. eapply clos_rtn1_rt. assumption.
+Qed.
 
-  Lemma subterm_witness_subterm : forall v l a e, In (a, e) l -> subterm_or_eq e (Ecase v l).
-  Proof.
-    intros. constructor. econstructor. eassumption.
-  Qed.
+Lemma subterm_witness_subterm : forall v l a e, In (a, e) l -> subterm_or_eq e (Ecase v l).
+Proof.
+  intros. constructor. econstructor. eassumption.
+Qed.
 
-  Lemma subterm_case_list : forall x t ys e   v l c e',
-    subterm_or_eq (Econstr x t ys e) (Ecase v l) -> subterm_or_eq (Econstr x t ys e) (Ecase v ((c, e') :: l)).
-  Proof.
-    intros. apply subterm_exists_witness in H. destruct H as [a [b [H1 H2]]].
-    eapply rt_trans. eassumption. eapply subterm_witness_subterm. cbn. right. eassumption.
-  Qed.
+Lemma subterm_case_list : forall x t ys e   v l c e',
+  subterm_or_eq (Econstr x t ys e) (Ecase v l) ->
+  subterm_or_eq (Econstr x t ys e) (Ecase v ((c, e') :: l)).
+Proof.
+  intros. apply subterm_exists_witness in H. destruct H as [a [b [H1 H2]]].
+  eapply rt_trans. eassumption. eapply subterm_witness_subterm. cbn. right. eassumption.
+Qed.
 
-  Theorem correct_cenv_case_drop_clause : forall l v c e,
-    correct_cenv_of_exp cenv (Ecase v ((c, e) :: l)) ->
-    correct_cenv_of_exp cenv (Ecase v l).
-  Proof.
-    unfold correct_cenv_of_exp. unfold Forall_constructors_in_e. intros.
-    eapply H. eapply subterm_case_list. eassumption.
-  Qed.
+Theorem correct_cenv_case_drop_clause : forall l v c e,
+  correct_cenv_of_exp cenv (Ecase v ((c, e) :: l)) ->
+  correct_cenv_of_exp cenv (Ecase v l).
+Proof.
+  unfold correct_cenv_of_exp. unfold Forall_constructors_in_e. intros.
+  eapply H. eapply subterm_case_list. eassumption.
+Qed.
 
-  Theorem Forall_constructors_in_constr:
+Theorem Forall_constructors_in_constr:
   forall P x t ys e,
   Forall_constructors_in_e P (Econstr x t ys e) ->
   P x t ys.
-  Proof.
-    intros.
-    unfold Forall_constructors_in_e in *.
-    eapply H.
-    apply rt_refl.
-  Qed.
+Proof.
+  intros.
+  unfold Forall_constructors_in_e in *.
+  eapply H.
+  apply rt_refl.
+Qed.
 
 Open Scope list.
 
@@ -748,9 +674,6 @@ Qed.
 Import seq.
 
 Theorem translate_exp_correct {lenv} :
-    (* find_symbol_domain p map -> *)
-    (* finfo_env_correct fenv map -> *)
-    (* correct_crep_of_env cenv rep_env -> *)
     forall e instructions,
       correct_cenv_of_exp cenv e ->
     translate_exp nenv cenv lenv fenv e = Ret instructions ->
@@ -934,16 +857,13 @@ Definition result_val_LambdaANF_Codegen (val : LambdaANF.cps.val)
       repr_val_LambdaANF_Codegen fenv nenv  _ val sr fr wasmval)
     \/ (sglob_val sr (f_inst fr) result_out_of_mem = Some (nat_to_value 1)).
 
-Import ssrfun ssrbool eqtype seq.
+Import ssreflect ssrfun ssrbool eqtype seq.
 
-Import  binary_format_printer host datatypes_properties check_toks
-               operations opsem interpreter_func properties common.
+Import binary_format_printer host datatypes_properties check_toks
+              operations opsem interpreter_func properties common.
 
-
-Import eqtype.
 Import Lia.
 Import Relations.Relation_Operators.
-Import ssreflect seq.
 
 
 Lemma i32_exists_nat : forall (x : i32), exists n, x = nat_to_i32 n /\ (-1 < Z.of_nat n <  Wasm_int.Int32.modulus)%Z.
@@ -4248,8 +4168,6 @@ Theorem repr_bs_LambdaANF_Codegen_related :
     (* SSA form, let-bound vars not assigned yet *)
     (forall x, In x (collect_local_variables e) -> rho ! x = None) ->
     bstep_e (M.empty _) cenv rho e v n ->  (* e n-steps to v *)
-    (* correct_envs cenv ienv rep_env rho e ->
-       inductive type/constructor environments are correct/pertain to e *)
     forall (hs : host_state) (sr : store_record) (f : frame)
            (instructions : list basic_instruction),
 
@@ -5321,9 +5239,6 @@ Import bytestring.
 Variable cenv:LambdaANF.cps.ctor_env.
 Variable funenv:LambdaANF.cps.fun_env.
 Variable nenv : LambdaANF.cps_show.name_env.
-Variable finfo_env: LambdaANF_to_Clight.fun_info_env. (* map from a function name to its type info *)
- (* This should be a definition rather than a parameter, computed once and for all from cenv *)
-Variable rep_env: M.t ctor_rep.
 
 Variable host_function : eqType.
 Variable hfn : host_function.
@@ -5334,9 +5249,7 @@ Variable host_instance : host.
 Let store_record := store_record host_function.
 (*Let administrative_instruction := administrative_instruction host_function.*)
 Let host_state := host_state host_instance.
-
 Let reduce_trans := @reduce_trans host_function host_instance.
-
 
 
 Ltac simpl_modulus := unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat.
@@ -5367,7 +5280,6 @@ Lemma inductive_eq_dec : forall e, {exists fds e', e = Efun fds e'} + {~exists f
 Proof.
    destruct e; try (right; move => [fds' [e' Hcontra]]; inv Hcontra; done). left. eauto.
 Qed.
-
 
 Lemma eqseq_true {T : eqType} : forall (l1 l2 : seq.seq T), eqseq l1 l2 = true -> l1 = l2.
 Proof.
@@ -7192,7 +7104,8 @@ Proof.
     eapply reduce_trans_local.
     dostep'. constructor. eapply rs_block with (vs:=[]); eauto. cbn.
     apply reduce_trans_label. apply Hred.
-    eapply result_val_LambdaANF_Codegen_depends_on_finst; try eassumption. subst. cbn in Hfinst. congruence. Unshelve. all: auto. }
+    eapply result_val_LambdaANF_Codegen_depends_on_finst; try eassumption. subst. cbn in Hfinst. congruence.
+  } Unshelve. all: auto.
 Qed.
 
 End MAIN.
