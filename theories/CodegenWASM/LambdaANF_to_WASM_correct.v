@@ -3691,7 +3691,7 @@ Proof.
    }
 Qed.
 
-Lemma fds_length_length :
+Lemma numOf_fundefs_length :
   forall f0 fns,
   (fix iter (fds : fundefs) : error (seq.seq wasm_function) :=
                match fds with
@@ -3708,7 +3708,7 @@ Lemma fds_length_length :
                           fun m2 : seq.seq wasm_function -> error (seq.seq wasm_function) => m2 a
                       end (fun following : seq.seq wasm_function => Ret (fn :: following)%SEQ))
                | Fnil => Ret []
-               end) f0 = Ret fns -> fds_length f0 = length fns.
+               end) f0 = Ret fns -> numOf_fundefs f0 = length fns.
 Proof.
   induction f0; intros. 2: { now inv H. }
   destruct (translate_function nenv cenv fenv v l e). inv H.
@@ -3736,7 +3736,7 @@ Inductive expression_restricted : cps.exp -> Prop :=
       expression_restricted e ->
       (forall f t ys e', find_def f fds = Some (t, ys, e') ->
                    Z.of_nat (length ys) <= max_function_args /\ expression_restricted e')%Z ->
-      (Z.of_nat (fds_length fds) < max_num_functions)%Z ->
+      (Z.of_nat (numOf_fundefs fds) < max_num_functions)%Z ->
       expression_restricted (Efun fds e)
   | ER_app : forall f ft ys,
       (Z.of_nat (Datatypes.length ys) <= max_function_args)%Z ->
@@ -3761,10 +3761,15 @@ Proof.
   - eapply rt_trans; eauto.
 Qed.
 
-Lemma find_def_dsubterm_fds_e : forall f fds t ys e,
+Lemma find_def_dsubterm_fds_e : forall fds f t ys e,
    find_def f fds = Some (t, ys, e) ->
    dsubterm_fds_e e fds.
-Admitted.
+Proof.
+  induction fds; intros. 2: inv H.
+  cbn in H. destruct (M.elt_eq f0 v).
+  (* f0=v *) inv H. constructor.
+  (* f0<>v *) constructor. eapply IHfds; eauto.
+Qed.
 
 Theorem check_restrictions_expression_restricted : forall e e',
   check_restrictions e = Ret tt ->
@@ -3829,7 +3834,7 @@ Proof.
     now apply clos_rtn1_rt. }
   { (* Efun *)
     rename H1 into IHfds, H2 into IHe, H4 into Hsub. inv H3.
-    destruct (Z.of_nat (fds_length f2) <? max_num_functions)%Z eqn:HmaxFns. 2: inv H2.
+    destruct (Z.of_nat (numOf_fundefs f2) <? max_num_functions)%Z eqn:HmaxFns. 2: inv H2.
     cbn in H2.
     destruct ((fix iter (fds : fundefs) := _) f2) eqn:Hfds. inv H2. destruct u.
     apply clos_rt_rtn1 in Hsub. inv Hsub.
@@ -4187,8 +4192,8 @@ Proof.
   Unshelve. auto.
 Qed.
 
-Lemma collect_function_vars_length_fds_length_eq : forall fds e,
-  length (collect_function_vars (Efun fds e)) = fds_length fds.
+Lemma collect_function_vars_length_numOf_fundefs_eq : forall fds e,
+  length (collect_function_vars (Efun fds e)) = numOf_fundefs fds.
 Proof.
   induction fds; intros; auto. cbn. f_equal. now eapply IHfds with (e:=e).
 Qed.
@@ -5569,9 +5574,9 @@ Proof.
 Qed.
 
 Lemma translate_fvar_fname_mapping_aux : forall fds e f i N env,
-  (forall x j, env ! x = Some j -> j < fds_length fds + N) ->
+  (forall x j, env ! x = Some j -> j < numOf_fundefs fds + N) ->
   (create_var_mapping N (collect_function_vars (Efun fds e))
-        env) ! f = Some i -> i < fds_length fds + N.
+        env) ! f = Some i -> i < numOf_fundefs fds + N.
 Proof.
   induction fds; intros.
   - cbn. destruct i. lia.
@@ -5587,7 +5592,7 @@ Qed.
 
 Lemma translate_fvar_fname_mapping : forall e f errMsg i,
     translate_var nenv (create_fname_mapping nenv e) f errMsg = Ret i ->
-    match e with Efun fds _ => i < fds_length fds + 4 | _ => True end.
+    match e with Efun fds _ => i < numOf_fundefs fds + 4 | _ => True end.
 Proof.
   intros. unfold create_fname_mapping, translate_var in H.
   destruct ((create_var_mapping 4 (collect_function_vars e)
@@ -6143,8 +6148,8 @@ Lemma translate_funcs_fenv : forall fds fns fenv e,
                | Fnil => Ret [::]
                end) fds = Ret fns ->
 
-  (forall x i, i < fds_length fds ->
-               length fns = fds_length fds ->
+  (forall x i, i < numOf_fundefs fds ->
+               length fns = numOf_fundefs fds ->
                 (nth_error (collect_function_vars (Efun fds e)) i = Some x ->
                  option_map (fun f => fidx f) (nth_error fns i) = (fenv ! x))).
 Proof.
@@ -6167,7 +6172,7 @@ Qed.
 
 Lemma translate_funcs_idx_bounds : forall fds fns fenv min max,
   (forall f f', fenv ! f = Some f' -> min <= f' < max) ->
-  length fns = fds_length fds ->
+  length fns = numOf_fundefs fds ->
   (fix iter (fds : fundefs) :
                  error (seq wasm_function) :=
                match fds with
@@ -6237,16 +6242,16 @@ Proof.
   destruct (nth_error fns i) eqn:Hio. 2: inv Hi. cbn in Hi. inv Hi.
   destruct (nth_error fns j) eqn:Hjo. 2: inv Hj. cbn in Hj. inv Hj.
 
-  have Hlen := fds_length_length _ _ _ _ _ HtransFns. symmetry in Hlen.
+  have Hlen := numOf_fundefs_length _ _ _ _ _ HtransFns. symmetry in Hlen.
 
-  assert (Hilen: i < fds_length fds). { rewrite -Hlen. now apply nth_error_Some. }
-  have Hilen' := Hilen. rewrite <- (collect_function_vars_length_fds_length_eq _ e) in Hilen'.
+  assert (Hilen: i < numOf_fundefs fds). { rewrite -Hlen. now apply nth_error_Some. }
+  have Hilen' := Hilen. rewrite <- (collect_function_vars_length_numOf_fundefs_eq _ e) in Hilen'.
   apply nth_error_Some in Hilen'. apply notNone_Some in Hilen'. destruct Hilen' as [v Hiv].
   have Hi' := translate_funcs_fenv _ _ _ _ Hinj HtransFns _ _ Hilen Hlen Hiv.
   rewrite Hio in Hi'. cbn in Hi'.
 
-  assert (Hjlen: j < fds_length fds). { rewrite -Hlen. now apply nth_error_Some. }
-  have Hjlen' := Hjlen. rewrite <- (collect_function_vars_length_fds_length_eq _ e) in Hjlen'.
+  assert (Hjlen: j < numOf_fundefs fds). { rewrite -Hlen. now apply nth_error_Some. }
+  have Hjlen' := Hjlen. rewrite <- (collect_function_vars_length_numOf_fundefs_eq _ e) in Hjlen'.
   apply nth_error_Some in Hjlen'. apply notNone_Some in Hjlen'. destruct Hjlen' as [v' Hjv'].
   have Hj' := translate_funcs_fenv _ _ _ _ Hinj HtransFns _ _ Hjlen Hlen Hjv'.
   rewrite Hjo in Hj'. cbn in Hj'.
@@ -6457,7 +6462,7 @@ Lemma module_instantiate_INV_and_more_hold : forall e eAny topExp fds num_funs m
   (match topExp with Efun fds' _ => fds' | _ => Fnil end) = fds ->
   (forall (f : var) (t : fun_tag) (ys : seq var) (e : exp),
       find_def f fds = Some (t, ys, e) -> correct_cenv_of_exp cenv e) ->
-  num_funs = match topExp with | Efun fds _ => fds_length fds | _ => 42 (* unreachable*) end ->
+  num_funs = match topExp with | Efun fds _ => numOf_fundefs fds | _ => 42 (* unreachable*) end ->
   (Z.of_nat num_funs < max_num_functions)%Z ->
   LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, main_lenv) ->
   (* for INV_locals_all_i32, the initial context has no local vars for simplicity *)
@@ -6593,7 +6598,7 @@ Proof.
   assert (Hlen': length e_offs = length fns + 4). { now rewrite HeoffsLen -Hlen. }
   rewrite -Hlen' in HeoffsVals.
   assert (HlenMax: (Z.of_nat (Datatypes.length e_offs) < Wasm_int.Int32.modulus)%Z). {
-  apply fds_length_length in HtransFns.
+  apply numOf_fundefs_length in HtransFns.
   unfold max_num_functions in HfdsLength. simpl_modulus; cbn. lia. }
   assert (Hlen'': Datatypes.length e_offs = Datatypes.length (table_data t)) by lia.
   have H' := init_tabs_effect s' _ _ e_offs _ Heqts Hnone F2 F3 Logic.eq_refl HeoffsVals HlenMax Hlen''.
@@ -6654,7 +6659,7 @@ Proof.
      rewrite Hfuncs. cbn.
      rewrite map_length.
      destruct e; inv HtopExp'; try (inv HtransFns; simpl_modulus; cbn; lia).
-     erewrite <- fds_length_length; eauto.
+     erewrite <- numOf_fundefs_length; eauto.
      unfold max_num_functions in HfdsLength. simpl_modulus. cbn. lia. }
    split. (* inst_globs (f_inst f) no dups *)
    unfold INV_inst_globs_nodup. rewrite F0.
@@ -6674,7 +6679,7 @@ Proof.
       have H' := H.
       apply translate_fvar_fname_mapping in H'.
       destruct e; inv H. symmetry in HtopExp'; inv HtopExp'.
-      apply fds_length_length in HtransFns. rewrite HtransFns in H'.
+      apply numOf_fundefs_length in HtransFns. rewrite HtransFns in H'.
       apply nth_error_In with (n:=i). rewrite nth_error_map.
       rewrite HeoffsVals; try lia. cbn. f_equal.
       rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
@@ -6686,7 +6691,7 @@ Proof.
   { unfold INV_fvar_idx_inbounds. intros. rewrite Hfuncs. inv H. cbn.
     rewrite map_length.
     destruct e; inv H0. apply translate_fvar_fname_mapping in H1.
-       inv HtopExp'. apply fds_length_length in HtransFns. lia. }
+       inv HtopExp'. apply numOf_fundefs_length in HtransFns. lia. }
   (* types *)
   { unfold INV_types. intros. unfold stypes. cbn. unfold max_function_args in H.
    rewrite F4. apply list_function_types_nth_error. lia. }
@@ -6694,7 +6699,7 @@ Proof.
   (* inst_funcs (f_inst f) *)
   { rewrite F3. repeat f_equal. intros. rewrite H2. reflexivity.
     destruct e; inv HtopExp'; inv HtransFns; auto.
-    symmetry. rewrite Hlen. cbn. eapply fds_length_length. eassumption. }
+    symmetry. rewrite Hlen. cbn. eapply numOf_fundefs_length. eassumption. }
   split. (* val relation holds for functions *)
   { intros. apply notNone_Some in H. destruct H as [[[v' ys'] e''] Hfd].
     assert (Hnodup' : NoDup (collect_function_vars (Efun fds e))). {
@@ -6724,8 +6729,8 @@ Proof.
       inv H.
       apply translate_fvar_fname_mapping in H1.
       destruct e; inv HtopExp'; try (now inv Hfd).
-      assert (Hlen''': fds_length fds = length fns). {
-        now apply fds_length_length in HtransFns.
+      assert (Hlen''': numOf_fundefs fds = length fns). {
+        now apply numOf_fundefs_length in HtransFns.
       }
       rewrite Hlen''' in H1.
 
@@ -6741,7 +6746,7 @@ Proof.
                 (create_fname_mapping nenv (Efun fds e0)) f0 ""%bs = Ret f'). {
          unfold translate_var. now rewrite Hf. }
          apply var_mapping_list_lt_length' in HtransF.
-         rewrite collect_function_vars_length_fds_length_eq in HtransF. lia.
+         rewrite collect_function_vars_length_numOf_fundefs_eq in HtransF. lia.
       }
       eapply fns_fidx_nth_error_fidx; eauto.
     }
@@ -6856,7 +6861,7 @@ Proof.
                                      | Efun _ _ => e
                                      | _ => Efun Fnil e
                                      end with
-                               | Efun fds _ => fds_length fds
+                               | Efun fds _ => numOf_fundefs fds
                                | _ => 42 (* unreachable *)
                                end < max_num_functions)%Z). {
     unfold max_num_functions. destruct e; cbn; try lia. inv HeRestr. assumption.

@@ -2,7 +2,7 @@ Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/i
 
 From Wasm Require Import datatypes operations.
 
-From CertiCoq Require Import LambdaANF.toplevel.
+From CertiCoq Require Import LambdaANF.toplevel LambdaANF.cps_util.
 From CertiCoq Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import ExtLib.Structures.Monad.
 From MetaCoq.Utils Require Import bytestring MCString.
@@ -26,11 +26,6 @@ Definition max_constr_args   := 1024%Z.      (* should be possible to vary witho
 Definition max_function_args := 100%Z.       (* should be possible to vary without breaking much *)
 Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
 
-Fixpoint fds_length (fds : fundefs) : nat :=
-  match fds with
-  | Fnil => 0
-  | Fcons _ _ _ _ fds' => 1 + fds_length fds'
-  end.
 
 Definition when (b : bool) (err : string) : error Datatypes.unit :=
   if b then Ret tt else Err err.
@@ -53,7 +48,7 @@ Fixpoint check_restrictions (e : exp) : error Datatypes.unit:=
                 "found function application with too many function params, check max_function_args";;
       check_restrictions e'
   | Efun fds e' =>
-      _ <- when (Z.of_nat (fds_length fds) <? max_num_functions)%Z
+      _ <- when (Z.of_nat (numOf_fundefs fds) <? max_num_functions)%Z
                 "too many functions, check max_num_functions";;
       _ <- ((fix iter (fds : fundefs) : error Datatypes.unit :=
               match fds with
