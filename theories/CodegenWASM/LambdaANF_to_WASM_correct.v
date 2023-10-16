@@ -4815,6 +4815,7 @@ Proof with eauto.
         assumption.
       }
     }
+
     destruct Hval as [fidx [HredF Hval]]. inv Hval.
     assert (fl = fds). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst fl.
     rewrite H9 in H1. inv H1. rename H16 into Hexpr.
@@ -4912,7 +4913,7 @@ Proof with eauto.
        { (* ~In x xs *)
          have H' := set_lists_not_In _ _ _ _ _ H2 H4. rewrite H1 in H'.
          erewrite def_funs_find_def in H'.
-         2:{ intro Hcontra. eapply def_funs_not_find_def in Hcontra.
+         2:{ intro Hcontra. apply def_funs_not_find_def with (fds':=fds) (rho:=M.empty _) in Hcontra.
              rewrite Hcontra in H'. inv H'. } inv H'.
          have H' := set_lists_not_In _ _ _ _ _ H2 H4.
          rewrite H1 in H'.
@@ -4925,6 +4926,7 @@ Proof with eauto.
          apply Hfds with (errMsg:=errMsg) in H3. destruct H3 as [_ [_ [_ [fidx' [HtransF Hval]]]]].
          exists fidx'. split. assumption.
          eapply val_relation_depends_on_finst; try apply Hval. now subst. } }
+
       { (* vars *)
         intros. destruct Hrel_m as [_ HrelVars].
         assert (In x xs). {
@@ -4954,6 +4956,7 @@ Proof with eauto.
         subst f_before_IH. eapply val_relation_depends_on_finst; last eassumption.
         reflexivity. }
     }
+
     assert (HeRestr' : expression_restricted e). {
         apply Hfds with (errMsg:=""%bs) in H9. now destruct H9. }
 
@@ -5111,7 +5114,7 @@ Proof with eauto.
     unfold global_mem_ptr, result_var. lia.
     simpl_modulus. cbn. lia.
     Unshelve. all: auto. all: try (inv H6; assumption).
-Admitted.
+Qed.
 
 End THEOREM.
 
