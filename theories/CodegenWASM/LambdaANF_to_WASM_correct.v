@@ -11,18 +11,15 @@
  *)
 Unset Universe Checking.
 
-
 From mathcomp Require Import eqtype.
 
 From compcert Require Import Coqlib.
 
 Require Import LambdaANF.cps LambdaANF.eval LambdaANF.cps_util LambdaANF.List_util LambdaANF.Ensembles_util LambdaANF.identifiers LambdaANF.tactics LambdaANF.shrink_cps_corresp.
 
-
 Require Import Coq.ZArith.BinInt.
 Require Import Lia.
 Require Export Int31.
-
 
 Require Import Coq.Arith.Arith Coq.NArith.BinNat ExtLib.Data.String ExtLib.Data.List Coq.Program.Program  Coq.Sets.Ensembles Coq.Logic.Decidable Coq.Lists.ListDec Coq.Relations.Relations Relations.Relation_Operators.
 
@@ -3694,12 +3691,6 @@ Proof.
    }
 Qed.
 
-Fixpoint fds_length (fds : fundefs) : nat :=
-  match fds with
-  | Fnil => 0
-  | Fcons _ _ _ _ fds' => 1 + fds_length fds'
-  end.
-
 Lemma fds_length_length :
   forall f0 fns,
   (fix iter (fds : fundefs) : error (seq.seq wasm_function) :=
@@ -3724,8 +3715,7 @@ Proof.
   destruct (_ f0). inv H. destruct fns; inv H. cbn. now rewrite -IHf0.
 Qed.
 
-(* the number of args may be restricted to e.g. not surpass max Int32 *)
-(*  TODO. refuse to compile otherwise or follows from previous stage  *)
+
 Inductive expression_restricted : cps.exp -> Prop :=
   | ER_constr : forall x t ys e,
       (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z ->
@@ -3740,11 +3730,12 @@ Inductive expression_restricted : cps.exp -> Prop :=
       expression_restricted (Eproj x t n y e)
   | ER_letapp : forall f x ft ys e,
       expression_restricted e ->
+      (Z.of_nat (Datatypes.length ys) <= max_function_args)%Z ->
       expression_restricted (Eletapp x f ft ys e)
   | ER_fun : forall e fds,
       expression_restricted e ->
       (forall f t ys e', find_def f fds = Some (t, ys, e') ->
-                   Z.of_nat (length ys) < max_function_args /\ expression_restricted e')%Z ->
+                   Z.of_nat (length ys) <= max_function_args /\ expression_restricted e')%Z ->
       (Z.of_nat (fds_length fds) < max_num_functions)%Z ->
       expression_restricted (Efun fds e)
   | ER_app : forall f ft ys,
@@ -3759,6 +3750,140 @@ Inductive expression_restricted : cps.exp -> Prop :=
   | ER_halt : forall x,
       expression_restricted (Ehalt x).
 
+Local Hint Constructors expression_restricted : core.
+
+
+Lemma clos_trans_rt A (R : relation A) :
+  inclusion (clos_trans _ R) (clos_refl_trans _ R).
+Proof.
+  induction 1.
+  - apply rt_step. assumption.
+  - eapply rt_trans; eauto.
+Qed.
+
+Lemma find_def_dsubterm_fds_e : forall f fds t ys e,
+   find_def f fds = Some (t, ys, e) ->
+   dsubterm_fds_e e fds.
+Admitted.
+
+Theorem check_restrictions_expression_restricted : forall e e',
+  check_restrictions e = Ret tt ->
+  subterm_or_eq e' e -> expression_restricted e'.
+Proof.
+  have IH := exp_mut
+    (fun e => check_restrictions e = Ret () -> forall e',
+                subterm_or_eq e' e -> expression_restricted e')
+    (fun fds => ((fix iter (fds : fundefs) : error Datatypes.unit :=
+                   match fds with
+                   | Fnil => Ret tt
+                   | Fcons _ _ ys e' fds' =>
+                       _ <- when (Z.of_nat (length ys) <=? max_function_args)%Z
+                                 "found fundef with too many function args, check max_function_args";;
+                       _ <- (iter fds');;
+                       check_restrictions e'
+                   end) fds) = Ret () -> forall e' e'',
+               dsubterm_fds_e e' fds -> subterm_or_eq e'' e' -> expression_restricted e'').
+  intros. eapply IH; eauto; clear IH; try intros.
+  { (* Econstr *)
+    rename H3 into Hsub, H1 into IHe. inv H2.
+    destruct (Z.of_nat (Datatypes.length l) <=? max_constr_args)%Z eqn:Hlen. 2: inv H3.
+    cbn in H3. clear H.
+    apply Z.leb_le in Hlen. apply clos_rt_rtn1 in Hsub. inv Hsub. constructor; auto.
+    apply IHe; auto. apply rt_refl. inv H. apply IHe; auto. now apply clos_rtn1_rt. }
+  { (* Ecase nil *)
+    rename H2 into Hsub.
+    apply clos_rt_rtn1 in Hsub. inv Hsub. constructor. apply Forall_nil.
+    now inv H2. }
+  { (* Ecase cons *)
+    rename H4 into Hsub, H1 into IHe, H2 into IHe0. inv H3.
+    clear H0 H e. rename e0 into e.
+    destruct ((Z.of_nat (Pos.to_nat c) <? Wasm_int.Int32.modulus)%Z) eqn:Hlen. 2: inv H2.
+    cbn in H2. destruct (check_restrictions e) eqn:Hrestr. inv H2.
+    destruct (sequence _ ) eqn:Hseq; inv H2. destruct u.
+
+    assert (check_restrictions (Ecase v l) = Ret ()). {
+      unfold check_restrictions. cbn. now rewrite Hseq. }
+    assert (expression_restricted (Ecase v l)). {
+       apply IHe0; auto. apply rt_refl. }
+
+    apply clos_rt_rtn1 in Hsub. inv Hsub.
+    { constructor. apply Forall_cons. cbn. split. now apply Z.ltb_lt in Hlen.
+      apply IHe; auto. apply rt_refl. now inv H0. }
+
+    inv H1. destruct H5.
+    { inv H1. apply IHe; auto. now apply clos_rtn1_rt. }
+    { apply IHe0; auto. apply clos_rtn1_rt in H2.
+      assert (subterm_or_eq y (Ecase v l)). {
+        constructor. now econstructor. }
+      now eapply rt_trans. }
+  }
+  { (* Eproj *)
+    rename H3 into Hsub, H1 into IHe. inv H2. clear H e H0.
+    apply clos_rt_rtn1 in Hsub. inv Hsub. constructor. apply IHe; auto. apply rt_refl.
+    inv H. apply IHe; auto. now apply clos_rtn1_rt. }
+  { (* Eletapp *)
+    rename H3 into Hsub, H1 into IHe. inv H2. clear H H0 e.
+    destruct (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z eqn:Hlen. 2: inv H3.
+    apply Z.leb_le in Hlen. apply clos_rt_rtn1 in Hsub. inv Hsub. constructor; auto.
+    apply IHe; auto. apply rt_refl. inv H. apply IHe; auto.
+    now apply clos_rtn1_rt. }
+  { (* Efun *)
+    rename H1 into IHfds, H2 into IHe, H4 into Hsub. inv H3.
+    destruct (Z.of_nat (fds_length f2) <? max_num_functions)%Z eqn:HmaxFns. 2: inv H2.
+    cbn in H2.
+    destruct ((fix iter (fds : fundefs) := _) f2) eqn:Hfds. inv H2. destruct u.
+    apply clos_rt_rtn1 in Hsub. inv Hsub.
+    { constructor.
+      - apply IHe; auto. apply rt_refl.
+      - intros. split.
+        { clear IHfds H0 H IHe HmaxFns H2. clear e0 e e'.
+          rename e'0 into e, f2 into fds.
+          generalize dependent f. revert t ys e.
+          induction fds; intros. 2: inv H1.
+          cbn in H1. destruct (M.elt_eq f0 v).
+          + (* f0=v *)
+            inv H1. cbn in Hfds.
+            destruct (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z eqn:Hlen.
+            2: inv Hfds. now apply Z.leb_le in Hlen.
+          + (* f0<>v *)
+            cbn in Hfds.
+            destruct (Z.of_nat (Datatypes.length l) <=? max_function_args)%Z.
+            2:inv Hfds. cbn in Hfds.
+            destruct ((fix iter (fds : fundefs) := _) fds) eqn:Hfds'. inv Hfds.
+            destruct u. eapply IHfds; eauto.
+        }
+        apply find_def_dsubterm_fds_e in H1. eapply IHfds; eauto. apply rt_refl.
+      - now apply Z.ltb_lt in HmaxFns.
+    } inv H1.
+    { apply clos_rtn1_rt in H3. eapply IHfds; eauto. }
+    { apply IHe; auto. apply clos_rtn1_rt in H3. assumption. }
+  }
+  { (* Eapp *)
+    rename H2 into Hsub. inv H1.
+    destruct (Z.of_nat (Datatypes.length l) <=? max_function_args)%Z eqn:Hlen. 2: inv H3.
+    apply Z.leb_le in Hlen. apply clos_rt_rtn1 in Hsub. now inv Hsub. }
+  { (* Eprim_val *)
+    rename H3 into Hsub, H1 into IHe. inv H2. clear H e H0.
+    apply clos_rt_rtn1 in Hsub. inv Hsub. constructor. apply IHe; auto. apply rt_refl.
+    inv H. apply IHe; auto. now apply clos_rtn1_rt. }
+  { (* Eprim *)
+    rename H3 into Hsub, H1 into IHe. inv H2. clear H e H0.
+    apply clos_rt_rtn1 in Hsub. inv Hsub. constructor. apply IHe; auto. apply rt_refl.
+    inv H. apply IHe; auto. now apply clos_rtn1_rt. }
+  { (* Ehalt *)
+    rename H2 into Hsub.
+    apply clos_rt_rtn1 in Hsub. inv Hsub. constructor. inv H2. }
+  { (* base case 1 *)
+    rename H2 into IHfds, H1 into IHe.
+    cbn in H3. destruct (Z.of_nat (Datatypes.length l) <=? max_function_args)%Z.
+    2:inv H3. cbn in H3.
+    destruct ((fix iter (fds : fundefs) := _) f5) eqn:Hfds. inv H3. destruct u.
+    inv H4.
+    { apply IHe; auto. }
+    { eapply IHfds; eauto. }
+  }
+  { (* base case 2 *) inv H2. }
+Qed.
 
 Lemma var_mapping_list_lt_length' : forall l loc loc' err_str n,
   translate_var nenv (create_var_mapping n l (M.empty _)) loc err_str = Ret loc' ->
@@ -6402,7 +6527,9 @@ Proof.
   unfold instantiate in Hinst.
   unfold LambdaANF_to_WASM in Hcompile.
   remember (list_function_types (Z.to_nat max_function_args)) as types.
-   simpl in Hcompile. destruct (generate_constr_pp_function cenv nenv e) eqn:HgenPP. inv Hcompile.
+   simpl in Hcompile.
+   destruct (check_restrictions e) eqn:HRestr. inv Hcompile.
+   destruct (generate_constr_pp_function cenv nenv e) eqn:HgenPP. inv Hcompile.
   destruct (match _ with | Efun fds _ => _ fds | _ => Err _ end) eqn:HtransFns. inv Hcompile.
   destruct (match e with
             | Efun _ _ => e
@@ -6696,8 +6823,6 @@ Theorem LambdaANF_Codegen_related :
   forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var)
          (hs : host_state) module fenv lenv
          (sr : store_record) (fr : frame) exports,
-  (* restricts the number of args a function can have etc. *)
-  expression_restricted e ->
   (* evaluation of LambdaANF expression *)
   bstep_e (M.empty _) cenv (M.empty _) e v n ->
   (* compilation function *)
@@ -6718,8 +6843,14 @@ Theorem LambdaANF_Codegen_related :
 
        result_val_LambdaANF_Codegen fenv nenv _ v sr' fr.
 Proof.
-  intros ? ? ? ? ? ? ? ? ? ? ? HeRestr Hstep LANF2WASM Hcenv HvarsEq HvarsNodup Hfreevars Hinst.
+  intros ? ? ? ? ? ? ? ? ? ? ?  Hstep LANF2WASM Hcenv HvarsEq HvarsNodup Hfreevars Hinst.
   subst vars.
+
+  assert (HeRestr: expression_restricted e).
+  { unfold LambdaANF_to_WASM in LANF2WASM. destruct (check_restrictions e) eqn:HeRestr.
+    inv LANF2WASM. destruct u. eapply check_restrictions_expression_restricted; eauto.
+    apply rt_refl. }
+
   remember ({| f_locs := []; f_inst := f_inst fr |}) as f.
   assert (Hmaxfuns : (Z.of_nat match match e with
                                      | Efun _ _ => e
@@ -6771,6 +6902,7 @@ Proof.
   unfold LambdaANF_to_WASM in LANF2WASM.
   remember (list_function_types (Z.to_nat max_function_args)) as ftypes.
   simpl in LANF2WASM.
+  destruct (check_restrictions e). inv LANF2WASM.
   destruct (generate_constr_pp_function cenv nenv e) eqn:Hppconst. inv LANF2WASM.
   destruct (match _ with
        | Efun fds _ => _ fds

@@ -20,9 +20,57 @@ Import MonadNotation.
 
 (* memory can grow to at most 64KB * max_mem_pages *)
 Definition max_mem_pages     := 5000%N.
-Definition max_constr_args   := 1024%Z.      (* TODO enforce, should be possible to vary without breaking too much *)
-Definition max_function_args := 100%Z.       (* TODO enforce, should be possible to vary without breaking too much *)
-Definition max_num_functions := 1_000_000%Z. (* TODO enforce, sohuld be possible to vary without breaking too much *)
+
+(* ***** RESTRICTIONS ON constructors and functions ****** *)
+Definition max_constr_args   := 1024%Z.      (* should be possible to vary without breaking much *)
+Definition max_function_args := 100%Z.       (* should be possible to vary without breaking much *)
+Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
+
+Fixpoint fds_length (fds : fundefs) : nat :=
+  match fds with
+  | Fnil => 0
+  | Fcons _ _ _ _ fds' => 1 + fds_length fds'
+  end.
+
+Definition when (b : bool) (err : string) : error Datatypes.unit :=
+  if b then Ret tt else Err err.
+
+(* enforces predicate expression_restricted in the proof file *)
+Fixpoint check_restrictions (e : exp) : error Datatypes.unit:=
+  match e with
+  | Econstr _ _ ys e' =>
+       _ <- when (Z.of_nat (Datatypes.length ys) <=? max_constr_args)%Z
+                 "found constructor with too many args, check max_constr_args";;
+       check_restrictions e'
+  | Ecase x ms =>
+      _ <- sequence (map (fun p =>
+                        _ <- when (Z.of_nat (Pos.to_nat (fst p)) <? Wasm_int.Int32.modulus)%Z
+                                  "found case with tag >= i32.max";;
+                        check_restrictions (snd p)) ms);; Ret tt
+  | Eproj _ _ _ _ e' => check_restrictions e'
+  | Eletapp _ _ _ ys e' =>
+      _ <- when (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
+                "found function application with too many function params, check max_function_args";;
+      check_restrictions e'
+  | Efun fds e' =>
+      _ <- when (Z.of_nat (fds_length fds) <? max_num_functions)%Z
+                "too many functions, check max_num_functions";;
+      _ <- ((fix iter (fds : fundefs) : error Datatypes.unit :=
+              match fds with
+              | Fnil => Ret tt
+              | Fcons _ _ ys e' fds' =>
+                  _ <- when (Z.of_nat (length ys) <=? max_function_args)%Z
+                       "found fundef with too many function args, check max_function_args";;
+                  _ <- (iter fds');;
+                  check_restrictions e'
+              end) fds);;
+      check_restrictions e'
+  | Eapp _ _ ys => when (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
+                        "found function application with too many function params, check max_function_args"
+  | Eprim_val _ _ e' => check_restrictions e'
+  | Eprim _ _ _ e' => check_restrictions e'
+  | Ehalt _ => Ret tt
+   end.
 
 (* ***** HARDCODED FUNCTION IDs ****** *)
 (*  In Wasm, functions are referred to by their index (in the list of functions of a module).
@@ -472,6 +520,8 @@ Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_elemen
 
 
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
+  _ <- check_restrictions e;;
+
   let fname_mapping := create_fname_mapping nenv e in
 
   constr_pp_function <- generate_constr_pp_function cenv nenv e;;
