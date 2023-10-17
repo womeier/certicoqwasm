@@ -437,19 +437,6 @@ Scheme repr_val_LambdaANF_Codegen_mut := Induction for repr_val_LambdaANF_Codege
 
 (* MEMORY RELATION *)
 
-(* wasm values can be stored in memory, local or global variables *)
-Definition stored_in_mem (v : wasm_value) (sr : store_record) :=
-    exists m addr,
-    (* store_record contains memory *)
-    List.nth_error sr.(s_mems) 0 = Some m /\
-    (* memory contains value at some address *)
-    load_i32 m (N.of_nat addr) = Some (VAL_int32 (wasm_value_to_i32 v)).
-
-Definition stored_in_globals (v : wasm_value) (sr : store_record) :=
-  exists global i,
-  List.nth_error sr.(s_globals) i = Some global /\
-     global.(g_val) = VAL_int32 (wasm_value_to_i32 v).
-
 Definition stored_in_locals {lenv} (x : cps.var) (v : wasm_value) (f : frame ) :=
   exists i,
   (forall err, translate_var nenv lenv x err = Ret i) /\
@@ -459,7 +446,7 @@ Definition rel_mem_LambdaANF_Codegen {lenv} (e : exp) (rho : LambdaANF.eval.env)
                     (sr : store_record) (fr : frame) (fds : fundefs) :=
         (* function def is related to function index *)
         (forall x f v errMsg,
-            M.get x rho = Some v ->
+            rho ! x = Some v ->
              (* f is var in fds, v is either a Vfun or Vconstr value *)
             subval_or_eq (Vfun (M.empty _) fds f) v ->
             (* i is index of function f *)
@@ -471,10 +458,10 @@ Definition rel_mem_LambdaANF_Codegen {lenv} (e : exp) (rho : LambdaANF.eval.env)
             occurs_free e x ->
             (* not a function var *)
             find_def x fds = None ->
-            (exists v6 val,
-               M.get x rho = Some v6 /\
-               stored_in_locals (lenv:=lenv) x val fr /\
-               repr_val_LambdaANF_Codegen v6 sr fr val)).
+            (exists v w,
+               rho ! x = Some v /\
+               stored_in_locals (lenv:=lenv) x w fr /\
+               repr_val_LambdaANF_Codegen v sr fr w)).
 
 End RELATION.
 

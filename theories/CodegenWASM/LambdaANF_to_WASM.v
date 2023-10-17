@@ -89,7 +89,6 @@ Definition write_int_function_name := "$write_int".
 
 Definition constr_pp_function_name : string := "$pretty_print_constructor".
 Definition constr_pp_function_idx : immediate := 2.
-
 Definition main_function_name := "$main_function".
 Definition main_function_idx : immediate := 3.
 
@@ -179,7 +178,7 @@ Definition instr_write_string (s : string) : list basic_instruction :=
 
 (* prints constructors as S-expressions *)
 Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : cps.exp) : error wasm_function :=
-  let constr_ptr := 0 (* local var *) in
+  let constr_ptr := 0 (* fun param *) in
   let tmp := 1        (* local var *) in
   let tags := collect_constr_tags e in
   let self_fn_idx := constr_pp_function_idx in
