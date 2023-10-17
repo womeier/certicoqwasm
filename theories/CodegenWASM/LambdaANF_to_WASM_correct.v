@@ -1748,7 +1748,7 @@ Ltac dostep :=
 
 (* only returns single list of instructions *)
 Ltac dostep' :=
-   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first  apply rt_step.
+   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first  apply rt_step; separate_instr.
 
 (* Print caseConsistent. *)
 Theorem caseConsistent_findtag_In_cenv:
@@ -2219,11 +2219,11 @@ Proof with eauto.
   destruct Hgrow.
   { eexists. split.
     (* load global_mem_ptr *)
-    dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
+    dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
     (* add required bytes *)
-    dostep. separate_instr. elimr_nary_instr 2. constructor.
+    dostep. elimr_nary_instr 2. constructor.
     apply rs_binop_success. reflexivity.
-    dostep. separate_instr. elimr_nary_instr 2. constructor.
+    dostep. elimr_nary_instr 2. constructor.
     apply rs_binop_success. cbn. unfold is_left.
     rewrite zeq_false. reflexivity.
     { (*TODO code duplication *)
@@ -2239,18 +2239,17 @@ Proof with eauto.
     dostep. apply r_eliml; auto.
     elimr_nary_instr 0. eapply r_current_memory...
 
-    dostep. separate_instr. elimr_nary_instr 2.
+    dostep. elimr_nary_instr 2.
     constructor. apply rs_relop.
 
-    dostep'. separate_instr.
-    constructor. subst.
+    dostep'. constructor. subst.
     rewrite HneedMoreMem. apply rs_if_true. intro H3'. inv H3'.
 
-    dostep'. separate_instr. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
+    dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
     cbn.
     apply reduce_trans_label.
-    dostep'. separate_instr. elimr_nary_instr 1. eapply r_grow_memory_success; eauto.
-    dostep'. separate_instr. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
+    dostep'. elimr_nary_instr 1. eapply r_grow_memory_success; eauto.
+    dostep'. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
     dostep'. constructor. apply rs_if_false.
 
     assert (size >= 0)%N. { subst. cbn. auto. lia. }
@@ -2258,7 +2257,7 @@ Proof with eauto.
       subst. cbn in *. unfold page_limit in *.
       rewrite Z_nat_bin in H6.
       rewrite Wasm_int.Int32.Z_mod_modulus_id in H6. lia. simpl_modulus. cbn. lia. }
-    dostep'. separate_instr. constructor. apply rs_block with (vs:= [])(n:=0); eauto.
+    dostep'. constructor. apply rs_block with (vs:= [])(n:=0); eauto.
     apply reduce_trans_label. cbn. apply rt_refl.
     intros.
     left. split.
@@ -2295,7 +2294,7 @@ Proof with eauto.
 
     eexists. split.
     (* load global_mem_ptr *)
-    dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
+    dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
     (* add required bytes *)
     dostep. elimr_nary_instr 2. constructor.
     apply rs_binop_success. reflexivity.
@@ -2317,7 +2316,7 @@ Proof with eauto.
 
     dostep. elimr_nary_instr 2. constructor. apply rs_relop.
 
-    dostep'. separate_instr. constructor. subst. rewrite HneedMoreMem. apply rs_if_true. discriminate.
+    dostep'. constructor. subst. rewrite HneedMoreMem. apply rs_if_true. discriminate.
     dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
     apply reduce_trans_label.
     dostep. elimr_nary_instr 1. eapply r_grow_memory_failure; try eassumption.
@@ -2380,11 +2379,11 @@ Proof with eauto.
   (* enough space already *)
   exists sr. split.
   (* load global_mem_ptr *)
-  dostep. separate_instr. elimr_nary_instr 0. apply r_get_global. eassumption.
+  dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
   (* add required bytes *)
-  dostep. separate_instr. elimr_nary_instr 2. constructor.
+  dostep. elimr_nary_instr 2. constructor.
   apply rs_binop_success. reflexivity.
-  dostep. separate_instr. elimr_nary_instr 2. constructor.
+  dostep. elimr_nary_instr 2. constructor.
   apply rs_binop_success. cbn. unfold is_left.
   rewrite zeq_false. reflexivity.
   { (*TODO code duplication *)
@@ -2400,11 +2399,10 @@ Proof with eauto.
   dostep. apply r_eliml; auto.
   elimr_nary_instr 0. eapply r_current_memory...
 
-  dostep. separate_instr. elimr_nary_instr 2.
+  dostep. elimr_nary_instr 2.
   constructor. apply rs_relop.
 
-  dostep'. separate_instr.
-  constructor. subst.
+  dostep'. constructor. subst.
   rewrite HenoughMem. apply rs_if_false. reflexivity.
 
   dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto. cbn.
@@ -4802,7 +4800,7 @@ Proof with eauto.
           apply H20 in H1. destruct H1. destruct H19. split; auto. } destruct HtBounds.
         repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. }
       rewrite H0.
-      dostep'. separate_instr. constructor. apply rs_if_false. reflexivity.
+      dostep'. constructor. apply rs_if_false. reflexivity.
 
       dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn.
       eapply reduce_trans_label. unfold to_e_list. apply Hred.
@@ -5134,7 +5132,7 @@ Proof with eauto.
     exists s', fr. cbn. split.
     destruct Hloc as [ilocal [H4 Hilocal]]. inv H1. erewrite H4 in H5. injection H5 => H'. subst.
     (* execute wasm instructions *)
-    dostep. separate_instr. apply r_elimr. eapply r_get_local. eassumption.
+    dostep. apply r_elimr. eapply r_get_local. eassumption.
     dostep'. apply r_set_global. eassumption.
     apply rt_refl.
     split; auto.
