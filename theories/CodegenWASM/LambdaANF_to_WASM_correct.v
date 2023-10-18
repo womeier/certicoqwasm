@@ -6351,6 +6351,51 @@ Proof.
     now right. all: congruence. }
 Qed.
 
+Lemma module_instantiatable : forall e module fenv venv,
+  LambdaANF_to_WASM nenv cenv e = Ret (module, fenv, venv) ->
+  exists sr f exports, instantiate host_function host_instance initial_store module
+    [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] (sr, (f_inst f), exports, None).
+Proof.
+  intros. eexists. eexists. intros. unfold LambdaANF_to_WASM in H.
+  destruct (check_restrictions e) eqn:Hrestr. inv H. destruct u.
+  destruct (generate_constr_pp_function cenv nenv e) eqn:Hpp. inv H.
+  destruct (match e with
+            | Efun _ _ => e
+            | _ => Efun Fnil e
+            end) eqn:He; try (by inv H).
+  destruct ((fix iter (fds : fundefs) := _) f) eqn:Hfuns. inv H. rename l into fns.
+  cbn in H.
+  destruct (translate_exp nenv cenv _ _) eqn:Hexpr. inv H.
+  rename l into wasm_main_instr.
+  remember (list_function_types (Pos.to_nat 100)) as ts. inv H.
+  eexists. repeat esplit.
+  (* function types *) {
+  cbn. repeat rewrite map_app; cbn.
+  apply Forall2_cons. cbn.
+  unshelve instantiate (4 := _). admit. admit. admit. }
+  (* module glob typing *) {
+     apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
+     apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
+     apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
+     apply Forall2_cons. cbn. repeat split; auto. cbn. constructor.
+     apply Forall2_nil. }
+  (* module elem typing *) { admit. }
+  (* module data typing *) { apply Forall_nil. }
+  (* module import typing *) { admit. }
+  (* module export typing *) { admit. }
+  (* external typing *) {
+    apply Forall2_cons. econstructor; cbn; auto.
+    apply Forall2_cons. econstructor; cbn; auto.
+    apply Forall2_nil. }
+  (* alloc_module is true *) { admit. }
+  (* instantiate globals *) { cbn. unfold instantiate_elem. cbn. admit. }
+  (* instantiate elem *) { admit. }
+  (* instantiate data *) { admit. }
+  (* check_bounds elem *) { admit. }
+  (* check_bounds data *) { admit. }
+  (* remaining *) { cbn. admit. }
+Admitted.
+
 
 Lemma module_instantiate_INV_and_more_hold : forall e eAny topExp fds num_funs module fenv main_lenv sr f exports,
   NoDup (collect_function_vars (Efun fds eAny)) ->
@@ -6723,8 +6768,7 @@ Qed.
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 Theorem LambdaANF_Codegen_related :
   forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var)
-         (hs : host_state) module fenv lenv
-         (sr : store_record) (fr : frame) exports,
+         (hs : host_state) module fenv lenv,
   (* evaluation of LambdaANF expression *)
   bstep_e (M.empty _) cenv (M.empty _) e v n ->
   (* compilation function *)
@@ -6736,22 +6780,29 @@ Theorem LambdaANF_Codegen_related :
   NoDup vars ->
   (* expression must be closed *)
   (~ exists x, occurs_free e x ) ->
-  (* instiation with the two imported functions *)
-  instantiate _ host_instance initial_store module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] ((sr, (f_inst fr), exports), None) ->
+
+  exists sr exports fr sr',
+  (* instantiation with the two imported functions *)
+  instantiate _ host_instance initial_store module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)]
+      ((sr, (f_inst fr), exports), None)  /\
+
   (* reduces to some sr' that has the result variable set to the corresponding value *)
-  exists (sr' : store_record),
-       reduce_trans (hs, sr,  (Build_frame [] (f_inst fr)), [ AI_basic (BI_call main_function_idx) ])
-                    (hs, sr', (Build_frame [] (f_inst fr)), [])    /\
+  reduce_trans (hs, sr,  (Build_frame [] (f_inst fr)), [ AI_basic (BI_call main_function_idx) ])
+               (hs, sr', (Build_frame [] (f_inst fr)), [])    /\
 
        result_val_LambdaANF_Codegen fenv nenv _ v sr' fr.
 Proof.
-  intros ? ? ? ? ? ? ? ? ? ? ?  Hstep LANF2WASM Hcenv HvarsEq HvarsNodup Hfreevars Hinst.
+  intros ? ? ? ? ? ? ? ? Hstep LANF2WASM Hcenv HvarsEq HvarsNodup Hfreevars.
   subst vars.
 
   assert (HeRestr: expression_restricted e).
   { unfold LambdaANF_to_WASM in LANF2WASM. destruct (check_restrictions e) eqn:HeRestr.
     inv LANF2WASM. destruct u. eapply check_restrictions_expression_restricted; eauto.
     apply rt_refl. }
+
+  have Hinst := module_instantiatable _ _ _ _ LANF2WASM.
+  destruct Hinst as [sr [fr [exports Hinst]]].
+  exists sr, exports, fr.
 
   remember ({| f_locs := []; f_inst := f_inst fr |}) as f.
   assert (Hmaxfuns : (Z.of_nat match match e with
@@ -6979,7 +7030,7 @@ Proof.
                         HfdsEqRhoEmpty_before_IH Hfds Hinv_before_IH Hexpr Hrelm.
 
     destruct HMAIN as [s' [f' [Hred [Hval Hfinst]]]]. cbn.
-    exists s'. split.
+    exists s'. split. assumption. split.
     dostep'. apply r_call. cbn.
     rewrite HinstFuncs. reflexivity.
     dostep'. eapply r_invoke_native with (ves:=[]) (vcs:=[]) (t1s:=[]) (t2s:=[])(f' := f_before_IH); eauto.
@@ -7077,7 +7128,7 @@ Proof.
                       HfenvRho HeRestr Hunbound Hstep hs _ _ _ HfdsEqRhoEmpty_before_IH Hfds
                         Hinv_before_IH Hexpr Hrelm.
     destruct HMAIN as [s' [f' [Hred [Hval Hfinst]]]]. cbn.
-    exists s'. split.
+    exists s'. split. assumption. split.
     dostep'. apply r_call. cbn.
     rewrite HinstFuncs. reflexivity.
     dostep'. eapply r_invoke_native with (ves:=[]) (vcs:=[]) (t1s:=[]) (t2s:=[])(f' := f_before_IH); eauto.
