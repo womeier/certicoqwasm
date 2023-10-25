@@ -47,8 +47,6 @@ jobs:
               sudo chmod 777 . -R
               sudo chmod 777 ~/.opam/ -R
               git config --global --add safe.directory /github/workspace
-              git config --global --add safe.directory /github/workspace/submodules/wasmcert
-              git config --global --add safe.directory /github/workspace/submodules/strong-induction
               git config --global --add safe.directory /github/workspace/submodules/metacoq
               git submodule update --init
             endGroup
@@ -57,9 +55,8 @@ jobs:
               opam update
               opam pin -y coq-mathcomp-ssreflect 1.16.0
               opam install coq-mathcomp-ssreflect
-              opam pin -y coq-itree 5.1.1
-              opam install coq-itree
-              opam install coq-parseque
+              opam pin -y coq-wasm 0.1
+              opam install coq-wasm
 
               cd ~/repo
               opam pin -n -y  submodules/metacoq # was pinned to the submodule at the same path in the dockerfile before -> is not rebuilt
@@ -70,18 +67,6 @@ jobs:
             #    python3-pip
             #  python3 -m pip install --user --upgrade alectryon
             #endGroup
-            startGroup "Make submodules"
-              cd ~/repo/submodules/
-              git submodule update --init
-
-              cd wasmcert
-              echo "Building wasmcert"
-              dune build
-              dune install
-              cd ..
-
-              cd ..
-            endGroup
           after_script: |
             startGroup "List installed packages"
               opam list

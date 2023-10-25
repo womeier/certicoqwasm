@@ -26,10 +26,3 @@ cd submodules
 # make -j 2 translations all
 # make install
 # cd ..
-
-#cd wasmcert
-#echo "Building wasmcert"
-#clean
-#make
-#make install
-#cd ..
