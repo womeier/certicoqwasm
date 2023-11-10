@@ -7,6 +7,7 @@
   > Relates LambdaANF states to Wasm states according to execution semantics
 
   TODO: consider reusing functions from certicoq for collecting variables
+  TODO: consider using Ensemble like the rest of certicoq
 
  *)
 Unset Universe Checking.

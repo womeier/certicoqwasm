@@ -100,12 +100,12 @@ Definition fname_env    := M.tree nat. (* maps function variables to their id (i
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
 
 (* global vars *)
-Definition global_mem_ptr    : immediate := 0.
+Definition global_mem_ptr    : immediate := 0. (* ptr to free memory, increased when new 'objects' are allocated, there is no GC *)
 Definition constr_alloc_ptr  : immediate := 1. (* ptr to beginning of constr alloc in linear mem *)
 Definition result_var        : immediate := 2. (* final result *)
 Definition result_out_of_mem : immediate := 3.
 
-(* target type for generating functions, contains more fields than the one from Wasm *)
+(* target type for generating functions, contains more info than the one from Wasm *)
 Record wasm_function :=
   { fidx : immediate
   ; export_name : string
@@ -367,7 +367,6 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' =>
-       (*      if Z.gtb (Z.of_nat (length ys)) max_constr_args then Err "found constructor with too many args" else *)
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
       x_var <- translate_var nenv lenv x "translate_exp constr";;
       store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
@@ -421,7 +420,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    | Eapp f ft ys => (* wasm doesn't treat tail call in a special way at the time *)
      instr_call <- translate_call nenv lenv fenv f ys ;;
 
-     Ret instr_call (* tail calls are not supported yet in wasm. normal function return.  *)
+     Ret instr_call (* tail calls are not supported yet in Wasm 1.0. normal function return.  *)
 
    | Eprim_val x p e' => Err "translating prim_val to WASM not supported yet"
    | Eprim x p ys e' => Err "translating prim to WASM not supported yet"
