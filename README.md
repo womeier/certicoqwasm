@@ -1,5 +1,9 @@
-Extension: backend for WebAssembly (https://github.com/WasmCert/WasmCert-Coq)
+This repo contains a WebAssembly-backend for CertiCoq targeting the AST of the [WasmCert](https://github.com/WasmCert/WasmCert-Coq) mechanisation.
+Backend and correctness proof are in `theories/CodegenWASM/`,
+there are no substantial changes to the rest, essentially only adjustments for testing and CI. <br>
 
+See the Makefile in `benchmarks/` and the GH-actions config
+for how to use it (generate .wasm file + run in e.g. NodeJS).
 
 original README:
 ----------------------------------
