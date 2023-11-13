@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - master
-      - coq-8.17
+      - 8.17
   pull_request:
     branches:
       - "**"
@@ -52,8 +52,6 @@ jobs:
             startGroup "Install some more opam packages"
               opam repo add coq-released https://coq.inria.fr/opam/released
               opam update
-              opam pin -y coq-mathcomp-ssreflect 1.16.0
-              opam install coq-mathcomp-ssreflect
               opam pin -y coq-wasm 0.1
               opam install coq-wasm
 
