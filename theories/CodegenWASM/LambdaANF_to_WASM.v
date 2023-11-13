@@ -409,13 +409,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
            ; BI_set_local x_var
            ] ++ following_instr)
 
-   | Eletapp x f ft ys e' => Err "got unexpected non-tailcall, did you forget the -cps flag?" (*
-     following_instr <- (translate_exp nenv cenv lenv fenv e' : error (list basic_instruction)) ;;
-     x_var <- translate_var nenv lenv x "translate_exp app";;
-     instr_call <- translate_call nenv lenv fenv f ys ;;
-     Ret (instr_call ++
-          [ BI_set_local x_var
-          ] ++ following_instr) *)
+   | Eletapp x f ft ys e' => Err "got unexpected non-tailcall, did you forget the -cps flag?"
 
    | Eapp f ft ys => (* wasm doesn't treat tail call in a special way at the time *)
      instr_call <- translate_call nenv lenv fenv f ys ;;
@@ -491,7 +485,7 @@ Definition collect_function_vars (e : cps.exp) : list cps.var :=
     end.
 
 (* maps function names to ids (id=index in function list of module) *)
-Definition create_fname_mapping (nenv : name_env) (e : exp) : fname_env :=
+Definition create_fname_mapping (e : exp) : fname_env :=
   let fun_vars := collect_function_vars e in
   create_var_mapping 4 fun_vars (M.empty _).
 
@@ -515,7 +509,7 @@ Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_elemen
 Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
   _ <- check_restrictions e;;
 
-  let fname_mapping := create_fname_mapping nenv e in
+  let fname_mapping := create_fname_mapping e in
 
   constr_pp_function <- generate_constr_pp_function cenv nenv e;;
 

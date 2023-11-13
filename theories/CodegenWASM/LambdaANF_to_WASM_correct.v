@@ -5488,7 +5488,7 @@ Qed.
 
 
 Lemma translate_fvar_fname_mapping : forall e f errMsg i,
-    translate_var nenv (create_fname_mapping nenv e) f errMsg = Ret i ->
+    translate_var nenv (create_fname_mapping e) f errMsg = Ret i ->
     match e with Efun fds _ => i < numOf_fundefs fds + 4 | _ => True end.
 Proof.
   intros. unfold create_fname_mapping, translate_var in H.
@@ -5953,7 +5953,7 @@ Lemma translate_functions_exists_original_fun : forall fds fds'' fns wasmFun e,
                match fds with
                | Fcons x _ xs e fds' =>
                    match
-                     translate_function nenv cenv (create_fname_mapping nenv (Efun fds'' e)) x
+                     translate_function nenv cenv (create_fname_mapping (Efun fds'' e)) x
                        xs e
                    with
                    | Err t => fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
@@ -5977,14 +5977,14 @@ Lemma translate_functions_exists_original_fun : forall fds fds'' fns wasmFun e,
 Proof.
   induction fds; intros fds'' fns wasmFun e' Hnodup Htrans Hin. 2: { inv Htrans. inv Hin. }
   destruct (translate_function nenv cenv
-        (create_fname_mapping nenv (Efun _ e)) v l
+        (create_fname_mapping (Efun _ e)) v l
         e) eqn:transF. inv Htrans. cbn.
   destruct ((fix iter (fds : fundefs) : error (seq.seq wasm_function) :=
               match fds with
               | Fcons x _ xs e0 fds' =>
                   match
                     translate_function nenv cenv
-                      (create_fname_mapping nenv (Efun _ e0)) x xs e0
+                      (create_fname_mapping (Efun _ e0)) x xs e0
                   with
                   | Err t =>
                       fun _ : wasm_function -> error (seq.seq wasm_function) => Err t
@@ -6109,7 +6109,7 @@ Proof.
 Qed.
 
 Lemma translate_funcs_increasing_fids : forall fds fns fenv e e',
-  fenv = create_fname_mapping nenv e ->
+  fenv = create_fname_mapping e ->
   match e with Efun fds' _ => fds' = fds | _ => True end ->
   map_injective fenv ->
   NoDup (collect_function_vars (Efun fds e')) ->
@@ -6119,7 +6119,7 @@ Lemma translate_funcs_increasing_fids : forall fds fns fenv e e',
                | Fcons x _ xs e0 fds' =>
                    match
                      translate_function nenv cenv
-                       (create_fname_mapping nenv e) x xs e0
+                       (create_fname_mapping e) x xs e0
                    with
                    | Err t => fun _ : wasm_function -> error (seq wasm_function) => Err t
                    | Ret a => fun m2 : wasm_function -> error (seq wasm_function) => m2 a
@@ -6156,9 +6156,9 @@ Proof.
   destruct e; (try now inv Hjv'). subst f. clear HtransFns.
   remember (fidx w) as i'. remember (fidx w0) as j'. clear Heqi' Heqj'.
 
-  assert (Hi'': translate_var nenv (create_fname_mapping nenv (Efun fds e)) v ""%bs = Ret i'). {
+  assert (Hi'': translate_var nenv (create_fname_mapping (Efun fds e)) v ""%bs = Ret i'). {
     unfold translate_var. now rewrite Hi'. }
-  assert (Hj'': translate_var nenv (create_fname_mapping nenv (Efun fds e)) v' ""%bs = Ret j'). {
+  assert (Hj'': translate_var nenv (create_fname_mapping (Efun fds e)) v' ""%bs = Ret j'). {
     unfold translate_var. now rewrite Hj'. }
   unfold create_fname_mapping in Hi'.
   rewrite (var_mapping_list_lt_length_nth_error_idx _ _ _ 4 _ _ _ Hiv) in Hi''; auto.
@@ -6244,7 +6244,7 @@ Qed.
 
 
 Lemma translate_funcs_NoDup : forall fds fns fenv e e',
-  fenv = create_fname_mapping nenv e ->
+  fenv = create_fname_mapping e ->
   match e with Efun fds' _ => fds' = fds | _ => True end ->
   map_injective fenv ->
   NoDup (collect_function_vars (Efun fds e')) ->
@@ -6254,7 +6254,7 @@ Lemma translate_funcs_NoDup : forall fds fns fenv e e',
                | Fcons x _ xs e0 fds' =>
                    match
                      translate_function nenv cenv
-                       (create_fname_mapping nenv e) x xs e0
+                       (create_fname_mapping e) x xs e0
                    with
                    | Err t => fun _ : wasm_function -> error (seq wasm_function) => Err t
                    | Ret a => fun m2 : wasm_function -> error (seq wasm_function) => m2 a
@@ -6608,14 +6608,14 @@ Proof.
     subst. eauto.
     exists (fidx func).
     split. { inv H. unfold translate_var. unfold translate_var in H0.
-      destruct ((create_fname_mapping nenv e) ! a); auto. inv H0. }
+      destruct ((create_fname_mapping e) ! a); auto. inv H0. }
     econstructor; eauto. rewrite Hfuncs. cbn.
     assert (fidx func >= 4). { inv H. unfold translate_var in H0.
-      destruct ((create_fname_mapping nenv e) ! a) eqn:Ha; inv H0.
+      destruct ((create_fname_mapping e) ! a) eqn:Ha; inv H0.
       now apply local_variable_mapping_gt_idx in Ha. }
     apply In_nth_error in H2. destruct H2 as [j Hj].
     assert (nth_error fns (fidx func - 4) = Some func). {
-      assert (Hinj: map_injective (create_fname_mapping nenv e)). {
+      assert (Hinj: map_injective (create_fname_mapping e)). {
         apply create_local_variable_mapping_injective.
         destruct e; try (by constructor). now inv HtopExp'.
       }
@@ -6640,7 +6640,7 @@ Proof.
         intros ? ? Hf.
         split. { now apply local_variable_mapping_gt_idx in Hf. }
         assert (HtransF: translate_var nenv
-                (create_fname_mapping nenv (Efun fds e0)) f0 ""%bs = Ret f'). {
+                (create_fname_mapping (Efun fds e0)) f0 ""%bs = Ret f'). {
          unfold translate_var. now rewrite Hf. }
          apply var_mapping_list_lt_length' in HtransF.
          rewrite collect_function_vars_length_numOf_fundefs_eq in HtransF. lia.
@@ -6649,7 +6649,7 @@ Proof.
     }
 
     assert (HnodupFns: NoDup fns). {
-      assert (Hinj: map_injective (create_fname_mapping nenv e)). {
+      assert (Hinj: map_injective (create_fname_mapping e)). {
         apply create_local_variable_mapping_injective.
         destruct e; try (by constructor). now inv HtopExp'.
       }
@@ -6823,7 +6823,7 @@ Proof.
 
   remember (Build_frame (repeat (nat_to_value 0) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
   remember (create_local_variable_mapping (collect_local_variables e)) as lenv.
-  remember (create_fname_mapping nenv e) as fenv.
+  remember (create_fname_mapping e) as fenv.
 
   assert (Hinv_before_IH: INV fenv nenv _ lenv sr f_before_IH). { subst.
     destruct Hinv as [? [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]].
