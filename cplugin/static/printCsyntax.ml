@@ -18,7 +18,7 @@
 
 open Format
 open Camlcoq
-open Values
+open Values0
 open AST
 open! Ctypes
 open Cop
@@ -76,7 +76,7 @@ let attributes a =
   match a.attr_alignas with
   | None -> s1
   | Some l ->
-      sprintf " _Alignas(%Ld)%s" (Int64.shift_left 1L (N.to_int l)) s1
+      sprintf " __attribute((aligned(%Ld)))%s" (Int64.shift_left 1L (N.to_int l)) s1
 
 let attributes_space a =
   let s = attributes a in
@@ -85,8 +85,20 @@ let attributes_space a =
 let name_optid id =
   if id = "" then "" else " " ^ id
 
+let is_int_or_ptr_attr a n =
+  let open Datatypes in
+  match a.attr_alignas with
+  | Some l when N.to_int l = n -> true
+  | _ -> false
+
 let rec name_cdecl id ty =
   match ty with
+  (* BEGIN hack for the value typedef *)
+  | Ctypes.Tpointer(Ctypes.Tvoid, a) when is_int_or_ptr_attr a 2 ->
+      "value" ^ name_optid id
+  | Ctypes.Tpointer(Ctypes.Tvoid, a) when is_int_or_ptr_attr a 3 ->
+      "value" ^ name_optid id
+  (* END *)
   | Ctypes.Tvoid ->
       "void" ^ name_optid id
   | Ctypes.Tint(sz, sg, a) ->
@@ -171,7 +183,7 @@ let rec precedence = function
 (* Expressions *)
 
 let print_pointer_hook
-   : (formatter -> Values.block * Integers.Int.int -> unit) ref
+   : (formatter -> Values0.block * Integers.Int.int -> unit) ref
    = ref (fun p (b, ofs) -> ())
 
 let is_nan (f : float) = f <> f

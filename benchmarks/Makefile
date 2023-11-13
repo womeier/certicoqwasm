@@ -33,7 +33,6 @@ runwasm: $(JSFILES)
 
 clean:
 	rm -f ./*.wat ./*.wasm ./*.tests.*.js *.ir
-
 	rm -f ./*.vo
 	rm -f ./*.vos
 	rm -f ./*.vok

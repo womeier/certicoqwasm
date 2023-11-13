@@ -19,6 +19,7 @@ Definition heapInfIdent:positive := 95.
 Definition numArgsIdent:positive := 97.
 Definition isptrIdent:positive := 82.
 Definition caseIdent:positive := 83.
+Definition resultIdent:positive := 93.
 
 Definition stackframeTIdent:positive := 78. (* the stack_frame type *)
 Definition frameIdent:positive := 79. (* the stack frame of the current function *)
@@ -38,11 +39,11 @@ Definition add_prim_names (prims : list (kername * string * bool * nat * positiv
 
 
 Definition Clight_trans (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error Cprogram :=
-  let '(_, cenv, ctag, itag, nenv, fenv, _, prog) := t in
+  let '(_, p_env, cenv, ctag, itag, nenv, fenv, _, prog) := t in
   let p := LambdaANF_to_Clight.compile
              argsIdent allocIdent limitIdent gcIdent mainIdent bodyIdent threadInfIdent
              tinfIdent heapInfIdent numArgsIdent isptrIdent caseIdent
-             args prog cenv nenv in
+             args p_env prog cenv nenv in
   match p with
   | exceptionMonad.Ret (nenv, prog, head) =>
     Ret (add_prim_names prims nenv, stripOption mainIdent prog, stripOption mainIdent head)
@@ -52,11 +53,11 @@ Definition Clight_trans (prims : list (kername * string * bool * nat * positive)
 
 (* TODO unify with the one above, propagate errors *)
 Definition Clight_trans_fast (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error Cprogram :=
-  let '(_, cenv, ctag, itag, nenv, fenv, _, prog) := t in
+  let '(_, p_env, cenv, ctag, itag, nenv, fenv, _, prog) := t in
   let '(nenv, prog, head) := LambdaANF_to_Clight.compile_fast
                                argsIdent allocIdent limitIdent gcIdent mainIdent bodyIdent threadInfIdent
                                tinfIdent heapInfIdent numArgsIdent isptrIdent caseIdent
-                               args prog cenv nenv in
+                               args p_env prog cenv nenv in
   Ret (add_prim_names prims nenv, stripOption mainIdent prog, stripOption mainIdent head).
 
 
@@ -64,7 +65,7 @@ Definition Clight_trans_ANF (prims : list (kername * string * bool * nat * posit
   let '(_, pr_env, cenv, ctag, itag, nenv, fenv, _, prog) := t in
   let '(p, str) := LambdaANF_to_Clight_stack.compile
                      argsIdent allocIdent nallocIdent limitIdent gcIdent mainIdent bodyIdent threadInfIdent
-                     tinfIdent heapInfIdent numArgsIdent isptrIdent caseIdent
+                     tinfIdent heapInfIdent numArgsIdent isptrIdent caseIdent resultIdent
                      args
                      pr_env
                      stackframeTIdent frameIdent rootIdent fpIdent nextFld rootIdent prevFld

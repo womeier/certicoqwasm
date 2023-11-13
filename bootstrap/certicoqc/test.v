@@ -1,6 +1,8 @@
 Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
 
-From MetaCoq.Template Require Import All Loader Primitive bytestring.
+From MetaCoq.Template Require Import All.
+From MetaCoq.Utils Require Import bytestring.
+From MetaCoq.Common Require Import Primitive.
 From Coq Require Import PrimFloat PrimInt63.
 From CertiCoq.CertiCoqC Require Import CertiCoqC.
 
@@ -26,6 +28,8 @@ Definition string_of_bool b :=
 #[export] Instance Z_show : Show BinNums.Z := string_of_Z.
 Require Import ZArith.
 
+From MetaCoq.ErasurePlugin Require Import Loader.
+Fail From CertiCoq.CertiCoqC Require Import compile.
 From CertiCoq.CertiCoqC Require Import compile.
 From CertiCoq.Common Require Import Pipeline_utils.
 
