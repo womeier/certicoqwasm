@@ -3022,8 +3022,7 @@ Proof.
 
       assert (Hcap_before_IH: sglob_val (host_function:=host_function) s_before_IH
             (f_inst f) constr_alloc_ptr = Some (VAL_int32 (nat_to_i32 v_cap))). {
-        subst. eapply  global_var_write_read_other; try apply H6; auto.
-        unfold constr_alloc_ptr, global_mem_ptr. lia. }
+        subst. eapply  global_var_write_read_other; try apply H6; auto. }
 
       assert (Hlen_m0: (N.of_nat v_cap + page_size < mem_length m0)%N). {
         apply mem_store_preserves_length in Hm0.
@@ -3359,7 +3358,7 @@ Proof.
                (upd_s_mem (host_function:=host_function) s' (set_nth m' (s_mems s') 0 m')) (f_inst f) constr_alloc_ptr)
     with (sglob_val (host_function:=host_function) s' (f_inst f) constr_alloc_ptr) by reflexivity.
     apply global_var_write_read_same in H0.
-    eapply global_var_write_read_other in H1; eauto. unfold constr_alloc_ptr, global_mem_ptr. lia. }
+    eapply global_var_write_read_other in H1; eauto. }
   assert (HenoughM': (N.of_nat gmp_v + page_size < mem_length m')%N). {
     have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hlinmem _]]]]]]].
     destruct Hlinmem as [Hmem1 [m'' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
