@@ -27,40 +27,40 @@ Definition max_function_args := 100%Z.       (* should be possible to vary witho
 Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
 
 
-Definition when (b : bool) (err : string) : error Datatypes.unit :=
+Definition assert (b : bool) (err : string) : error Datatypes.unit :=
   if b then Ret tt else Err err.
 
 (* enforces predicate expression_restricted in the proof file *)
 Fixpoint check_restrictions (e : exp) : error Datatypes.unit:=
   match e with
   | Econstr _ _ ys e' =>
-       _ <- when (Z.of_nat (Datatypes.length ys) <=? max_constr_args)%Z
+       _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_constr_args)%Z
                  "found constructor with too many args, check max_constr_args";;
        check_restrictions e'
   | Ecase x ms =>
       _ <- sequence (map (fun p =>
-                        _ <- when (Z.of_nat (Pos.to_nat (fst p)) <? Wasm_int.Int32.modulus)%Z
+                        _ <- assert (Z.of_nat (Pos.to_nat (fst p)) <? Wasm_int.Int32.modulus)%Z
                                   "found case with tag >= i32.max";;
                         check_restrictions (snd p)) ms);; Ret tt
   | Eproj _ _ _ _ e' => check_restrictions e'
   | Eletapp _ _ _ ys e' =>
-      _ <- when (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
+      _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
                 "found function application with too many function params, check max_function_args";;
       check_restrictions e'
   | Efun fds e' =>
-      _ <- when (Z.of_nat (numOf_fundefs fds) <? max_num_functions)%Z
+      _ <- assert (Z.of_nat (numOf_fundefs fds) <? max_num_functions)%Z
                 "too many functions, check max_num_functions";;
       _ <- ((fix iter (fds : fundefs) : error Datatypes.unit :=
               match fds with
               | Fnil => Ret tt
               | Fcons _ _ ys e' fds' =>
-                  _ <- when (Z.of_nat (length ys) <=? max_function_args)%Z
+                  _ <- assert (Z.of_nat (length ys) <=? max_function_args)%Z
                        "found fundef with too many function args, check max_function_args";;
                   _ <- (iter fds');;
                   check_restrictions e'
               end) fds);;
       check_restrictions e'
-  | Eapp _ _ ys => when (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
+  | Eapp _ _ ys => assert (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
                         "found function application with too many function params, check max_function_args"
   | Eprim_val _ _ e' => check_restrictions e'
   | Eprim _ _ _ e' => check_restrictions e'

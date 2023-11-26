@@ -37,7 +37,7 @@ Require Import compcert.common.AST
 Require Import CodegenWASM.LambdaANF_to_WASM.
 
 From Wasm Require Import datatypes datatypes_properties operations host type_preservation
-                         binary_format_printer check_toks memory_list
+                         instantiation_spec binary_format_printer check_toks memory_list
                          opsem interpreter_func properties common.
 
 Require Import Libraries.maps_util.
@@ -472,8 +472,13 @@ Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show.
 Import Common.compM Common.Pipeline_utils.
 Import bytestring.
 Import ExtLib.Structures.Monad MonadNotation.
-Import eqtype.
-Import host.
+Import ssreflect ssrbool.
+
+Import host binary_format_printer host datatypes_properties check_toks
+              operations opsem interpreter_func properties common.
+
+Import Lia.
+Import Relations.Relation_Operators.
 
 Variable cenv:LambdaANF.cps.ctor_env.
 Variable funenv:LambdaANF.cps.fun_env.
@@ -844,15 +849,6 @@ Definition result_val_LambdaANF_Codegen (val : LambdaANF.cps.val)
       wasm_value_to_i32 wasmval = res_i32 /\
       repr_val_LambdaANF_Codegen fenv nenv  _ val sr fr wasmval)
     \/ (sglob_val sr (f_inst fr) result_out_of_mem = Some (nat_to_value 1)).
-
-Import ssreflect ssrfun ssrbool eqtype seq.
-
-Import binary_format_printer host datatypes_properties check_toks
-              operations opsem interpreter_func properties common.
-
-Import Lia.
-Import Relations.Relation_Operators.
-
 
 Lemma i32_exists_nat : forall (x : i32), exists n, x = nat_to_i32 n /\ (-1 < Z.of_nat n <  Wasm_int.Int32.modulus)%Z.
 Proof.
@@ -3687,7 +3683,7 @@ Proof.
                    match fds with
                    | Fnil => Ret tt
                    | Fcons _ _ ys e' fds' =>
-                       _ <- when (Z.of_nat (length ys) <=? max_function_args)%Z
+                       _ <- assert (Z.of_nat (length ys) <=? max_function_args)%Z
                                  "found fundef with too many function args, check max_function_args";;
                        _ <- (iter fds');;
                        check_restrictions e'
@@ -4043,7 +4039,7 @@ Proof.
 Qed.
 
 Lemma map_repeat_eq {A} {B} : forall (l : list A) (v : B),
-  repeat v (Datatypes.length l) = map (fun => v) l.
+  repeat v (Datatypes.length l) = map (fun _ => v) l.
 Proof.
   induction l; cbn; intros; auto. f_equal. apply IHl.
 Qed.
@@ -5151,70 +5147,15 @@ Qed.
 
 End THEOREM.
 
-(* Definition extract_const g := match g.(modglob_init) with (* guarantee non-divergence during instantiation *)
-| [:: BI_const c] => Ret c
-| _ => Err "only constants allowed during instantiation"%bs
-end : error value.
-
-Definition extract_i32 instr :=  match instr with
-   | [:: BI_const (VAL_int32 i)] => Ret i
-   | _ => Err "expected const i32"%bs
-end : error i32.
-
-(* error monad from certicoq *)
-Definition interp_instantiate (s : store_record) (m : module) (v_imps : list v_ext)
-  : error (store_record * instance * list module_export) :=
-  match module_type_checker m with
-  | None => Err "module_type_checker failed"%bs
-  | Some (t_imps, t_exps) =>
-    if seq.all2 (external_type_checker _ s) v_imps t_imps then
-      let inst_c := {|
-            inst_types := nil;
-            inst_funcs := nil;
-            inst_tab := nil;
-            inst_memory := nil;
-            inst_globs := List.map (fun '(Mk_globalidx i) => i) (ext_globs v_imps);
-          |} in
-      (* init global vars *)
-      g_inits <- sequence (List.map extract_const m.(mod_globals));;
-
-      let '(s', inst, v_exps) := interp_alloc_module _ s m v_imps g_inits in
-
-      e_offs <- sequence (List.map (fun e => extract_i32 e.(modelem_offset)) m.(mod_elem));;
-      d_offs <- sequence (List.map (fun d => extract_i32 d.(moddata_offset)) m.(mod_data));;
-
-      if check_bounds_elem _ inst s' m e_offs &&
-         check_bounds_data _ inst s' m d_offs then
-        match m.(mod_start) with
-        | Some _ => Err "start function not supported"%bs
-        | None =>
-          let s'' := init_tabs _ s' inst (List.map nat_of_int e_offs) m.(mod_elem) in
-          let s_end := init_mems _ s' inst (List.map N_of_int d_offs) m.(mod_data) in
-          Ret (s_end, inst, v_exps)
-        end
-      else Err "bounds check failed"%bs
-    else Err "external_type_checker failed"%bs
-  end.
-
-Definition interp_instantiate_wrapper (m : module)
-  : error (store_record * instance * list module_export) :=
-  interp_instantiate empty_store_record m nil.
- *)
-
-
 Section MAIN.
 
-Import host.
-Import eqtype.
+Import host instantiation_spec.
 Import Lia.
 Import Relations.Relation_Operators.
-Import ssreflect seq.
-
-From compcert Require Import Maps.
+Import ssreflect seq eqtype.
 
 Import LambdaANF.toplevel LambdaANF.cps LambdaANF.cps_show.
 Import Common.compM Common.Pipeline_utils.
-From Wasm Require Import instantiation_spec.
 
 Import ExtLib.Structures.Monad.
 Import MonadNotation.
