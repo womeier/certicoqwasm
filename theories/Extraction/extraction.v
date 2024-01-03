@@ -1,5 +1,3 @@
-Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
-
 Require compcert.common.AST
         compcert.common.Errors
         compcert.common.Values

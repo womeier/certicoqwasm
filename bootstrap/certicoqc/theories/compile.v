@@ -1,6 +1,3 @@
-Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues
-/254 *)
-
 From CertiCoq.Plugin Require Import CertiCoq.
 From MetaCoq.Utils Require Import utils.
 Open Scope bs_scope.

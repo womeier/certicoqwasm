@@ -1,4 +1,3 @@
-Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
 From Wasm Require Import datatypes.
 
 From Coq Require Import ZArith List.

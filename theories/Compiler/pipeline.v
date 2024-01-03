@@ -1,5 +1,3 @@
-Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
-
 From Wasm Require Import binary_format_printer.
 
 Require Export LambdaBoxMut.toplevel LambdaBoxLocal.toplevel LambdaANF.toplevel Codegen.toplevel CodegenWASM.toplevel.

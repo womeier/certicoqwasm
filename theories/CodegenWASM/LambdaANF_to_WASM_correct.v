@@ -10,8 +10,6 @@
   TODO: consider using Ensemble like the rest of certicoq
 
  *)
-Unset Universe Checking.
-
 From mathcomp Require Import eqtype.
 
 From compcert Require Import Coqlib.
@@ -5142,7 +5140,7 @@ Proof with eauto.
     eapply global_var_write_read_other; try eassumption.
     unfold global_mem_ptr, result_var. lia.
     simpl_modulus. cbn. lia.
-    Unshelve. all: auto. all: try (inv H6; assumption).
+    Unshelve. apply ""%bs.
 Qed.
 
 End THEOREM.

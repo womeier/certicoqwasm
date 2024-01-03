@@ -1,5 +1,3 @@
-Unset Universe Checking. (* maybe https://github.com/DeepSpec/InteractionTrees/issues/254 *)
-
 From MetaCoq.Template Require Import All.
 From MetaCoq.Utils Require Import bytestring.
 From MetaCoq.Common Require Import Primitive.
