@@ -2,8 +2,8 @@ This repo contains a WebAssembly-backend for CertiCoq targeting the AST of the [
 Backend and correctness proof are in `theories/CodegenWASM/`,
 there are no substantial changes to the rest, essentially only adjustments for testing and CI. <br>
 
-See the Makefile in `benchmarks/` and the GH-actions config
-for how to use it (generate .wasm file + run in e.g. NodeJS).
+See the Makefile in `benchmarks/` and the GH-actions config for how to use it (generate .wasm file + run in e.g. NodeJS),
+there are also small examples in [certicoqwasm-testing](https://github.com/womeier/certicoqwasm-testing).
 
 original README:
 ----------------------------------
