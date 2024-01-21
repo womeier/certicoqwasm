@@ -397,8 +397,8 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
 
    | Eproj x tg n y e' =>
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
-       y_var <- translate_var nenv lenv y "translate_exp proj y";;
-       x_var <- translate_var nenv lenv x "translate_exp proj x";;
+      y_var <- translate_var nenv lenv y "translate_exp proj y";;
+      x_var <- translate_var nenv lenv x "translate_exp proj x";;
 
       Ret ([ BI_get_local y_var
            ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4)) (* skip ctor_id and previous constr arguments *)
@@ -407,12 +407,21 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
            ; BI_set_local x_var
            ] ++ following_instr)
 
-   | Eletapp x f ft ys e' => Err "got unexpected non-tailcall, did you forget the -cps flag?"
+   | Eletapp x f ft ys e' =>
+      x_var <- translate_var nenv lenv x "translate_exp proj x";;
+      following_instr <- translate_exp nenv cenv lenv fenv e' ;;
+      instr_call <- translate_call nenv lenv fenv f ys ;;
 
-   | Eapp f ft ys => (* wasm doesn't treat tail call in a special way at the time *)
-     instr_call <- translate_call nenv lenv fenv f ys ;;
+      Ret (instr_call ++ [ BI_get_global result_out_of_mem
+                         ; BI_if (Tf nil nil)
+                            []
+                            ([BI_get_global result_var; BI_set_local x_var] ++ following_instr)
+                         ])
 
-     Ret instr_call (* tail calls are not supported yet in Wasm 1.0. normal function return.  *)
+   | Eapp f ft ys =>
+      instr_call <- translate_call nenv lenv fenv f ys ;;
+
+      Ret instr_call (* tail calls are not supported in Wasm 1.0: normal function, TODO once WasmCert has tailcalls, generate one here *)
 
    | Eprim_val x p e' => Err "translating prim_val to WASM not supported yet"
    | Eprim x p ys e' => Err "translating prim to WASM not supported yet"

@@ -343,7 +343,24 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
     repr_fun_args_Codegen (lenv:=lenv) args args' ->
     (* instr reduces to const containing funidx to call *)
     repr_read_var_or_funvar (lenv:=lenv) v instr ->
-    repr_expr_LambdaANF_Codegen (Eapp v t args) ((args' ++ [instr] ++ [BI_call_indirect (length args)])).
+    repr_expr_LambdaANF_Codegen (Eapp v t args) ((args' ++ [instr] ++ [BI_call_indirect (length args)]))
+
+| R_letapp_e : forall x x' v instr t args args' e e',
+    (* translated assigned var *)
+    repr_var (lenv:=lenv) x x' ->
+    (* following expression *)
+    repr_expr_LambdaANF_Codegen e e' ->
+    (* args are provided properly *)
+    repr_fun_args_Codegen (lenv:=lenv) args args' ->
+    (* instr reduces to const containing funidx to call *)
+    repr_read_var_or_funvar (lenv:=lenv) v instr ->
+    repr_expr_LambdaANF_Codegen (Eletapp x v t args e) ((args' ++
+                                                  [ instr
+                                                  ; BI_call_indirect (length args)
+                                                  ; BI_get_global result_out_of_mem
+                                                  ; BI_if (Tf nil nil) []
+                                                     ([BI_get_global result_var; BI_set_local x'] ++ e')])).
+
 
 (* Variable mem : memory. *) (* WASM memory, created e.g. at initialization *)
 
@@ -816,8 +833,23 @@ Proof.
       eapply Forall_constructors_subterm. eassumption.
       unfold subterm_e. constructor. constructor.
       econstructor; eauto. econstructor; eauto. }
-  - (* Eletapp *) (* non-tail call, we require CPS *)
-    inv H.
+  - (* Eletapp *)
+    simpl in H.
+    { destruct (translate_var nenv lenv x _) eqn:Hvar. inv H.
+      destruct (translate_exp nenv cenv lenv fenv e) eqn:H_eqTranslate. inv H.
+      unfold translate_call in H.
+      destruct (pass_function_args nenv lenv fenv ys) eqn:Hargs. inv H.
+      destruct (instr_local_var_read nenv lenv fenv f) eqn:Hloc. inv H. inv H.
+      rewrite <- app_assoc. constructor. econstructor. eassumption.
+      apply IHe; auto.
+      eapply Forall_constructors_subterm; eauto. constructor. constructor.
+      apply pass_function_args_correct. assumption.
+      unfold instr_local_var_read in Hloc.
+      destruct (is_function_var fenv f) eqn:Hfname.
+      - destruct (translate_var nenv fenv f _) eqn:fun_var; inv Hloc.
+        constructor. econstructor. eassumption.
+      - destruct (translate_var  nenv lenv f _) eqn:var_var; inv Hloc.
+        constructor. econstructor. eassumption. }
   - (* Efun *)
     inv H.
   - (* Eapp *)
@@ -5099,7 +5131,7 @@ Proof with eauto.
     subst f_before_IH. now rewrite -Hfinst. reflexivity.
     }
 
-  - (* Eletapp *)   inv Hrepr_e. (* absurd, we require CPS *)
+  - (* Eletapp *)   admit.
   - (* Efun *)      inv Hrepr_e. (* absurd, fn defs only on topmost level *)
   - (* Eprim_val *) inv Hrepr_e. (* absurd, primitives not supported *)
   - (* Eprim *)     inv Hrepr_e. (* absurd, primitives not supported *)
@@ -5141,7 +5173,7 @@ Proof with eauto.
     unfold global_mem_ptr, result_var. lia.
     simpl_modulus. cbn. lia.
     Unshelve. apply ""%bs.
-Qed.
+Admitted.
 
 End THEOREM.
 
@@ -6911,7 +6943,7 @@ Proof.
     }
 
     subst lenv.
-    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv fenv nenv _ host_instance
+    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv _ host_instance
                     _ _ _ _ _ _ _ HlenvInjective
                      HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
                       HeRestr' Hunbound Hstep hs _ _ _
@@ -7011,7 +7043,7 @@ Proof.
       intros. discriminate. }
 
     subst lenv.
-    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv fenv nenv _ host_instance _ (M.empty _)
+    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv _ host_instance _ (M.empty _)
                     _ _ _ _ _ HlenvInjective HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf
                       HfenvRho HeRestr Hunbound Hstep hs _ _ _ HfdsEqRhoEmpty_before_IH Hfds
                         Hinv_before_IH Hexpr Hrelm.
