@@ -50,11 +50,6 @@ jobs:
               git submodule update --init
             endGroup
             startGroup "Install some more opam packages"
-              opam repo add coq-released https://coq.inria.fr/opam/released
-              opam update
-              opam pin -y coq-wasm 0.1
-              opam install coq-wasm
-
               cd ~/repo
               opam pin -n -y  submodules/metacoq # was pinned to the submodule at the same path in the dockerfile before -> is not rebuilt
             endGroup
