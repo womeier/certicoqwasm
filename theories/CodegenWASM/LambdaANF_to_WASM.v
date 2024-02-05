@@ -194,27 +194,40 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : 
                   ] ++ (gen_rec_calls calls' arity)
     end in
 
+  let get_ctor_id_instrs (arity : nat) :=
+    if arity =? 0 then
+      [ BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_U)) ]
+    else
+      [ BI_load T_i32 None 2%N 0%N ] (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+  in
+
+  let get_ctor_print_instrs (name  : string) (arity : nat) :=
+    if arity =? 0 then
+      instr_write_string (String.append " " name)
+    else
+      instr_write_string (String.append " (" name) ++
+        BI_get_local constr_ptr :: BI_set_local tmp :: gen_rec_calls arity arity
+  in
+
   let gen_print_constr_block (c : ctor_tag) : error (list basic_instruction) :=
     let ctor_id := Pos.to_nat c in
     let ctor_name := show_tree (show_con cenv c) in
-
     ctor_arity <- (match M.get c cenv with
                   | Some {| ctor_arity := n |} => Ret (N.to_nat n)
                   | _ => Err "found constructor without ctor_arity set"
                   end) ;;
 
-    Ret [ BI_const (nat_to_value ctor_id)
-        ; BI_get_local constr_ptr
-        ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-        ; BI_relop T_i32 (Relop_i ROI_eq)
-        ; BI_if (Tf nil nil)
-                ((instr_write_string " ") ++ (if ctor_arity =? 0 then [] else (instr_write_string "(")) ++ instr_write_string ctor_name ++
-                 [ BI_get_local constr_ptr
-                 ; BI_set_local tmp
-                 ] ++ gen_rec_calls ctor_arity ctor_arity)
-                []
-        ]
+    ctor_id_instrs <- Ret (get_ctor_id_instrs ctor_arity) ;;
+    ctor_print_instrs <- Ret (get_ctor_print_instrs ctor_name ctor_arity) ;;
+    Ret ([ BI_const (nat_to_value ctor_id) ; BI_get_local constr_ptr ] ++
+           ctor_id_instrs ++
+           [ BI_relop T_i32 (Relop_i ROI_eq) ;
+             BI_if (Tf nil nil)
+               ctor_print_instrs
+               []
+           ])
   in
+
   blocks <- sequence (map gen_print_constr_block tags) ;;
 
   let body := (concat blocks) ++
@@ -367,21 +380,28 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    | Econstr x tg ys e' =>
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
       x_var <- translate_var nenv lenv x "translate_exp constr";;
-      store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
-
-      (* Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++ *)
-      Ret (grow_memory_if_necessary page_size ++
-          [ BI_get_global result_out_of_mem
-          ; BI_const (nat_to_value 1)
-          ; BI_relop T_i32 (Relop_i ROI_eq)
-          ; BI_if (Tf [] [])
-                  []
-                  (store_constr ++
-                  [ BI_get_global constr_alloc_ptr
-                  ; BI_set_local x_var
-                  ] ++ following_instr)
-          ])
-
+      match ys with
+      | [] => Ret ([ BI_const (nat_to_value (Pos.to_nat tg))
+               ; BI_const (nat_to_value 1)
+               ; BI_binop T_i32 (Binop_i BOI_shl)
+               ; BI_const (nat_to_value 1)
+               ; BI_binop T_i32 (Binop_i BOI_add)
+               ; BI_set_local x_var ] ++ following_instr)
+      | _ =>
+          store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
+          (* Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++ *)
+          Ret (grow_memory_if_necessary page_size ++
+                 [ BI_get_global result_out_of_mem
+                   ; BI_const (nat_to_value 1)
+                   ; BI_relop T_i32 (Relop_i ROI_eq)
+                   ; BI_if (Tf [] [])
+                       []
+                       (store_constr ++
+                          [ BI_get_global constr_alloc_ptr
+                            ; BI_set_local x_var
+                          ] ++ following_instr)
+            ])
+      end
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp)) : error (list (ctor_tag * list basic_instruction)) :=
       match arms with
