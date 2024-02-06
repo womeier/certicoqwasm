@@ -366,6 +366,9 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (
   match es with
   | [] => [ BI_unreachable ]
   | (t, instrs) :: tl =>
+      (* if boxed (pointer), then load tag from memory;
+         otherwise, obtain tag from unboxed representation ( tag = (repr >> 1) )
+       *)
       BI_get_local v ::
         (if boxed then
            [ BI_load T_i32 None 2%N 0%N ]
