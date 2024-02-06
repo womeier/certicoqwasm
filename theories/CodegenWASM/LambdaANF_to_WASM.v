@@ -174,6 +174,12 @@ Definition instr_write_string (s : string) : list basic_instruction :=
     end in
   flat_map (fun c => [BI_const (nat_to_value c); BI_call write_char_function_idx]) (to_ascii_list s).
 
+Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
+  match M.get t cenv with
+  | Some {| ctor_arity := n |} => Ret (N.to_nat n)
+  | _ => Err "found constructor without ctor_arity set"
+  end.
+
 (* prints constructors as S-expressions *)
 Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : cps.exp) : error wasm_function :=
   let constr_ptr := 0 (* fun param *) in
@@ -196,14 +202,14 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : 
 
   let get_ctor_id_instrs (arity : nat) :=
     if arity =? 0 then
-      [ BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_U)) ]
+      [ BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_S)) ]
     else
       [ BI_load T_i32 None 2%N 0%N ] (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
   in
 
   let get_ctor_print_instrs (name  : string) (arity : nat) :=
     if arity =? 0 then
-      instr_write_string (String.append " " name)
+      instr_write_string (String.append " " name) ++ [ BI_return ]
     else
       instr_write_string (String.append " (" name) ++
         BI_get_local constr_ptr :: BI_set_local tmp :: gen_rec_calls arity arity
@@ -212,11 +218,7 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : 
   let gen_print_constr_block (c : ctor_tag) : error (list basic_instruction) :=
     let ctor_id := Pos.to_nat c in
     let ctor_name := show_tree (show_con cenv c) in
-    ctor_arity <- (match M.get c cenv with
-                  | Some {| ctor_arity := n |} => Ret (N.to_nat n)
-                  | _ => Err "found constructor without ctor_arity set"
-                  end) ;;
-
+    ctor_arity <- get_ctor_arity cenv c ;;
     ctor_id_instrs <- Ret (get_ctor_id_instrs ctor_arity) ;;
     ctor_print_instrs <- Ret (get_ctor_print_instrs ctor_name ctor_arity) ;;
     Ret ([ BI_const (nat_to_value ctor_id) ; BI_get_local constr_ptr ] ++
@@ -360,16 +362,18 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 
        ] ++ set_constr_args).
 
-Fixpoint create_case_nested_if_chain (v : immediate) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
+Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
   match es with
   | [] => [ BI_unreachable ]
-  | (t, instr) :: tl =>
-            [ BI_get_local v
-            ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-            ; BI_const (nat_to_value (Pos.to_nat t)) (* ctor id*)
-            ; BI_relop T_i32 (Relop_i ROI_eq)
-            ; BI_if (Tf nil nil) instr (create_case_nested_if_chain v tl)
-            ]
+  | (t, instrs) :: tl =>
+      BI_get_local v ::
+        (if boxed then
+           [ BI_load T_i32 None 2%N 0%N ]
+         else
+           [ BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_S)) ]) ++
+        [ BI_const (nat_to_value (Pos.to_nat t))
+          ; BI_relop T_i32 (Relop_i ROI_eq)
+          ; BI_if (Tf nil nil) instrs (create_case_nested_if_chain boxed v tl) ]
   end.
 
 (* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
@@ -403,17 +407,28 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
             ])
       end
    | Ecase x arms =>
-      let fix translate_case_branch_expressions (arms : list (ctor_tag * exp)) : error (list (ctor_tag * list basic_instruction)) :=
-      match arms with
-      | [] => Ret []
-      | (t, e)::tl => e' <- translate_exp nenv cenv lenv fenv e;;
-                      arms' <- translate_case_branch_expressions tl;;
-                      Ret ((t, e') :: arms')
-      end in
-      transl_branch_exprs <- translate_case_branch_expressions arms;;
-
+      let fix translate_case_branch_expressions (arms : list (ctor_tag * exp)) : error (list (ctor_tag * list basic_instruction) * list (ctor_tag * list basic_instruction)) :=
+        match arms with
+        | [] => Ret ([], [])
+        | (t, e)::tl =>
+            instrs <- translate_exp nenv cenv lenv fenv e;;
+            arity <- get_ctor_arity cenv t ;;
+            '(arms_b, arms_u) <- translate_case_branch_expressions tl;;
+            if arity =? 0 then
+              Ret (arms_b, (t, instrs) :: arms_u)
+            else
+              Ret ((t, instrs) :: arms_b, arms_u)
+        end
+      in
       x_var <- translate_var nenv lenv x "translate_exp case";;
-      Ret (create_case_nested_if_chain x_var transl_branch_exprs)
+      '(arms_b, arms_u) <- translate_case_branch_expressions arms;;
+      Ret ([ BI_get_local x_var ;
+             BI_const (nat_to_value 1) ;
+             BI_binop T_i32 (Binop_i BOI_and) ;
+             BI_testop T_i32 TO_eqz ;
+             BI_if (Tf [] [])
+               (create_case_nested_if_chain true x_var arms_b)
+               (create_case_nested_if_chain false x_var arms_u)])
 
    | Eproj x tg n y e' =>
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
