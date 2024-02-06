@@ -5911,8 +5911,8 @@ Proof with eauto.
               destruct Hloc' as [x1' [? ?]].
               unfold stored_in_locals. cbn.
 
-              assert (x1' <> x'). { intro. subst x1'.
-                inv H9.
+              assert (x1' <> x'). {
+                intro. subst x1'. inv H9.
                 unfold translate_var in H8.
                 destruct (lenv ! x_res) eqn:Heqn; inv H8.
                 specialize H4 with err_str. unfold translate_var in H4.
@@ -5921,13 +5921,12 @@ Proof with eauto.
                 now apply Hcontra. }
               exists x1'. split; auto. subst f_before_cont. cbn.
               rewrite set_nth_nth_error_other; auto.
-              have Hl := HlocalBound _ _ H9. apply nth_error_Some in Hl.
-              apply notNone_Some in Hl. destruct Hl.
-              apply nth_error_Some. apply notNone_Some. exists x0. assumption.
-              apply val_relation_depends_on_finst with (fr:=fr_after_call). subst f_before_cont f_before_IH. cbn.
-              cbn in Hfinst. congruence.
-              apply HvalPres.
-              apply val_relation_depends_on_finst with (fr:=fr). subst f_before_IH. reflexivity. assumption.
+              have Hl := HlocalBound _ _ H9. assumption.
+              apply val_relation_depends_on_finst with (fr:=fr_after_call).
+              subst f_before_cont f_before_IH. cbn.
+              cbn in Hfinst. congruence. apply HvalPres.
+              apply val_relation_depends_on_finst with (fr:=fr).
+              subst f_before_IH. reflexivity. assumption.
             }
           }
         }
