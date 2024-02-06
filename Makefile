@@ -1,9 +1,13 @@
 .PHONY: all submodules plugin cplugin install clean bootstrap
 
 
+OS=$(shell uname)
+
+CORES=$(if $(filter Linux,$(OS)),$(shell nproc),$(shell sysctl -n hw.logicalcpu))
+
 all theories/Extraction/extraction.vo: theories/Makefile libraries/Makefile
-	$(MAKE) -C libraries -j`nproc`
-	$(MAKE) -C theories -j`nproc`
+	$(MAKE) -C libraries -j $(CORES)
+	$(MAKE) -C theories -j $(CORES)
 
 theories/Makefile: theories/_CoqProject
 	cd theories;coq_makefile -f _CoqProject -o Makefile
