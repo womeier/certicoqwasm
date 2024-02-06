@@ -385,13 +385,15 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
       x_var <- translate_var nenv lenv x "translate_exp constr";;
       match ys with
-      | [] => Ret ([ BI_const (nat_to_value (Pos.to_nat tg))
-               ; BI_const (nat_to_value 1)
-               ; BI_binop T_i32 (Binop_i BOI_shl)
-               ; BI_const (nat_to_value 1)
-               ; BI_binop T_i32 (Binop_i BOI_add)
-               ; BI_set_local x_var ] ++ following_instr)
-      | _ =>
+      | [] => Ret ([ BI_const (nat_to_value (Pos.to_nat tg)) (* Nullary constructor *)
+                    (* Unboxed representation ( (tag << 1) + 1 ) *)
+                    ; BI_const (nat_to_value 1)
+                    ; BI_binop T_i32 (Binop_i BOI_shl)
+                    ; BI_const (nat_to_value 1)
+                    ; BI_binop T_i32 (Binop_i BOI_add)
+                    ; BI_set_local x_var ] ++ following_instr)
+      | _ => (* n > 0 ary constructor  *)
+          (* Boxed representation *)
           store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
           (* Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++ *)
           Ret (grow_memory_if_necessary page_size ++
@@ -421,14 +423,18 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
         end
       in
       x_var <- translate_var nenv lenv x "translate_exp case";;
-      '(arms_b, arms_u) <- translate_case_branch_expressions arms;;
+      (* split the case arms into boxed/ unboxed ( NOTE: follows C backend translation ) *)
+      '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions arms;;
+      (* check if the matched variable is a pointer;
+         if so, jump to matching against the boxed arms,
+         otherwise jump to matching against the unboxed arms *)
       Ret ([ BI_get_local x_var ;
              BI_const (nat_to_value 1) ;
              BI_binop T_i32 (Binop_i BOI_and) ;
              BI_testop T_i32 TO_eqz ;
              BI_if (Tf [] [])
-               (create_case_nested_if_chain true x_var arms_b)
-               (create_case_nested_if_chain false x_var arms_u)])
+               (create_case_nested_if_chain true x_var arms_boxed)
+               (create_case_nested_if_chain false x_var arms_unboxed)])
 
    | Eproj x tg n y e' =>
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
