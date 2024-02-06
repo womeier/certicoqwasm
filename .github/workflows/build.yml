@@ -47,11 +47,16 @@ jobs:
               sudo chmod 777 ~/.opam/ -R
               git config --global --add safe.directory /github/workspace
               git config --global --add safe.directory /github/workspace/submodules/metacoq
+              git config --global --add safe.directory /github/workspace/submodules/wasmcert
               git submodule update --init
             endGroup
             startGroup "Install some more opam packages"
               cd ~/repo
               opam pin -n -y  submodules/metacoq # was pinned to the submodule at the same path in the dockerfile before -> is not rebuilt
+
+              # remove again once proposals in upstream WasmCert
+              opam pin -y -y  submodules/wasmcert
+              opam install /github/workspace/submodules/wasmcert/
             endGroup
             #      startGroup 'Install Alectryon'
             #  sudo apt-get update -y -q
