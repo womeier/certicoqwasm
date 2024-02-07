@@ -1269,10 +1269,10 @@ Lemma r_eliml: forall hs s f es hs' s' f' es' lconst,
 Proof.
   move => hs s f es hs' s' f' es' lconst HConst H.
   apply const_es_exists in HConst. destruct HConst as [vs ?].
-  (* eapply r_label with (lh:=LH_base vs []). eassumption. *)
-  (* - cbn. rewrite cats0. congruence. *)
-  (* - cbn. rewrite cats0. congruence. *)
-Admitted. (* Qed. *)
+  eapply r_label with (lh:=LH_base vs []). eassumption.
+  - cbn. rewrite cats0. congruence.
+  - cbn. rewrite cats0. congruence.
+Qed.
 
 Lemma r_elimr: forall hs s f es hs' s' f' es' les,
     reduce (host_instance := host_instance) hs s f es hs' s' f' es' ->
@@ -1280,7 +1280,7 @@ Lemma r_elimr: forall hs s f es hs' s' f' es' les,
 Proof.
   move => hs s f es hs' s' f' es' les H.
   eapply r_label with (lh:=LH_base [] les); eauto.
-Admitted. (* Qed. *)
+Qed.
 
 Lemma nth_error_ext {A} (l l' : list A) :
   (forall n, nth_error l n = nth_error l' n) -> l = l'.
@@ -1815,11 +1815,10 @@ Proof.
     assert ((s, s0, f, l) = (s, s0, f, l)) as H' by reflexivity.
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])). eapply rt_step.
     eapply r_label with (es:=instructions) (k:=1) (lh:= (LH_rec [] 0 [] (LH_base [] []) [])).
-    apply H. cbn.
-    (* rewrite cats0. reflexivity. *)
-    (* cbn. reflexivity. rewrite cats0. *)
-    (* now eapply IHclos_refl_trans_1n. *)
-Admitted. (* Qed. *)
+    apply H. cbn. rewrite cats0. reflexivity.
+    cbn. reflexivity. rewrite cats0.
+    now eapply IHclos_refl_trans_1n.
+Qed.
 
 Lemma reduce_trans_local : forall instructions hs hs' sr sr' fr fr' f0,
  clos_refl_trans
@@ -1882,9 +1881,9 @@ Proof.
   - destruct y as [[[hs0 s0] f0] es0].
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])). apply rt_step.
     eapply r_label with (k:=0) (lh:=LH_base [] les). apply H.
-    (* reflexivity. reflexivity. *)
-    (* apply IHclos_refl_trans_1n; auto. *)
-Admitted. (* Qed. *)
+    reflexivity. reflexivity.
+    apply IHclos_refl_trans_1n; auto.
+Qed.
 
 Lemma app_trans_const : forall hs hs' s s' f f' es es' lconst,
   const_list lconst ->
@@ -6262,14 +6261,14 @@ Proof.
   intros ? ? ? [[[[hs' s'] f'] instr'] Hcontra]. cbn in Hcontra.
   remember [] as l. revert Heql.
   induction Hcontra; intros; subst; try discriminate.
-  { inv H. destruct vs; inv H0. destruct vs; inv H0. admit.
-    (* destruct lh; cbn in H1; destruct (v_to_e_list l); inv H1. *) }
+  { inv H. destruct vs; inv H0. destruct vs; inv H0.
+    destruct lh; cbn in H1; destruct (v_to_e_list l); inv H1. }
   { destruct vcs; inv Heql. }
   { destruct vcs; inv Heql. }
   { destruct vcs; inv Heql. }
-  { admit. (* destruct lh; cbn in Heql; destruct (v_to_e_list l); inv Heql. *)
-    (* destruct es; auto. inv H0. *) }
-Admitted. (* Qed. *)
+  { destruct lh; cbn in Heql; destruct (v_to_e_list l); inv Heql.
+    destruct es; auto. inv H0. }
+Qed.
 
 
 Lemma reduce_const_false : forall state state' s s' f f' c instr,
@@ -6281,24 +6280,21 @@ Proof.
   induction Hcontra; intros; try discriminate. subst.
   { inv H. destruct vs; inv H0. destruct vs; inv H4.
            destruct vs; inv H0. destruct vs; inv H4.
-           destruct lh; inv H1.
-           admit.
-           (* destruct (v_to_e_list l); inv H2. *)
-           (* destruct l1; inv H3. destruct (v_to_e_list l); inv H2. *)
-           (* destruct l2; inv H3. *) }
+           destruct lh; inv H1. destruct (v_to_e_list l); inv H2.
+           destruct l1; inv H3. destruct (v_to_e_list l); inv H2.
+           destruct l2; inv H3. }
   { destruct ves; inv Heqinstr'. destruct ves; inv H11. }
   { destruct ves; inv Heqinstr'. destruct ves; inv H8. }
   { destruct ves; inv Heqinstr'. destruct ves; inv H8. }
   { subst.
-    admit.
-    (* destruct lh; cbn in Heqinstr'. *)
-    (* destruct (v_to_e_list l). 2:{ inv Heqinstr'. destruct l1, es, l0; inv H1. *)
-    (* eapply reduce_nil_false. eexists (hs', s', f', es'). eassumption. } *)
-    (* destruct es; inv Heqinstr'. cbn in H. *)
-    (* eapply reduce_nil_false. eexists (hs', s', f', es'). eassumption. *)
-    (* now destruct es, l0; inv H1. *)
-    (* destruct (v_to_e_list l); inv Heqinstr'. destruct l2; inv H1. *) }
-Admitted. (* Qed. *)
+    destruct lh; cbn in Heqinstr'.
+    destruct (v_to_e_list l). 2:{ inv Heqinstr'. destruct l1, es, l0; inv H1.
+    eapply reduce_nil_false. eexists (hs', s', f', es'). eassumption. }
+    destruct es; inv Heqinstr'. cbn in H.
+    eapply reduce_nil_false. eexists (hs', s', f', es'). eassumption.
+    now destruct es, l0; inv H1.
+    destruct (v_to_e_list l); inv Heqinstr'. destruct l2; inv H1. }
+Qed.
 
 Lemma reduce_trans_const_eq : forall state s f c c',
    opsem.reduce_trans (host_instance:=host_instance)
