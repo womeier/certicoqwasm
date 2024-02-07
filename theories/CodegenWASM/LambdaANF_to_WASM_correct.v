@@ -1242,7 +1242,6 @@ Qed.
 Lemma exists_i32 : exists (v : i32), True.
 Proof. exists (nat_to_i32 1). constructor. Qed.
 
-(******** lemmas removed in update: TODO reorganize  ********)
 Lemma notNone_Some {A} : forall (o : option A),
   o <> None <-> exists v, o = Some v.
 Proof.
@@ -1250,32 +1249,26 @@ Proof.
   eauto. congruence. contradiction. now destruct H.
 Qed.
 
-(** The lemmas [r_eliml] and [r_elimr] are the fundamental framing lemmas.
-  They enable to focus on parts of the stack, ignoring the context. **)
-
+(** The lemmas [r_eliml] and [r_elimr] are relicts from ancient times,
+    kept for compatability for now, TODO rework (use new context representation) **)
 Lemma r_eliml: forall hs s f es hs' s' f' es' lconst,
   const_list lconst ->
-  reduce (host_instance:=host_instance) hs s f es hs' s' f' es' ->
+  reduce (host_instance := host_instance) hs s f es hs' s' f' es' ->
   reduce hs s f (lconst ++ es) hs' s' f' (lconst ++ es').
 Proof.
   move => hs s f es hs' s' f' es' lconst HConst H.
-  apply: r_label; try apply/lfilledP.
-  - by apply: H.
-  - replace (lconst++es) with (lconst++es++[::]); first by apply: LfilledBase.
-    f_equal. by apply: cats0.
-  - replace (lconst++es') with (lconst++es'++[::]); first by apply: LfilledBase.
-    f_equal. by apply: cats0.
+  apply const_es_exists in HConst. destruct HConst as [vs ?].
+  eapply r_label with (lh:=LH_base vs []). eassumption.
+  - cbn. rewrite cats0. congruence.
+  - cbn. rewrite cats0. congruence.
 Qed.
 
 Lemma r_elimr: forall hs s f es hs' s' f' es' les,
-    reduce (host_instance:=host_instance) hs s f es hs' s' f' es' ->
+    reduce (host_instance := host_instance) hs s f es hs' s' f' es' ->
     reduce hs s f (es ++ les) hs' s' f' (es' ++ les).
 Proof.
   move => hs s f es hs' s' f' es' les H.
-  apply: r_label; try apply/lfilledP.
-  - apply: H.
-  - replace (es++les) with ([::]++es++les) => //. by apply: LfilledBase.
-  - replace (es'++les) with ([::]++es'++les) => //. by apply: LfilledBase.
+  eapply r_label with (lh:=LH_base [] les); eauto.
 Qed.
 
 Lemma nth_error_ext {A} (l l' : list A) :
@@ -1289,7 +1282,6 @@ Proof.
   - injection (Hnth 0) as ->. f_equal. apply IHl.
     intro n. exact (Hnth (S n)).
 Qed.
-(*****************)
 
 
 Lemma update_global_get_same : forall sr sr' i val fr,
@@ -1787,13 +1779,6 @@ Ltac elimr_nary_instr n :=
           end
   end.
 
-Lemma administrative_instruction_eqb_refl : forall x,
-  administrative_instruction_eqb x x = true.
-Proof.
-  intros. unfold administrative_instruction_eqb.
-  destruct administrative_instruction_eq_dec. reflexivity. contradiction.
-Qed.
-
 Lemma reduce_trans_label : forall instructions hs hs' sr sr' fr fr',
  clos_refl_trans
   (host.host_state host_instance * datatypes.store_record host_function * frame *
@@ -1819,10 +1804,9 @@ Proof.
     assert ((s, s0, f, l) = (s, s0, f, l)) as H' by reflexivity.
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])). eapply rt_step.
     eapply r_label with (es:=instructions) (k:=1) (lh:= (LH_rec [] 0 [] (LH_base [] []) [])).
-    apply H. cbn. rewrite app_nil_r. now rewrite administrative_instruction_eqb_refl.
-    cbn. rewrite app_nil_r. assert (eqseq [:: AI_label 0 [::] l] [:: AI_label 0 [::] l]). {
-       cbn. now rewrite administrative_instruction_eqb_refl. } eassumption.
-    eapply IHclos_refl_trans_1n; eauto.
+    apply H. cbn. rewrite cats0. reflexivity.
+    cbn. reflexivity. rewrite cats0.
+    now eapply IHclos_refl_trans_1n.
 Qed.
 
 Lemma reduce_trans_local : forall instructions hs hs' sr sr' fr fr' f0,
@@ -1885,8 +1869,8 @@ Proof.
   - inv Heqx. apply rt_refl.
   - destruct y as [[[hs0 s0] f0] es0].
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])). apply rt_step.
-    eapply r_label with (k:=0) (lh:=LH_base [] les). apply H. cbn. now apply /eqseqP.
-    cbn. now apply /eqseqP.
+    eapply r_label with (k:=0) (lh:=LH_base [] les). apply H.
+    reflexivity. reflexivity.
     apply IHclos_refl_trans_1n; auto.
 Qed.
 
@@ -6251,12 +6235,6 @@ Proof.
     cbn. rewrite app_length. cbn. now rewrite Nat.add_comm -app_assoc.
 Qed.
 
-Lemma nth_0_0 : forall n:nat, nth n [0] 0 = 0.
-Proof.
-  intro. induction n; cbn in *; auto.
-Qed.
-
-
 Lemma reduce_nil_false : forall state s f,
   ~ exists y,
   (reduce_tuple (host_instance:=host_instance))
@@ -6266,21 +6244,14 @@ Proof.
   remember [] as l. revert Heql.
   induction Hcontra; intros; subst; try discriminate.
   { inv H. destruct vs; inv H0. destruct vs; inv H0.
-    unfold lfilled in H1. destruct (lfill 0 lh [AI_trap]) eqn:Heqn. 2: inv H1.
-    apply eqseq_true in H1. subst. destruct lh; inv Heqn. destruct (const_list l); inv H1.
-    destruct l; inv H2. }
+    destruct lh; cbn in H1; destruct (v_to_e_list l); inv H1. }
   { destruct vcs; inv Heql. }
   { destruct vcs; inv Heql. }
   { destruct vcs; inv Heql. }
-  { apply IHHcontra. unfold lfilled in H.
-    destruct (lfill k lh es) eqn:Heqn. 2: inv H. apply eqseq_true in H. subst.
-    destruct lh. 2: { destruct k; first inv Heqn. cbn in Heqn.
-                      destruct (const_list l). 2: inv Heqn.
-                      destruct (lfill k lh es); inv Heqn.
-                      destruct l; inv H1. }
-    destruct k; inv Heqn. destruct (const_list l); inv H1. destruct l, es, l0; inv H2.
-    reflexivity. }
+  { destruct lh; cbn in Heql; destruct (v_to_e_list l); inv Heql.
+    destruct es; auto. inv H0. }
 Qed.
+
 
 Lemma reduce_const_false : forall state state' s s' f f' c instr,
   ~ (reduce_tuple (host_instance:=host_instance))
@@ -6291,29 +6262,20 @@ Proof.
   induction Hcontra; intros; try discriminate. subst.
   { inv H. destruct vs; inv H0. destruct vs; inv H4.
            destruct vs; inv H0. destruct vs; inv H4.
-           destruct lh; inv H1. unfold lfilled in H2.
-           destruct (lfill 0 _ _) eqn:Heqn. 2: inv H2.
-           apply eqseq_true in H2. subst.
-           cbn in Heqn. destruct (const_list l); inv Heqn.
-           destruct l; inv H1. destruct l; inv H3. }
+           destruct lh; inv H1. destruct (v_to_e_list l); inv H2.
+           destruct l1; inv H3. destruct (v_to_e_list l); inv H2.
+           destruct l2; inv H3. }
   { destruct ves; inv Heqinstr'. destruct ves; inv H11. }
   { destruct ves; inv Heqinstr'. destruct ves; inv H8. }
   { destruct ves; inv Heqinstr'. destruct ves; inv H8. }
   { subst.
-    unfold lfilled in H, H0. destruct (lfill k lh es) eqn:Heqn. 2: inv H.
-    apply eqseq_true in H. subst.
-    destruct lh, k; inv Heqn. destruct (const_list l); inv H1.
-    destruct es.
-    { (* es = []*)
-      eapply reduce_nil_false. exists (hs', s', f', es'). eassumption.
-    }
-    { (* es = [const c] *)
-      destruct l, es; cbn in H2; inv H2; eauto.
-      destruct l; inv H3. destruct l; inv H3.
-    }
-    destruct (const_list l). 2: inv H1.
-    destruct (lfill k lh es) eqn:Heqn; inv H1.
-    destruct l; inv H2. destruct l; inv H3. }
+    destruct lh; cbn in Heqinstr'.
+    destruct (v_to_e_list l). 2:{ inv Heqinstr'. destruct l1, es, l0; inv H1.
+    eapply reduce_nil_false. eexists (hs', s', f', es'). eassumption. }
+    destruct es; inv Heqinstr'. cbn in H.
+    eapply reduce_nil_false. eexists (hs', s', f', es'). eassumption.
+    now destruct es, l0; inv H1.
+    destruct (v_to_e_list l); inv Heqinstr'. destruct l2; inv H1. }
 Qed.
 
 Lemma reduce_trans_const_eq : forall state s f c c',
