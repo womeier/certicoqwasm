@@ -730,7 +730,6 @@ Theorem translate_exp_correct {lenv} :
     translate_exp nenv cenv lenv fenv e = Ret instructions ->
     @repr_expr_LambdaANF_Codegen fenv nenv lenv e instructions.
 Proof.
-  intros (* Hcrep *) e.
   induction e using exp_ind'; intros instr Hcenv; intros.
   - (* Econstr *)
     simpl in H.
