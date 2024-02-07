@@ -297,39 +297,17 @@ Inductive repr_fun_args_Codegen {lenv} : list LambdaANF.cps.var ->
     repr_fun_args_Codegen (a :: args) ([BI_const (nat_to_value a')] ++ instr).
 
 
-(* CODEGEN RELATION: relatates LambdaANF expression and result of translate_exp *)
-Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_instruction -> Prop :=
-| R_halt_e: forall v v',
-    repr_var (lenv:=lenv) v v' ->
-    repr_expr_LambdaANF_Codegen (Ehalt v) [ BI_get_local v'
-                                          ; BI_set_global result_var
-                                          ]
-| Rproj_e: forall x x' t n v v' e  s,
-    repr_expr_LambdaANF_Codegen e  s ->
-    repr_var (lenv:=lenv) x x' ->
-    repr_var (lenv:=lenv) v v' ->
-      repr_expr_LambdaANF_Codegen (Eproj x t n v e)
-           ([ BI_get_local v'
-           ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4))
-           ; BI_binop T_i32 (Binop_i BOI_add)
-           ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0)
-           ; BI_set_local x'
-           ] ++ s)
-
-| Rconstr_e:
-    forall x x' t vs sgrow sargs sres e e',
-    (* translated assigned var *)
-    repr_var (lenv:=lenv) x x' ->
+Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var -> list basic_instruction -> list basic_instruction ->  Prop :=
+| Rconstr_asgn_boxed :
+  forall x' t vs sgrow sargs sres scont,
     (* allocate memory *)
     grow_memory_if_necessary page_size = sgrow ->
     (* store args *)
     Forall_statements_in_seq (set_nth_constr_arg (lenv:=lenv)) vs sargs ->
     (* set result *)
     sres = [BI_get_global constr_alloc_ptr; BI_set_local x'] ->
-    (* following expression *)
-    repr_expr_LambdaANF_Codegen e e' ->
 
-    repr_expr_LambdaANF_Codegen (Econstr x t vs e)
+    repr_asgn_constr_Codegen x' t vs scont
                      (sgrow ++
                      [ BI_get_global result_out_of_mem
                      ; BI_const (nat_to_value 1)
@@ -346,8 +324,46 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
                           ; BI_const (nat_to_value 4)
                           ; BI_binop T_i32 (Binop_i BOI_add)
                           ; BI_set_global global_mem_ptr
-                          ] ++ sargs ++ sres ++ e')
+                          ] ++ sargs ++ sres ++ scont)
                      ])
+| Rconstr_asgn_unboxed :
+  forall x' t scont,
+    repr_asgn_constr_Codegen x' t [] scont ([ BI_const (nat_to_value (Pos.to_nat t))
+                           (* Unboxed representation ( (tag << 1) + 1 ) *)
+                           ; BI_const (nat_to_value 1)
+                           ; BI_binop T_i32 (Binop_i BOI_shl)
+                           ; BI_const (nat_to_value 1)
+                           ; BI_binop T_i32 (Binop_i BOI_add)
+                           ; BI_set_local x' ] ++ scont ).
+
+
+
+
+(* CODEGEN RELATION: relatates LambdaANF expression and result of translate_exp *)
+Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_instruction -> Prop :=
+| R_halt_e: forall v v',
+    repr_var (lenv:=lenv) v v' ->
+    repr_expr_LambdaANF_Codegen (Ehalt v) [ BI_get_local v'
+                                          ; BI_set_global result_var
+                                          ]
+| Rproj_e: forall x x' t n v v' e e',
+    repr_expr_LambdaANF_Codegen e e' ->
+    repr_var (lenv:=lenv) x x' ->
+    repr_var (lenv:=lenv) v v' ->
+      repr_expr_LambdaANF_Codegen (Eproj x t n v e)
+           ([ BI_get_local v'
+           ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4))
+           ; BI_binop T_i32 (Binop_i BOI_add)
+           ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0)
+           ; BI_set_local x'
+           ] ++ e')
+
+| Rconstr_e: forall x x' t vs e instrs e',
+    repr_expr_LambdaANF_Codegen e e' ->
+    repr_var (lenv:=lenv) x x' ->
+    repr_asgn_constr_Codegen (lenv:=lenv) x' t vs e' instrs ->
+    repr_expr_LambdaANF_Codegen (Econstr x t vs e) instrs
+
 
 | Rcase_e_nil : forall v, repr_expr_LambdaANF_Codegen (Ecase v []) [BI_unreachable]
 
@@ -737,7 +753,7 @@ Proof.
     { destruct (translate_exp nenv cenv lenv fenv e) eqn:H_eqTranslate; inv H.
       destruct (translate_var nenv lenv v _) eqn:H_translate_var. inv H1.
       destruct (store_constructor nenv cenv lenv fenv t l) eqn:store_constr.
-      inv H1. inv H1. cbn.
+      inv H1. inv H0. cbn.
   repeat match goal with
   |- context C [?x :: ?l] =>
      lazymatch l with [::] => fail | _ => rewrite <-(cat1s x l) end
