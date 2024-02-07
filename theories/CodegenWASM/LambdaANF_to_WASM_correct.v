@@ -308,33 +308,34 @@ Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var ->
     sres = [BI_get_global constr_alloc_ptr; BI_set_local x'] ->
 
     repr_asgn_constr_Codegen x' t vs scont
-                     (sgrow ++
-                     [ BI_get_global result_out_of_mem
-                     ; BI_const (nat_to_value 1)
-                     ; BI_relop T_i32 (Relop_i ROI_eq)
-                     ; BI_if (Tf nil nil)
-                         (* grow mem failed *) []
-                         (* grow mem success *)
-                         ([ BI_get_global global_mem_ptr
-                          ; BI_set_global constr_alloc_ptr
-                          ; BI_get_global constr_alloc_ptr
-                          ; BI_const (nat_to_value (Pos.to_nat t))
-                          ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
-                          ; BI_get_global global_mem_ptr
-                          ; BI_const (nat_to_value 4)
-                          ; BI_binop T_i32 (Binop_i BOI_add)
-                          ; BI_set_global global_mem_ptr
-                          ] ++ sargs ++ sres ++ scont)
-                     ])
+      (sgrow ++
+         [ BI_get_global result_out_of_mem
+           ; BI_const (nat_to_value 1)
+           ; BI_relop T_i32 (Relop_i ROI_eq)
+           ; BI_if (Tf nil nil)
+               (* grow mem failed *) []
+               (* grow mem success *)
+               ([ BI_get_global global_mem_ptr
+                  ; BI_set_global constr_alloc_ptr
+                  ; BI_get_global constr_alloc_ptr
+                  ; BI_const (nat_to_value (Pos.to_nat t))
+                  ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
+                  ; BI_get_global global_mem_ptr
+                  ; BI_const (nat_to_value 4)
+                  ; BI_binop T_i32 (Binop_i BOI_add)
+                  ; BI_set_global global_mem_ptr
+                 ] ++ sargs ++ sres ++ scont)
+      ])
+
 | Rconstr_asgn_unboxed :
   forall x' t scont,
-    repr_asgn_constr_Codegen x' t [] scont ([ BI_const (nat_to_value (Pos.to_nat t))
-                           (* Unboxed representation ( (tag << 1) + 1 ) *)
-                           ; BI_const (nat_to_value 1)
-                           ; BI_binop T_i32 (Binop_i BOI_shl)
-                           ; BI_const (nat_to_value 1)
-                           ; BI_binop T_i32 (Binop_i BOI_add)
-                           ; BI_set_local x' ] ++ scont ).
+    repr_asgn_constr_Codegen x' t [] scont
+      ([ BI_const (nat_to_value (Pos.to_nat t))
+         ; BI_const (nat_to_value 1)
+         ; BI_binop T_i32 (Binop_i BOI_shl)
+         ; BI_const (nat_to_value 1)
+         ; BI_binop T_i32 (Binop_i BOI_add)
+         ; BI_set_local x' ] ++ scont ).
 
 
 
@@ -367,17 +368,29 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
 
 | Rcase_e_nil : forall v, repr_expr_LambdaANF_Codegen (Ecase v []) [BI_unreachable]
 
-| Rcase_e_cons : forall v v' cl instrs_more t e e',
+| Rcase_e_cons_unboxed : forall v v' cl instrs_more t e e',
         repr_var (lenv:=lenv) v v' ->
         repr_expr_LambdaANF_Codegen (Ecase v cl) instrs_more ->
         repr_expr_LambdaANF_Codegen e e' ->
         repr_expr_LambdaANF_Codegen (Ecase v ((t, e) :: cl))
-                                    [ BI_get_local v'
-                                    ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0)
-                                    ; BI_const (nat_to_value (Pos.to_nat t))
-                                    ; BI_relop T_i32 (Relop_i ROI_eq)
-                                    ; BI_if (Tf nil nil) e' instrs_more
-                                    ]
+          [ BI_get_local v'
+            ; BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_S))
+            ; BI_const (nat_to_value (Pos.to_nat t))
+            ; BI_relop T_i32 (Relop_i ROI_eq)
+            ; BI_if (Tf nil nil) e' instrs_more
+          ]
+
+| Rcase_e_cons_boxed : forall v v' cl instrs_more t e e',
+        repr_var (lenv:=lenv) v v' ->
+        repr_expr_LambdaANF_Codegen (Ecase v cl) instrs_more ->
+        repr_expr_LambdaANF_Codegen e e' ->
+        repr_expr_LambdaANF_Codegen (Ecase v ((t, e) :: cl))
+          [ BI_get_local v'
+            ; BI_load T_i32 None 2%N 0%N
+            ; BI_const (nat_to_value (Pos.to_nat t))
+            ; BI_relop T_i32 (Relop_i ROI_eq)
+            ; BI_if (Tf nil nil) e' instrs_more
+          ]
 
 | R_app_e : forall v instr t args args',
     (* args are provided properly *)
@@ -442,12 +455,18 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> (* val *)
                                         store_record ->     (* sr *)
                                          frame ->           (* fr *)
                                           wasm_value ->     (* wal *)
-                                           Prop :=
-| Rconstr_v : forall v t vs (sr : store_record) fr gmp m (addr : nat),
+                                          Prop :=
+| Rconstr_unboxed_v : forall v t (sr : store_record) fr uv,
+    v = (tag_to_i32 t) ->
+    repr_val_LambdaANF_Codegen (LambdaANF.cps.Vconstr t []) sr fr (Val_ptr uv)
+
+
+| Rconstr_boxed_v : forall v t vs (sr : store_record) fr gmp m (addr : nat),
     (* simple memory model: gmp is increased whenever new mem is needed,
        gmp only increases *)
     sglob_val sr (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
     (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
+    length vs > 0 ->
     (* addr in bounds of linear memory (later INV: gmp + 4 < length of memory) *)
     (addr + 4 <= gmp) ->
     (* store_record contains memory *)
@@ -458,6 +477,8 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> (* val *)
     (* arguments are set properly *)
     repr_val_constr_args_LambdaANF_Codegen vs sr fr (4 + addr) ->
     repr_val_LambdaANF_Codegen (LambdaANF.cps.Vconstr t vs) sr fr (Val_ptr addr)
+
+
 | Rfunction_v : forall fds f sr fr tag xs e e' idx ftype ts body,
       repr_funvar f idx ->
       find_def f fds = Some (tag, xs, e) ->
@@ -752,134 +773,151 @@ Proof.
     simpl in H.
     { destruct (translate_exp nenv cenv lenv fenv e) eqn:H_eqTranslate; inv H.
       destruct (translate_var nenv lenv v _) eqn:H_translate_var. inv H1.
-      destruct (store_constructor nenv cenv lenv fenv t l) eqn:store_constr.
-      inv H1. inv H0. cbn.
-  repeat match goal with
-  |- context C [?x :: ?l] =>
-     lazymatch l with [::] => fail | _ => rewrite <-(cat1s x l) end
-  end.
-  rename i into v'.
-  replace   ([:: BI_get_global global_mem_ptr] ++
-   [:: BI_const (N_to_value 65536)] ++
-   [:: BI_binop T_i32 (Binop_i BOI_add)] ++
-   [:: BI_const (Z_to_value 65536)] ++
-   [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
-   [:: BI_current_memory] ++
-   [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
-   [:: BI_if (Tf [::] [::])
-         ([:: BI_const (nat_to_value 1)] ++
-          [:: BI_grow_memory] ++
-          [:: BI_const (Z_to_value (-1))] ++
-          [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-          [:: BI_if (Tf [::] [::])
-                ([:: BI_const (nat_to_value 1)] ++
-                 [:: BI_set_global result_out_of_mem]) [::]])
-         [::]] ++
-   [:: BI_get_global result_out_of_mem] ++
-   [:: BI_const (nat_to_value 1)] ++
-   [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-   [:: BI_if (Tf [::] [::]) [::]
-         (l1 ++
-          ([:: BI_get_global constr_alloc_ptr] ++
-           [:: BI_set_local v'] ++ l0)%SEQ)%list]) with
-   (([:: BI_get_global global_mem_ptr] ++
-   [:: BI_const (N_to_value 65536)] ++
-   [:: BI_binop T_i32 (Binop_i BOI_add)] ++
-   [:: BI_const (Z_to_value 65536)] ++
-   [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
-   [:: BI_current_memory] ++
-   [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
-   [:: BI_if (Tf [::] [::])
-         ([:: BI_const (nat_to_value 1)] ++
-          [:: BI_grow_memory] ++
-          [:: BI_const (Z_to_value (-1))] ++
-          [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-          [:: BI_if (Tf [::] [::])
-                ([:: BI_const (nat_to_value 1)] ++
-                 [:: BI_set_global result_out_of_mem]) []])
-         []]) ++
-   [:: BI_get_global result_out_of_mem] ++
-   [:: BI_const (nat_to_value 1)] ++
-   [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-   [:: BI_if (Tf [::] [::]) [::]
-         (l1 ++
-          ([:: BI_get_global constr_alloc_ptr] ++
-           [:: BI_set_local v'] ++ l0)%SEQ)%list]) by reflexivity.
-  remember ([:: BI_get_global global_mem_ptr] ++
-   [:: BI_const (N_to_value 65536)] ++
-   [:: BI_binop T_i32 (Binop_i BOI_add)] ++
-   [:: BI_const (Z_to_value 65536)] ++
-   [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
-   [:: BI_current_memory] ++
-   [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
-   [:: BI_if (Tf [::] [::])
-         ([:: BI_const (nat_to_value 1)] ++
-          [:: BI_grow_memory] ++
-          [:: BI_const (Z_to_value (-1))] ++
-          [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-          [:: BI_if (Tf [::] [::])
-                ([:: BI_const (nat_to_value 1)] ++
-                 [:: BI_set_global result_out_of_mem]) []])
-         []]) as grow_instr.
-      unfold store_constructor in store_constr.
-      destruct (set_constructor_args nenv lenv fenv l 0) eqn:Hconstrargs. inv store_constr.
-         remember (grow_memory_if_necessary page_size) as grow.
-      inversion store_constr.
+      destruct l as [|v0 l'].
+      (* Nullary constructor *)
+      + { inv H1.
+          eapply Rconstr_e with (e':=l0) (x':=i); eauto.
+          apply IHe; auto.
+          assert (subterm_e e (Econstr v t [] e) ). { constructor; constructor. }
+          eapply Forall_constructors_subterm. eassumption. assumption.
+          econstructor; eauto.
+          eapply Rconstr_asgn_unboxed. }
+      (* Non-nullary constructor *)
+      + { remember (v0 :: l') as l.
+          destruct (store_constructor nenv cenv lenv fenv t l) eqn:store_constr.
+          inv H1. inv H1. cbn.
+          repeat match goal with
+                   |- context C [?x :: ?l] =>
+                     lazymatch l with [::] => fail | _ => rewrite <-(cat1s x l) end
+                 end.
+          rename i into v'.
+          replace   ([:: BI_get_global global_mem_ptr] ++
+                       [:: BI_const (N_to_value 65536)] ++
+                       [:: BI_binop T_i32 (Binop_i BOI_add)] ++
+                       [:: BI_const (Z_to_value 65536)] ++
+                       [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
+                       [:: BI_current_memory] ++
+                       [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
+                       [:: BI_if (Tf [::] [::])
+                          ([:: BI_const (nat_to_value 1)] ++
+                             [:: BI_grow_memory] ++
+                             [:: BI_const (Z_to_value (-1))] ++
+                             [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
+                             [:: BI_if (Tf [::] [::])
+                                ([:: BI_const (nat_to_value 1)] ++
+                                   [:: BI_set_global result_out_of_mem]) [::]])
+                          [::]] ++
+                       [:: BI_get_global result_out_of_mem] ++
+                       [:: BI_const (nat_to_value 1)] ++
+                       [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
+                       [:: BI_if (Tf [::] [::]) [::]
+                          (l1 ++
+                             ([:: BI_get_global constr_alloc_ptr] ++
+                                [:: BI_set_local v'] ++ l0)%SEQ)%list]) with
+            (([:: BI_get_global global_mem_ptr] ++
+                [:: BI_const (N_to_value 65536)] ++
+                [:: BI_binop T_i32 (Binop_i BOI_add)] ++
+                [:: BI_const (Z_to_value 65536)] ++
+                [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
+                [:: BI_current_memory] ++
+                [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
+                [:: BI_if (Tf [::] [::])
+                   ([:: BI_const (nat_to_value 1)] ++
+                      [:: BI_grow_memory] ++
+                      [:: BI_const (Z_to_value (-1))] ++
+                      [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
+                      [:: BI_if (Tf [::] [::])
+                         ([:: BI_const (nat_to_value 1)] ++
+                            [:: BI_set_global result_out_of_mem]) []])
+                   []]) ++
+               [:: BI_get_global result_out_of_mem] ++
+               [:: BI_const (nat_to_value 1)] ++
+               [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
+               [:: BI_if (Tf [::] [::]) [::]
+                  (l1 ++
+                     ([:: BI_get_global constr_alloc_ptr] ++
+                        [:: BI_set_local v'] ++ l0)%SEQ)%list]) by reflexivity.
+          remember ([:: BI_get_global global_mem_ptr] ++
+                      [:: BI_const (N_to_value 65536)] ++
+                      [:: BI_binop T_i32 (Binop_i BOI_add)] ++
+                      [:: BI_const (Z_to_value 65536)] ++
+                      [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
+                      [:: BI_current_memory] ++
+                      [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
+                      [:: BI_if (Tf [::] [::])
+                         ([:: BI_const (nat_to_value 1)] ++
+                            [:: BI_grow_memory] ++
+                            [:: BI_const (Z_to_value (-1))] ++
+                            [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
+                            [:: BI_if (Tf [::] [::])
+                               ([:: BI_const (nat_to_value 1)] ++
+                                  [:: BI_set_global result_out_of_mem]) []])
+                         []]) as grow_instr.
+          unfold store_constructor in store_constr.
+          destruct (set_constructor_args nenv lenv fenv (v0 :: l') 0) eqn:Hconstrargs. inv store_constr.
+          remember (grow_memory_if_necessary page_size) as grow.
+          inversion store_constr.
 
-         replace ([:: BI_get_global constr_alloc_ptr, BI_set_local v' & l0]) with
-         ([:: BI_get_global constr_alloc_ptr; BI_set_local v'] ++ l0) by reflexivity.
+          replace ([:: BI_get_global constr_alloc_ptr, BI_set_local v' & l0]) with
+            ([:: BI_get_global constr_alloc_ptr; BI_set_local v'] ++ l0) by reflexivity.
 
-       replace ([:: BI_get_global global_mem_ptr, BI_set_global constr_alloc_ptr,
-        BI_get_global global_mem_ptr, BI_const (N_to_value page_size),
-        BI_binop T_i32 (Binop_i BOI_add), BI_set_global global_mem_ptr,
-        BI_get_global constr_alloc_ptr, BI_const (nat_to_value (Pos.to_nat t)),
-        BI_store T_i32 None 2%N 0%N
-      & l2]) with ([:: BI_get_global global_mem_ptr; BI_set_global constr_alloc_ptr;
-        BI_get_global global_mem_ptr; BI_const (N_to_value page_size);
-        BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr] ++
-        [BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
-        BI_store T_i32 None 2%N 0%N] ++ l2) by reflexivity.
+          replace ([:: BI_get_global global_mem_ptr, BI_set_global constr_alloc_ptr,
+                      BI_get_global global_mem_ptr, BI_const (N_to_value page_size),
+                      BI_binop T_i32 (Binop_i BOI_add), BI_set_global global_mem_ptr,
+                      BI_get_global constr_alloc_ptr, BI_const (nat_to_value (Pos.to_nat t)),
+                      BI_store T_i32 None 2%N 0%N
+                      & l]) with ([:: BI_get_global global_mem_ptr; BI_set_global constr_alloc_ptr;
+                                    BI_get_global global_mem_ptr; BI_const (N_to_value page_size);
+                                    BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr] ++
+                                     [BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
+                                      BI_store T_i32 None 2%N 0%N] ++ l) by reflexivity.
 
-        replace ([:: BI_get_global constr_alloc_ptr] ++ [:: BI_set_local v'] ++ l0) with
-                ([BI_get_global constr_alloc_ptr; BI_set_local v'] ++ l0) by reflexivity.
-        remember ([BI_get_global constr_alloc_ptr; BI_set_local v']) as sres.
+          replace ([:: BI_get_global constr_alloc_ptr] ++ [:: BI_set_local v'] ++ l0) with
+            ([BI_get_global constr_alloc_ptr; BI_set_local v'] ++ l0) by reflexivity.
+          remember ([BI_get_global constr_alloc_ptr; BI_set_local v']) as sres.
 
-        replace ([:: BI_get_global global_mem_ptr,
-              BI_set_global constr_alloc_ptr,
-              BI_get_global constr_alloc_ptr,
-              BI_const (nat_to_value (Pos.to_nat t)),
-              BI_store T_i32 None 2%N 0%N,
-              BI_get_global global_mem_ptr,
-              BI_const (nat_to_value 4),
-              BI_binop T_i32 (Binop_i BOI_add),
-              BI_set_global global_mem_ptr
-            & l2]) with ([ BI_get_global global_mem_ptr;
-              BI_set_global constr_alloc_ptr ] ++ [
-              BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
-              BI_store T_i32 None 2%N 0%N;
-              BI_get_global global_mem_ptr;
-              BI_const (nat_to_value 4);
-              BI_binop T_i32 (Binop_i BOI_add);
-              BI_set_global global_mem_ptr
-            ] ++ l2) by reflexivity.
-        repeat rewrite <- app_assoc.
-        eapply Rconstr_e with (e' := l0) (sres := sres); eauto.
-        econstructor. eassumption. apply set_nth_constr_arg_correct. assumption.
-        apply IHe; auto.
-        assert (subterm_e e (Econstr v t l e) ). { constructor; constructor. }
-        eapply Forall_constructors_subterm. eassumption. assumption.
-        }
+          replace ([:: BI_get_global global_mem_ptr,
+                      BI_set_global constr_alloc_ptr,
+                      BI_get_global constr_alloc_ptr,
+                      BI_const (nat_to_value (Pos.to_nat t)),
+                      BI_store T_i32 None 2%N 0%N,
+                      BI_get_global global_mem_ptr,
+                      BI_const (nat_to_value 4),
+                      BI_binop T_i32 (Binop_i BOI_add),
+                      BI_set_global global_mem_ptr
+                      & l]) with ([ BI_get_global global_mem_ptr;
+                                     BI_set_global constr_alloc_ptr ] ++ [
+                                       BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
+                                       BI_store T_i32 None 2%N 0%N;
+                                       BI_get_global global_mem_ptr;
+                                       BI_const (nat_to_value 4);
+                                       BI_binop T_i32 (Binop_i BOI_add);
+                                       BI_set_global global_mem_ptr
+                                     ] ++ l) by reflexivity.
+          repeat rewrite <- app_assoc.
+          eapply Rconstr_e with (e' := l0); eauto.
+          apply IHe.
+          assert (subterm_e e (Econstr v t (v0 :: l') e) ). { constructor; constructor. }
+          eapply Forall_constructors_subterm. eassumption. assumption. reflexivity.
+          econstructor. eauto.
+          eapply Rconstr_asgn_boxed. eauto.
+          apply set_nth_constr_arg_correct.
+          replace ([:: v0] ++ l') with (v0 :: l') by reflexivity.
+          assumption.
+          assumption.
+    } }
   - (* Ecase nil *) simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar.
                     inv H. inv H. constructor.
   - (* Ecase const *) {
-    simpl in H. destruct (translate_exp nenv cenv lenv fenv e) eqn:Hexp. inv H.
-    destruct (_ l) eqn:Hprep. inv H.
-    destruct (translate_var nenv lenv v _) eqn:Hvar. inv H. inv H.
-    constructor. econstructor. eassumption. apply IHe0.
-    eapply correct_cenv_case_drop_clause. eassumption.
-    cbn. rewrite Hprep. rewrite Hvar. reflexivity.
-    apply IHe; auto. eapply Forall_constructors_subterm; eauto.
-    constructor. econstructor. cbn. left; eauto. }
+      admit.
+    (* simpl in H. destruct (translate_exp nenv cenv lenv fenv e) eqn:Hexp. inv H. *)
+    (* destruct (_ l) eqn:Hprep. inv H. *)
+    (* destruct (translate_var nenv lenv v _) eqn:Hvar. inv H. inv H. *)
+    (* constructor. econstructor. eassumption. apply IHe0. *)
+    (* eapply correct_cenv_case_drop_clause. eassumption. *)
+    (* cbn. rewrite Hprep. rewrite Hvar. reflexivity. *)
+    (* apply IHe; auto. eapply Forall_constructors_subterm; eauto. *)
+(* constructor. econstructor. cbn. left; eauto. *) }
   - (* Eproj *) {
     simpl in H.
     destruct (translate_exp nenv cenv lenv fenv e) eqn:He. inv H.
@@ -924,7 +962,7 @@ Proof.
   - (* Ehalt *)
     simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
     injection H => instr'. subst. constructor. econstructor. eauto.
-Qed.
+Admitted. (* Qed. *)
 
 Definition result_val_LambdaANF_Codegen (val : LambdaANF.cps.val)
                                         (sr : store_record) (fr : frame) : Prop :=

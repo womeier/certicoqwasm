@@ -365,7 +365,8 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (ctor_tag * list basic_instruction)) : error (list basic_instruction) :=
   match es with
   | [] => Ret [ BI_unreachable ]
-  | [ (_, instrs) ] => Ret instrs
+  (* NOTE: Leave out small optimization to make proof easier *)
+  (* | [ (_, instrs) ] => Ret instrs *)
   | (t, instrs) :: tl =>
       (* if boxed (pointer), then load tag from memory;
          otherwise, obtain tag from unboxed representation ( tag = (repr >> 1) )
@@ -414,39 +415,45 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
             ])
       end
    | Ecase x arms =>
-      let fix translate_case_branch_expressions (arms : list (ctor_tag * exp)) : error (list (ctor_tag * list basic_instruction) * list (ctor_tag * list basic_instruction)) :=
+      let fix translate_case_branch_expressions (v : immediate) (arms : list (ctor_tag * exp)) : error (list basic_instruction) :=
         match arms with
-        | [] => Ret ([], [])
+        | [] => Ret [ BI_unreachable ]
         | (t, e)::tl =>
-            instrs <- translate_exp nenv cenv lenv fenv e;;
+            e' <- translate_exp nenv cenv lenv fenv e;;
             arity <- get_ctor_arity cenv t ;;
-            '(arms_b, arms_u) <- translate_case_branch_expressions tl;;
-            if arity =? 0 then
-              Ret (arms_b, (t, instrs) :: arms_u)
-            else
-              Ret ((t, instrs) :: arms_b, arms_u)
+            rest_cases <- translate_case_branch_expressions v tl;;
+            let ctor_repr_instrs := (if arity =? 0 then
+               [ BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_S)) ]
+             else
+               [ BI_load T_i32 None 2%N 0%N ]) in
+            Ret (BI_get_local v :: ctor_repr_instrs ++
+                   [ BI_const (nat_to_value (Pos.to_nat t))
+                     ; BI_relop T_i32 (Relop_i ROI_eq)
+                     ; BI_if (Tf nil nil) e' rest_cases ])
         end
       in
       x_var <- translate_var nenv lenv x "translate_exp case";;
-      (* split the case arms into boxed/ unboxed ( NOTE: follows C backend translation ) *)
-      arms' <- translate_case_branch_expressions arms;;
-      (* check if the matched variable is a pointer;
-         if so, jump to matching against the boxed arms,
-         otherwise jump to matching against the unboxed arms *)
-      match arms' with
-      | (arms_boxed, []) => (create_case_nested_if_chain true x_var arms_boxed)
-      | ([], arms_unboxed) => (create_case_nested_if_chain false x_var arms_unboxed)
-      | (arms_boxed, arms_unboxed) =>
-          boxed_cases <- (create_case_nested_if_chain true x_var arms_boxed) ;;
-          unboxed_cases <- (create_case_nested_if_chain false x_var arms_unboxed) ;;
-          Ret ([ BI_get_local x_var ;
-                 BI_const (nat_to_value 1) ;
-                 BI_binop T_i32 (Binop_i BOI_and) ;
-                 BI_testop T_i32 TO_eqz ;
-                 BI_if (Tf [] [])
-                   boxed_cases
-                   unboxed_cases ])
-      end
+      translate_case_branch_expressions x_var arms
+      (* (* split the case arms into boxed/ unboxed ( NOTE: follows C backend translation ) *) *)
+
+      (* (* check if the matched variable is a pointer; *)
+      (*    if so, jump to matching against the boxed arms, *)
+      (*    otherwise jump to matching against the unboxed arms *) *)
+      (* match arms' with *)
+      (* (* Note: Small optimization that complicates proof; leave out for now *) *)
+      (* (* | (arms_boxed, []) => (create_case_nested_if_chain true x_var arms_boxed) *) *)
+      (* (* | ([], arms_unboxed) => (create_case_nested_if_chain false x_var arms_unboxed) *) *)
+      (* | (arms_boxed, arms_unboxed) => *)
+      (*     boxed_cases <- (create_case_nested_if_chain true x_var arms_boxed) ;; *)
+      (*     unboxed_cases <- (create_case_nested_if_chain false x_var arms_unboxed) ;; *)
+      (*     Ret ([ BI_get_local x_var ; *)
+      (*            BI_const (nat_to_value 1) ; *)
+      (*            BI_binop T_i32 (Binop_i BOI_and) ; *)
+      (*            BI_testop T_i32 TO_eqz ; *)
+      (*            BI_if (Tf [] []) *)
+      (*              boxed_cases *)
+      (*              unboxed_cases ]) *)
+      (* end *)
 
    | Eproj x tg n y e' =>
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
