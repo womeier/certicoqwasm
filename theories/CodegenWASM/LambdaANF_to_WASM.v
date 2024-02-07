@@ -262,11 +262,13 @@ Fixpoint pass_function_args (nenv : name_env) (lenv: localvar_env) (fenv : fname
       Ret (a0' :: args'')
   end.
 
-Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (f : cps.var) (args : list cps.var) : error (list basic_instruction) :=
+(* all fns return nothing, typeidx = num args *)
+Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_env)
+                          (f : cps.var) (args : list cps.var) (tailcall : bool) : error (list basic_instruction) :=
   instr_pass_params <- pass_function_args nenv lenv fenv args;;
   instr_fidx <- instr_local_var_read nenv lenv fenv f;;
-  Ret (instr_pass_params ++ [instr_fidx] ++ [BI_call_indirect (length args)]). (* all fns return nothing, typeidx = num args *)
-
+  let call := if tailcall then BI_return_call_indirect else BI_return_call in
+  Ret (instr_pass_params ++ [instr_fidx] ++ [call (length args)]).
 
 (* Example placement of constructors in the linear memory:
      data Bintree := Leaf | Node Bintree Value Bintree
@@ -410,7 +412,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    | Eletapp x f ft ys e' =>
       x_var <- translate_var nenv lenv x "translate_exp proj x";;
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
-      instr_call <- translate_call nenv lenv fenv f ys ;;
+      instr_call <- translate_call nenv lenv fenv f ys true ;;
 
       Ret (instr_call ++ [ BI_get_global result_out_of_mem
                          ; BI_if (Tf nil nil)
@@ -419,7 +421,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
                          ])
 
    | Eapp f ft ys =>
-      instr_call <- translate_call nenv lenv fenv f ys ;;
+      instr_call <- translate_call nenv lenv fenv f ys false ;;
 
       Ret instr_call (* tail calls are not supported in Wasm 1.0: normal function, TODO once WasmCert has tailcalls, generate one here *)
 
