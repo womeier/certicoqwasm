@@ -56,7 +56,7 @@ jobs:
 
               # remove again once proposals in upstream WasmCert
               opam pin -y -y  submodules/wasmcert
-              opam install /github/workspace/submodules/wasmcert/
+              opam install /github/workspace/submodules/wasmcert/ -y
             endGroup
             #      startGroup 'Install Alectryon'
             #  sudo apt-get update -y -q
