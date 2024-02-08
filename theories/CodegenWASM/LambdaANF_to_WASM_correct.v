@@ -432,12 +432,15 @@ Definition tag_to_i32 (t : ctor_tag) :=
 Definition immediate_to_i32 (i : immediate) :=
   Wasm_int.Int32.repr (BinInt.Z.of_nat i).
 
+(* TODO use i32 instead *)
 Inductive wasm_value :=
+  | Val_unboxed : immediate -> wasm_value
   | Val_ptr : immediate -> wasm_value
   | Val_funidx : immediate -> wasm_value.
 
 Definition wasm_value_to_immediate (v : wasm_value) :=
     match v with
+    | Val_unboxed i => i
     | Val_ptr i => i
     | Val_funidx i => i
     end.
@@ -456,9 +459,9 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> (* val *)
                                          frame ->           (* fr *)
                                           wasm_value ->     (* wal *)
                                           Prop :=
-| Rconstr_unboxed_v : forall v t (sr : store_record) fr uv,
-    v = (tag_to_i32 t) ->
-    repr_val_LambdaANF_Codegen (LambdaANF.cps.Vconstr t []) sr fr (Val_ptr uv)
+| Rconstr_unboxed_v : forall v t (sr : store_record) fr,
+    Pos.to_nat (t * 2 + 1) = v ->
+    repr_val_LambdaANF_Codegen (LambdaANF.cps.Vconstr t []) sr fr (Val_unboxed v)
 
 
 | Rconstr_boxed_v : forall v t vs (sr : store_record) fr gmp m (addr : nat),
@@ -991,16 +994,28 @@ Proof.
   rewrite (Wasm_int.Int32.Z_lt_irrelevant high high'). reflexivity.
 Qed.
 
+(* TODO properly *)
 Lemma val_relation_depends_on_finst : forall v sr fr fr' value,
     f_inst fr = f_inst fr' ->
     repr_val_LambdaANF_Codegen fenv nenv host_function v sr fr value ->
     repr_val_LambdaANF_Codegen fenv nenv host_function v sr fr' value.
 Proof.
   intros. inv H0.
-  (* Nullary constructor value *)
-  { admit. }
-  (* constructor value *)
-  { have indPrinciple := repr_val_constr_args_LambdaANF_Codegen_mut fenv nenv host_function
+  (* unboxed constructor value *)
+  { by constructor. }
+  (* boxed constructor value *)
+  {
+  assert (Hxx : (forall (v : nat) (t : positive)
+                  (sr : datatypes.store_record host_function)
+                  (fr : frame),
+                Pos.to_nat (t * 2 + 1) = v ->
+                forall f' : frame,
+                f_inst fr = f_inst f' ->
+                repr_val_LambdaANF_Codegen fenv nenv host_function
+                  (Vconstr t [::]) sr f' (Val_unboxed v))). {
+    intros. subst. constructor. reflexivity. }
+
+  have indPrinciple := repr_val_constr_args_LambdaANF_Codegen_mut fenv nenv host_function
     (fun (v : cps.val) (s : datatypes.store_record host_function) (f : frame) (w : wasm_value)
          (H: repr_val_LambdaANF_Codegen fenv nenv host_function v s f w) =>
          (forall f',
@@ -1012,17 +1027,17 @@ Proof.
          (forall f',
                 f_inst f = f_inst f' ->
                 repr_val_constr_args_LambdaANF_Codegen fenv nenv host_function l s f' i)
-    ). admit.
-    (* eapply indPrinciple in H7; intros; clear indPrinciple; try eassumption. *)
-    (* { econstructor; eauto. congruence. } *)
-    (* { econstructor; eauto. congruence. } *)
-    (* { econstructor; eauto. rewrite -H0. eassumption. } *)
-    (* { econstructor; eauto. } *)
-    (* { econstructor; eauto. congruence. } *)
+    ) Hxx.
+    eapply indPrinciple in H8; intros; clear indPrinciple; try eassumption.
+    { econstructor; eauto. congruence. }
+    { econstructor; eauto. congruence. }
+    { econstructor; eauto. rewrite -H0. eassumption. }
+    { econstructor; eauto. }
+    { econstructor; eauto. congruence. }
   }
   (* function *)
   { econstructor; eauto. rewrite -H. eassumption. }
-Admitted. (* Qed. *)
+Qed.
 
 Lemma val_relation_func_depends_on_funcs : forall val s s' f i,
   s_funcs s = s_funcs s' ->
@@ -1052,7 +1067,7 @@ Lemma val_relation_depends_on_mem_smaller_than_gmp_and_funcs :
 Proof.
   intros. inv H9.
   (* Nullary constructor value *)
-  { admit. }
+  { now constructor.  }
   (* Non-nullary constructor value *)
   {
 
@@ -4403,13 +4418,12 @@ Proof.
   intros ? ? Hexpr. revert eAny Hexpr.
   induction e_body using exp_ind'; intros.
   { (* Econstr *)
-    admit.
-    (* inv Hexpr. *)
-    (* have H' := IHe_body _ H9. *)
-    (* apply rt_then_t_or_eq in H. destruct H as [H | H]. congruence. *)
-    (* apply clos_trans_tn1 in H. inv H. inv H0. *)
-    (* eapply H'. apply rt_refl. inv H0. *)
-    (* apply clos_tn1_trans in H1. eapply H'. now apply t_then_rt. *)
+    inv Hexpr.
+    have H' := IHe_body _ H5.
+    apply rt_then_t_or_eq in H. destruct H as [H | H]. congruence.
+    apply clos_trans_tn1 in H. inv H. inv H0.
+    eapply H'. apply rt_refl. inv H0.
+    apply clos_tn1_trans in H1. eapply H'. now apply t_then_rt.
   } { (* Ecase [] *)
     apply rt_then_t_or_eq in H. destruct H; first congruence.
     apply clos_trans_tn1 in H. inv H. { inv H0. inv H2. }
@@ -7242,10 +7256,8 @@ Proof.
     split. now left.
     cbn. rewrite map_repeat_eq.
     repeat (split; first reflexivity).
-    admit.
-
-    (* apply translate_exp_correct in Hexp; eauto. eapply HcorrCenv with (f:=v). cbn. *)
-    (*   destruct (M.elt_eq v v); try contradiction. reflexivity. *)
+    eapply translate_exp_correct in Hexp; eauto. eapply HcorrCenv with (f:=v). cbn.
+    destruct (M.elt_eq v v); try contradiction. reflexivity.
   }
   { (* f0<>v *)
     assert (Hnodup': NoDup (collect_function_vars (Efun fds e0))). {
@@ -7265,7 +7277,7 @@ Proof.
     repeat (split; eauto).
     rewrite -H3 in H8. eassumption.
     now right. all: congruence. }
-Admitted. (* Qed. *)
+Qed.
 
 
 Lemma module_instantiate_INV_and_more_hold :
@@ -7755,9 +7767,9 @@ Proof.
     inversion HtopExp. subst e0 f0. rename fds' into fds.
     inversion Hstep. subst fl e0 v0 c rho. clear Hstep. rename H4 into Hstep.
 
-    eapply translate_exp_correct in Hexpr.
-    2:{ admit. (* eapply Forall_constructors_subterm. eassumption. constructor. *)
-        (* apply dsubterm_fds2. *) }
+    eapply translate_exp_correct in Hexpr; try eassumption.
+    2:{ eapply Forall_constructors_subterm. eassumption. constructor.
+        apply dsubterm_fds2. }
 
     (* prepare IH *)
 
@@ -7862,7 +7874,7 @@ Proof.
         destruct Hc as [fidx [HtransF Hval]].
         exists fidx. split. assumption.
         eapply val_relation_depends_on_finst; last apply Hval.
-        subst f_before_IH. admit. admit. admit. admit. (* reflexivity. *) }
+        subst f_before_IH. reflexivity. }
     }
 
     assert (Hrelm : rel_env_LambdaANF_Codegen fenv
@@ -7889,27 +7901,24 @@ Proof.
     }
 
     subst lenv.
-    admit.
-    (* have HMAIN := repr_bs_LambdaANF_Codegen_related cenv fenv nenv _ host_instance *)
-    (*                 _ _ _ _ _ _ _ HlenvInjective *)
-    (*                  HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho *)
-    (*                   HeRestr' Hunbound Hstep hs _ _ _ *)
-    (*                     HfdsEqRhoEmpty_before_IH Hfds Hinv_before_IH Hexpr Hrelm. *)
+    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv _ host_instance
+                    _ _ _ _ _ _ _ HlenvInjective
+                      HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
+                      HeRestr' Hunbound Hstep hs _ _ _
+                         HfdsEqRhoEmpty_before_IH Hfds Hinv_before_IH Hexpr Hrelm.
 
-    (* destruct HMAIN as [s' [f' [Hred [Hval [Hfinst _]]]]]. cbn. *)
-    (* exists s'. split. *)
-    (* dostep'. apply r_call. cbn. *)
-    (* rewrite HinstFuncs. reflexivity. *)
-    (* dostep'. eapply r_invoke_native with (ves:=[]) (vcs:=[]) (t1s:=[]) (t2s:=[])(f' := f_before_IH); eauto. *)
-    (* rewrite HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst.  reflexivity. *)
-    (* subst f_before_IH. cbn. apply repeat0_n_zeros. *)
-    (* eapply reduce_trans_local. *)
-    (* dostep'. constructor. eapply rs_block with (vs:=[]); eauto. cbn. *)
-    (* apply reduce_trans_label. apply Hred. *)
-    (* eapply result_val_LambdaANF_Codegen_depends_on_finst; try apply Hval. *)
-    (* subst f_before_IH. now cbn in Hfinst. *)
-    admit.
-    admit.
+    destruct HMAIN as [s' [f' [Hred [Hval [Hfinst _]]]]]. cbn.
+    exists s'. split.
+    dostep'. apply r_call. cbn.
+    rewrite HinstFuncs. reflexivity.
+    dostep'. eapply r_invoke_native with (ves:=[]) (vcs:=[]) (t1s:=[]) (t2s:=[])(f' := f_before_IH); eauto.
+    rewrite HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst.  reflexivity.
+    subst f_before_IH. cbn. apply repeat0_n_zeros.
+    eapply reduce_trans_local.
+    dostep'. constructor. eapply rs_block with (vs:=[]); eauto. cbn.
+    apply reduce_trans_label. apply Hred.
+    eapply result_val_LambdaANF_Codegen_depends_on_finst; try apply Hval.
+    subst f_before_IH. now cbn in Hfinst.
   }
 
   { (* top exp is not Efun _ _ *)
@@ -7920,7 +7929,7 @@ Proof.
     assert (e0 = e). { destruct e; inv HtopExp; auto. exfalso. eauto. }
     subst e0. clear HtopExp.
 
-    eapply translate_exp_correct in Hexpr; auto.
+    eapply translate_exp_correct in Hexpr; eauto.
 
     assert (Hrelm : rel_env_LambdaANF_Codegen fenv
        (lenv:=create_local_variable_mapping (collect_local_variables e))
@@ -7993,27 +8002,25 @@ Proof.
       intros. discriminate. }
 
     subst lenv.
-    admit.
-    admit.
-    (* have HMAIN := repr_bs_LambdaANF_Codegen_related cenv fenv nenv _ host_instance _ (M.empty _) *)
-    (*                 _ _ _ _ _ HlenvInjective HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf *)
-    (*                   HfenvRho HeRestr Hunbound Hstep hs _ _ _ HfdsEqRhoEmpty_before_IH Hfds *)
-    (*                     Hinv_before_IH Hexpr Hrelm. *)
-    (* destruct HMAIN as [s' [f' [Hred [Hval [Hfinst _]]]]]. cbn. *)
-    (* exists s'. split. *)
-    (* dostep'. apply r_call. cbn. *)
-    (* rewrite HinstFuncs. reflexivity. *)
-    (* dostep'. eapply r_invoke_native with (ves:=[]) (vcs:=[]) (t1s:=[]) (t2s:=[])(f' := f_before_IH); eauto. *)
-    (* rewrite HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst.  reflexivity. *)
-    (* subst f_before_IH. cbn. *)
-    (* assert (HexpEq: match e with | Efun _ exp => exp *)
-    (*                              | _ => e end= e). *)
-    (* { destruct e; auto. exfalso. eauto. } rewrite HexpEq. clear HexpEq. apply repeat0_n_zeros. *)
-    (* eapply reduce_trans_local. *)
-    (* dostep'. constructor. eapply rs_block with (vs:=[]); eauto. cbn. *)
-    (* apply reduce_trans_label. apply Hred. *)
-    (* eapply result_val_LambdaANF_Codegen_depends_on_finst; try eassumption. subst. cbn in Hfinst. congruence. *)
+    have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv _ host_instance _ (M.empty _)
+                    _ _ _ _ _ HlenvInjective HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf
+                      HfenvRho HeRestr Hunbound Hstep hs _ _ _ HfdsEqRhoEmpty_before_IH Hfds
+                        Hinv_before_IH Hexpr Hrelm.
+    destruct HMAIN as [s' [f' [Hred [Hval [Hfinst _]]]]]. cbn.
+    exists s'. split.
+    dostep'. apply r_call. cbn.
+    rewrite HinstFuncs. reflexivity.
+    dostep'. eapply r_invoke_native with (ves:=[]) (vcs:=[]) (t1s:=[]) (t2s:=[])(f' := f_before_IH); eauto.
+    rewrite HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst.  reflexivity.
+    subst f_before_IH. cbn.
+    assert (HexpEq: match e with | Efun _ exp => exp
+                                 | _ => e end= e).
+    { destruct e; auto. exfalso. eauto. } rewrite HexpEq. clear HexpEq. apply repeat0_n_zeros.
+    eapply reduce_trans_local.
+    dostep'. constructor. eapply rs_block with (vs:=[]); eauto. cbn.
+    apply reduce_trans_label. apply Hred.
+    eapply result_val_LambdaANF_Codegen_depends_on_finst; try eassumption. subst. cbn in Hfinst. congruence.
   } Unshelve. all: auto.
-Admitted. (* Qed. *)
+Qed.
 
 End MAIN.
