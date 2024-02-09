@@ -1103,40 +1103,40 @@ Proof.
           gmp' >= gmp ->
           (forall a, (a + 4 <= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
              repr_val_constr_args_LambdaANF_Codegen fenv nenv host_function l s' f' i)
-    ). admit. (* eapply indPrinciple in H16; intros; clear indPrinciple; try eassumption; try lia. *)
-    (* { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence. *)
-    (*                          inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; try lia. *)
-    (*                          rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; lia. } subst gmp0. *)
-    (*   assert (m = m0) by congruence; subst m0. *)
-    (*   econstructor. eassumption. lia. lia. eassumption. reflexivity. *)
-    (*   rewrite <- H8. assumption. lia. eassumption. } *)
-    (* { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence. *)
-    (*                          inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; try lia. *)
-    (*                          rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; lia. } subst gmp0. *)
-    (*   assert (gmp = gmp1). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence. *)
-    (*                          inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; try lia. *)
-    (*                          rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; lia. } subst gmp1. *)
-    (*   assert (m = m0) by congruence. subst m0. *)
-    (*   assert (m1 = m2) by congruence. subst m2. subst. *)
-    (*   econstructor; eauto. lia. rewrite <- H25; auto; try lia. } *)
-    (* { econstructor; eauto. congruence. } *)
-    (* { econstructor. } *)
-    (* { assert (gmp = gmp0). { *)
-    (*      assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence. *)
-    (*           inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia. *)
-    (*           rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst gmp0. *)
-    (*   econstructor; eauto. lia. assert (gmp1 = gmp). { *)
-    (*      assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence. *)
-    (*           inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia. *)
-    (*           rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst. lia. *)
-    (*   rewrite <- H26. assert (m1 = m2) by congruence. subst m2. eassumption. *)
-    (*   assert (gmp1 = gmp). { *)
-    (*              assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence. *)
-    (*              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia. *)
-    (*              rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst gmp1. lia. *)
-    (*   eapply H9; eauto; lia. } *)
-    (* { assert (m = m0) by congruence. subst m0. lia. } *)
-    (* { assert (m = m0) by congruence; subst m0. apply H8. lia. } *)
+  ). admit. (* eapply indPrinciple in H16; intros; clear indPrinciple; try eassumption; try lia.
+    { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; lia. } subst gmp0.
+      assert (m = m0) by congruence; subst m0.
+      econstructor. eassumption. lia. lia. eassumption. reflexivity.
+      rewrite <- H8. assumption. lia. eassumption. }
+    { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; lia. } subst gmp0.
+      assert (gmp = gmp1). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; lia. } subst gmp1.
+      assert (m = m0) by congruence. subst m0.
+      assert (m1 = m2) by congruence. subst m2. subst.
+      econstructor; eauto. lia. rewrite <- H25; auto; try lia. }
+    { econstructor; eauto. congruence. }
+    { econstructor. }
+    { assert (gmp = gmp0). {
+         assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
+              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
+              rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst gmp0.
+      econstructor; eauto. lia. assert (gmp1 = gmp). {
+         assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
+              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
+              rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst. lia.
+      rewrite <- H26. assert (m1 = m2) by congruence. subst m2. eassumption.
+      assert (gmp1 = gmp). {
+                 assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
+                 inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
+                 rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst gmp1. lia.
+      eapply H9; eauto; lia. }
+    { assert (m = m0) by congruence. subst m0. lia. }
+    { assert (m = m0) by congruence; subst m0. apply H8. lia. } *)
   }
   (* function *)
   { econstructor; eauto. rewrite <- H0. rewrite -H. eassumption. }
@@ -4550,10 +4550,13 @@ Proof with eauto.
      HfenvWf HfenvRho HeRestr Hunbound Hev. subst vars.
   generalize dependent lenv.
   induction Hev; intros lenv HlenvInjective HenvsDisjoint state sr fr instructions HfdsEqRhoEmpty Hfds Hinv Hrepr_e Hrel_m.
-  - (* Econstr *) admit. (*
+  - (* Econstr *)
+    (* admit. *)
+    inversion Hrepr_e.
+    inversion H8.
+    {
     assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z). { now inv HeRestr. }
-
-    inversion Hrepr_e. subst t0 x0 vs0 e0 sgrow. rename H5 into Hx', H10 into Hexp.
+    subst t0 x0 vs0 e0 sgrow. rename H7 into Hx'. rename H6 into Hexp.
     { remember (grow_memory_if_necessary page_size) as grow.
       cbn. repeat rewrite map_cat. cbn.
 
@@ -4592,8 +4595,8 @@ Proof with eauto.
         (Z.of_nat gmp_v + Z.of_N page_size < Z.of_N (mem_length m))%Z)).
       { intros. assert (m' = m0) by congruence. subst m0.
         assert (gmp_v = gmp_v'). { rewrite Hgmp' in H3. inv H3.
-          rewrite Wasm_int.Int32.Z_mod_modulus_id in H6; try lia.
-          rewrite Wasm_int.Int32.Z_mod_modulus_id in H6; try lia. }
+          rewrite Wasm_int.Int32.Z_mod_modulus_id in H7; try lia.
+          rewrite Wasm_int.Int32.Z_mod_modulus_id in H7; try lia. }
         subst gmp_v'. lia. }
 
      assert (HfVal' : (forall (y : positive) (y' : immediate) (v : cps.val),
@@ -4603,7 +4606,7 @@ Proof with eauto.
              (Val_funidx y'))).
      { intros. destruct Hrel_m as [Hfun1 [Hfun2 _]].
       assert (Hfd: (exists i : nat, fenv ! y = Some i)). {
-        inv H3. unfold translate_var in H4. now destruct (fenv ! y) eqn:Hy. }
+        inv H3. unfold translate_var in H5. now destruct (fenv ! y) eqn:Hy. }
       apply HfenvWf in Hfd. apply notNone_Some in Hfd.
 
        have H' := HfenvRho _ _ H2 Hfd. subst v0.
@@ -4619,7 +4622,7 @@ Proof with eauto.
        eapply val_relation_func_depends_on_funcs; try apply Hval. auto.
      }
 
-      have Hconstr := store_constr_reduce state _ _ _ _ _ _ t _ HenvsDisjoint HfenvWf Hinv' HenoughM' HrelM Hmaxargs H8 H HfVal'.
+      have Hconstr := store_constr_reduce state _ _ _ _ _ _ t _ HenvsDisjoint HfenvWf Hinv' HenoughM' HrelM Hmaxargs H10 H HfVal'.
       destruct Hconstr as [s_v [Hred_v [Hinv_v [Hfuncs' [HvalPreserved' [cap_v [wal [? [? Hvalue]]]]]]]]].
 
     { subst cap_v.
@@ -4676,7 +4679,7 @@ Proof with eauto.
         { (* fns1 *) intros. subst rho'.
            destruct (var_dec x x1).
            { (* x=x1 *) subst x1. rewrite M.gss in H3. inv H3.
-             apply subval_or_eq_fun in H4. destruct H4 as [v1 [Hr1 Hr2]].
+             apply subval_or_eq_fun in H5. destruct H5 as [v1 [Hr1 Hr2]].
              have H'' := get_list_In_val _ _ _ _ H Hr2.
              destruct H'' as [x2 [Hin Hrho]].
              have H' := Hfun1 _ _ _ Hrho Hr1. assumption.
@@ -4706,7 +4709,7 @@ Proof with eauto.
           }
           { (* x <> x1 *)
             assert (Hocc: occurs_free (Econstr x t ys e) x1). { now apply Free_Econstr2. }
-            have H' := Hvar _ Hocc H4.
+            have H' := Hvar _ Hocc H5.
             destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
             exists val', wal'. split.
             subst rho'. rewrite M.gso; auto. split.
@@ -4717,10 +4720,11 @@ Proof with eauto.
             intro. subst x'.
             inv Hx'.
             specialize Hl1 with err_str.
-            unfold translate_var in Hl1, H5.
+            unfold translate_var in Hl1, H7.
             destruct (lenv ! x1) eqn:Hlx1; inv Hl1.
-            destruct (lenv ! x) eqn:Hlx2; inv H5.
+            destruct (lenv ! x) eqn:Hlx2. inv H7.
             have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. contradiction.
+            discriminate.
             apply nth_error_Some. congruence.
             apply val_relation_depends_on_finst with (fr:=fr). subst. reflexivity.
             apply HvalPreserved'.
@@ -4750,7 +4754,7 @@ Proof with eauto.
           rho' ! a = Some v -> find_def a fds <> None -> v = Vfun (M.empty cps.val) fds a). {
           intros. apply HfenvRho; auto. subst rho'.
           rewrite M.gso in H3; auto. intro Hcontra. subst a.
-          apply notNone_Some in H4. apply HfenvWf in H4. destruct H4.
+          apply notNone_Some in H5. apply HfenvWf in H5. destruct H5.
           inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
           apply Hd2 in H0. unfold translate_var in H3. now rewrite H0 in H3. }
 
@@ -4816,7 +4820,9 @@ Proof with eauto.
     dostep'. constructor. eapply rs_block with (vs:=[]); auto.
     dostep'. constructor. apply rs_label_const; auto. apply rt_refl.
     split. right. assumption. split. reflexivity. split. congruence.
-    split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }} *)
+    split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }} }
+    { admit. }
+
   - (* Eproj ctor_tag t, let x := proj_n y in e *)
     { inv Hrepr_e.
       rename v' into y', H8 into Hx', H9 into Hy'.
