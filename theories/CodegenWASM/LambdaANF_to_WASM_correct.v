@@ -309,23 +309,23 @@ Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var ->
 
     repr_asgn_constr_Codegen x' t vs scont
       (sgrow ++
-         [ BI_get_global result_out_of_mem
-           ; BI_const (nat_to_value 1)
-           ; BI_relop T_i32 (Relop_i ROI_eq)
-           ; BI_if (Tf nil nil)
-               (* grow mem failed *) []
-               (* grow mem success *)
-               ([ BI_get_global global_mem_ptr
-                  ; BI_set_global constr_alloc_ptr
-                  ; BI_get_global constr_alloc_ptr
-                  ; BI_const (nat_to_value (Pos.to_nat t))
-                  ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
-                  ; BI_get_global global_mem_ptr
-                  ; BI_const (nat_to_value 4)
-                  ; BI_binop T_i32 (Binop_i BOI_add)
-                  ; BI_set_global global_mem_ptr
-                 ] ++ sargs ++ sres ++ scont)
-      ])
+       [ BI_get_global result_out_of_mem
+       ; BI_const (nat_to_value 1)
+       ; BI_relop T_i32 (Relop_i ROI_eq)
+       ; BI_if (Tf nil nil)
+           (* grow mem failed *) []
+           (* grow mem success *)
+           ([ BI_get_global global_mem_ptr
+            ; BI_set_global constr_alloc_ptr
+            ; BI_get_global constr_alloc_ptr
+            ; BI_const (nat_to_value (Pos.to_nat t))
+            ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
+            ; BI_get_global global_mem_ptr
+            ; BI_const (nat_to_value 4)
+            ; BI_binop T_i32 (Binop_i BOI_add)
+            ; BI_set_global global_mem_ptr
+            ] ++ sargs ++ sres ++ scont)
+       ])
 
 | Rconstr_asgn_unboxed :
   forall x' t scont,
@@ -338,21 +338,19 @@ Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var ->
          ; BI_set_local x' ] ++ scont ).
 
 
-
-
 (* CODEGEN RELATION: relatates LambdaANF expression and result of translate_exp *)
 Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_instruction -> Prop :=
-| R_halt_e: forall v v',
-    repr_var (lenv:=lenv) v v' ->
-    repr_expr_LambdaANF_Codegen (Ehalt v) [ BI_get_local v'
+| R_halt_e: forall x x',
+    repr_var (lenv:=lenv) x x' ->
+    repr_expr_LambdaANF_Codegen (Ehalt x) [ BI_get_local x'
                                           ; BI_set_global result_var
                                           ]
-| Rproj_e: forall x x' t n v v' e e',
+| Rproj_e: forall x x' t n y y' e e',
     repr_expr_LambdaANF_Codegen e e' ->
     repr_var (lenv:=lenv) x x' ->
-    repr_var (lenv:=lenv) v v' ->
-      repr_expr_LambdaANF_Codegen (Eproj x t n v e)
-           ([ BI_get_local v'
+    repr_var (lenv:=lenv) y y' ->
+      repr_expr_LambdaANF_Codegen (Eproj x t n y e)
+           ([ BI_get_local y'
            ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4))
            ; BI_binop T_i32 (Binop_i BOI_add)
            ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0)
@@ -368,16 +366,16 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
 
 | Rcase_e_nil : forall v, repr_expr_LambdaANF_Codegen (Ecase v []) [BI_unreachable]
 
-| Rcase_e_cons_unboxed : forall v v' cl instrs_more t e e',
-        repr_var (lenv:=lenv) v v' ->
-        repr_expr_LambdaANF_Codegen (Ecase v cl) instrs_more ->
+| Rcase_e_cons_unboxed : forall y y' cl instrs_more t e e',
+        repr_var (lenv:=lenv) y y' ->
+        repr_expr_LambdaANF_Codegen (Ecase y cl) instrs_more ->
         repr_expr_LambdaANF_Codegen e e' ->
-        repr_expr_LambdaANF_Codegen (Ecase v ((t, e) :: cl))
-          [ BI_get_local v'
-            ; BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_S))
-            ; BI_const (nat_to_value (Pos.to_nat t))
-            ; BI_relop T_i32 (Relop_i ROI_eq)
-            ; BI_if (Tf nil nil) e' instrs_more
+        repr_expr_LambdaANF_Codegen (Ecase y ((t, e) :: cl))
+          [ BI_get_local y'
+          ; BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_S))
+          ; BI_const (nat_to_value (Pos.to_nat t))
+          ; BI_relop T_i32 (Relop_i ROI_eq)
+          ; BI_if (Tf nil nil) e' instrs_more
           ]
 
 | Rcase_e_cons_boxed : forall v v' cl instrs_more t e e',
@@ -386,10 +384,10 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
         repr_expr_LambdaANF_Codegen e e' ->
         repr_expr_LambdaANF_Codegen (Ecase v ((t, e) :: cl))
           [ BI_get_local v'
-            ; BI_load T_i32 None 2%N 0%N
-            ; BI_const (nat_to_value (Pos.to_nat t))
-            ; BI_relop T_i32 (Relop_i ROI_eq)
-            ; BI_if (Tf nil nil) e' instrs_more
+          ; BI_load T_i32 None 2%N 0%N
+          ; BI_const (nat_to_value (Pos.to_nat t))
+          ; BI_relop T_i32 (Relop_i ROI_eq)
+          ; BI_if (Tf nil nil) e' instrs_more
           ]
 
 | R_app_e : forall v instr t args args',
@@ -773,50 +771,51 @@ Proof.
   induction e using exp_ind'; intros instr Hcenv; intros.
   - (* Econstr *)
     simpl in H.
-    { destruct (translate_exp nenv cenv lenv fenv e) eqn:H_eqTranslate; inv H.
-      destruct (translate_var nenv lenv v _) eqn:H_translate_var. inv H1.
-      destruct l as [|v0 l'].
-      (* Nullary constructor *)
-      + { inv H1.
-          eapply Rconstr_e with (e':=l0) (x':=i); eauto.
-          apply IHe; auto.
-          assert (subterm_e e (Econstr v t [] e) ). { constructor; constructor. }
-          eapply Forall_constructors_subterm. eassumption. assumption.
-          econstructor; eauto.
-          eapply Rconstr_asgn_unboxed. }
-      (* Non-nullary constructor *)
-      + { remember (v0 :: l') as l.
-          destruct (store_constructor nenv cenv lenv fenv t l) eqn:store_constr.
-          inv H1. inv H1. cbn.
-          repeat match goal with
-                   |- context C [?x :: ?l] =>
-                     lazymatch l with [::] => fail | _ => rewrite <-(cat1s x l) end
-                 end.
-          rename i into v'.
-          replace   ([:: BI_get_global global_mem_ptr] ++
-                       [:: BI_const (N_to_value 65536)] ++
-                       [:: BI_binop T_i32 (Binop_i BOI_add)] ++
-                       [:: BI_const (Z_to_value 65536)] ++
-                       [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
-                       [:: BI_current_memory] ++
-                       [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
-                       [:: BI_if (Tf [::] [::])
-                          ([:: BI_const (nat_to_value 1)] ++
-                             [:: BI_grow_memory] ++
-                             [:: BI_const (Z_to_value (-1))] ++
-                             [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-                             [:: BI_if (Tf [::] [::])
-                                ([:: BI_const (nat_to_value 1)] ++
-                                   [:: BI_set_global result_out_of_mem]) [::]])
-                          [::]] ++
-                       [:: BI_get_global result_out_of_mem] ++
-                       [:: BI_const (nat_to_value 1)] ++
-                       [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-                       [:: BI_if (Tf [::] [::]) [::]
-                          (l1 ++
-                             ([:: BI_get_global constr_alloc_ptr] ++
-                                [:: BI_set_local v'] ++ l0)%SEQ)%list]) with
-            (([:: BI_get_global global_mem_ptr] ++
+    destruct (translate_exp nenv cenv lenv fenv e) eqn:H_eqTranslate; inv H.
+    destruct (translate_var nenv lenv v _) eqn:H_translate_var. inv H1.
+    destruct l as [|v0 l'].
+    (* Nullary constructor *)
+    { inv H1.
+      eapply Rconstr_e with (e':=l0) (x':=i); eauto.
+      apply IHe; auto.
+      assert (subterm_e e (Econstr v t [] e) ). { constructor; constructor. }
+      eapply Forall_constructors_subterm. eassumption. assumption.
+      econstructor; eauto.
+      eapply Rconstr_asgn_unboxed.
+    } (* Non-nullary constructor *)
+    { remember (v0 :: l') as l.
+      destruct (store_constructor nenv cenv lenv fenv t l) eqn:store_constr.
+      inv H1. inv H1. cbn.
+      repeat match goal with
+             |- context C [?x :: ?l] =>
+             lazymatch l with [::] => fail | _ => rewrite <-(cat1s x l) end
+             end.
+      rename i into v'.
+      replace ([:: BI_get_global global_mem_ptr] ++
+               [:: BI_const (N_to_value 65536)] ++
+               [:: BI_binop T_i32 (Binop_i BOI_add)] ++
+               [:: BI_const (Z_to_value 65536)] ++
+               [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
+               [:: BI_current_memory] ++
+               [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
+               [:: BI_if (Tf [::] [::])
+                     ([:: BI_const (nat_to_value 1)] ++
+                      [:: BI_grow_memory] ++
+                      [:: BI_const (Z_to_value (-1))] ++
+                      [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
+                      [:: BI_if (Tf [::] [::])
+                            ([:: BI_const (nat_to_value 1)] ++
+                             [:: BI_set_global result_out_of_mem])
+                            [::]])
+                      [::]] ++
+               [:: BI_get_global result_out_of_mem] ++
+               [:: BI_const (nat_to_value 1)] ++
+               [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
+               [:: BI_if (Tf [::] [::]) [::]
+                     (l1 ++
+                     ([:: BI_get_global constr_alloc_ptr] ++
+                      [:: BI_set_local v'] ++ l0)%SEQ)%list]) with
+              (([:: BI_get_global global_mem_ptr] ++
                 [:: BI_const (N_to_value 65536)] ++
                 [:: BI_binop T_i32 (Binop_i BOI_add)] ++
                 [:: BI_const (Z_to_value 65536)] ++
@@ -905,25 +904,31 @@ Proof.
           eapply Rconstr_asgn_boxed. eauto.
           apply set_nth_constr_arg_correct.
           replace ([:: v0] ++ l') with (v0 :: l') by reflexivity.
-          assumption.
-          assumption.
-    } }
+          assumption. assumption.
+    }
   - (* Ecase nil *) simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar.
                     inv H. inv H. constructor.
   - (* Ecase const *) {
-      simpl in H.
-      destruct (translate_var nenv lenv v _) eqn:Hvar; inv H.
-      destruct (translate_exp nenv cenv lenv fenv e) eqn:Hexp; inv H1.
-      destruct (get_ctor_arity cenv c) eqn:Harity; inv H0.
-      admit.
-    (* simpl in H. destruct (translate_exp nenv cenv lenv fenv e) eqn:Hexp. inv H. *)
-    (* destruct (_ l) eqn:Hprep. inv H. *)
-    (* destruct (translate_var nenv lenv v _) eqn:Hvar. inv H. inv H. *)
-    (* constructor. econstructor. eassumption. apply IHe0. *)
-    (* eapply correct_cenv_case_drop_clause. eassumption. *)
-    (* cbn. rewrite Hprep. rewrite Hvar. reflexivity. *)
-    (* apply IHe; auto. eapply Forall_constructors_subterm; eauto. *)
-(* constructor. econstructor. cbn. left; eauto. *) }
+    simpl in H.
+    destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
+    destruct (translate_exp nenv cenv lenv fenv e) eqn:Hexp. inv H.
+    destruct (get_ctor_arity cenv c) eqn:Harity. inv H.
+    destruct (_ i l) eqn:Hprep. inv H. inv H.
+    destruct n; cbn.
+    { (* unboxed *)
+      constructor. econstructor. eassumption. apply IHe0.
+      eapply correct_cenv_case_drop_clause. eassumption.
+      unfold translate_exp. rewrite Hvar. cbn. now rewrite Hprep.
+      apply IHe; auto. eapply Forall_constructors_subterm; eauto.
+      constructor. econstructor. cbn. left; eauto.
+    } { (* boxed *)
+      constructor. econstructor. eassumption. apply IHe0.
+      eapply correct_cenv_case_drop_clause. eassumption.
+      unfold translate_exp. rewrite Hvar. cbn. now rewrite Hprep.
+      apply IHe; auto. eapply Forall_constructors_subterm; eauto.
+      constructor. econstructor. cbn. left; eauto.
+      }
+    }
   - (* Eproj *) {
     simpl in H.
     destruct (translate_exp nenv cenv lenv fenv e) eqn:He. inv H.
@@ -968,7 +973,7 @@ Proof.
   - (* Ehalt *)
     simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
     injection H => instr'. subst. constructor. econstructor. eauto.
-Admitted. (* Qed. *)
+Qed.
 
 Definition result_val_LambdaANF_Codegen (val : LambdaANF.cps.val)
                                         (sr : store_record) (fr : frame) : Prop :=
@@ -994,28 +999,15 @@ Proof.
   rewrite (Wasm_int.Int32.Z_lt_irrelevant high high'). reflexivity.
 Qed.
 
-(* TODO properly *)
 Lemma val_relation_depends_on_finst : forall v sr fr fr' value,
     f_inst fr = f_inst fr' ->
     repr_val_LambdaANF_Codegen fenv nenv host_function v sr fr value ->
     repr_val_LambdaANF_Codegen fenv nenv host_function v sr fr' value.
 Proof.
   intros. inv H0.
-  (* unboxed constructor value *)
-  { by constructor. }
-  (* boxed constructor value *)
-  {
-  assert (Hxx : (forall (v : nat) (t : positive)
-                  (sr : datatypes.store_record host_function)
-                  (fr : frame),
-                Pos.to_nat (t * 2 + 1) = v ->
-                forall f' : frame,
-                f_inst fr = f_inst f' ->
-                repr_val_LambdaANF_Codegen fenv nenv host_function
-                  (Vconstr t [::]) sr f' (Val_unboxed v))). {
-    intros. subst. constructor. reflexivity. }
-
-  have indPrinciple := repr_val_constr_args_LambdaANF_Codegen_mut fenv nenv host_function
+  { (* unboxed constructor value *) by constructor. }
+  { (* boxed constructor value *)
+    have indPrinciple := repr_val_constr_args_LambdaANF_Codegen_mut fenv nenv host_function
     (fun (v : cps.val) (s : datatypes.store_record host_function) (f : frame) (w : wasm_value)
          (H: repr_val_LambdaANF_Codegen fenv nenv host_function v s f w) =>
          (forall f',
@@ -1027,9 +1019,10 @@ Proof.
          (forall f',
                 f_inst f = f_inst f' ->
                 repr_val_constr_args_LambdaANF_Codegen fenv nenv host_function l s f' i)
-    ) Hxx.
-    eapply indPrinciple in H8; intros; clear indPrinciple; try eassumption.
+    ).
+    have H8' := H8. eapply indPrinciple in H8; intros; clear indPrinciple; try eassumption.
     { econstructor; eauto. congruence. }
+    { econstructor; eauto. }
     { econstructor; eauto. congruence. }
     { econstructor; eauto. rewrite -H0. eassumption. }
     { econstructor; eauto. }
@@ -1070,7 +1063,6 @@ Proof.
   { now constructor.  }
   (* Non-nullary constructor value *)
   {
-
   have indPrinciple := repr_val_constr_args_LambdaANF_Codegen_mut fenv nenv host_function
   (fun (v : cps.val) (s : datatypes.store_record host_function) (f : frame) (w : wasm_value)
        (H: repr_val_LambdaANF_Codegen fenv nenv host_function v s f w) =>
@@ -1103,44 +1095,46 @@ Proof.
           gmp' >= gmp ->
           (forall a, (a + 4 <= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
              repr_val_constr_args_LambdaANF_Codegen fenv nenv host_function l s' f' i)
-  ). admit. (* eapply indPrinciple in H16; intros; clear indPrinciple; try eassumption; try lia.
+  ). have H16' := H16.
+    eapply indPrinciple in H16; intros; clear indPrinciple; try eassumption; try lia.
     { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
-                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; try lia.
-                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H14; lia. } subst gmp0.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H15; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H15; lia. } subst gmp0.
       assert (m = m0) by congruence; subst m0.
-      econstructor. eassumption. lia. lia. eassumption. reflexivity.
+      econstructor. eassumption. lia. lia. lia. eassumption. reflexivity.
       rewrite <- H8. assumption. lia. eassumption. }
+    { now constructor. }
     { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
-                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; try lia.
-                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; lia. } subst gmp0.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst gmp0.
       assert (gmp = gmp1). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
-                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; try lia.
-                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H27; lia. } subst gmp1.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst gmp1.
       assert (m = m0) by congruence. subst m0.
       assert (m1 = m2) by congruence. subst m2. subst.
-      econstructor; eauto. lia. rewrite <- H25; auto; try lia. }
+      econstructor; eauto. lia. rewrite <- H26; auto; try lia. }
     { econstructor; eauto. congruence. }
     { econstructor. }
     { assert (gmp = gmp0). {
          assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
-              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
-              rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst gmp0.
+              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H29; try lia.
+              rewrite Wasm_int.Int32.Z_mod_modulus_id in H29; lia. } subst gmp0.
       econstructor; eauto. lia. assert (gmp1 = gmp). {
          assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
-              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
-              rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst. lia.
-      rewrite <- H26. assert (m1 = m2) by congruence. subst m2. eassumption.
+              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H29; try lia.
+              rewrite Wasm_int.Int32.Z_mod_modulus_id in H29; lia. } subst. lia.
+      rewrite <- H27. assert (m1 = m2) by congruence. subst m2. eassumption.
       assert (gmp1 = gmp). {
                  assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
-                 inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; try lia.
-                 rewrite Wasm_int.Int32.Z_mod_modulus_id in H28; lia. } subst gmp1. lia.
+                 inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H29; try lia.
+                 rewrite Wasm_int.Int32.Z_mod_modulus_id in H29; lia. } subst gmp1. lia.
       eapply H9; eauto; lia. }
     { assert (m = m0) by congruence. subst m0. lia. }
-    { assert (m = m0) by congruence; subst m0. apply H8. lia. } *)
+    { assert (m = m0) by congruence; subst m0. apply H8. lia. }
   }
   (* function *)
   { econstructor; eauto. rewrite <- H0. rewrite -H. eassumption. }
-Admitted. (* Qed. *)
+Qed.
 
 Lemma result_val_LambdaANF_Codegen_depends_on_finst : forall val s f f',
   f_inst f = f_inst f' ->
@@ -4895,7 +4889,7 @@ Proof with eauto.
 
   - (* Eproj ctor_tag t, let x := proj_n y in e *)
     { inv Hrepr_e.
-      rename v' into y', H8 into Hx', H9 into Hy'.
+      rename H8 into Hx', H9 into Hy'.
 
       (* y is constr value with correct tag, arity *)
       assert (Hy : occurs_free (Eproj x t n y e) y) by constructor.
@@ -5123,7 +5117,7 @@ Proof with eauto.
 
       (* t0 = t *)
       { inv H1. clear IHcl.
-        inv Hrepr_e. rename v' into y', H7 into Hy'.
+        inv Hrepr_e. rename H7 into Hy'.
 
         assert (Hy : occurs_free (Ecase y ((t, e) :: cl)) y) by constructor.
         have Hrel_m' := Hrel_m.
@@ -6191,7 +6185,7 @@ Proof with eauto.
 
     have I := Hinv. destruct I as [INVres [_ [HMzero [Hgmp_r [_ [Hmuti32 [Hlinmem [HgmpInMem [_ [Hfuncs [Hinstglobs _]]]]]]]]]]].
     apply global_var_w_implies_global_var_r in Hgmp_r; auto. destruct Hgmp_r.
-    edestruct i32_exists_nat as [x' [Hx' ?]]. erewrite Hx' in H. subst.
+    edestruct i32_exists_nat as [x'' [Hx'' ?]]. erewrite Hx'' in H. subst.
 
     destruct Hlinmem as [Hmem1 [m [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. subst.
     apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
@@ -6224,7 +6218,7 @@ Proof with eauto.
       assert (nth_error (s_mems s') 0 = Some m). {
         now rewrite -(update_global_preserves_memory _ _ _ _ _ Hs). }
       assert (sglob_val (host_function:=host_function) s' (f_inst fr) global_mem_ptr =
-                                                    Some (VAL_int32 (nat_to_i32 x'))). {
+                                                    Some (VAL_int32 (nat_to_i32 x''))). {
       erewrite update_global_get_other; try eassumption. reflexivity. now intro.
     }
     eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs; try apply H2; eauto.
