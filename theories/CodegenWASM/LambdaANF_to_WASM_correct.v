@@ -4821,7 +4821,77 @@ Proof with eauto.
     dostep'. constructor. apply rs_label_const; auto. apply rt_refl.
     split. right. assumption. split. reflexivity. split. congruence.
     split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }} }
-    { admit. }
+    { (* Nullary constructor case *)
+      subst.
+      inv H8. inv H0.
+      remember ({|f_locs := set_nth ((VAL_int32
+                (Wasm_int.Int32.iadd
+                   (Wasm_int.Int32.ishl (nat_to_i32 (Pos.to_nat t)) (nat_to_i32 1))
+                   (nat_to_i32 1)))) (f_locs fr) x' ((VAL_int32
+                (Wasm_int.Int32.iadd
+                   (Wasm_int.Int32.ishl (nat_to_i32 (Pos.to_nat t)) (nat_to_i32 1))
+                   (nat_to_i32 1)))); f_inst := f_inst fr|}) as f_before_IH.
+      assert (HNoDup : NoDup (collect_local_variables e ++ collect_function_vars (Efun fds e))). {
+        admit.
+      }
+      assert (HfenvRho' : (forall (a : positive) (v : val),
+        (map_util.M.set x (Vconstr t vs) rho) ! a = Some v ->
+        find_def a fds <> None -> v = Vfun (M.empty val) fds a)). { admit. }
+      assert (Herestr' :  expression_restricted e). { admit. }
+
+      assert (Hunbound' : (forall x0 : var,
+        In x0 (collect_local_variables e) ->
+        (map_util.M.set x (Vconstr t vs) rho) ! x0 = None)). { admit. }
+
+      assert (HfdsEqRhoEmpty' : (forall (x0 : positive) (rho' : M.t val) (fds' : fundefs)
+          (f' : var) (v : val),
+        (map_util.M.set x (Vconstr t vs) rho) ! x0 = Some v ->
+        subval_or_eq (Vfun rho' fds' f') v -> fds' = fds /\ rho' = M.empty val)). { admit. }
+
+      assert (Hfds' :  (forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) (errMsg : string),
+        find_def a fds = Some (t, ys, e) ->
+        expression_restricted e /\
+        (forall x : var, occurs_free e x -> In x ys \/ find_def x fds <> None) /\
+        NoDup
+          (ys ++ collect_local_variables e ++ collect_function_vars (Efun fds e)) /\
+        (exists fidx : immediate,
+           translate_var nenv fenv a errMsg = Ret fidx /\
+           repr_val_LambdaANF_Codegen fenv nenv host_function
+             (Vfun (M.empty val) fds a) sr f_before_IH (Val_funidx fidx)))). { admit. }
+      assert (Hinv' : INV lenv sr f_before_IH). { admit. }
+      assert (Hrel_m' : rel_env_LambdaANF_Codegen (lenv:=lenv) fenv nenv host_function e
+         (map_util.M.set x (Vconstr t vs) rho) sr f_before_IH fds). { admit. }
+
+
+      have IH := IHHev HNoDup HfenvRho' Herestr' Hunbound' _ HlenvInjective HenvsDisjoint state sr f_before_IH _ HfdsEqRhoEmpty' Hfds' Hinv' H6 Hrel_m'.
+      destruct IH as [sr' [f' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]].
+      exists sr', f'.
+      split.
+      dostep.
+      elimr_nary_instr 2.
+      constructor. apply rs_binop_success. reflexivity.
+      dostep.
+      elimr_nary_instr 2.
+      constructor. apply rs_binop_success. reflexivity.
+      dostep.
+      elimr_nary_instr 1.
+      eapply r_set_local with (f':=f_before_IH).
+      subst f_before_IH. reflexivity.
+      have I := Hinv.
+      destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HlocalBound _]]]]]]]]]]]]].
+      apply /ssrnat.leP.
+      apply HlocalBound in H7. assumption.
+      subst f_before_IH. reflexivity.
+      apply Hred.
+      split. apply Hval.
+      split. subst f_before_IH. apply Hfinst.
+      split. apply Hsfuncs.
+      split. { intros. apply HvalPres. eapply val_relation_depends_on_finst.
+               2:eassumption.
+               subst. reflexivity.
+      }
+      assumption.
+    }
 
   - (* Eproj ctor_tag t, let x := proj_n y in e *)
     { inv Hrepr_e.
