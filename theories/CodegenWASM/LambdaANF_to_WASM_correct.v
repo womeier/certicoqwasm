@@ -4843,22 +4843,39 @@ Proof with eauto.
                 (Wasm_int.Int32.iadd
                    (Wasm_int.Int32.ishl (nat_to_i32 (Pos.to_nat t)) (nat_to_i32 1))
                    (nat_to_i32 1)))); f_inst := f_inst fr|}) as f_before_IH.
-      assert (HNoDup : NoDup (collect_local_variables e ++ collect_function_vars (Efun fds e))). {
-        admit.
+      assert (HNoDup' : NoDup (collect_local_variables e ++ collect_function_vars (Efun fds e))). {
+        cbn in Hnodup. apply NoDup_cons_iff in Hnodup.
+        destruct Hnodup. assumption.
       }
       assert (HfenvRho' : (forall (a : positive) (v : val),
         (map_util.M.set x (Vconstr t vs) rho) ! a = Some v ->
-        find_def a fds <> None -> v = Vfun (M.empty val) fds a)). { admit. }
-      assert (Herestr' :  expression_restricted e). { admit. }
+        find_def a fds <> None -> v = Vfun (M.empty val) fds a)). {
+        intros. apply HfenvRho. rewrite M.gso in H1. assumption.
+        intro. subst a. apply notNone_Some in H2. apply HfenvWf in H2. destruct H2. inv H7. destruct HenvsDisjoint as [Hd1 Hd2]. apply Hd2 in H1. unfold translate_var in H2. rewrite H1 in H2. inv H2. assumption.
+      }
+      assert (Herestr' :  expression_restricted e). {
+        inv HeRestr. assumption.
+      }
 
       assert (Hunbound' : (forall x0 : var,
         In x0 (collect_local_variables e) ->
-        (map_util.M.set x (Vconstr t vs) rho) ! x0 = None)). { admit. }
+        (map_util.M.set x (Vconstr t vs) rho) ! x0 = None)). {
+        intros. apply NoDup_app_remove_r in Hnodup. cbn in Hnodup. apply NoDup_cons_iff in Hnodup. rewrite M.gso. apply Hunbound. unfold collect_local_variables. cbn. fold collect_local_variables. right. assumption. destruct Hnodup as [Hx _ ]. unfold not. unfold not in Hx. intros Heq. subst x. apply Hx in H1. contradiction.
+      }
 
       assert (HfdsEqRhoEmpty' : (forall (x0 : positive) (rho' : M.t val) (fds' : fundefs)
           (f' : var) (v : val),
         (map_util.M.set x (Vconstr t vs) rho) ! x0 = Some v ->
-        subval_or_eq (Vfun rho' fds' f') v -> fds' = fds /\ rho' = M.empty val)). { admit. }
+        subval_or_eq (Vfun rho' fds' f') v -> fds' = fds /\ rho' = M.empty val)). {
+        intros x0 rho' fds' f' v0 Hrho' Hval'.
+        destruct (var_dec x x0).
+        { subst x0. rewrite M.gss in Hrho'. inv Hrho'. apply subval_or_eq_fun in Hval'. destruct Hval' as [v' [Hval' Hin]].
+          destruct (get_list_In_val _ _ _ _ H Hin) as [y [Hiny Hrho']].
+          eapply HfdsEqRhoEmpty; eauto.
+        }
+        { rewrite M.gso in Hrho'. eapply HfdsEqRhoEmpty; eauto. auto.
+        }
+      }
 
       assert (Hfds' :  (forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) (errMsg : string),
         find_def a fds = Some (t, ys, e) ->
@@ -4869,13 +4886,21 @@ Proof with eauto.
         (exists fidx : immediate,
            translate_var nenv fenv a errMsg = Ret fidx /\
            repr_val_LambdaANF_Codegen cenv fenv nenv host_function
-             (Vfun (M.empty val) fds a) sr f_before_IH (Val_funidx fidx)))). { admit. }
-      assert (Hinv' : INV lenv sr f_before_IH). { admit. }
+             (Vfun (M.empty val) fds a) sr f_before_IH (Val_funidx fidx)))). {
+        intros ? ? ? ? ? Hfd. apply Hfds with (errMsg:=errMsg) in Hfd. destruct Hfd as [? [? [? [idx [Htransf Hval]]]]].
+        split. assumption.
+        split. assumption.
+        split. assumption.
+        exists idx. split. assumption. eapply val_relation_func_depends_on_funcs. auto. eapply val_relation_depends_on_finst; last apply Hval. subst. reflexivity.
+      }
+      assert (Hinv' : INV lenv sr f_before_IH). {
+eapply update_local_preserves_INV; try
+eassumption.
+destruct Hinv as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [H' _]]]]]]]]]]]]]. destruct (H' x x'). assumption. auto. auto.
+      }
       assert (Hrel_m' : @rel_env_LambdaANF_Codegen cenv fenv nenv host_function lenv e
          (map_util.M.set x (Vconstr t vs) rho) sr f_before_IH fds). { admit. }
-
-
-      have IH := IHHev HNoDup HfenvRho' Herestr' Hunbound' _ HlenvInjective HenvsDisjoint state sr f_before_IH _ HfdsEqRhoEmpty' Hfds' Hinv' H6 Hrel_m'.
+      have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ HlenvInjective HenvsDisjoint state sr f_before_IH _ HfdsEqRhoEmpty' Hfds' Hinv' H6 Hrel_m'.
       destruct IH as [sr' [f' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]].
       exists sr', f'.
       split.
