@@ -4656,7 +4656,6 @@ Proof with eauto.
   generalize dependent lenv.
   induction Hev; intros lenv HlenvInjective HenvsDisjoint state sr fr instructions HfdsEqRhoEmpty Hfds Hinv Hrepr_e Hrel_m.
   - (* Econstr *)
-    (* admit. *)
     inversion Hrepr_e.
     inversion H8.
     {
@@ -6848,7 +6847,7 @@ Proof.
     rewrite nth_error_app1. 2: { rewrite firstn_length. lia. }
     assert (Hlen' : n < length table_data) by lia.
     apply nth_error_Some in Hlen'. eapply notNone_Some in Hlen'; eauto. destruct Hlen'.
-    erewrite nth_error_firstn; eauto.}
+    erewrite nth_error_firstn; eauto. }
 Admitted. (* Qed. *)
 
 Lemma init_tab_preserves_length : forall s s' f t t' n n',
