@@ -600,11 +600,12 @@ Definition stored_in_locals {lenv} (x : cps.var) (v : wasm_value) (f : frame ) :
 
 Definition rel_env_LambdaANF_Codegen {lenv} (e : exp) (rho : LambdaANF.eval.env)
                     (sr : store_record) (fr : frame) (fds : fundefs) :=
-        (forall x f v ,
+        (forall x f v fds' rho',
             rho ! x = Some v ->
-             (* f is var in fds, v is either a Vfun or Vconstr value *)
-            subval_or_eq (Vfun (M.empty _) fds f) v ->
-            name_in_fundefs fds f)
+            (* f is var in fds, v is either a Vfun or Vconstr value *)
+            subval_or_eq (Vfun rho' fds' f) v ->
+            (* fds only on toplevel, thus the two equalities *)
+            rho' = M.empty _ /\ fds' = fds /\ name_in_fundefs fds f)
         /\
         (forall f errMsg,
             name_in_fundefs fds f ->
@@ -3865,6 +3866,7 @@ Proof.
       subst v.
       destruct HrelM as [Hfun1 [Hfun2 _]]. inv H.
       eapply Hfun1 in Ha. 2:apply rt_refl.
+      destruct Ha as [_ [_ Ha]].
       apply Hfun2 with (errMsg:=errMsg) in Ha.
       destruct Ha as [a'' [HtransF Hrepr]]. econstructor; eauto.
       cbn. congruence.
@@ -4624,8 +4626,6 @@ Theorem repr_bs_LambdaANF_Codegen_related :
     forall (hs : host_state) (sr : store_record) (f : frame)
            (instructions : list basic_instruction),
 
-      (* fds only on toplevel so obtained for all funvalues, obtained rho = M.empty *)
-      (forall x rho' fds' f' v, rho ! x = Some v -> subval_or_eq (Vfun rho' fds' f') v -> fds' = fds /\ rho' = M.empty _) ->
       (forall a t ys e errMsg, find_def a fds = Some (t, ys, e) ->
           expression_restricted e /\ (forall x, occurs_free e x -> In x ys \/ find_def x fds <> None) /\
           NoDup (ys ++ collect_local_variables e ++ collect_function_vars (Efun fds e)) /\
@@ -4654,7 +4654,7 @@ Proof with eauto.
   intros lenv rho v e n vars fds HlenvInjective HenvsDisjoint Hvars Hnodup
      HfenvWf HfenvRho HeRestr Hunbound Hev. subst vars.
   generalize dependent lenv.
-  induction Hev; intros lenv HlenvInjective HenvsDisjoint state sr fr instructions HfdsEqRhoEmpty Hfds Hinv Hrepr_e Hrel_m.
+  induction Hev; intros lenv HlenvInjective HenvsDisjoint state sr fr instructions Hfds Hinv Hrepr_e Hrel_m.
   - (* Econstr *)
     inversion Hrepr_e.
     inversion H8.
@@ -4720,7 +4720,8 @@ Proof with eauto.
         (Vfun (M.empty cps.val) fds y)) by constructor.
 
        inv H3.
-       have H' := Hfun1 _ _ _ H2 Hsubval. apply Hfun2 with (errMsg:=errMsg) in H'.
+       have H' := Hfun1 _ _ _ _ _ H2 Hsubval. destruct H' as [_ [_ H']].
+       apply Hfun2 with (errMsg:=errMsg) in H'.
        destruct H' as [i [HvarI Hval]].
        assert (i = y') by congruence. subst i.
        eapply val_relation_func_depends_on_funcs; try apply Hval. auto.
@@ -4735,20 +4736,6 @@ Proof with eauto.
 
       remember ({|f_locs := set_nth (VAL_int32 (wasm_value_to_i32 wal)) (f_locs fr) x' (VAL_int32 (wasm_value_to_i32 wal));
       f_inst := f_inst fr|}) as f_before_IH.
-
-      assert (HfdsEqRhoEmpty_before_IH: (forall (x : positive) (rho'0 : M.t cps.val)
-        (fds' : fundefs) (f' : var) v, rho' ! x = Some v -> subval_or_eq (Vfun rho'0 fds' f') v -> fds' = fds /\ rho'0 = M.empty _)). {
-        intros x1 rho'0 fds' f' v0 Hrho' Hval'.
-        subst rho'.
-        destruct (var_dec x x1).
-        (* x=x1 *)
-        { subst x1. rewrite M.gss in Hrho'. inv Hrho'.
-          apply subval_or_eq_fun in Hval'. destruct Hval' as [v' [Hval' Hin]].
-          destruct (get_list_In_val _ _ _ _ H Hin) as [y [Hiny Hrho']].
-          now eapply HfdsEqRhoEmpty. }
-        (* x<>x1 *)
-        { rewrite M.gso in Hrho'; auto. now eapply HfdsEqRhoEmpty in Hrho'. }
-      }
 
       assert (Hfds': forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) (errMsg : bytestring.String.t),
         find_def a fds = Some (t, ys, e) ->
@@ -4786,7 +4773,7 @@ Proof with eauto.
              apply subval_or_eq_fun in H5. destruct H5 as [v1 [Hr1 Hr2]].
              have H'' := get_list_In_val _ _ _ _ H Hr2.
              destruct H'' as [x2 [Hin Hrho]].
-             have H' := Hfun1 _ _ _ Hrho Hr1. assumption.
+             have H' := Hfun1 _ _ _ _ _ Hrho Hr1. assumption.
            }
            { (* x<>x1 *) rewrite M.gso in H3; eauto. }
         } split.
@@ -4863,7 +4850,7 @@ Proof with eauto.
           apply Hd2 in H0. unfold translate_var in H3. now rewrite H0 in H3. }
 
       have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint
-                 state s_v f_before_IH _ HfdsEqRhoEmpty_before_IH Hfds' Hinv_before_IH Hexp Hrel_m_v.
+                 state s_v f_before_IH _ Hfds' Hinv_before_IH Hexp Hrel_m_v.
       destruct IH as [s_final [f_final [Hred_IH [Hval [Hfinst [Hsfuncs' [HvalPres H_INV]]]]]]]. cbn in Hfinst.
 
       exists s_final, f_final. split.
@@ -4953,19 +4940,6 @@ Proof with eauto.
         (map_util.M.set x (Vconstr t vs) rho) ! x0 = None)). {
         intros. apply NoDup_app_remove_r in Hnodup. cbn in Hnodup. apply NoDup_cons_iff in Hnodup. rewrite M.gso. apply Hunbound. unfold collect_local_variables. cbn. fold collect_local_variables. right. assumption. destruct Hnodup as [Hx _ ]. unfold not. unfold not in Hx. intros Heq. subst x. apply Hx in H0. contradiction.
       }
-      assert (HfdsEqRhoEmpty' : (forall (x0 : positive) (rho' : M.t val) (fds' : fundefs)
-          (f' : var) (v : val),
-        (map_util.M.set x (Vconstr t vs) rho) ! x0 = Some v ->
-        subval_or_eq (Vfun rho' fds' f') v -> fds' = fds /\ rho' = M.empty val)). {
-        intros x0 rho' fds' f' v0 Hrho' Hval'.
-        destruct (var_dec x x0).
-        { subst x0. rewrite M.gss in Hrho'. inv Hrho'. apply subval_or_eq_fun in Hval'. destruct Hval' as [v' [Hval' Hin]].
-          destruct (get_list_In_val _ _ _ _ H Hin) as [y [Hiny Hrho']].
-          eapply HfdsEqRhoEmpty; eauto.
-        }
-        { rewrite M.gso in Hrho'. eapply HfdsEqRhoEmpty; eauto. auto.
-        }
-      }
 
       assert (Hfds' :  (forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) (errMsg : string),
         find_def a fds = Some (t, ys, e) ->
@@ -4995,7 +4969,7 @@ Proof with eauto.
             destruct H1 as [v1 [Hr1 Hr2]].
             have H'' := get_list_In_val _ _ _ _ H Hr2.
             destruct H'' as [x2 [Hin Hrho]].
-            have H' := Hfun1 _ _ _ Hrho Hr1. assumption.
+            have H' := Hfun1 _ _ _ _ _ Hrho Hr1. assumption.
           }
           { rewrite M.gso in H0; eauto. }
         } split.
@@ -5029,7 +5003,7 @@ Proof with eauto.
             unfold Wasm_int.Int32.iadd. unfold Wasm_int.Int32.add.
             unfold Wasm_int.Int32.ishl. unfold Wasm_int.Int32.shl.} *)
         } }
-      have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ HlenvInjective HenvsDisjoint state sr f_before_IH _ HfdsEqRhoEmpty' Hfds' Hinv' H6 Hrel_m'.
+      have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ HlenvInjective HenvsDisjoint state sr f_before_IH _ Hfds' Hinv' H6 Hrel_m'.
       destruct IH as [sr' [f' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]].
       exists sr', f'.
       split.
@@ -5092,15 +5066,19 @@ Proof with eauto.
             subst x1. rewrite M.gss in H10. inv H10. rename v0 into v.
             apply nthN_In in H0.
             have H' := subval_or_eq_constr _ _ _ t H12 H0.
-            have HF := Hfun1 _ _ _ Hrho H'. apply Hfun2 with (errMsg:=""%bs) in HF.
+            have HF := Hfun1 _ _ _ _ _ Hrho H'. destruct HF as [? [? HF]]. subst.
+            apply Hfun2 with (errMsg:=""%bs) in HF.
             destruct HF as [i [Htrans Hval]].
-            inv Hval. eapply find_def_name_in_fundefs. eassumption.
+            inv Hval. do 2 split => //.
+            eapply find_def_name_in_fundefs. eassumption.
           }
           { (* x <> x1*)
             rewrite M.gso in H10; auto.
-            have H' := Hfun1 _ _ _ H10 H12. apply Hfun2 with (errMsg:=""%bs) in H'.
+            have H' := Hfun1 _ _ _ _ _ H10 H12. destruct H' as [? [? H']]. subst.
+            apply Hfun2 with (errMsg:=""%bs) in H'.
             destruct H' as [i [Htf Hval]].
-            inv Hval. eapply find_def_name_in_fundefs. eassumption.
+            inv Hval. do 2 split => //.
+            eapply find_def_name_in_fundefs. eassumption.
            }
         } split.
         { (* funs2 *)
@@ -5146,23 +5124,6 @@ Proof with eauto.
           eapply val_relation_depends_on_finst; try eassumption; auto.
         }
      }}
-
-     assert (HfdsEqRhoEmpty': forall (x1 : positive) (rho' : M.t cps.val) (fds' : fundefs) (f' : var) v0,
-                                                 (map_util.M.set x v rho) ! x1 = Some v0 ->
-                                                 subval_or_eq (Vfun rho' fds' f') v0 ->
-                                                 fds' = fds /\ rho' = M.empty _). {
-        intros x1 rho' fds' f' v0 Hrho' Hval.
-        destruct (var_dec x x1).
-        (* x=x1 *)
-        { subst x1. rewrite M.gss in Hrho'. inv Hrho'.
-          assert (In v0 vs). { now eapply nthN_In. }
-          assert (Hsub: subval_or_eq (Vfun rho' fds' f') (Vconstr t vs)).
-          { now eapply subval_or_eq_constr. }
-          have H' := HfdsEqRhoEmpty _ _ _ _ _ Hrho Hsub. now destruct H'. }
-        (* x<>x1 *)
-        { rewrite M.gso in Hrho'; auto. eapply HfdsEqRhoEmpty in Hrho'.
-          eassumption. eassumption. }
-     }
 
      assert (Hfds': (forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) errMsg,
       find_def a fds = Some (t, ys, e) ->
@@ -5225,7 +5186,7 @@ Proof with eauto.
        apply Hd2 in H10. unfold translate_var in H12. now rewrite H10 in H12. }
 
      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint
-                      state _ _ _ HfdsEqRhoEmpty' Hfds' Hinv' H7 Hrm.
+                      state _ _ _ Hfds' Hinv' H7 Hrm.
      destruct IH as [sr' [f' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]]. cbn in Hfinst.
 
      exists sr', f'. cbn. split.
@@ -5321,7 +5282,7 @@ Proof with eauto.
         }
 
       have IH := IHHev Hnodup' HfenvRho HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint
-                       state _ _ _ HfdsEqRhoEmpty Hfds Hinv H9 Hrel.
+                       state _ _ _ Hfds Hinv H9 Hrel.
       destruct IH as [sr' [fr' [Hstep [Hval [Hfinst [HvalPres H_INV]]]]]].
 
       exists  sr', fr'. split.
@@ -5435,15 +5396,17 @@ Proof with eauto.
    } *)
   - (* Eapp *)
     { inv Hrepr_e. rename args' into args_instr.
+      assert (HfdsRhoEq: fl = fds /\ rho' = M.empty _). { destruct Hrel_m as [Hfun1 _]. eapply Hfun1 in H. now destruct H. apply rt_refl. } destruct HfdsRhoEq. subst fl rho'.
       (* treat direct + indirect calls in one *)
       assert (Hval: exists fidx,
         reduce_trans (state, sr, fr, [AI_basic instr])
                      (state, sr, fr, [AI_basic (BI_const (nat_to_value fidx))]) /\
         repr_val_LambdaANF_Codegen cenv fenv nenv _ (Vfun (M.empty _) fds f') sr fr (Val_funidx fidx)). {
+
       inv H8.
       { (* indirect call *)
         assert (Hocc: occurs_free (Eapp f t ys) f) by constructor.
-        have Hrel := Hrel_m. destruct Hrel as [_ [_ Hvar]].
+        have Hrel := Hrel_m. destruct Hrel as [Hfun1 [_ Hvar]].
         assert (HfNone: find_def f fds = None). {
           apply HfenvWf_None with (f:=f) in HfenvWf. rewrite HfenvWf.
           inv H3. unfold translate_var in H4. destruct (lenv ! f) eqn:Hf'; inv H4.
@@ -5451,9 +5414,8 @@ Proof with eauto.
         apply Hvar in Hocc; auto. destruct Hocc as [val [wal [Hrho [[j [Htrans Hwal]] Hval]]]].
         inv H3. rewrite Htrans in H4. inv H4.
         rewrite H in Hrho. inv Hrho. inv Hval.
-        rewrite H1 in H8. symmetry in H8. inv H8.
+        rewrite H1 in H6. symmetry in H6. inv H6.
         rename i into locIdx.
-        assert (fl = fds). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst fl.
         exists idx. split.
         dostep'. apply r_get_local. eassumption. apply rt_refl.
         econstructor; eauto. }
@@ -5461,14 +5423,13 @@ Proof with eauto.
         inv H3. unfold translate_var in H4. destruct (fenv ! f) eqn:Hf; inv H4.
         assert (Hf': exists i, fenv ! f = Some i) by eauto.
         apply HfenvWf in Hf'.
-        assert (Htemp: rho' = M.empty _ /\ f = f'). {
-          apply HfenvRho in H. now inv H. now destruct Hf'. }
-        inv Htemp. rename f' into f.
-        assert (fl = fds). { apply HfenvRho in H. now inv H. now destruct Hf'. } subst fl.
+        assert (Htemp: f' = f). { apply HfenvRho in H. now inv H. now destruct Hf'. }
+        inv Htemp.
         destruct Hrel_m as [Hfun1 [Hfun2 _]].
         assert (Hsubval: subval_or_eq (Vfun (M.empty cps.val) fds f)
                                       (Vfun (M.empty cps.val) fds f)) by constructor.
-        have H' := Hfun1 _ _ _ H Hsubval. apply Hfun2 with (errMsg:=errMsg) in H'.
+        have H' := Hfun1 _ _ _ _ _ H Hsubval. destruct H' as [_ [_ H']].
+        apply Hfun2 with (errMsg:=errMsg) in H'.
         destruct H' as [idx [HtransF Hval]].
         assert (idx = i). { unfold translate_var in HtransF. now rewrite Hf in HtransF. }
         subst idx. exists i. split. apply rt_refl.
@@ -5477,7 +5438,6 @@ Proof with eauto.
     }
 
     destruct Hval as [fidx [HredF Hval]]. inv Hval.
-    assert (fl = fds). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst fl.
     rewrite H9 in H1. inv H1. rename H16 into Hexpr.
 
     repeat rewrite map_cat. cbn.
@@ -5490,35 +5450,6 @@ Proof with eauto.
 
     (* prepare IH *)
     remember (create_local_variable_mapping (xs ++(collect_local_variables e))) as lenv_before_IH.
-    assert (HfdsEqRhoEmpty_before_IH: (forall (x : positive) (rho' : M.t cps.val) (fds' : fundefs) (f' : var) v,
-      rho'' ! x = Some v -> subval_or_eq (Vfun rho' fds' f') v ->
-                                     fds' = fds /\ rho' = M.empty _)). {
-      intros.
-      assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst rho'.
-      assert (Hdec: decidable_eq var). {
-        intros n m. unfold Decidable.decidable. now destruct (var_dec n m). }
-      have H' := In_decidable Hdec x xs. clear Hdec. destruct H'.
-      { (* In x xs *)
-        have H' := set_lists_In _ _ _ _ _ _ H4 H1 H2.
-        destruct (get_list_In_val _ _ _ _ H0 H') as [y [Hin Hrho]].
-        eapply HfdsEqRhoEmpty in Hrho. now destruct Hrho. eassumption. }
-      { (* ~In x xs *)
-        have H' := set_lists_not_In _ _ _ _ _ H2 H4. rewrite H1 in H'.
-        erewrite def_funs_find_def in H'. inv H'.
-        { apply subval_fun in H3. now destruct H3 as [? [? ?]].
-          assert (Hfd: find_def x fds <> None). {
-            have H' := set_lists_not_In _ _ _ _ _ H2 H4.
-            rewrite H1 in H'. inv H'. intro Hcontra.
-            eapply def_funs_not_find_def in Hcontra. erewrite Hcontra in H10.
-            discriminate.
-          }
-          apply notNone_Some in Hfd. destruct Hfd.
-          now eapply find_def_name_in_fundefs. }
-        intro Hcontra.
-        apply def_funs_spec in H'. destruct H' as [[? ?] | [? Hcontra']]. 2: inv Hcontra'.
-        apply name_in_fundefs_find_def_is_Some in H5. now destruct H5 as [? [? [? ?]]].
-      }
-    }
 
     assert (Hfds_before_IH: (forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) errMsg,
       find_def a fds = Some (t, ys, e) ->
@@ -5556,9 +5487,8 @@ Proof with eauto.
     assert (Hrelm: @rel_env_LambdaANF_Codegen cenv fenv nenv host_function
                               lenv_before_IH e rho'' sr f_before_IH fds). {
       unfold rel_env_LambdaANF_Codegen. split.
-      { (* funs1 *) intros.
-        assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. }
-        subst rho'.
+      { (* funs1 *)
+        intros.
         assert (Hdec: decidable_eq var). {
           intros n m. unfold Decidable.decidable. now destruct (var_dec n m). }
        have H' := In_decidable Hdec x xs. clear Hdec. destruct H'.
@@ -5623,7 +5553,6 @@ Proof with eauto.
 
     assert (Hunbound': (forall x : var, In x (collect_local_variables e) -> rho'' ! x = None)). {
       intros.
-      assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst rho'.
       assert (~ exists v, find_def x fds = Some v). {
         intro Hcontra. destruct Hcontra as [? Hfd].
         assert (Hfd': find_def x fds <> None) by congruence.
@@ -5688,13 +5617,11 @@ Proof with eauto.
 
     have H' := set_lists_not_In _ _ _ _ _ H2 HaXs.
     rewrite <- H' in H1.
-    assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. }
-    subst rho'.
     eapply def_funs_find_def in H3. now erewrite H' in H3. }
 
     subst lenv_before_IH.
     have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _  HlenvInjective' HenvsDisjoint'
-                   state _ _ _ HfdsEqRhoEmpty_before_IH Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
+                   state _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
 
     destruct IH as [sr_final [fr_final [Hred [Hval [Hfinst [Hfuncs [HvalPres H_INV]]]]]]].
 
@@ -5747,6 +5674,7 @@ Proof with eauto.
     (* needs 2 IH, first one for the function body (mostly copy paste from Eapp, could be refactored),
                    second one for the continuation, similar to the other cases *)
     { inv Hrepr_e. rename args' into args_instr. rename e into e_cont, x into x_res.
+      assert (Htemp: fl = fds /\ rho' = M.empty _). { destruct Hrel_m as [Hfun1 _]. eapply Hfun1 in H. now destruct H. apply rt_refl. } destruct Htemp. subst fl rho'.
       (* treat direct + indirect calls in one *)
       assert (Hval: exists fidx,
         reduce_trans (state, sr, fr, [AI_basic instr])
@@ -5765,9 +5693,8 @@ Proof with eauto.
         apply Hlocals in Hocc; auto. destruct Hocc as [val [wal [Hrho [[j [Htrans Hwal]] Hval]]]].
         inv H3. rewrite Htrans in H4. inv H4.
         rewrite H in Hrho. inv Hrho. inv Hval.
-        rewrite H1 in H7. symmetry in H7. inv H7.
+        rewrite H1 in H6. symmetry in H6. inv H6.
         rename i into locIdx.
-        assert (fl = fds). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst fl.
         exists idx. split.
         dostep'. apply r_get_local. eassumption. apply rt_refl. split.
         econstructor; eauto. eauto. }
@@ -5775,14 +5702,12 @@ Proof with eauto.
         inv H3. unfold translate_var in H4. destruct (fenv ! f) eqn:Hf; inv H4.
         assert (Hf': exists i, fenv ! f = Some i) by eauto.
         apply HfenvWf in Hf'.
-        assert (Htemp: rho' = M.empty _ /\ f = f'). {
-          apply HfenvRho in H. now inv H. now destruct Hf'. }
-        inv Htemp. rename f' into f.
-        assert (fl = fds). { apply HfenvRho in H. now inv H. now destruct Hf'. } subst fl.
+        assert (Htemp: f' = f). { apply HfenvRho in H. now inv H. now destruct Hf'. } inv Htemp.
         destruct Hrel_m as [Hfun1 [Hfun2 _]].
         assert (Hsubval: subval_or_eq (Vfun (M.empty cps.val) fds f)
                                       (Vfun (M.empty cps.val) fds f)) by constructor.
-        have H' := Hfun1 _ _ _ H Hsubval. apply Hfun2 with (errMsg:=errMsg) in H'.
+        have H' := Hfun1 _ _ _ _ _ H Hsubval. destruct H' as [_ [_ H']].
+        apply Hfun2 with (errMsg:=errMsg) in H'.
         destruct H' as [idx [HtransF Hval]].
         assert (idx = i). { unfold translate_var in HtransF. now rewrite Hf in HtransF. }
         subst idx. exists i. split. apply rt_refl.
@@ -5791,7 +5716,6 @@ Proof with eauto.
     }
 
     destruct Hval as [fidx [HredF [Hval [e_body' HexprBody]]]]. inv Hval.
-    assert (fl = fds). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst fl.
     rewrite H7 in H1. inv H1. rename H18 into Hexpr.
 
     repeat rewrite map_cat. cbn.
@@ -5805,34 +5729,6 @@ Proof with eauto.
 
     (* prepare IH1 for e_body *)
     remember (create_local_variable_mapping (xs ++ collect_local_variables e_body)) as lenv_before_IH.
-    assert (HfdsEqRhoEmpty_before_IH: (forall (x : positive) (rho' : M.t cps.val) (fds' : fundefs) (f' : var) v,
-      rho'' ! x = Some v -> subval_or_eq (Vfun rho' fds' f') v ->
-                                     fds' = fds /\ rho' = M.empty _)). {
-      intros.
-      assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst rho'.
-      assert (Hdec: decidable_eq var). {
-        intros n m. unfold Decidable.decidable. now destruct (var_dec n m). }
-      have H' := In_decidable Hdec x xs. clear Hdec. destruct H'.
-      { (* In x xs *)
-        have H' := set_lists_In _ _ _ _ _ _ H4 H1 H2.
-        destruct (get_list_In_val _ _ _ _ H0 H') as [y [Hin Hrho]].
-        eapply HfdsEqRhoEmpty in Hrho. now destruct Hrho. eassumption. }
-      { (* ~In x xs *)
-        have H' := set_lists_not_In _ _ _ _ _ H2 H4. rewrite H1 in H'.
-        erewrite def_funs_find_def in H'. inv H'.
-        { apply subval_fun in H3. now destruct H3 as [? [? ?]].
-          assert (Hfd: find_def x fds <> None). {
-            have H' := set_lists_not_In _ _ _ _ _ H2 H4.
-            rewrite H1 in H'. inv H'. intro Hcontra.
-            eapply def_funs_not_find_def in Hcontra. erewrite Hcontra in H8.
-            discriminate.
-          }
-          apply notNone_Some in Hfd. destruct Hfd.
-          now eapply find_def_name_in_fundefs. }
-        intro Hcontra.
-        apply def_funs_spec in H'. destruct H' as [[? ?] | [? Hcontra']]; subst. 2: inv Hcontra'.
-        apply name_in_fundefs_find_def_is_Some in H5. now destruct H5 as [? [? [? ?]]]. }
-    }
 
     assert (Hfds_before_IH: (forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) errMsg,
       find_def a fds = Some (t, ys, e) ->
@@ -5871,8 +5767,6 @@ Proof with eauto.
                               e_body rho'' sr f_before_IH fds). {
       unfold rel_env_LambdaANF_Codegen. split.
       { (* funs1 *) intros.
-        assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. }
-        subst rho'.
         assert (Hdec: decidable_eq var). {
           intros n m. unfold Decidable.decidable. now destruct (var_dec n m). }
        have H' := In_decidable Hdec x xs. clear Hdec. destruct H'.
@@ -5889,7 +5783,7 @@ Proof with eauto.
          rewrite H1 in H'.
          apply def_funs_spec in H'. destruct H' as [[? ?] | [? Hcontra]]. 2: inv Hcontra.
          apply subval_fun in H3. 2: assumption.
-         destruct H3 as [f1 [?H ?H]]. inv H3. inv H8. assumption. }
+         destruct H3 as [f1 [?H ?H]]. inv H3. inv H8 => //. }
       } split.
       { (* funs2 *)
         intros ? ? Hnfd. destruct Hrel_m as [_ [Hfun2 _]].
@@ -5933,7 +5827,6 @@ Proof with eauto.
 
     assert (Hunbound': (forall x : var, In x (collect_local_variables e_body) -> rho'' ! x = None)). {
       intros.
-      assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst rho'.
       assert (~ exists v, find_def x fds = Some v). {
         intro Hcontra. destruct Hcontra as [? Hfd].
         assert (Hfd': find_def x fds <> None) by congruence.
@@ -5998,13 +5891,11 @@ Proof with eauto.
 
     have H' := set_lists_not_In _ _ _ _ _ H2 HaXs.
     rewrite <- H' in H1.
-    assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. }
-    subst rho'.
     eapply def_funs_find_def in H3. now erewrite H' in H3. }
 
     subst lenv_before_IH.
     have IH_body := IHHev1 Hnodup' HfenvRho' HeRestr' Hunbound' _  HlenvInjective' HenvsDisjoint'
-                   state _ _ _ HfdsEqRhoEmpty_before_IH Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
+                   state _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
     clear HfenvRho' Hnodup' Hunbound' HeRestr' IHHev1.
 
     destruct IH_body as [sr_after_call [fr_after_call [Hred [Hval [Hfinst [Hfuncs [HvalPres H_INV]]]]]]].
@@ -6021,7 +5912,6 @@ Proof with eauto.
          /\ (forall wal val, repr_val_LambdaANF_Codegen cenv fenv nenv host_function val sr fr wal ->
                              repr_val_LambdaANF_Codegen cenv fenv nenv host_function val sr_final fr_final wal)
          /\ (INV_result_var_out_of_mem_is_zero sr_final fr_final -> INV lenv sr_final fr_final)). {
-      assert (rho' = M.empty _). { eapply HfdsEqRhoEmpty in H. now destruct H. apply rt_refl. } subst rho'.
       destruct Hval as [Hsuccess | HOutOfMem].
       { (* success *)
         clear Hexpr. rename H10 into Hexpr.
@@ -6057,62 +5947,6 @@ Proof with eauto.
             now apply NoDup_cons_iff in Hnodup. }
           rewrite M.gso; auto.
           apply Hunbound. now right. now intro.
-        }
-
-        assert (HfdsEqRhoEmpty_before_cont_IH: (forall (x : positive) (rho' : M.t val)
-                                               (fds' : fundefs) (f' : var) (v0 : val),
-           (map_util.M.set x_res v rho) ! x = Some v0 ->
-             subval_or_eq (Vfun rho' fds' f') v0 ->
-             fds' = fds /\ rho' = M.empty val)). {
-          intros x ? ? ? ? Hrho' Hval'.
-          destruct (var_dec x x_res).
-          { (* x = x_res *)
-            subst x_res. rewrite M.gss in Hrho'. symmetry in Hrho'. inv Hrho'.
-            have H' := step_preserves_empty_env_fds _ _ _ _ fds _ _ _ _ _ Hev1 Hval'.
-            edestruct H'.
-            { intros ? ? ? ? ? Hrho Hsubval.
-              assert (Hdec: decidable_eq var). { intros n m.
-              unfold Decidable.decidable. now destruct (var_dec n m). }
-              have H'' := In_decidable Hdec x0 xs. destruct H''.
-              { (* In x0 xs *)
-                have H'' := set_lists_In _ _ _ _ _ _ H1 Hrho H2.
-                destruct (get_list_In_val _ _ _ _ H0 H'') as [y [HyIn HyRho]].
-                have H12' := HfdsEqRhoEmpty _ _ _ _ _ HyRho Hsubval.
-                destruct H12'. subst. destruct Hrel_m as [Hfun1 _].
-                eapply Hfun1 in HyRho. 2: eassumption. auto.
-              }
-              { (* ~In x0 xs *)
-                have H'' := set_lists_not_In _ _ _ _ _ H2 H1.
-                rewrite Hrho in H''.
-                erewrite def_funs_find_def in H''. 2: {
-                  intro Hcontra. eapply def_funs_not_find_def  in Hcontra.
-                  erewrite Hcontra in H''. inv H''. }
-                inv H''.
-                have H'' := set_lists_not_In _ _ _ _ _ H2 H1.
-                rewrite Hrho in H''.
-                apply subval_fun in Hsubval.
-                destruct Hsubval as [ff [Heq Hfundef]]. now inv Heq.
-                apply def_funs_spec in H''. destruct H'' as [[? ?] | [? Hcontra]].
-                assumption. inv Hcontra.
-              }
-            }
-            { intros ? ? ? ? [HbodyNofun | HfdsNofun].
-              - eapply repr_expr_LambdaANF_Codegen_no_Efun_subterm; eauto.
-              - destruct HfdsNofun as [Hsub HsubFds].
-                eapply dsubterm_fds_e_find_def in HsubFds.
-                2:{ now apply NoDup_app_remove_l in Hnodup. }
-                destruct HsubFds as [? [? [? Hfd]]].
-                have Hfd' := Hfd.
-                eapply Hfds in Hfd. destruct Hfd as [_ [_ [_ [? [? HvalFun]]]]]. inv HvalFun.
-                assert (e = e'') by congruence. subst e''.
-                eapply repr_expr_LambdaANF_Codegen_no_Efun_subterm; eauto.
-            }
-            now destruct H3.
-          }
-          { (* x <> x_res *)
-            rewrite M.gso in Hrho'; auto. eapply HfdsEqRhoEmpty in Hrho'.
-            eassumption. eassumption.
-          }
         }
 
         assert (Hinv_before_cont_IH: INV lenv sr_after_call f_before_cont). {
@@ -6158,7 +5992,7 @@ Proof with eauto.
               assert (Hsubval: subval_or_eq (Vfun (M.empty val) fds f0)
                                             (Vfun (M.empty val) fds f0)).
               { apply rt_refl. }
-              have H''1 := Hfun1 _ _ _ _ Hsubval.
+              have H''1 := Hfun1 _ _ _ _ _ _ Hsubval.
 
               have H' := step_preserves_empty_env_fds _ _ _ _ fds _ _ _ _ _ Hev1 H3.
               edestruct H'.
@@ -6169,9 +6003,9 @@ Proof with eauto.
                 { (* In x0 xs *)
                   have H'' := set_lists_In _ _ _ _ _ _ H1 Hrho H2.
                   destruct (get_list_In_val _ _ _ _ H0 H'') as [y [HyIn HyRho]].
-                  have H12' := HfdsEqRhoEmpty _ _ _ _ _ HyRho Hsubval'.
-                  destruct H12'. subst.
-                  eapply Hfun1 in HyRho. 2: eassumption. auto.
+                  have H12' := Hfun1 _ _ _ _ _ HyRho Hsubval'.
+                  destruct H12' as [? [? _]]. subst.
+                  eapply Hfun1 in HyRho. 2: eassumption. now destruct HyRho as [?[??]].
                 }
                 { (* ~In x0 xs *)
                   have H'' := set_lists_not_In _ _ _ _ _ H2 H1.
@@ -6204,7 +6038,7 @@ Proof with eauto.
            { (* x <> x_res*)
              rewrite M.gso in H1; auto.
              destruct Hrel_m' as [Hfun1 [Hfun2 Hvar]].
-             have H' := Hfun1 _ _ _ H1 H3. assumption.
+             have H' := Hfun1 _ _ _ _ _ H1 H3. assumption.
            }
          } split.
          { (* funs2 *)
@@ -6263,7 +6097,7 @@ Proof with eauto.
         }
 
         have IH_cont := IHHev2 Hnodup' HfenvRho' HeRestr' Hunbound' lenv HlenvInjective HenvsDisjoint
-                   state _ _ _ HfdsEqRhoEmpty_before_cont_IH Hfds_before_cont_IH Hinv_before_cont_IH Hexpr HrelM'.
+                   state _ _ _ Hfds_before_cont_IH Hinv_before_cont_IH Hexpr HrelM'.
         destruct IH_cont as [sr_final [fr_final [Hred' [Hval' [Hfinst' [Hfuncs' [HvalPres' H_INV']]]]]]]. clear IHHev2.
 
         exists sr_final, fr_final. split.
@@ -8075,19 +7909,6 @@ Proof.
       now eapply H'.
     }
 
-    assert (HfdsEqRhoEmpty_before_IH: (forall (x : positive) (rho' : M.t val)
-           (fds' : fundefs) (f' : var) v,
-           (def_funs fds fds (M.empty val) (M.empty val)) ! x = Some v ->
-             subval_or_eq (Vfun rho' fds' f') v ->
-             fds' = fds /\ rho' = M.empty _)). {
-       intros. have H' := H.
-       apply def_funs_spec in H.
-       destruct H as [[? ?] | [? Hcontra]]. 2: inv Hcontra.
-       rewrite def_funs_eq in H'. 2: assumption.
-       inv H'. apply subval_fun in H0. destruct H0 as [? [Hval Hfd]].
-         now inv Hval. assumption.
-    }
-
     assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e0 : exp) errMsg,
         find_def a fds = Some (t, ys, e0) ->
         expression_restricted e0 /\
@@ -8129,12 +7950,12 @@ Proof.
           sr f_before_IH fds). {
       split.
       { (* funs1 (follows from previous Hfds) *)
-        intros ? ? ? Hdf Hval. have H' := Hdf.
+        intros ? ? ? ? ? Hdf Hval. have H' := Hdf.
         apply def_funs_spec in Hdf.
         destruct Hdf as [[? ?] | [? H]]. 2: inv H.
         rewrite def_funs_eq in H'. 2: assumption.
         inv H'. apply subval_fun in Hval. 2: assumption.
-        destruct Hval as [? [Hval ?]]. inv Hval. assumption.
+        destruct Hval as [? [Hval ?]]. inv Hval => //.
       } split.
       { (* funs2 *)
         intros ? ? Hnfd. apply name_in_fundefs_find_def_is_Some in Hnfd.
@@ -8150,8 +7971,7 @@ Proof.
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv _ host_instance
                     _ _ _ _ _ _ _ HlenvInjective
                       HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
-                      HeRestr' Hunbound Hstep hs _ _ _
-                         HfdsEqRhoEmpty_before_IH Hfds Hinv_before_IH Hexpr Hrelm.
+                      HeRestr' Hunbound Hstep hs _ _ _ Hfds Hinv_before_IH Hexpr Hrelm.
 
     destruct HMAIN as [s' [f' [Hred [Hval [Hfinst _]]]]]. cbn.
     exists s'. split.
@@ -8203,11 +8023,6 @@ Proof.
       rewrite <- app_assoc in HvarsNodup. now eapply NoDup_app_remove_middle in HvarsNodup.
     }
 
-    assert (HfdsEqRhoEmpty_before_IH: (forall (x : positive) (rho' : M.t val)
-           (fds' : fundefs) (f' : var) v,
-           (M.empty _) ! x = Some v -> subval_or_eq (Vfun rho' fds' f') v ->
-             fds' = Fnil /\ rho' = M.empty _)). { intros. inv H. }
-
     assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e0 : exp) errMsg,
         find_def a Fnil = Some (t, ys, e0) ->
         expression_restricted e0 /\
@@ -8250,8 +8065,7 @@ Proof.
     subst lenv.
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv _ host_instance _ (M.empty _)
                     _ _ _ _ _ HlenvInjective HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf
-                      HfenvRho HeRestr Hunbound Hstep hs _ _ _ HfdsEqRhoEmpty_before_IH Hfds
-                        Hinv_before_IH Hexpr Hrelm.
+                      HfenvRho HeRestr Hunbound Hstep hs _ _ _ Hfds Hinv_before_IH Hexpr Hrelm.
     destruct HMAIN as [s' [f' [Hred [Hval [Hfinst _]]]]]. cbn.
     exists s'. split.
     dostep'. apply r_call. cbn.
