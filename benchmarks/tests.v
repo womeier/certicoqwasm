@@ -79,15 +79,15 @@ Definition sha := sha256.SHA_256 (sha256.str_to_bytes test).
 
 Definition sha_fast := sha256.SHA_256' (sha256.str_to_bytes test).
 
-Eval compute in "Compiling demo1".
+(* Eval compute in "Compiling demo1".*)
 
-CertiCoq Generate WASM -cps -debug demo1.
+(* CertiCoq Generate WASM -cps -debug demo1. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo1. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
 
-Eval compute in "Compiling demo2".
+(* Eval compute in "Compiling demo2". *)
 
-CertiCoq Generate WASM -cps -debug demo2.
+(* CertiCoq Generate WASM -cps -debug demo2. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo2. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo2. *)
 
@@ -99,32 +99,32 @@ CertiCoq Generate WASM -cps -debug demo3.
 (* CertiCoq Compile -cps -ext "_cps_opt" demo3. *)
 *)
 
-Eval compute in "Compiling list_sum".
+(* Eval compute in "Compiling list_sum". *)
 
-CertiCoq Generate WASM -debug list_sum.
+(* CertiCoq Generate WASM -debug list_sum. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" list_sum. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" list_sum. *)
 
 
 Eval compute in "Compiling vs_easy".
 
-(* CertiCoq Generate WASM -cps -time -debug vs_easy. *)
-CertiCoq Generate WASM -time -debug vs_easy.
+CertiCoq Generate WASM -cps -time -debug vs_easy.
+(* CertiCoq Generate WASM -time -debug vs_easy. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" -time_anf vs_easy. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" vs_easy. *)
 
 Eval compute in "Compiling vs_hard".
 
-(* CertiCoq Generate WASM -cps -time -debug vs_hard. *)
-CertiCoq Generate WASM -time -debug vs_hard.
+CertiCoq Generate WASM -cps -time -debug vs_hard.
+(* CertiCoq Generate WASM -time -debug vs_hard. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" vs_hard. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" vs_hard. *)
 
 
 Eval compute in "Compiling binom".
 
-(* CertiCoq Generate WASM -cps -time -debug binom. *)
-CertiCoq Generate WASM -time -debug binom.
+CertiCoq Generate WASM -cps -time -debug binom.
+(* CertiCoq Generate WASM -time -debug binom. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" binom. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" binom. *)
 
@@ -153,7 +153,7 @@ CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
 
 Eval compute in "Compiling sha_fast".
 
-(* CertiCoq Generate WASM -cps -time -debug sha_fast. *)
-CertiCoq Generate WASM -time -debug sha_fast.
+CertiCoq Generate WASM -cps -time -debug sha_fast.
+(* CertiCoq Generate WASM -time -debug sha_fast. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" sha_fast. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
