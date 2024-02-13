@@ -7527,7 +7527,7 @@ Proof.
 Qed.
 
 
-Lemma module_instantiate_INV_and_more_hold :
+Theorem module_instantiate_INV_and_more_hold :
 forall e eAny topExp fds num_funs module fenv main_lenv sr f exports,
   NoDup (collect_function_vars (Efun fds eAny)) ->
   expression_restricted e ->
