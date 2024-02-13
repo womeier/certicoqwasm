@@ -9,7 +9,12 @@ WASMFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wasm, $(TESTS))
 JSFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.js, $(TESTS))
 WASM2WAT=wasm2wat --enable-tail-call
 
-#all: lib tests optimize runwasm
+OS=$(shell uname)
+
+STACKSIZE=$(if $(filter Linux,$(OS)),unlimited,65532)
+
+SED=$(if $(filter Linux,$(OS)),sed,gsed)
+
 all: lib tests runwasm
 
 .PHONY: all default clean lib cleanlib tests $(TESTS)
@@ -18,14 +23,14 @@ $(WASMFILES): tests
 
 %.js: %.wasm
 	cp ./run-wasm-template.js $@
-	sed -i 's/{{file}}/$</g' $@
+	$(SED) -i 's/{{file}}/$</g' $@
 
 #optimize: $(WASMFILES)
 #	wasm-opt -O2 --enable-tail-call --enable-mutable-globals $< --output tmp
 #	mv tmp $<
 
 runwasm: $(JSFILES)
-	ulimit -s unlimited && ./run_wasm_benchmarks.py
+	ulimit -s $(STACKSIZE) && ./run_wasm_benchmarks.py
 
 clean:
 	rm -f ./*.wat ./*.wasm ./*.tests.*.js *.ir
@@ -44,4 +49,4 @@ cleanlib:
 	$(MAKE) clean -C lib
 
 tests: tests.v
-	ulimit -s unlimited && coqc $(COQOPTS) tests.v
+	ulimit -s $(STACKSIZE) && coqc $(COQOPTS) tests.v
