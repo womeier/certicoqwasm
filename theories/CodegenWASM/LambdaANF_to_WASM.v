@@ -282,7 +282,7 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
                           (f : cps.var) (args : list cps.var) (tailcall : bool) : error (list basic_instruction) :=
   instr_pass_params <- pass_function_args nenv lenv fenv args;;
   instr_fidx <- instr_local_var_read nenv lenv fenv f;;
-  let call := if tailcall then BI_return_call_indirect else BI_return_call in
+  let call := if tailcall then BI_return_call_indirect else BI_call_indirect in
   Ret (instr_pass_params ++ [instr_fidx] ++ [call (length args)]).
 
 (* Example placement of constructors in the linear memory:
@@ -444,7 +444,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       y_var <- translate_var nenv lenv y "translate_exp proj y";;
       x_var <- translate_var nenv lenv x "translate_exp proj x";;
 
-      ret ([ BI_get_local y_var
+      Ret ([ BI_get_local y_var
            ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4)) (* skip ctor_id and previous constr arguments *)
            ; BI_binop T_i32 (Binop_i BOI_add)
            ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
@@ -454,7 +454,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    | Eletapp x f ft ys e' =>
       x_var <- translate_var nenv lenv x "translate_exp proj x";;
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
-      instr_call <- translate_call nenv lenv fenv f ys true ;;
+      instr_call <- translate_call nenv lenv fenv f ys false ;;
 
       Ret (instr_call ++ [ BI_get_global result_out_of_mem
                          ; BI_if (Tf nil nil)
@@ -463,9 +463,9 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
                          ])
 
    | Eapp f ft ys =>
-      instr_call <- translate_call nenv lenv fenv f ys false ;;
+      instr_call <- translate_call nenv lenv fenv f ys true;;
 
-      Ret instr_call (* tail calls are not supported in Wasm 1.0: normal function, TODO once WasmCert has tailcalls, generate one here *)
+      Ret instr_call
 
    | Eprim_val x p e' => Err "translating prim_val to WASM not supported yet"
    | Eprim x p ys e' => Err "translating prim to WASM not supported yet"
