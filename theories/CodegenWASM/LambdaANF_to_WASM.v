@@ -29,17 +29,19 @@ Definition assert (b : bool) (err : string) : error Datatypes.unit :=
   if b then Ret tt else Err err.
 
 (* enforces predicate expression_restricted in the proof file *)
-Fixpoint check_restrictions (e : exp) : error Datatypes.unit:=
+Fixpoint check_restrictions (e : exp) : error Datatypes.unit :=
   match e with
-  | Econstr _ _ ys e' =>
+  | Econstr _ t ys e' =>
+       _ <- assert (Z.of_nat (Pos.to_nat t) <? Wasm_int.Int32.half_modulus)%Z
+                       "constructor tag too large" ;;
        _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_constr_args)%Z
                  "found constructor with too many args, check max_constr_args";;
        check_restrictions e'
   | Ecase x ms =>
       _ <- sequence (map (fun p =>
-                        _ <- assert (Z.of_nat (Pos.to_nat (fst p)) <? Wasm_int.Int32.modulus)%Z
-                                  "found case with tag >= i32.max";;
-                        check_restrictions (snd p)) ms);; Ret tt
+                           _ <- assert (Z.of_nat (Pos.to_nat (fst p)) <? Wasm_int.Int32.half_modulus)%Z
+                                 "constructor tag too large" ;;
+                           check_restrictions (snd p)) ms);; Ret tt
   | Eproj _ _ _ _ e' => check_restrictions e'
   | Eletapp _ _ _ ys e' =>
       _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z

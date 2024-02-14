@@ -331,6 +331,7 @@ Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var ->
 
 | Rconstr_asgn_unboxed :
   forall x' t scont,
+    (* TODO: Remove this *)
     (-1 < (Z.of_nat (Pos.to_nat t)) < Wasm_int.Int32.half_modulus)%Z ->
     get_ctor_arity cenv t = Ret 0 ->
     repr_asgn_constr_Codegen x' t [] scont
@@ -3883,12 +3884,13 @@ Qed.
 
 
 Inductive expression_restricted : cps.exp -> Prop :=
-  | ER_constr : forall x t ys e,
+| ER_constr : forall x t ys e,
+    (Z.of_nat (Pos.to_nat t) < Wasm_int.Int32.half_modulus)%Z ->
       (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z ->
       expression_restricted e ->
       expression_restricted (Econstr x t ys e)
   | ER_case : forall x ms,
-      Forall (fun p => (Z.of_nat (Pos.to_nat (fst p)) < Wasm_int.Int32.modulus)%Z /\
+      Forall (fun p => (Z.of_nat (Pos.to_nat (fst p)) < Wasm_int.Int32.half_modulus)%Z /\
                         expression_restricted (snd p)) ms ->
       expression_restricted (Ecase x ms)
   | ER_proj : forall x t n y e,
@@ -3940,8 +3942,10 @@ Proof.
   intros. eapply IH; eauto; clear IH; try intros.
   { (* Econstr *)
     rename H3 into Hsub, H1 into IHe. inv H2.
+    destruct (Z.of_nat (Pos.to_nat t) <? Wasm_int.Int32.half_modulus)%Z eqn:Htupper. 2: inv H3.
     destruct (Z.of_nat (Datatypes.length l) <=? max_constr_args)%Z eqn:Hlen. 2: inv H3.
     cbn in H3. clear H.
+    apply Z.ltb_lt in Htupper.
     apply Z.leb_le in Hlen. apply clos_rt_rtn1 in Hsub. inv Hsub. constructor; auto.
     apply IHe; auto. apply rt_refl. inv H. apply IHe; auto. now apply clos_rtn1_rt. }
   { (* Ecase nil *)
@@ -3951,17 +3955,16 @@ Proof.
   { (* Ecase cons *)
     rename H4 into Hsub, H1 into IHe, H2 into IHe0. inv H3.
     clear H0 H e. rename e0 into e.
-    destruct ((Z.of_nat (Pos.to_nat c) <? Wasm_int.Int32.modulus)%Z) eqn:Hlen. 2: inv H2.
-    cbn in H2. destruct (check_restrictions e) eqn:Hrestr. inv H2.
+    destruct ((Z.of_nat (Pos.to_nat c) <? Wasm_int.Int32.half_modulus)%Z) eqn:Hupper. 2: inv H2.
+    (* cbn in H2. *) destruct (check_restrictions e) eqn:Hrestr. inv H2.
     destruct (sequence _ ) eqn:Hseq; inv H2. destruct u.
-
     assert (check_restrictions (Ecase v l) = Ret ()). {
-      unfold check_restrictions. cbn. now rewrite Hseq. }
+      unfold check_restrictions. simpl. now rewrite Hseq. }
     assert (expression_restricted (Ecase v l)). {
        apply IHe0; auto. apply rt_refl. }
 
     apply clos_rt_rtn1 in Hsub. inv Hsub.
-    { constructor. apply Forall_cons. cbn. split. now apply Z.ltb_lt in Hlen.
+    { constructor. apply Forall_cons. simpl. split. now apply Z.ltb_lt.
       apply IHe; auto. apply rt_refl. now inv H0. }
 
     inv H1. destruct H5.
@@ -4993,6 +4996,7 @@ Proof with eauto.
             {
               unfold stored_in_locals. exists x'. split.
               - unfold translate_var. inv H7. unfold translate_var in H4. destruct (lenv ! x); inv H4; reflexivity.
+                (* TODO: modify to use assumption from restricted expression relation instead of the one from the constructor assignment relation *)
               - subst f_before_IH. cbn. erewrite set_nth_nth_error_same; eauto.
                 unfold nat_to_i32. cbn. unfold wasm_value_to_i32. unfold wasm_value_to_immediate.
                 unfold Wasm_int.Int32.iadd. unfold Wasm_int.Int32.add.
