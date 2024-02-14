@@ -6038,8 +6038,7 @@ Proof with eauto.
                   have H'' := set_lists_In _ _ _ _ _ _ H1 Hrho H2.
                   destruct (get_list_In_val _ _ _ _ H0 H'') as [y [HyIn HyRho]].
                   have H12' := Hfun1 _ _ _ _ _ HyRho Hsubval'.
-                  destruct H12' as [? [? _]]. subst.
-                  eapply Hfun1 in HyRho. 2: eassumption. now destruct HyRho as [?[??]].
+                  now destruct H12' as [?[??]].
                 }
                 { (* ~In x0 xs *)
                   have H'' := set_lists_not_In _ _ _ _ _ H2 H1.
@@ -6714,9 +6713,9 @@ Proof.
     subst. eexists. split. reflexivity. cbn. cbn in Hlen.
     rewrite nth_error_app1. 2: { rewrite firstn_length. lia. }
     assert (Hlen' : n < length table_data) by lia.
-    apply nth_error_Some in Hlen'. eapply notNone_Some in Hlen'; eauto. destruct Hlen'.
+    apply nth_error_Some in Hlen'. apply notNone_Some in Hlen'; auto. destruct Hlen'.
     erewrite nth_error_firstn; eauto. }
-Admitted. (* Qed. *)
+Qed.
 
 Lemma init_tab_preserves_length : forall s s' f t t' n n',
   n' < length (table_data t) ->
@@ -7064,7 +7063,7 @@ Proof.
     eassumption.
   }
   Unshelve. all: assumption.
-Admitted. (* Qed. *)
+Qed.
 
 Lemma translate_funcs_fenv : forall fds fns fenv e,
   map_injective fenv ->
