@@ -331,6 +331,7 @@ Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var ->
 
 | Rconstr_asgn_unboxed :
   forall x' t scont,
+    (-1 < (Z.of_nat (Pos.to_nat t)) < Wasm_int.Int32.half_modulus)%Z ->
     get_ctor_arity cenv t = Ret 0 ->
     repr_asgn_constr_Codegen x' t [] scont
       ([ BI_const (nat_to_value (Pos.to_nat t))
@@ -389,6 +390,7 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
            ] ++ e')
 
 | Rconstr_e: forall x x' t vs e instrs e',
+
     repr_expr_LambdaANF_Codegen e e' ->
     repr_var (lenv:=lenv) x x' ->
     repr_asgn_constr_Codegen (lenv:=lenv) x' t vs e' instrs ->
@@ -521,7 +523,8 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> (* val *)
                                          frame ->           (* fr *)
                                           wasm_value ->     (* wal *)
                                           Prop :=
-| Rconstr_unboxed_v : forall v t (sr : store_record) fr,
+| Rconstr_unboxed_v : forall v (t : ctor_tag) (sr : store_record) fr,
+    (-1 < Z.of_nat (Pos.to_nat t) < Wasm_int.Int32.half_modulus)%Z ->
     Pos.to_nat (t * 2 + 1) = v ->
     get_ctor_arity cenv t = Ret 0 ->
     repr_val_LambdaANF_Codegen (Vconstr t []) sr fr (Val_unboxed v)
@@ -881,7 +884,7 @@ Proof.
       assert (subterm_e e (Econstr v t [] e) ). { constructor; constructor. }
       eapply Forall_constructors_subterm. eassumption. assumption.
       econstructor; eauto.
-      eapply Rconstr_asgn_unboxed.
+      eapply Rconstr_asgn_unboxed. admit.
       apply Forall_constructors_in_constr in Hcenv.
       destruct (cenv ! t) eqn:Hc; auto. destruct c. inv Hcenv.
       unfold get_ctor_arity. now rewrite Hc.
@@ -1015,27 +1018,8 @@ Proof.
   - (* Ecase nil *) simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar.
     inv H. inv H. econstructor. econstructor. eauto.
     econstructor. econstructor. econstructor.
-  - (* Ecase const *) {
+  - (* Ecase const *) { admit.
       (* WIP  *)
-    simpl in H.
-    destruct (translate_exp nenv cenv lenv fenv e) eqn:Hexp.
-    destruct (translate_var nenv lenv v _) eqn:Hvar; inv H.
-    destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
-    destruct (_ l). inv H.
-    destruct p as [boxed unboxed].
-    destruct (get_ctor_arity cenv c) eqn:Harity.
-    inv H.
-    destruct n. simpl in H.
-    inv H.
-    econstructor. econstructor. eassumption.
-    econstructor.
-    admit.
-    admit.
-    admit.
-    admit.
-    admit.
-    admit.
-    admit.
     }
   - (* Eproj *) {
     simpl in H.
@@ -4914,6 +4898,7 @@ Proof with eauto.
     split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }} }
     { (* Nullary constructor case *)
       subst.
+
       remember ({|f_locs := set_nth ((VAL_int32
                 (Wasm_int.Int32.iadd
                    (Wasm_int.Int32.ishl (nat_to_i32 (Pos.to_nat t)) (nat_to_i32 1))
@@ -4982,27 +4967,61 @@ Proof with eauto.
         { intros. destruct (var_dec x x0).
           { subst x0.
             exists (Vconstr t vs).
-            exists (Val_unboxed (Pos.to_nat (t * 2 + 1))).
+            exists (Val_unboxed (Pos.to_nat (t~1))).
             rewrite M.gss. split. reflexivity.
             split.
-            unfold stored_in_locals. exists x'. split.
-            unfold translate_var. inv H7. unfold translate_var in H2. destruct (lenv ! x); inv H2; reflexivity.
-            subst f_before_IH. cbn. erewrite set_nth_nth_error_same; eauto.
-            admit.
-            admit.
-            assert (vs = []). { admit. }
-            subst vs.
-            constructor; auto.
+            {
+
+              destruct Hinv as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HlocalBound _]]]]]]]]]]]]].
+              have Hl := HlocalBound _ _ H7.
+              apply nth_error_Some in Hl.
+              apply notNone_Some in Hl. destruct Hl as [? Hlx].
+
+              unfold stored_in_locals. exists x'. split.
+              - unfold translate_var. inv H7. unfold translate_var in H2. destruct (lenv ! x); inv H2; reflexivity.
+              - subst f_before_IH. cbn. erewrite  set_nth_nth_error_same; eauto.
+                unfold nat_to_i32. cbn. unfold wasm_value_to_i32. unfold wasm_value_to_immediate.
+                unfold Wasm_int.Int32.iadd. unfold Wasm_int.Int32.add.
+                unfold Wasm_int.Int32.ishl. unfold Wasm_int.Int32.shl. cbn.
+                rewrite Znat.positive_nat_Z. rewrite Znat.positive_nat_Z. rewrite Wasm_int.Int32.Z_mod_modulus_id. rewrite Wasm_int.Int32.Z_mod_modulus_id. simpl. reflexivity. rewrite Znat.positive_nat_Z in H9. admit.
+                rewrite Wasm_int.Int32.Z_mod_modulus_id. admit. admit.
+            }
+            {
+              assert (vs = []). { admit. }
+              subst vs.
+              econstructor. admit.
+              lia.
+              assumption.
+            }
           }
-          admit.
-        (* unfold nat_to_i32.
-            unfold wasm_value_to_i32.
-            unfold wasm_value_to_immediate.
-            unfold nat_to_i32.
-            rewrite Znat.positive_nat_Z. rewrite Znat.positive_nat_Z.
-            unfold Wasm_int.Int32.iadd. unfold Wasm_int.Int32.add.
-            unfold Wasm_int.Int32.ishl. unfold Wasm_int.Int32.shl.} *)
-        } }
+          {
+
+            destruct Hinv as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HlocalBound _]]]]]]]]]]]]].
+            have Hl := HlocalBound _ _ H7.
+            apply nth_error_Some in Hl.
+            apply notNone_Some in Hl. destruct Hl as [? Hlx].
+
+            assert (vs = []). { admit. }
+            assert (Hocc: occurs_free (Econstr x t [] e) x0). { now apply Free_Econstr2. }
+            have H' := Hvar _ Hocc H1.
+            destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
+            exists val', wal'. split.
+            rewrite M.gso; auto. split.
+            destruct Hloc as [i [Hl1 Hl2]].
+            unfold stored_in_locals. exists i. split; auto.
+            subst f_before_IH.
+            rewrite set_nth_nth_error_other; auto.
+            intro. subst x'. inv H7.
+            specialize Hl1 with err_str.
+            unfold translate_var in Hl1, H3.
+            destruct (lenv ! x0) eqn:Hlx1; inv Hl1.
+            destruct (lenv ! x) eqn:Hlx2; inv H3.
+            have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. contradiction.
+            apply nth_error_Some. congruence.
+            apply val_relation_depends_on_finst with (fr:=fr). subst. reflexivity. assumption.
+          }
+        }
+      }
       have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ HlenvInjective HenvsDisjoint state sr f_before_IH _ Hfds' Hinv' H6 Hrel_m'.
       destruct IH as [sr' [f' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]].
       exists sr', f'.
