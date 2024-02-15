@@ -331,8 +331,6 @@ Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var ->
 
 | Rconstr_asgn_unboxed :
   forall x' t scont,
-    (* TODO: Remove this *)
-    (-1 < (Z.of_nat (Pos.to_nat t)) < Wasm_int.Int32.half_modulus)%Z ->
     get_ctor_arity cenv t = Ret 0 ->
     repr_asgn_constr_Codegen x' t [] scont
       ([ BI_const (nat_to_value (Pos.to_nat t))
@@ -525,7 +523,6 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> (* val *)
                                           wasm_value ->     (* wal *)
                                           Prop :=
 | Rconstr_unboxed_v : forall v (t : ctor_tag) (sr : store_record) fr,
-    (-1 < Z.of_nat (Pos.to_nat t) < Wasm_int.Int32.half_modulus)%Z ->
     Pos.to_nat (t * 2 + 1) = v ->
     get_ctor_arity cenv t = Ret 0 ->
     repr_val_LambdaANF_Codegen (Vconstr t []) sr fr (Val_unboxed v)
@@ -885,7 +882,7 @@ Proof.
       assert (subterm_e e (Econstr v t [] e) ). { constructor; constructor. }
       eapply Forall_constructors_subterm. eassumption. assumption.
       econstructor; eauto.
-      eapply Rconstr_asgn_unboxed. admit.
+      eapply Rconstr_asgn_unboxed.
       apply Forall_constructors_in_constr in Hcenv.
       destruct (cenv ! t) eqn:Hc; auto. destruct c. inv Hcenv.
       unfold get_ctor_arity. now rewrite Hc.
@@ -4996,21 +4993,18 @@ Proof with eauto.
             {
               unfold stored_in_locals. exists x'. split.
               - unfold translate_var. inv H7. unfold translate_var in H4. destruct (lenv ! x); inv H4; reflexivity.
-                (* TODO: modify to use assumption from restricted expression relation instead of the one from the constructor assignment relation *)
               - subst f_before_IH. cbn. erewrite set_nth_nth_error_same; eauto.
                 unfold nat_to_i32. cbn. unfold wasm_value_to_i32. unfold wasm_value_to_immediate.
                 unfold Wasm_int.Int32.iadd. unfold Wasm_int.Int32.add.
                 unfold Wasm_int.Int32.ishl. unfold Wasm_int.Int32.shl. cbn.
                 repeat rewrite Znat.positive_nat_Z.
-                repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia).
-                simpl. reflexivity.
-                rewrite Wasm_int.Int32.half_modulus_modulus; lia.
+                repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia); try (inv HeRestr; lia).
+                simpl. congruence.
+                rewrite Wasm_int.Int32.half_modulus_modulus. inv HeRestr. lia.
             }
             {
               subst vs.
               econstructor.
-              rewrite Znat.positive_nat_Z.
-              lia.
               now rewrite Pos.mul_comm.
               assumption.
             }
