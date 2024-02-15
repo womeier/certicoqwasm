@@ -494,7 +494,7 @@ Definition tag_to_i32 (t : ctor_tag) :=
 Definition immediate_to_i32 (i : immediate) :=
   Wasm_int.Int32.repr (BinInt.Z.of_nat i).
 
-(* TODO use i32 instead *)
+(* TODO use ref types (WasmGC) instead *)
 Inductive wasm_value :=
   | Val_unboxed : immediate -> wasm_value
   | Val_ptr : immediate -> wasm_value
@@ -1350,10 +1350,9 @@ Lemma set_nth_nth_error_same : forall {X:Type} (l:seq X) e e' i vd,
     nth_error l i = Some e ->
     nth_error (set_nth vd l i e') i = Some e'.
 Proof.
-  intros. generalize dependent e'. generalize dependent l.
-  generalize dependent vd. generalize dependent e. induction i; intros.
+  intros. revert l H. induction i; intros.
   - inv H. destruct l; inv H1. reflexivity.
-  - cbn in H. destruct l. inv H. eapply IHi in H. cbn. eassumption.
+  - cbn in H. destruct l. inv H. now apply IHi in H.
 Qed.
 
 
@@ -5506,10 +5505,7 @@ Proof with eauto.
          rewrite H1 in H'.
          apply def_funs_spec in H'. destruct H' as [[? ?] | [? Hcontra]]. 2: inv Hcontra.
          apply subval_fun in H3. 2: assumption.
-         destruct H3 as [f1 [?H ?H]]. inv H3. inv H10.
-         apply name_in_fundefs_find_def_is_Some in H5.
-         destruct H5 as [? [? [? ?]]]. apply Hfds with (errMsg:=""%bs) in H3.
-         now destruct H3 as [_ [_ [_ [fidx' [HtransF Hval]]]]].
+         destruct H3 as [f1 [?H ?H]]. inv H3. now inv H10.
       }} split.
       { (* fun2 *)
         destruct Hrel_m as [_ [Hfun2 _]].
@@ -5521,7 +5517,8 @@ Proof with eauto.
       { (* vars *)
         intros. destruct Hrel_m as [_ HrelVars].
         assert (In x xs). {
-          apply Hfds with (errMsg:=""%bs) in H9; auto. destruct H9 as [? [Hxxs ?]].
+          apply Hfds with (errMsg:=""%bs) in H9; auto.
+          destruct H9 as [? [Hxxs ?]].
           have H' := Hxxs _ H1. now destruct H'. }
         destruct (get_set_lists_In_xs _ _ _ _ _ H4 H2) as [v' Hv'].
         have H' := set_lists_nth_error _ _ _ _ _ _ H2 H4 Hv'.
@@ -6390,9 +6387,8 @@ Proof.
 Qed.
 
 Lemma reduce_trans_const_eq : forall state s f c c',
-   opsem.reduce_trans (host_instance:=host_instance)
-                    (state, s, f, [AI_basic (BI_const c)])
-                    (state, s, f, [AI_basic (BI_const c')]) -> c = c'.
+   reduce_trans (state, s, f, [AI_basic (BI_const c)])
+                (state, s, f, [AI_basic (BI_const c')]) -> c = c'.
 Proof.
   intros.
   remember (state, s, f, [AI_basic (BI_const c)]) as x.
@@ -6407,8 +6403,7 @@ Qed.
 
 Lemma reduce_forall_elem_effect : forall fns l f s state,
   Forall2 (fun (e : module_element) (c : Wasm_int.Int32.T) =>
-                  opsem.reduce_trans (host_instance:=host_instance)
-                    (state, s, {| f_locs := []; f_inst := f_inst f |},
+                  reduce_trans (state, s, {| f_locs := []; f_inst := f_inst f |},
                     to_e_list (modelem_offset e))
                     (state, s, {| f_locs := []; f_inst := f_inst f |},
                     [AI_basic (BI_const (VAL_int32 c))]))
@@ -6509,7 +6504,7 @@ Qed.
 Lemma e_offs_increasing' : forall len n i l  s fr state,
   Forall2
         (fun (e : module_element) (c : Wasm_int.Int32.T) =>
-         opsem.reduce_trans (host_instance:=host_instance)
+         reduce_trans
            (state, s, {| f_locs := []; f_inst := f_inst fr |},
            to_e_list (modelem_offset e))
            (state, s, {| f_locs := []; f_inst := f_inst fr |},
@@ -6536,7 +6531,7 @@ Qed.
 
 Lemma e_offs_increasing : forall e_offs len state s fr,
   Forall2  (fun (e : module_element) (c : Wasm_int.Int32.T) =>
-               opsem.reduce_trans (host_instance:=host_instance)
+               reduce_trans
                  (state, s, {| f_locs := []; f_inst := f_inst fr |}, to_e_list (modelem_offset e))
                  (state, s, {| f_locs := []; f_inst := f_inst fr |},
                  [AI_basic (BI_const (VAL_int32 c))]))
