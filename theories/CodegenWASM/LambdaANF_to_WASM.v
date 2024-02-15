@@ -367,6 +367,7 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
   match es with
   | [] => [ BI_unreachable ]
+  | [ (_, instrs) ] => instrs
   | (t, instrs) :: tl =>
       (* if boxed (pointer), then load tag from memory;
          otherwise, obtain tag from unboxed representation ( tag = (repr >> 1) )

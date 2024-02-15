@@ -341,11 +341,11 @@ Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var ->
          ; BI_set_local x' ] ++ scont ).
 
 
-Inductive repr_match_boxed: immediate -> list (ctor_tag * list basic_instruction) -> list basic_instruction -> Prop :=
-| Rmatch_boxed_nil: forall v, repr_match_boxed v [] [ BI_unreachable ]
-| Rmatch_boxed_cons: forall v t instrs brs instrs_more,
-    repr_match_boxed v brs instrs_more ->
-    repr_match_boxed v ((t, instrs) :: brs)
+Inductive repr_case_boxed: immediate -> list (ctor_tag * list basic_instruction) -> list basic_instruction -> Prop :=
+| Rcase_boxed_nil: forall v, repr_case_boxed v [] [ BI_unreachable ]
+| Rcase_boxed_cons: forall v t instrs brs instrs_more,
+    repr_case_boxed v brs instrs_more ->
+    repr_case_boxed v ((t, instrs) :: brs)
       [ BI_get_local v
         ; BI_load T_i32 None 2%N 0%N
         ; BI_const (nat_to_value (Pos.to_nat t))
@@ -355,11 +355,11 @@ Inductive repr_match_boxed: immediate -> list (ctor_tag * list basic_instruction
             instrs_more ].
 
 
-Inductive repr_match_unboxed: immediate -> list (ctor_tag * list basic_instruction) -> list basic_instruction -> Prop :=
-| Rmatch_unboxed_nil: forall v, repr_match_unboxed v [] [ BI_unreachable ]
-| Rmatch_unboxed_cons: forall v t instrs brs instrs_more,
-    repr_match_unboxed v brs instrs_more ->
-    repr_match_unboxed v ((t, instrs) :: brs)
+Inductive repr_case_unboxed: immediate -> list (ctor_tag * list basic_instruction) -> list basic_instruction -> Prop :=
+| Rcase_unboxed_nil: forall v, repr_case_unboxed v [] [ BI_unreachable ]
+| Rcase_unboxed_cons: forall v t instrs brs instrs_more,
+    repr_case_unboxed v brs instrs_more ->
+    repr_case_unboxed v ((t, instrs) :: brs)
       [ BI_get_local v
         ; BI_const (nat_to_value 1)
         ; BI_binop T_i32 (Binop_i (BOI_shr SX_S))
@@ -398,11 +398,9 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
 
 (* | Rcase_e_nil : forall v, repr_expr_LambdaANF_Codegen (Ecase v []) [BI_unreachable] *)
 
-| Rcase_e : forall y y' cl bbrs ubrs binstrs uinstrs,
+| Rcase_e : forall y y' cl binstrs uinstrs,
     repr_var (lenv:=lenv) y y' ->
-    repr_branches cl bbrs ubrs ->
-    repr_match_boxed y' bbrs binstrs ->
-    repr_match_unboxed y' ubrs uinstrs ->
+    repr_branches y' cl binstrs uinstrs ->
     repr_expr_LambdaANF_Codegen (Ecase y cl)
       [ BI_get_local y' ;
         BI_const (nat_to_value 1) ;
@@ -465,20 +463,49 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
                  ; BI_if (Tf nil nil) []
                      ([BI_get_global result_var; BI_set_local x'] ++ e')]))
 
-with repr_branches {lenv}: list (ctor_tag * exp) -> list (ctor_tag * list basic_instruction) -> list (ctor_tag * list basic_instruction) -> Prop :=
-| Rbranch_nil : repr_branches [] [] []
-| Rbranch_cons_boxed : forall cl t e n instrs bbrs ubrs,
-    repr_branches cl bbrs ubrs ->
+with repr_branches {lenv}: immediate -> list (ctor_tag * exp) -> list basic_instruction -> list basic_instruction -> Prop :=
+| Rbranch_nil : forall x, repr_branches x [] [ BI_unreachable ] [ BI_unreachable ]
+
+| Rbranch_single_boxed : forall x cl t e n instrs uinstrs,
+    repr_branches x cl [ BI_unreachable ] uinstrs ->
     get_ctor_arity cenv t = Ret n ->
     0 < n ->
     repr_expr_LambdaANF_Codegen e instrs ->
-    repr_branches ((t, e) :: cl) ((t, instrs) :: bbrs) ubrs
-| Rbranch_cons_unboxed : forall cl t e n instrs bbrs ubrs,
-    repr_branches cl bbrs ubrs ->
+    repr_branches x ((t, e) :: cl) instrs uinstrs
+
+| Rbranch_cons_boxed : forall x cl t e n instrs binstrs uinstrs,
+    repr_branches x cl binstrs uinstrs ->
+    get_ctor_arity cenv t = Ret n ->
+    0 < n ->
+    repr_expr_LambdaANF_Codegen e instrs ->
+    repr_branches x ((t, e) :: cl)
+      [ BI_get_local x
+        ; BI_load T_i32 None 2%N 0%N
+        ; BI_const (nat_to_value (Pos.to_nat t))
+        ; BI_relop T_i32 (Relop_i ROI_eq)
+        ; BI_if (Tf nil nil) instrs binstrs ]
+      uinstrs
+
+| Rbranch_single_unboxed : forall x cl t e n instrs binstrs,
+    repr_branches x cl binstrs [ BI_unreachable ] ->
     get_ctor_arity cenv t = Ret n ->
     n = 0 ->
     repr_expr_LambdaANF_Codegen e instrs ->
-    repr_branches ((t, e) :: cl) bbrs ((t, instrs) :: ubrs).
+    repr_branches x ((t, e) :: cl) binstrs instrs
+
+| Rbranch_cons_unboxed : forall x cl t e n instrs binstrs uinstrs,
+    repr_branches x cl binstrs uinstrs ->
+    get_ctor_arity cenv t = Ret n ->
+    n = 0 ->
+    repr_expr_LambdaANF_Codegen e instrs ->
+    repr_branches x ((t, e) :: cl) binstrs
+      [ BI_get_local x
+        ; BI_const (nat_to_value 1)
+        ; BI_binop T_i32 (Binop_i (BOI_shr SX_S))
+        ; BI_const (nat_to_value (Pos.to_nat t))
+        ; BI_relop T_i32 (Relop_i ROI_eq)
+        ; BI_if (Tf nil nil) instrs uinstrs ].
+
 
 Definition load_i32 m addr : option value :=
   match load m addr 0%N 4 with (* offset: 0, 4 bytes *)
@@ -832,22 +859,6 @@ Qed.
 
 Import seq.
 
-Lemma create_case_nested_if_chain_boxed_correct: forall v es instrs,
-    repr_match_boxed v es instrs ->
-    create_case_nested_if_chain true v es = instrs.
-Proof.
-  intros v es.
-  induction es.
-  intros.
-  inv H.
-  cbn. reflexivity.
-  intros.
-  cbn.
-  inv H.
-  apply IHes in H4.
-  rewrite H4. reflexivity.
-Qed.
-
 Definition translate_case_branch_expressions nenv cenv lenv fenv :=
   (fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
     : error (list (ctor_tag * list basic_instruction) * list (ctor_tag  * list basic_instruction)) :=
@@ -1015,10 +1026,42 @@ Proof.
     }
   - (* Ecase nil *) simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar.
     inv H. inv H. econstructor. econstructor. eauto.
-    econstructor. econstructor. econstructor.
-  - (* Ecase const *) { admit.
-      (* WIP  *)
+    econstructor.
+  - (* Ecase const *) {
+      simpl in H.
+      destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
+      destruct (translate_exp nenv cenv lenv fenv e) eqn:He. inv H.
+      destruct (translate_exp nenv cenv lenv fenv (Ecase v l)) eqn:Hl.
+      simpl in Hl. destruct (_ l) eqn:Hm. inv H. rewrite Hvar in Hl. destruct p. inv Hl.
+      assert (correct_cenv_of_exp cenv (Ecase v l)). {
+        intro; intros. eapply Hcenv. apply rt_then_t_or_eq in H0. inv H0. inv H1. apply t_then_rt. apply subterm_case. eauto.
+      }
+      specialize (IHe0 l1 H0). clear H0. assert (Ret l1 = Ret l1) by reflexivity. specialize (IHe0 H0). clear H0.
+      simpl in Hl.
+      destruct (_ l) eqn:Hm. rewrite Hvar in Hl. inv Hl. rewrite Hvar in Hl. destruct p. inv Hl.
+      assert (correct_cenv_of_exp cenv e). {
+        intro; intros. eapply Hcenv.  eapply rt_trans. eauto. constructor. econstructor. constructor. reflexivity.
+      }
+      specialize (IHe l0 H0). assert (Ret l0 = Ret l0) by reflexivity. specialize (IHe H1). clear H0 H1.
+      inv IHe0. unfold create_case_nested_if_chain in H6.
+      destruct (get_ctor_arity cenv c) eqn:Har. inv H.
+      destruct n eqn:Hn.
+      { (* Unboxed branch *)
+        destruct l3.
+        - inv H. econstructor. assumption.
+          eapply Rbranch_single_unboxed; eauto.
+        - inv H. econstructor. assumption.
+          eapply Rbranch_cons_unboxed; eauto.
+      }
+      { (* Boxed branch *)
+        destruct l2.
+        - inv H. econstructor; eauto.
+          eapply Rbranch_single_boxed; eauto. lia.
+        - inv H. econstructor; eauto.
+          eapply Rbranch_cons_boxed; eauto. lia.
+      }
     }
+
   - (* Eproj *) {
     simpl in H.
     destruct (translate_exp nenv cenv lenv fenv e) eqn:He. inv H.
