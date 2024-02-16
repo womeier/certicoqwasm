@@ -1047,21 +1047,16 @@ Proof.
       destruct (get_ctor_arity cenv c) eqn:Har. inv H.
       destruct n eqn:Hn.
       { (* Unboxed branch *)
-        destruct l3.
-        - inv H. econstructor. assumption.
-          eapply Rbranch_single_unboxed; eauto.
-        - inv H. econstructor. assumption.
-          eapply Rbranch_cons_unboxed; eauto.
+        destruct l3; inv H; econstructor; eauto.
+        - eapply Rbranch_single_unboxed; eauto.
+        - eapply Rbranch_cons_unboxed; eauto.
       }
       { (* Boxed branch *)
-        destruct l2.
-        - inv H. econstructor; eauto.
-          eapply Rbranch_single_boxed; eauto. lia.
-        - inv H. econstructor; eauto.
-          eapply Rbranch_cons_boxed; eauto. lia.
+        destruct l2; inv H; econstructor; eauto.
+        - eapply Rbranch_single_boxed; eauto; lia.
+        - eapply Rbranch_cons_boxed; eauto; lia.
       }
     }
-
   - (* Eproj *) {
     simpl in H.
     destruct (translate_exp nenv cenv lenv fenv e) eqn:He. inv H.
