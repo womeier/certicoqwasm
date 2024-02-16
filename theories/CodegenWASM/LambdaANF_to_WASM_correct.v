@@ -1903,34 +1903,52 @@ Ltac elimr_nary_instr n :=
           end
   end.
 
-Lemma reduce_trans_label : forall instructions hs hs' sr sr' fr fr',
+Lemma reduce_trans_label' : forall instr instr' hs hs' sr sr' fr fr' i (lh : lholed i),
  clos_refl_trans
   (host.host_state host_instance * datatypes.store_record host_function * frame *
    seq administrative_instruction)
  (reduce_tuple (host_instance:=host_instance))
- (hs,  sr, fr, instructions)
+ (hs,  sr, fr, instr)
+ (hs', sr', fr', instr') ->
+
+  clos_refl_trans
+  (host.host_state host_instance * datatypes.store_record host_function * frame *
+   seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
+  (hs,  sr,  fr,  lfill lh instr)
+  (hs', sr', fr', lfill lh instr').
+Proof.
+  intros.
+  apply clos_rt_rt1n in H.
+  remember (hs, sr, fr, instr) as x. remember (hs', sr', fr', instr') as x'.
+  generalize dependent hs. generalize dependent hs'.
+  revert fr fr' sr sr' instr instr'.
+  induction H; intros; subst.
+  - inv Heqx. apply rt_refl.
+  - destruct y as [[[? ?] ?] ?].
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])).
+    eapply rt_step. eapply r_label with (k:=i) (lh:=lh); eauto.
+    now apply IHclos_refl_trans_1n.
+Qed.
+
+Lemma reduce_trans_label : forall instr hs hs' sr sr' fr fr',
+ clos_refl_trans
+  (host.host_state host_instance * datatypes.store_record host_function * frame *
+   seq administrative_instruction)
+ (reduce_tuple (host_instance:=host_instance))
+ (hs,  sr, fr, instr)
  (hs', sr', fr', []) ->
 
   clos_refl_trans
   (host.host_state host_instance * datatypes.store_record host_function * frame *
    seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
-  (hs,  sr, fr, [:: AI_label 0 [::] instructions])
+  (hs,  sr, fr, [:: AI_label 0 [::] instr])
   (hs', sr', fr', [::]).
 Proof.
   intros.
-  apply clos_rt_rt1n in H.
-  remember (hs, sr, fr, instructions) as x. remember (hs', sr', fr', [::]) as x'.
-  generalize dependent state. generalize dependent sr. generalize dependent fr.
-  generalize dependent fr'. generalize dependent sr'. revert instructions hs hs'.
-  induction H; intros; subst.
-  - inv Heqx. constructor. constructor. now apply rs_label_const.
-  - destruct y as [[[? ?] ?] ?].
-    assert ((s, s0, f, l) = (s, s0, f, l)) as H' by reflexivity.
-    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])). eapply rt_step.
-    eapply r_label with (es:=instructions) (k:=1) (lh:= (LH_rec [] 0 [] (LH_base [] []) [])).
-    apply H. cbn. rewrite cats0. reflexivity.
-    cbn. reflexivity. rewrite cats0.
-    now eapply IHclos_refl_trans_1n.
+  remember (LH_rec [] 0 [] (LH_base [] []) []) as lh.
+  have H' := reduce_trans_label' instr [] _ _ _ _ _ _ _ lh. subst lh. cbn in H'.
+  rewrite cats0 in H'. eapply rt_trans. eapply H'; auto. eassumption.
+  eapply rt_step. constructor. now apply rs_label_const.
 Qed.
 
 Lemma reduce_trans_local : forall instructions hs hs' sr sr' fr fr' f0,
@@ -1958,6 +1976,34 @@ Proof.
     eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])).
     eapply rt_step. eapply r_local. apply H.
     now eapply IHclos_refl_trans_1n.
+Qed.
+
+(* TODO rename and consolidate lemmas above *)
+Lemma reduce_trans_local' : forall instr instr' hs hs' sr sr' fr fr' f0,
+ clos_refl_trans
+  (host.host_state host_instance * datatypes.store_record host_function * frame *
+   seq administrative_instruction)
+ (reduce_tuple (host_instance:=host_instance))
+ (hs,  sr, fr, instr)
+ (hs', sr', fr', instr') ->
+
+  clos_refl_trans
+  (host.host_state host_instance * datatypes.store_record host_function * frame *
+   seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
+  (hs,  sr, f0, [:: AI_local 0 fr instr])
+  (hs', sr', f0, [:: AI_local 0 fr' instr']).
+Proof.
+  intros.
+  apply clos_rt_rt1n in H.
+  remember (hs, sr, fr, instr) as x. remember (hs', sr', fr', instr') as x'.
+  generalize dependent hs. generalize dependent hs'. revert instr instr' fr fr' f0 sr sr'.
+  induction H; intros; subst.
+  - inv Heqx. apply rt_refl.
+  - destruct y as [[[? ?] ?] ?].
+    have IH := IHclos_refl_trans_1n _ _ _ _ _ _ _ _ Logic.eq_refl _ Logic.eq_refl.
+    eapply rt_trans with (y := (?[hs], ?[sr], f0, [:: AI_local 0 ?[f'] ?[instr]])).
+    2: by apply IH.
+    eapply rt_step. now eapply r_local.
 Qed.
 
 Ltac dostep :=
@@ -4604,7 +4650,7 @@ Qed.
 Theorem repr_bs_LambdaANF_Codegen_related :
   (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
   forall lenv (rho : eval.env) (v : cps.val) (e : exp) (n : nat) (vars : list cps.var) (fds : fundefs)
-                               fTop es es' k (lh : lholed k),
+                               fAny es es' k (lh : lholed k),
     map_injective lenv ->
     domains_disjoint lenv fenv ->
     vars = (collect_local_variables e) ++ (collect_function_vars (Efun fds e))%list ->
@@ -4635,14 +4681,13 @@ Theorem repr_bs_LambdaANF_Codegen_related :
       (* translate_exp e returns instructions *)
       @repr_expr_LambdaANF_Codegen cenv fenv nenv lenv e instructions ->
 
-      (* TODO: check if necessary, this is to get a strong enough IH for the case *)
       lfill lh (map AI_basic instructions) = es ->
-      lfill lh [] = es' -> (* TODO may need return statement *)
+      lfill lh [] = es' ->
 
       (* relates a LambdaANF evaluation environment [rho] to a WASM environment [store/frame] (free variables in e) *)
       @rel_env_LambdaANF_Codegen cenv fenv nenv _ lenv e rho sr f fds ->
       exists (sr' : store_record) (f' : frame),
-        reduce_trans (hs, sr, fTop, [AI_local 0 f es]) (hs, sr', fTop, [AI_local 0 f' es']) /\
+        reduce_trans (hs, sr, fAny, [AI_local 0 f es]) (hs, sr', fAny, [AI_local 0 f' es']) /\
         (* value sr'.res points to value related to v *)
         result_val_LambdaANF_Codegen v sr' f' /\
         f_inst f = f_inst f' /\ s_funcs sr = s_funcs sr' /\
@@ -4651,11 +4696,12 @@ Theorem repr_bs_LambdaANF_Codegen_related :
                          repr_val_LambdaANF_Codegen cenv fenv nenv host_function val sr' f' wal) /\
         (* INV holds if program will continue to run *)
         (INV_result_var_out_of_mem_is_zero sr' f' -> INV lenv sr' f').
-Proof with eauto. Admitted. (*
-  intros lenv rho v e n vars fds HlenvInjective HenvsDisjoint Hvars Hnodup
+Proof with eauto.
+  intros lenv rho v e n vars fds fAny es es' k lh HlenvInjective HenvsDisjoint Hvars Hnodup
      HfenvWf HfenvRho HeRestr Hunbound Hev. subst vars.
-  generalize dependent lenv.
-  induction Hev; intros lenv HlenvInjective HenvsDisjoint state sr fr instructions Hfds Hinv Hrepr_e Hrel_m.
+  generalize dependent lenv. generalize dependent lh. revert es es' k.
+  induction Hev; intros es es' k lh lenv HlenvInjective HenvsDisjoint state sr fr instructions
+                        Hfds Hinv Hrepr_e Hlh1 Hlh2 Hrel_m.
   - (* Econstr *)
     inversion Hrepr_e.
     inversion H8.
@@ -4850,12 +4896,18 @@ Proof with eauto. Admitted. (*
           inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
           apply Hd2 in H0. unfold translate_var in H3. now rewrite H0 in H3. }
 
-      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint
-                 state s_v f_before_IH _ Hfds' Hinv_before_IH Hexp Hrel_m_v.
+      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ _ lh _ HlenvInjective HenvsDisjoint
+                 state s_v f_before_IH _ Hfds' Hinv_before_IH Hexp Logic.eq_refl Logic.eq_refl Hrel_m_v.
       destruct IH as [s_final [f_final [Hred_IH [Hval [Hfinst [Hsfuncs' [HvalPres H_INV]]]]]]]. cbn in Hfinst.
+
+      subst es es'. cbn.
 
       exists s_final, f_final. split.
       (* steps *)
+
+      subst instrs instructions. rewrite map_cat.
+
+      eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
       eapply rt_trans. apply app_trans. apply Hred. cbn.
 
       dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
