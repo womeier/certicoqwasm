@@ -4730,8 +4730,8 @@ Theorem repr_bs_LambdaANF_Codegen_related :
 Proof with eauto.
   intros lenv rho v e n vars fds fAny es k lh HlenvInjective HenvsDisjoint Hvars Hnodup
      HfenvWf HfenvRho HeRestr Hunbound Hev. subst vars.
-  generalize dependent lenv. generalize dependent lh. revert es k.
-  induction Hev; intros es k lh lenv HlenvInjective HenvsDisjoint state sr fr instructions
+  generalize dependent lenv. generalize dependent lh. revert es k fAny.
+  induction Hev; intros es k fAny lh lenv HlenvInjective HenvsDisjoint state sr fr instructions
                         Hfds Hinv Hrepr_e Hlh1 Hrel_m.
   - (* Econstr *)
     inversion Hrepr_e.
@@ -4929,7 +4929,7 @@ Proof with eauto.
 
       have H' := lholed_nested_label _ lh. edestruct H' as [k' [lh' Heq']]. clear H'.
 
-      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ lh' _ HlenvInjective HenvsDisjoint
+      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fAny lh' _ HlenvInjective HenvsDisjoint
                  state s_v f_before_IH _ Hfds' Hinv_before_IH Hexp Logic.eq_refl Hrel_m_v.
       destruct IH as [s_final [f_final [k'' [lh'' [Hred_IH [Hval [Hfinst [Hsfuncs' [HvalPres H_INV]]]]]]]]].
       cbn in Hfinst.
@@ -5297,7 +5297,7 @@ END COMMENTED OUT FOR TAILCALL MERGE
        inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
        apply Hd2 in H10. unfold translate_var in H12. now rewrite H10 in H12. }
 
-     have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ lh _ HlenvInjective HenvsDisjoint
+     have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fAny lh _ HlenvInjective HenvsDisjoint
                       state _ _ _ Hfds' Hinv' H7 Logic.eq_refl Hrm.
      destruct IH as [sr' [f' [k' [lh' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]]]]. cbn in Hfinst.
 
@@ -5734,7 +5734,7 @@ END COMMENTED OUT FOR TAILCALL MERGE
     remember (LH_rec [] 0 [] (LH_base [] []) []) as lh_IH.
 
     subst lenv_before_IH.
-    have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ lh_IH _ HlenvInjective' HenvsDisjoint'
+    have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fAny lh_IH _ HlenvInjective' HenvsDisjoint'
                    state _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Logic.eq_refl Hrelm.
 
     destruct IH as [sr_final [fr_final [k' [lh' [Hred [Hval [Hfinst [Hfuncs [HvalPres H_INV]]]]]]]]].
@@ -5791,15 +5791,18 @@ END COMMENTED OUT FOR TAILCALL MERGE
              congruence.
              apply HvalPres. apply val_relation_depends_on_finst with (fr:=fr).
              reflexivity. assumption. }
-    intro H_INV'. have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [? [_ [_ [_ [? _]]]]]]]]]]]]].
 
+    (* intro H_INV'.
     have h' := H_INV'. apply H_INV in h'.
-    eapply change_locals_preserves_INV. apply Hinv. apply h'. assumption.
+    have I := h'. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [? [_ [_ [_ [? _]]]]]]]]]]]]].
+    have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [? [_ [_ [_ [? _]]]]]]]]]]]]].
+
+    eapply change_locals_preserves_INV with (l:=f_locs fr_final); auto. apply h'. assumption.
     apply H_INV'.
     unfold INV_result_var_out_of_mem_is_zero in H_INV'.
       subst f_before_IH. rewrite Hfinst in H_INV'. apply H_INV'.
       subst f_before_IH. cbn in Hfinst. rewrite -Hfinst. cbn.
-      now destruct fr.
+      now destruct fr. *) admit. (* can't be that hard *)
     }
 
   - (* Eletapp *)
@@ -5931,19 +5934,19 @@ END COMMENTED OUT FOR TAILCALL MERGE
           have H' := Hxxs _ H1. now destruct H'. }
         have H' := get_set_lists_In_xs _ _ _ _ _ H4 H2. destruct H' as [v'' Hv'].
         have H' := set_lists_nth_error _ _ _ _ _ _ H2 H4 Hv'.
-        destruct H' as [k [Hvk Hxk]].
-        have H'' := const_val_list_nth_error _ _ _ _ _ _ HfargsRes Hvk.
+        destruct H' as [k' [Hvk' Hxk']].
+        have H'' := const_val_list_nth_error _ _ _ _ _ _ HfargsRes Hvk'.
         destruct H'' as [w [Hw Hnth]].
         exists v'', w. split; auto. split; auto.
 
-        unfold stored_in_locals. subst lenv_before_IH f_before_IH. exists k.
+        unfold stored_in_locals. subst lenv_before_IH f_before_IH. exists k'.
         split. {
           intros. unfold create_local_variable_mapping.
-          rewrite (var_mapping_list_lt_length_nth_error_idx _ k); auto.
+          rewrite (var_mapping_list_lt_length_nth_error_idx _ k'); auto.
           apply Hfds with (errMsg:=""%bs) in H7. destruct H7 as [_ [_ [HnodupE _]]].
           rewrite catA in HnodupE. apply NoDup_app_remove_r in HnodupE. assumption.
           rewrite nth_error_app1; auto. apply nth_error_Some. intro.
-          rewrite H5 in Hxk. inv Hxk. }
+          rewrite H5 in Hxk'. inv Hxk'. }
         cbn.
         rewrite nth_error_app1. 2: {
           rewrite length_is_size size_map -length_is_size.
@@ -6025,18 +6028,21 @@ END COMMENTED OUT FOR TAILCALL MERGE
     rewrite <- H' in H1.
     eapply def_funs_find_def in H3. now erewrite H' in H3. }
 
+    remember (LH_rec [] 0 [] (LH_base [] []) []) as lh_before_IH.
+
     subst lenv_before_IH.
-    have IH_body := IHHev1 Hnodup' HfenvRho' HeRestr' Hunbound' _  HlenvInjective' HenvsDisjoint'
-                   state _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Hrelm.
+    have IH_body := IHHev1 Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fr lh_before_IH _ HlenvInjective' HenvsDisjoint'
+                   state _ _ _ Hfds_before_IH Hinv_before_IH Hexpr Logic.eq_refl Hrelm.
+
+    destruct IH_body as [sr_after_call [fr_after_call [k0 [lh0 [Hred [Hval [Hfinst [Hfuncs [HvalPres H_INV]]]]]]]]].
     clear HfenvRho' Hnodup' Hunbound' HeRestr' IHHev1.
+    subst lh_before_IH. cbn in Hred. rewrite cats0 in Hred.
 
-    destruct IH_body as [sr_after_call [fr_after_call [Hred [Hval [Hfinst [Hfuncs [HvalPres H_INV]]]]]]].
-
-    assert (Hcont: exists (sr_final : store_record) (fr_final : frame),
-      reduce_trans (state, sr_after_call, fr, [ AI_basic (BI_get_global result_out_of_mem)
-                                              ; AI_basic (BI_if (Tf [::] [::]) [::]
-                                                 [:: BI_get_global result_var, BI_set_local x' & e'])])
-                   (state, sr_final, fr_final, [])
+    assert (Hcont: exists (sr_final : store_record) (fr_final : frame) k' (lh' : lholed k'),
+      reduce_trans (state, sr_after_call, fr, [AI_local 0 fr (lfill lh [ AI_basic (BI_get_global result_out_of_mem)
+                                                                         ; AI_basic (BI_if (Tf [::] [::]) [::]
+                                                                            [:: BI_get_global result_var, BI_set_local x' & e'])])])
+                   (state, sr_final, fr, [AI_local 0 fr_final (lfill lh' [])])
          /\ result_val_LambdaANF_Codegen v' sr_final fr_final
          /\ fr_final.(f_inst) = fr.(f_inst)
          /\ sr_final.(s_funcs) = sr.(s_funcs)
@@ -6227,21 +6233,30 @@ END COMMENTED OUT FOR TAILCALL MERGE
           }
         }
 
-        have IH_cont := IHHev2 Hnodup' HfenvRho' HeRestr' Hunbound' lenv HlenvInjective HenvsDisjoint
-                   state _ _ _ Hfds_before_cont_IH Hinv_before_cont_IH Hexpr HrelM'.
-        destruct IH_cont as [sr_final [fr_final [Hred' [Hval' [Hfinst' [Hfuncs' [HvalPres' H_INV']]]]]]]. clear IHHev2.
+        have H' := lholed_nested_label _ lh. edestruct H' as [k' [lh' Heq']]. clear H'.
 
-        exists sr_final, fr_final. split.
-        dostep'. elimr_nary_instr 0. apply r_get_global. rewrite -Hfinst in HresM. subst f_before_IH. eassumption.
+        have IH_cont := IHHev2 Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fr lh' lenv HlenvInjective HenvsDisjoint
+                   state _ _ _ Hfds_before_cont_IH Hinv_before_cont_IH Hexpr Logic.eq_refl HrelM'.
+        destruct IH_cont as [sr_final [fr_final [k_final [lh_final [Hred' [Hval' [Hfinst' [Hfuncs' [HvalPres' H_INV']]]]]]]]]. clear IHHev2.
+        rewrite -Heq' in Hred'.
+
+        exists sr_final, fr_final, k_final, lh_final. split.
+
+        eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
+        dostep'.  elimr_nary_instr 0. apply r_get_global. rewrite -Hfinst in HresM. subst f_before_IH. eassumption.
         dostep'. constructor. apply rs_if_false. reflexivity.
         dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn.
-        eapply reduce_trans_label.
+        apply reduce_trans_label0.
         dostep'. elimr_nary_instr 0. apply r_get_global. rewrite -Hfinst in Hres. subst f_before_IH. eassumption.
         dostep'. elimr_nary_instr 1. eapply r_set_local with (f' := f_before_cont).
         subst f_before_cont. reflexivity.
         apply /ssrnat.leP. eapply HlocalBound. eassumption.
         subst f_before_cont w. reflexivity.
-        assumption. split; auto.
+        apply rt_refl.
+        (* IH *)
+        cbn. apply Hred'.
+
+        split; auto.
         split. rewrite -Hfinst'. subst f_before_cont.
         reflexivity. split. congruence. split; last auto.
         intros. { apply HvalPres'. apply val_relation_depends_on_finst with (fr:=fr_after_call). subst. cbn. cbn in Hfinst. congruence. apply HvalPres.
@@ -6249,7 +6264,8 @@ END COMMENTED OUT FOR TAILCALL MERGE
         assumption. }
       }
       { (* out of mem *)
-        exists sr_after_call, fr. split.
+        exists sr_after_call, fr. eexists. eexists. split.
+        apply reduce_trans_local'. apply reduce_trans_label'.
         dostep. elimr_nary_instr 0. apply r_get_global. rewrite -Hfinst in HOutOfMem. subst f_before_IH. eassumption.
         dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
         dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn.
@@ -6265,10 +6281,11 @@ END COMMENTED OUT FOR TAILCALL MERGE
         rewrite HOutOfMem in Hcontra. inv Hcontra.
       }
     }
-    destruct Hcont as [sr_final [fr_final [Hred_final [Hval_final [Hfinst' [Hfuncs' [HvalPres' H_INV']]]]]]].
+    destruct Hcont as [sr_final [fr_final [k_final [lh_final [Hred_final [Hval_final [Hfinst' [Hfuncs' [HvalPres' H_INV']]]]]]]]].
 
     (* start execution *)
-    eexists. eexists. split.
+    do 4! eexists. split.
+    eapply rt_trans. eapply reduce_trans_local'. apply reduce_trans_label'.
     eapply rt_trans. apply app_trans. apply HfargsRed.
     eapply rt_trans. apply app_trans_const. apply map_const_const_list.
     separate_instr. apply app_trans. apply HredF.
@@ -6300,10 +6317,12 @@ END COMMENTED OUT FOR TAILCALL MERGE
     apply const_val_list_length_eq in HfargsRes.
     apply set_lists_length_eq in H2. rewrite H2. assumption. }
     reflexivity. reflexivity. subst; reflexivity. cbn.
-    eapply reduce_trans_local.
-    dostep'. constructor. eapply rs_block with (vs:=[]); auto. cbn.
+    eapply reduce_trans_local'.
+    dostep'. constructor. eapply rs_block with (vs:=[]); auto. cbn. apply rt_refl.
     (* apply IH1: function body *)
-    eapply reduce_trans_label. eassumption. cbn. apply Hred_final.
+    eapply rt_trans. apply app_trans. apply Hred. apply rt_refl.
+    (* apply IH2: continuation *)
+    apply Hred_final.
     do 4 (split; auto).
     }
   - (* Efun *)      inv Hrepr_e. (* absurd, fn defs only on topmost level *)
