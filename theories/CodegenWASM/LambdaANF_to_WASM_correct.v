@@ -5009,14 +5009,20 @@ Proof with eauto.
     apply val_relation_depends_on_finst with (fr:=fr). reflexivity.
     apply HvalPreserved'. apply HvalPreserved. assumption. }}
     { (* grow mem failed *)
-    eexists. eexists. split. eapply rt_trans. apply app_trans. apply Hred.
+    subst es es' instructions instrs.
+    rewrite map_cat.
+
+    eexists. eexists. split. eapply rt_trans.
+    eapply reduce_trans_local'. eapply rt_trans.
+    eapply reduce_trans_label'. apply app_trans. apply Hred. cbn.
+    apply reduce_trans_label'.
     dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
     dostep. elimr_nary_instr 2. constructor. apply rs_relop.
     dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
     dostep'. constructor. eapply rs_block with (vs:=[]); auto.
-    dostep'. constructor. apply rs_label_const; auto. apply rt_refl.
+    dostep'. constructor. apply rs_label_const; auto. apply rt_refl. apply rt_refl.
     split. right. assumption. split. reflexivity. split. congruence.
-    split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }} }
+    split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }}}
     { (* Nullary constructor case *)
       subst.
       remember ({|f_locs := set_nth ((VAL_int32
@@ -5108,7 +5114,7 @@ Proof with eauto.
             unfold Wasm_int.Int32.iadd. unfold Wasm_int.Int32.add.
             unfold Wasm_int.Int32.ishl. unfold Wasm_int.Int32.shl.} *)
         } }
-      have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ HlenvInjective HenvsDisjoint state sr f_before_IH _ Hfds' Hinv' H6 Hrel_m'.
+      have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ _ _ _ _ HlenvInjective HenvsDisjoint state sr f_before_IH _ Hfds' Hinv' H6 Logic.eq_refl Logic.eq_refl Hrel_m'.
       destruct IH as [sr' [f' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]].
       exists sr', f'.
       split.
