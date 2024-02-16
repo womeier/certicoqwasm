@@ -444,7 +444,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       y_var <- translate_var nenv lenv y "translate_exp proj y";;
       x_var <- translate_var nenv lenv x "translate_exp proj x";;
 
-      ret ([ BI_get_local y_var
+      Ret ([ BI_get_local y_var
            ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4)) (* skip ctor_id and previous constr arguments *)
            ; BI_binop T_i32 (Binop_i BOI_add)
            ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)

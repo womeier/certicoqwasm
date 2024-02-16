@@ -1951,6 +1951,27 @@ Proof.
   eapply rt_step. constructor. now apply rs_label_const.
 Qed.
 
+Lemma reduce_trans_label0 : forall instr instr' hs hs' sr sr' fr fr',
+ clos_refl_trans
+  (host.host_state host_instance * datatypes.store_record host_function * frame *
+   seq administrative_instruction)
+ (reduce_tuple (host_instance:=host_instance))
+ (hs,  sr, fr, instr)
+ (hs', sr', fr', instr') ->
+
+  clos_refl_trans
+  (host.host_state host_instance * datatypes.store_record host_function * frame *
+   seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
+  (hs,  sr, fr, [:: AI_label 0 [::] instr])
+  (hs', sr', fr', [:: AI_label 0 [::] instr']).
+Proof.
+  intros.
+  remember (LH_rec [] 0 [] (LH_base [] []) []) as lh.
+  have H' := reduce_trans_label' instr instr' _ _ _ _ _ _ _ lh. subst lh. cbn in H'.
+  do 2! rewrite cats0 in H'. eapply rt_trans. eapply H'; auto. eassumption.
+  apply rt_refl.
+Qed.
+
 Lemma reduce_trans_local : forall instructions hs hs' sr sr' fr fr' f0,
  clos_refl_trans
   (host.host_state host_instance * datatypes.store_record host_function * frame *
@@ -4646,6 +4667,18 @@ Proof.
   Unshelve. all: assumption.
 Qed.
 
+Lemma lholed_nested_label : forall k (lh : lholed k) es,
+  exists k' (lh' : lholed k'),
+  lfill lh [:: AI_label 0 [::] es] = lfill lh' es.
+Proof.
+  intros. induction lh; cbn.
+  - eexists. exists (LH_rec l 0 [] (LH_base [] []) l0). cbn.
+    now rewrite cats0.
+  - destruct IHlh as [k' [lh' Heq]]. cbn.
+    eexists. exists (LH_rec l n l0 lh' l1). cbn.
+    now rewrite Heq.
+Qed.
+
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Codegen_related :
   (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
@@ -4896,9 +4929,12 @@ Proof with eauto.
           inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
           apply Hd2 in H0. unfold translate_var in H3. now rewrite H0 in H3. }
 
-      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ _ lh _ HlenvInjective HenvsDisjoint
+      have H' := lholed_nested_label _ lh. edestruct H' as [k' [lh' Heq']]. clear H'.
+
+      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ _ lh' _ HlenvInjective HenvsDisjoint
                  state s_v f_before_IH _ Hfds' Hinv_before_IH Hexp Logic.eq_refl Logic.eq_refl Hrel_m_v.
       destruct IH as [s_final [f_final [Hred_IH [Hval [Hfinst [Hsfuncs' [HvalPres H_INV]]]]]]]. cbn in Hfinst.
+      rewrite -Heq' in Hred_IH.
 
       subst es es'. cbn.
 
@@ -4909,12 +4945,22 @@ Proof with eauto.
 
       eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
       eapply rt_trans. apply app_trans. apply Hred. cbn.
-
       dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
       dostep. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
       dostep'. constructor. apply rs_if_false. reflexivity.
       dostep'. constructor. eapply rs_block with (vs := []); auto.
-      apply reduce_trans_label. unfold to_e_list. cbn.
+
+      remember (LH_base [] []) as lh''. cbn.
+      have H' := reduce_trans_label' _ _ _ _ _ _ _ _ _ lh''. subst lh''. cbn in H'.
+
+      match goal with
+      |- context C [clos_refl_trans _ _ (_, _, _, ?es)] =>
+        let H := fresh "Hallo" in
+        have H := H' es ([:: AI_label 0 [::] (map AI_basic e')]); rewrite cats0 in H; apply H; clear H
+         (* lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end *)
+      end. clear H'.
+
+      unfold to_e_list. cbn.
       repeat rewrite map_cat. cbn. repeat rewrite map_cat.
       separate_instr. cbn.
       assert (Heq: [:: AI_basic (BI_get_global global_mem_ptr),
@@ -4940,18 +4986,24 @@ Proof with eauto.
   [seq AI_basic i | i <- sargs]) ++
   [seq AI_basic i | i <- sres] ++ [seq AI_basic i | i <- e']). { rewrite <- app_assoc. reflexivity. }
     rewrite Heq.
-    clear Heq. replace ([::]) with ([::] ++ [::]: list administrative_instruction) by reflexivity.
-    eapply rt_trans. apply app_trans. apply Hred_v. clear Hred_v. subst sres. cbn.
+    clear Heq. (* replace ([::]) with ([::] ++ [::]: list administrative_instruction) by reflexivity. *)
+    eapply rt_trans. apply reduce_trans_label0.
+    apply app_trans. apply Hred_v. clear Hred_v. subst sres. cbn.
     separate_instr.
     replace ([:: AI_basic (BI_get_global constr_alloc_ptr)] ++ [:: AI_basic (BI_set_local x')]  ++ [seq AI_basic i | i <- e'])
     with   (([:: AI_basic (BI_get_global constr_alloc_ptr)] ++ [:: AI_basic (BI_set_local x')]) ++ [seq AI_basic i | i <- e'])
-    by reflexivity. eapply rt_trans. apply app_trans.
+    by reflexivity. eapply rt_trans. apply reduce_trans_label0. apply app_trans.
     dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
 
     assert (f_inst f_before_IH = f_inst fr) as Hfinst'. { subst. reflexivity. }
     dostep'. eapply r_set_local. eassumption.
     apply /ssrnat.leP. apply nth_error_Some. congruence. subst. reflexivity. apply rt_refl. cbn.
-    apply Hred_IH. split. assumption. subst f_before_IH. cbn in Hfinst.
+    apply rt_refl. rewrite cats0.
+    eapply rt_trans. apply Hred_IH. cbn. rewrite -Heq'.
+    apply rt_step. apply r_local.
+    eapply r_label with (lh:=lh) => //=. constructor. apply rs_label_const => //.
+
+    split. assumption. subst f_before_IH. cbn in Hfinst.
     split; first auto. split. congruence.
     split; last auto. intros. apply HvalPres.
     apply val_relation_depends_on_finst with (fr:=fr). reflexivity.
