@@ -315,7 +315,8 @@ Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var ->
        ; BI_const (nat_to_value 1)
        ; BI_relop T_i32 (Relop_i ROI_eq)
        ; BI_if (Tf nil nil)
-           (* grow mem failed *) []
+           (* grow mem failed *)
+           [ BI_return ]
            (* grow mem success *)
            ([ BI_get_global global_mem_ptr
             ; BI_set_global constr_alloc_ptr
@@ -375,6 +376,7 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
     repr_var (lenv:=lenv) x x' ->
     repr_expr_LambdaANF_Codegen (Ehalt x) [ BI_get_local x'
                                           ; BI_set_global result_var
+                                          ; BI_return
                                           ]
 | Rproj_e: forall x x' t n y y' e e',
     repr_expr_LambdaANF_Codegen e e' ->
@@ -461,7 +463,7 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
       ((args' ++ [ instr
                  ; BI_call_indirect (length args)
                  ; BI_get_global result_out_of_mem
-                 ; BI_if (Tf nil nil) []
+                 ; BI_if (Tf nil nil) [ BI_return ]
                      ([BI_get_global result_var; BI_set_local x'] ++ e')]))
 
 with repr_branches {lenv}: list (ctor_tag * exp) -> list (ctor_tag * list basic_instruction) -> list (ctor_tag * list basic_instruction) -> Prop :=
@@ -911,7 +913,7 @@ Proof.
                [:: BI_get_global result_out_of_mem] ++
                [:: BI_const (nat_to_value 1)] ++
                [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-               [:: BI_if (Tf [::] [::]) [::]
+               [:: BI_if (Tf [::] [::]) [:: BI_return]
                      (l1 ++
                      ([:: BI_get_global constr_alloc_ptr] ++
                       [:: BI_set_local v'] ++ l0)%SEQ)%list]) with
@@ -934,7 +936,7 @@ Proof.
                [:: BI_get_global result_out_of_mem] ++
                [:: BI_const (nat_to_value 1)] ++
                [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-               [:: BI_if (Tf [::] [::]) [::]
+               [:: BI_if (Tf [::] [::]) [::BI_return]
                   (l1 ++
                      ([:: BI_get_global constr_alloc_ptr] ++
                         [:: BI_set_local v'] ++ l0)%SEQ)%list]) by reflexivity.
@@ -4718,7 +4720,7 @@ Theorem repr_bs_LambdaANF_Codegen_related :
       (* relates a LambdaANF evaluation environment [rho] to a WASM environment [store/frame] (free variables in e) *)
       @rel_env_LambdaANF_Codegen cenv fenv nenv _ lenv e rho sr f fds ->
       exists (sr' : store_record) (f' : frame) k (lh' : lholed k),
-        reduce_trans (hs, sr, fAny, [AI_local 0 f es]) (hs, sr', fAny, [AI_local 0 f' (lfill lh' [])]) /\
+        reduce_trans (hs, sr, fAny, [AI_local 0 f es]) (hs, sr', fAny, [AI_local 0 f' (lfill lh' [::AI_basic BI_return])]) /\
         (* value sr'.res points to value related to v *)
         result_val_LambdaANF_Codegen v sr' f' /\
         f_inst f = f_inst f' /\ s_funcs sr = s_funcs sr' /\
@@ -5010,15 +5012,17 @@ Proof with eauto.
     subst es instructions instrs.
     rewrite map_cat.
 
-    do 4! eexists. split. eapply rt_trans.
+    have H' := lholed_nested_label _ lh. edestruct H' as [k' [lh' Heq']]. clear H'.
+
+    do 3! eexists. exists lh'. split. eapply rt_trans.
     eapply reduce_trans_local'. eapply rt_trans.
     eapply reduce_trans_label'. apply app_trans. apply Hred. cbn.
     apply reduce_trans_label'.
     dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
     dostep. elimr_nary_instr 2. constructor. apply rs_relop.
     dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
-    dostep'. constructor. eapply rs_block with (vs:=[]); auto.
-    dostep'. constructor. apply rs_label_const; auto. apply rt_refl. apply rt_refl.
+    dostep'. constructor. eapply rs_block with (vs:=[]); auto. apply rt_refl. cbn.
+    rewrite Heq'. apply rt_refl.
     split. right. assumption. split. reflexivity. split. congruence.
     split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }}}
 (* COMMENTED OUT FOR TAILCALL MERGE
@@ -5802,7 +5806,7 @@ END COMMENTED OUT FOR TAILCALL MERGE
     unfold INV_result_var_out_of_mem_is_zero in H_INV'.
       subst f_before_IH. rewrite Hfinst in H_INV'. apply H_INV'.
       subst f_before_IH. cbn in Hfinst. rewrite -Hfinst. cbn.
-      now destruct fr. *) admit. (* can't be that hard *)
+      now destruct fr. *) admit. (* TODO Wolfgang can't be that hard *)
     }
 
   - (* Eletapp *)
@@ -6039,10 +6043,10 @@ END COMMENTED OUT FOR TAILCALL MERGE
     subst lh_before_IH. cbn in Hred. rewrite cats0 in Hred.
 
     assert (Hcont: exists (sr_final : store_record) (fr_final : frame) k' (lh' : lholed k'),
-      reduce_trans (state, sr_after_call, fr, [AI_local 0 fr (lfill lh [ AI_basic (BI_get_global result_out_of_mem)
-                                                                         ; AI_basic (BI_if (Tf [::] [::]) [::]
+      reduce_trans (state, sr_after_call, fAny, [AI_local 0 fr (lfill lh [ AI_basic (BI_get_global result_out_of_mem)
+                                                                         ; AI_basic (BI_if (Tf [::] [::]) [:: BI_return ]
                                                                             [:: BI_get_global result_var, BI_set_local x' & e'])])])
-                   (state, sr_final, fr, [AI_local 0 fr_final (lfill lh' [])])
+                   (state, sr_final, fAny, [AI_local 0 fr_final (lfill lh' [:: AI_basic BI_return])])
          /\ result_val_LambdaANF_Codegen v' sr_final fr_final
          /\ fr_final.(f_inst) = fr.(f_inst)
          /\ sr_final.(s_funcs) = sr.(s_funcs)
@@ -6235,7 +6239,7 @@ END COMMENTED OUT FOR TAILCALL MERGE
 
         have H' := lholed_nested_label _ lh. edestruct H' as [k' [lh' Heq']]. clear H'.
 
-        have IH_cont := IHHev2 Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fr lh' lenv HlenvInjective HenvsDisjoint
+        have IH_cont := IHHev2 Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fAny lh' lenv HlenvInjective HenvsDisjoint
                    state _ _ _ Hfds_before_cont_IH Hinv_before_cont_IH Hexpr Logic.eq_refl HrelM'.
         destruct IH_cont as [sr_final [fr_final [k_final [lh_final [Hred' [Hval' [Hfinst' [Hfuncs' [HvalPres' H_INV']]]]]]]]]. clear IHHev2.
         rewrite -Heq' in Hred'.
@@ -6264,12 +6268,17 @@ END COMMENTED OUT FOR TAILCALL MERGE
         assumption. }
       }
       { (* out of mem *)
-        exists sr_after_call, fr. eexists. eexists. split.
+        have H' := lholed_nested_label _ lh. edestruct H' as [k' [lh' Heq']]. clear H'.
+
+        exists sr_after_call, fr. eexists. exists lh'. split.
+
+        eapply rt_trans.
         apply reduce_trans_local'. apply reduce_trans_label'.
         dostep. elimr_nary_instr 0. apply r_get_global. rewrite -Hfinst in HOutOfMem. subst f_before_IH. eassumption.
         dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
-        dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn.
-        dostep'. constructor. now apply rs_label_const. apply rt_refl.
+        dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn. apply rt_refl.
+        rewrite Heq'. apply rt_refl.
+
         split. right. subst f_before_IH. rewrite -Hfinst in HOutOfMem. assumption.
         split. reflexivity. split. congruence. split.
         { intros. apply val_relation_depends_on_finst with (fr:=fr_after_call).
@@ -6321,8 +6330,11 @@ END COMMENTED OUT FOR TAILCALL MERGE
     dostep'. constructor. eapply rs_block with (vs:=[]); auto. cbn. apply rt_refl.
     (* apply IH1: function body *)
     eapply rt_trans. apply app_trans. apply Hred. apply rt_refl.
+    eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
+    dostep. elimr_nary_instr 0. constructor. apply rs_return with (lh:=lh0) (vs:=[::]) => //.
+    cbn. apply rt_refl.
     (* apply IH2: continuation *)
-    apply Hred_final.
+    eapply rt_trans. apply Hred_final. apply rt_refl.
     do 4 (split; auto).
     }
   - (* Efun *)      inv Hrepr_e. (* absurd, fn defs only on topmost level *)
@@ -6348,12 +6360,13 @@ END COMMENTED OUT FOR TAILCALL MERGE
     specialize INVres with (wasm_value_to_i32 wal).
     destruct INVres as [s' Hs].
 
-    exists s', fr. cbn. split.
     destruct Hloc as [ilocal [H4 Hilocal]]. inv H1. erewrite H4 in H2. injection H2 => H'. subst.
+    exists s', fr. eexists. eexists. cbn. split.
+
     (* execute wasm instructions *)
-    dostep. apply r_elimr. eapply r_get_local. eassumption.
-    dostep'. apply r_set_global. eassumption.
-    apply rt_refl.
+    apply reduce_trans_local'. apply reduce_trans_label'.
+    dostep. elimr_nary_instr 0. eapply r_get_local. eassumption.
+    dostep'. elimr_nary_instr 1. apply r_set_global. eassumption. apply rt_refl.
     split; auto.
     unfold result_val_LambdaANF_Codegen. left.
     exists (wasm_value_to_i32 wal). exists wal.
@@ -6374,15 +6387,15 @@ END COMMENTED OUT FOR TAILCALL MERGE
                                                     Some (VAL_int32 (nat_to_i32 x''))). {
       erewrite update_global_get_other; try eassumption. reflexivity. now intro.
     }
-    eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs; try apply H2; eauto.
+    eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs; try apply H; eauto.
     eapply update_global_preserves_funcs. eassumption.
     simpl_modulus. cbn. lia. simpl_modulus. cbn. lia.
     }
     intro H_INV. eapply update_global_preserves_INV. 6: eassumption.
     assumption. now intro. eassumption.
     eapply value_bounds; eauto. now intro.
-    Unshelve. all: try assumption; try apply ""%bs.
-Admitted. (* Qed *) *)
+    Unshelve. all: try assumption; try apply ""%bs; try apply [].
+Admitted. (* Qed *)
 
 End THEOREM.
 
@@ -8121,11 +8134,11 @@ Proof.
 
     subst lenv.
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv _ host_instance
-                    _ _ _ _ _ _ _ frameInit _ _ _ lh HlenvInjective
+                    _ _ _ _ _ _ _ frameInit _ _ lh HlenvInjective
                       HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
-                      HeRestr' Hunbound Hstep hs _ _ _ Hfds Hinv_before_IH Hexpr Logic.eq_refl Logic.eq_refl Hrelm.
+                      HeRestr' Hunbound Hstep hs _ _ _ Hfds Hinv_before_IH Hexpr Logic.eq_refl Hrelm.
 
-    destruct HMAIN as [s' [f' [Hred [Hval [Hfinst _]]]]]. cbn.
+    destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn.
     subst frameInit.
     exists s'. split.
     dostep'. apply r_call. cbn.
@@ -8136,8 +8149,7 @@ Proof.
     (* reduce block to push label *)
     dostep'. eapply r_local. constructor. eapply rs_block with (vs:=[]); eauto. cbn.
     rewrite cats0 in Hred. eapply rt_trans. apply Hred.
-    dostep'. eapply r_local. constructor. eapply rs_label_const => //.
-    apply rt_step. constructor. eapply rs_local_const => //.
+    dostep'. constructor. apply rs_return with (lh:=lh') (vs:=[::]) =>//. apply rt_refl.
     eapply result_val_LambdaANF_Codegen_depends_on_finst; try apply Hval.
     subst f_before_IH. now cbn in Hfinst.
   }
@@ -8223,12 +8235,12 @@ Proof.
 
     subst lenv.
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv _ host_instance _ (M.empty _)
-                    _ _ _ _ _ frameInit _ _ _ lh HlenvInjective HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf
-                      HfenvRho HeRestr Hunbound Hstep hs _ _ _ Hfds Hinv_before_IH Hexpr Logic.eq_refl Logic.eq_refl Hrelm.
+                    _ _ _ _ _ frameInit _ _ lh HlenvInjective HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf
+                      HfenvRho HeRestr Hunbound Hstep hs _ _ _ Hfds Hinv_before_IH Hexpr Logic.eq_refl Hrelm.
 
     subst lh frameInit.
 
-    destruct HMAIN as [s' [f' [Hred [Hval [Hfinst _]]]]]. cbn.
+    destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn.
     exists s'. split.
     dostep'. apply r_call. cbn.
     rewrite HinstFuncs. reflexivity.
@@ -8241,8 +8253,7 @@ Proof.
 
     dostep'. eapply r_local. constructor. eapply rs_block with (vs:=[]) => //=. cbn. cbn in Hred.
     rewrite cats0 in Hred. eapply rt_trans. apply Hred.
-    dostep'. eapply r_local. constructor. eapply rs_label_const => //.
-    apply rt_step. constructor. apply rs_local_const => //.
+    dostep'. constructor. apply rs_return with (lh:=lh') (vs:=[::]) =>//. apply rt_refl.
     eapply result_val_LambdaANF_Codegen_depends_on_finst; try eassumption. subst. cbn in Hfinst. congruence.
   } Unshelve. all: auto.
 Qed.

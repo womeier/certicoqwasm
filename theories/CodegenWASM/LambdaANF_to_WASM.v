@@ -407,7 +407,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
                    ; BI_const (nat_to_value 1)
                    ; BI_relop T_i32 (Relop_i ROI_eq)
                    ; BI_if (Tf [] [])
-                       []
+                       [ BI_return ]
                        (store_constr ++
                           [ BI_get_global constr_alloc_ptr
                             ; BI_set_local x_var
@@ -458,7 +458,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
 
       Ret (instr_call ++ [ BI_get_global result_out_of_mem
                          ; BI_if (Tf nil nil)
-                            []
+                            [ BI_return ]
                             ([BI_get_global result_var; BI_set_local x_var] ++ following_instr)
                          ])
 
@@ -471,7 +471,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    | Eprim x p ys e' => Err "translating prim to WASM not supported yet"
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_exp halt";;
-     Ret [ BI_get_local x_var; BI_set_global result_var ]
+     Ret [ BI_get_local x_var; BI_set_global result_var; BI_return ]
    end.
 
 
