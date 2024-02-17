@@ -551,6 +551,7 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> (* val *)
                                           Prop :=
 | Rconstr_unboxed_v : forall v (t : ctor_tag) (sr : store_record) fr,
     Pos.to_nat (t * 2 + 1) = v ->
+    (-1 < Z.of_nat v < Wasm_int.Int32.modulus)%Z ->
     get_ctor_arity cenv t = Ret 0 ->
     repr_val_LambdaANF_Codegen (Vconstr t []) sr fr (Val_unboxed v)
 
@@ -563,7 +564,6 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> (* val *)
     (* constr arity > 0 *)
     get_ctor_arity cenv t = Ret arity ->
     arity > 0 ->
-    length vs > 0 ->
     (* addr in bounds of linear memory (later INV: gmp + 4 < length of memory) *)
     (addr + 4 <= gmp) ->
     (* store_record contains memory *)
@@ -1148,7 +1148,7 @@ Proof.
                 f_inst f = f_inst f' ->
                 repr_val_constr_args_LambdaANF_Codegen cenv fenv nenv host_function l s f' i)
     ).
-    have H10' := H10. eapply indPrinciple in H10; intros; clear indPrinciple; try eassumption.
+    have H10' := H9. eapply indPrinciple in H9; intros; clear indPrinciple; try eassumption.
     { econstructor; eauto. congruence. }
     { econstructor; eauto. }
     { econstructor; eauto. congruence. }
@@ -1223,39 +1223,39 @@ Proof.
           gmp' >= gmp ->
           (forall a, (a + 4 <= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
              repr_val_constr_args_LambdaANF_Codegen cenv fenv nenv host_function l s' f' i)
-  ). have H19' := H19.
-    eapply indPrinciple in H19; intros; clear indPrinciple; try eassumption; try lia.
+  ). have H19' := H18.
+    eapply indPrinciple in H18; intros; clear indPrinciple; try eassumption; try lia.
     { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
-                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H17; try lia.
-                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H17; lia. } subst gmp0.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H16; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H16; lia. } subst gmp0.
       assert (m = m0) by congruence; subst m0.
       econstructor; try eassumption. lia. lia. reflexivity.
       rewrite <- H8. assumption. lia. }
     { now constructor. }
     { assert (gmp = gmp0). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
-                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H30; try lia.
-                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H30; lia. } subst gmp0.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H29; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H29; lia. } subst gmp0.
       assert (gmp = gmp1). { assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
-                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H30; try lia.
-                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H30; lia. } subst gmp1.
+                             inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H29; try lia.
+                             rewrite Wasm_int.Int32.Z_mod_modulus_id in H29; lia. } subst gmp1.
       assert (m = m0) by congruence. subst m0.
       assert (m1 = m2) by congruence. subst m2. subst.
-      econstructor; eauto. lia. rewrite <- H28; auto; try lia. }
+      econstructor; eauto. lia. rewrite <- H27; auto; try lia. }
     { econstructor; eauto. congruence. }
     { econstructor. }
     { assert (gmp = gmp0). {
          assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp0) by congruence.
-              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H31; try lia.
-              rewrite Wasm_int.Int32.Z_mod_modulus_id in H31; lia. } subst gmp0.
+              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H30; try lia.
+              rewrite Wasm_int.Int32.Z_mod_modulus_id in H30; lia. } subst gmp0.
       econstructor; eauto. lia. assert (gmp1 = gmp). {
          assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
-              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H31; try lia.
-              rewrite Wasm_int.Int32.Z_mod_modulus_id in H31; lia. } subst. lia.
-      rewrite <- H29. assert (m1 = m2) by congruence. subst m2. eassumption.
+              inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H30; try lia.
+              rewrite Wasm_int.Int32.Z_mod_modulus_id in H30; lia. } subst. lia.
+      rewrite <- H28. assert (m1 = m2) by congruence. subst m2. eassumption.
       assert (gmp1 = gmp). {
                  assert (Ht: nat_to_i32 gmp = nat_to_i32 gmp1) by congruence.
-                 inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H31; try lia.
-                 rewrite Wasm_int.Int32.Z_mod_modulus_id in H31; lia. } subst gmp1. lia.
+                 inv Ht. rewrite Wasm_int.Int32.Z_mod_modulus_id in H30; try lia.
+                 rewrite Wasm_int.Int32.Z_mod_modulus_id in H30; lia. } subst gmp1. lia.
       eapply H9; eauto; lia. }
     { assert (m = m0) by congruence. subst m0. lia. }
     { assert (m = m0) by congruence; subst m0. apply H8. lia. }
@@ -2007,6 +2007,22 @@ Proof.
     exists ctor_name, ctor_ind_name, ctor_ind_tag,ctor_arity,ctor_ordinal; auto.
 Qed.
 
+Lemma repr_branches_no_unboxed {lenv}:
+  forall (x : immediate) (t : ctor_tag) (e : exp) (cl : seq (ctor_tag * exp)) (instrs : list basic_instruction),
+    findtag cl t = Some e ->
+    @repr_branches cenv fenv nenv lenv x cl instrs [ BI_unreachable ] ->
+    ~  (get_ctor_arity cenv t = Ret 0).
+Proof.
+Admitted.
+
+
+Lemma repr_branches_no_boxed {lenv}:
+  forall (x : immediate) (t : ctor_tag) (e : exp) (cl : seq (ctor_tag * exp)) (instrs : list basic_instruction),
+    findtag cl t = Some e ->
+    @repr_branches cenv fenv nenv lenv x cl [ BI_unreachable ] instrs ->
+    ~ (exists arity, get_ctor_arity cenv t = Ret arity /\ arity > 0).
+Admitted.
+
 Lemma app_trans: forall s f es s' f' es' les hs hs',
   reduce_trans (hs, s, f, es) (hs', s', f', es') ->
   reduce_trans (hs, s, f, (es ++ les)) (hs', s', f', (es' ++ les)).
@@ -2067,11 +2083,12 @@ Lemma value_bounds : forall wal v sr fr,
 Proof.
   intros ? ? ? ? Hinv H.
   inv H.
-  (* - (* constr. value *) cbn. lia. *)
-  (* - (* function value *) cbn. *)
-  (*   assert (idx < length (s_funcs sr)). { apply nth_error_Some. congruence. } *)
-  (*   unfold INV_num_functions_upper_bound in Hinv. lia. *)
-Admitted. (* Qed. *)
+  - cbn. lia.
+  - cbn. lia.
+  - cbn.
+    assert (idx < length (s_funcs sr)). { apply nth_error_Some. congruence. }
+    unfold INV_num_functions_upper_bound in Hinv. lia.
+Qed.
 
 Lemma extract_constr_arg : forall n vs v sr fr addr m,
   INV_num_functions_upper_bound sr ->
@@ -3508,8 +3525,10 @@ Proof.
         cbn. repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia. }}}
 Qed.
 
-Lemma store_constr_reduce {lenv} : forall state s f rho fds ys (vs : list cps.val) t sargs,
-  domains_disjoint lenv fenv ->
+Lemma store_constr_reduce {lenv} : forall state s f rho fds ys (vs : list cps.val) t n sargs,
+    get_ctor_arity cenv t = Ret n ->
+    n > 0 ->
+    domains_disjoint lenv fenv ->
   (forall f, (exists res, find_def f fds = Some res) <-> (exists i, fenv ! f = Some i)) ->
   INV lenv s f ->
   (* enough memory available *)
@@ -3557,7 +3576,7 @@ Lemma store_constr_reduce {lenv} : forall state s f rho fds ys (vs : list cps.va
           /\ wasm_value_to_i32 wasmval = cap_v
           /\ repr_val_LambdaANF_Codegen cenv fenv nenv  _ (Vconstr t vs) s' f wasmval).
 Proof.
-  intros ? ? ? ? ? ? ? ? ? HenvsDisjoint HfenvWf Hinv HenoughM HmemR Hmaxargs Hsetargs Hrho HfVal.
+  intros ? ? ? ? ? ? ? ? ? ? HarrSome HarrGt0 HenvsDisjoint HfenvWf Hinv HenoughM HmemR Hmaxargs Hsetargs Hrho HfVal.
 
   have I := Hinv. destruct I as [_ [_ [_ [INVgmp_w [INVcap_w [INVmuti32 [INVmem [_ [_ [_ [INV_instglobs _]]]]]]]]]]].
   destruct INVmem as [_ [m [Hm _]]].
@@ -3750,9 +3769,6 @@ Proof.
     erewrite update_global_preserves_memory; eassumption. have H' := HenoughM _ _ Hm'' Hgmp H.
     apply mem_length_upper_bound in Hmem5''. cbn in Hmem5''. unfold page_size in H'. cbn in H'.
     unfold max_constr_args in Hmaxargs. simpl_modulus. cbn. lia. }
-  admit.
-  admit.
-  admit.
   lia. reflexivity.
   apply store_load in Hstore.
   rewrite deserialise_bits in Hstore; auto.
@@ -3760,7 +3776,7 @@ Proof.
   unfold nat_to_i32. cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
   rewrite Heq in Hstore.
   rewrite -Hmemsame. eassumption. lia. reflexivity. }
-Admitted. (* Qed. *)
+Qed.
 
 
 Inductive const_val_list : list cps.val -> store_record -> frame -> list nat -> Prop :=
@@ -4606,9 +4622,9 @@ Proof.
     apply rt_then_t_or_eq in H. destruct H; first congruence.
     apply clos_trans_tn1 in H. inv H. inv H0. inv H0.
   }
-Admitted. (* Qed. *)
+Admitted. (* TODO. *)
 
-(* TODO: move up to find_def_dsubterm_fds_e *)
+(* Qed: move up to find_def_dsubterm_fds_e *)
 Lemma dsubterm_fds_e_find_def : forall (fds : fundefs) (e : exp) (eAny : exp),
   NoDup (collect_function_vars (Efun fds eAny)) ->
   dsubterm_fds_e e fds ->
@@ -4749,7 +4765,7 @@ Proof with eauto.
        eapply val_relation_func_depends_on_funcs; try apply Hval. auto.
      }
 
-      have Hconstr := store_constr_reduce state _ _ _ _ _ _ t _ HenvsDisjoint HfenvWf Hinv' HenoughM' HrelM Hmaxargs H12 H HfVal'.
+      have Hconstr := store_constr_reduce state _ _ _ _ _ _ t _ _ H9 H10 HenvsDisjoint HfenvWf Hinv' HenoughM' HrelM Hmaxargs H12 H HfVal'.
       destruct Hconstr as [s_v [Hred_v [Hinv_v [Hfuncs' [HvalPreserved' [cap_v [wal [? [? Hvalue]]]]]]]]].
 
     { subst cap_v.
@@ -4935,6 +4951,7 @@ Proof with eauto.
     split. right. assumption. split. reflexivity. split. congruence.
     split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }} }
     { (* Nullary constructor case *)
+
       subst.
       assert (vs = []). {
         inv H. reflexivity.
@@ -5044,6 +5061,11 @@ Proof with eauto.
               subst vs.
               econstructor.
               now rewrite Pos.mul_comm.
+              cbn.
+              inv HeRestr.
+              rewrite Znat.positive_nat_Z in H10.
+              rewrite Znat.positive_nat_Z.
+              rewrite Wasm_int.Int32.half_modulus_modulus. lia.
               assumption.
             }
           }
@@ -5119,7 +5141,7 @@ Proof with eauto.
       inv Hlocal. destruct H.
 
       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [HfnsUpperBound [_ [_ [HlocalBound _]]]]]]]]]]]]].
-      have Hextr := extract_constr_arg n vs v _ _ _ _ HfnsUpperBound H0 H9 H15.
+      have Hextr := extract_constr_arg n vs v _ _ _ _ HfnsUpperBound H0 H8 H14.
       destruct Hextr as [bs [wal [Hload [Heq Hbsval]]]].
 
       assert (Hrm: @rel_env_LambdaANF_Codegen cenv fenv nenv host_function lenv e (map_util.M.set x v rho) sr
@@ -5129,9 +5151,9 @@ Proof with eauto.
         { (* funs1 *)
           destruct (var_dec x x1).
           { (* x = x1 *)
-            subst x1. rewrite M.gss in H10. inv H10. rename v0 into v.
+            subst x1. rewrite M.gss in H9. inv H9. rename v0 into v.
             apply nthN_In in H0.
-            have H' := subval_or_eq_constr _ _ _ t H12 H0.
+            have H' := subval_or_eq_constr _ _ _ t H11 H0.
             have HF := Hfun1 _ _ _ _ _ Hrho H'. destruct HF as [? [? HF]]. subst.
             apply Hfun2 with (errMsg:=""%bs) in HF.
             destruct HF as [i [Htrans Hval]].
@@ -5139,8 +5161,8 @@ Proof with eauto.
             eapply find_def_name_in_fundefs. eassumption.
           }
           { (* x <> x1*)
-            rewrite M.gso in H10; auto.
-            have H' := Hfun1 _ _ _ _ _ H10 H12. destruct H' as [? [? H']]. subst.
+            rewrite M.gso in H9; auto.
+            have H' := Hfun1 _ _ _ _ _ H9 H11. destruct H' as [? [? H']]. subst.
             apply Hfun2 with (errMsg:=""%bs) in H'.
             destruct H' as [i [Htf Hval]].
             inv Hval. do 2 split => //.
@@ -5161,8 +5183,8 @@ Proof with eauto.
             rewrite map_util.M.gsspec.
             apply peq_true.
             split. exists x'. split. inv Hx'. intro.
-            unfold translate_var in H13. unfold translate_var.
-            destruct (lenv ! x); auto. inv H13. cbn.
+            unfold translate_var in H12. unfold translate_var.
+            destruct (lenv ! x); auto. inv H12. cbn.
             unfold wasm_deserialise in Heq. rewrite -Heq.
             have Hl := HlocalBound _ _ Hx'. apply nth_error_Some in Hl.
             apply notNone_Some in Hl. destruct Hl.
@@ -5178,10 +5200,10 @@ Proof with eauto.
             unfold stored_in_locals. cbn.
 
             assert (x1' <> x'). { intro. subst x1'.
-              inv Hx'. unfold translate_var in H16.
-              destruct (lenv ! x) eqn:Heqn; inv H16.
-              specialize H13 with err_str. unfold translate_var in H13.
-              destruct (lenv ! x1) eqn:Heqn'; inv H13.
+              inv Hx'. unfold translate_var in H15.
+              destruct (lenv ! x) eqn:Heqn; inv H15.
+              specialize H12 with err_str. unfold translate_var in H12.
+              destruct (lenv ! x1) eqn:Heqn'; inv H12.
               have Hcontra := HlenvInjective _ _ _ _ n0 Heqn Heqn'.
               now apply Hcontra. }
 
@@ -5246,10 +5268,10 @@ Proof with eauto.
               find_def a fds <> None ->
               v0 = Vfun (M.empty cps.val) fds a). {
        intros. apply HfenvRho; auto.
-       rewrite M.gso in H10; auto. intro Hcontra. subst a.
-       apply notNone_Some in H12. apply HfenvWf in H12. destruct H12.
+       rewrite M.gso in H9; auto. intro Hcontra. subst a.
+       apply notNone_Some in H11. apply HfenvWf in H11. destruct H11.
        inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
-       apply Hd2 in H10. unfold translate_var in H12. now rewrite H10 in H12. }
+       apply Hd2 in H9. unfold translate_var in H11. now rewrite H9 in H11. }
 
      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint
                       state _ _ _ Hfds' Hinv' H7 Hrm.
@@ -5262,7 +5284,7 @@ Proof with eauto.
        have I := Hinv'. destruct I as [_ [_ [_ [_ [_ [_ [Hlinmem _]]]]]]].
        have Hly := HlocalBound _ _ Hy'.
        have Hlx := HlocalBound _ _ Hx'.
-       rewrite H in H10. injection H10 => ?. subst. clear H10.
+       rewrite H in H9. injection H9 => ?. subst. clear H9.
 
        (* get_local y' *)
        dostep. elimr_nary_instr 0.
@@ -5277,7 +5299,7 @@ Proof with eauto.
        eapply r_load_success.
 
        destruct Hlinmem as [Hmem1 [m' Hmem2]].
-       eassumption. apply H9.
+       eassumption. apply H8.
 
        assert (Har: Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
           (nat_to_i32 ((N.to_nat n + 1) * 4))) = (N.of_nat (4 + addr) + 4 * n)%N). {
