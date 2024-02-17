@@ -1100,7 +1100,7 @@ Proof.
   - (* Ehalt *)
     simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
     injection H => instr'. subst. constructor. econstructor. eauto.
-Admitted. (* Qed. *)
+Qed.
 
 Definition result_val_LambdaANF_Codegen (val : LambdaANF.cps.val)
                                         (sr : store_record) (fr : frame) : Prop :=
@@ -2131,10 +2131,12 @@ Lemma value_bounds : forall wal v sr fr,
 Proof.
   intros ? ? ? ? Hinv H.
   inv H.
-  (* - (* constr. value *) cbn. lia. *)
-  (* - (* function value *) cbn. *)
-  (*   assert (idx < length (s_funcs sr)). { apply nth_error_Some. congruence. } *)
-  (*   unfold INV_num_functions_upper_bound in Hinv. lia. *)
+  - (* constr. value unboxed *) admit.
+  - (* constr. value boxed *) cbn. lia.
+  - (* function value *)
+    cbn.
+    assert (idx < length (s_funcs sr)). { apply nth_error_Some. congruence. }
+    unfold INV_num_functions_upper_bound in Hinv. lia.
 Admitted. (* Qed. *)
 
 Lemma extract_constr_arg : forall n vs v sr fr addr m,
