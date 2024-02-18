@@ -412,34 +412,6 @@ Inductive repr_expr_LambdaANF_Codegen {lenv} : LambdaANF.cps.exp -> list basic_i
           binstrs
           uinstrs ]
 
-
-(* | Rcase_e_cons_unboxed : forall y y' cl instrs_more t e e', *)
-(*         repr_var (lenv:=lenv) y y' -> *)
-(*         repr_expr_LambdaANF_Codegen (Ecase y cl) instrs_more -> *)
-(*         repr_expr_LambdaANF_Codegen e e' -> *)
-(*         get_ctor_arity cenv t = Ret 0 -> *)
-(*         repr_expr_LambdaANF_Codegen (Ecase y ((t, e) :: cl)) *)
-(*           [ BI_get_local y' *)
-(*           ; BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_S)) *)
-(*           ; BI_const (nat_to_value (Pos.to_nat t)) *)
-(*           ; BI_relop T_i32 (Relop_i ROI_eq) *)
-(*           ; BI_if (Tf nil nil) e' instrs_more *)
-(*           ] *)
-
-(* | Rcase_e_cons_boxed : forall v v' cl instrs_more t e e' arity, *)
-(*         repr_var (lenv:=lenv) v v' -> *)
-(*         repr_expr_LambdaANF_Codegen (Ecase v cl) instrs_more -> *)
-(*         repr_expr_LambdaANF_Codegen e e' -> *)
-(*         get_ctor_arity cenv t = Ret arity -> *)
-(*         arity > 0 -> *)
-(*         repr_expr_LambdaANF_Codegen (Ecase v ((t, e) :: cl)) *)
-(*           [ BI_get_local v' *)
-(*           ; BI_load T_i32 None 2%N 0%N *)
-(*           ; BI_const (nat_to_value (Pos.to_nat t)) *)
-(*           ; BI_relop T_i32 (Relop_i ROI_eq) *)
-(*           ; BI_if (Tf nil nil) e' instrs_more *)
-(*           ] *)
-
 | R_app_e : forall v instr t args args',
     (* args are provided properly *)
     repr_fun_args_Codegen (lenv:=lenv) args args' ->
@@ -5049,7 +5021,6 @@ Proof with eauto.
     rewrite Heq'. apply rt_refl.
     split. right. assumption. split. reflexivity. split. congruence.
     split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }}}
-(* COMMENTED OUT FOR TAILCALL MERGE
     { (* Nullary constructor case *)
       subst.
       assert (vs = []). {
@@ -5185,10 +5156,13 @@ Proof with eauto.
           }
         }
       }
-      have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ HlenvInjective HenvsDisjoint state sr f_before_IH _ Hfds' Hinv' H6 Hrel_m'.
-      destruct IH as [sr' [f' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]].
-      exists sr', f'.
-      split.
+
+      have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ _ fAny lh _ HlenvInjective HenvsDisjoint
+                 state sr f_before_IH _ Hfds' Hinv' H6 Logic.eq_refl Hrel_m'.
+      destruct IH as [sr' [f' [k' [lh' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]]]].
+
+      exists sr', f', k', lh'.
+      split. eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
       dostep.
       elimr_nary_instr 2.
       constructor. apply rs_binop_success. reflexivity.
@@ -5204,7 +5178,10 @@ Proof with eauto.
       apply /ssrnat.leP.
       apply HlocalBound in H7. assumption.
       subst f_before_IH. reflexivity.
+      apply rt_refl.
+      (* IH *)
       apply Hred.
+
       split. apply Hval.
       split. subst f_before_IH. apply Hfinst.
       split. apply Hsfuncs.
@@ -5214,9 +5191,6 @@ Proof with eauto.
       }
       assumption.
     }
-
-END COMMENTED OUT FOR TAILCALL MERGE
-*) admit.
   - (* Eproj ctor_tag t, let x := proj_n y in e *)
     { inv Hrepr_e.
       rename H8 into Hx', H9 into Hy'.
