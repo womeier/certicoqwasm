@@ -524,6 +524,7 @@ Inductive repr_val_LambdaANF_Codegen:  LambdaANF.cps.val -> (* val *)
                                           wasm_value ->     (* wal *)
                                           Prop :=
 | Rconstr_unboxed_v : forall v (t : ctor_tag) (sr : store_record) fr,
+    (-1 < Z.of_nat v < Wasm_int.Int32.modulus)%Z ->
     Pos.to_nat (t * 2 + 1) = v ->
     get_ctor_arity cenv t = Ret 0 ->
     repr_val_LambdaANF_Codegen (Vconstr t []) sr fr (Val_unboxed v)
@@ -2103,13 +2104,13 @@ Lemma value_bounds : forall wal v sr fr,
 Proof.
   intros ? ? ? ? Hinv H.
   inv H.
-  - (* constr. value unboxed *) admit.
+  - (* constr. value unboxed *) cbn. lia.
   - (* constr. value boxed *) cbn. lia.
   - (* function value *)
     cbn.
     assert (idx < length (s_funcs sr)). { apply nth_error_Some. congruence. }
     unfold INV_num_functions_upper_bound in Hinv. lia.
-Admitted. (* Qed. *)
+Qed.
 
 Lemma extract_constr_arg : forall n vs v sr fr addr m,
   INV_num_functions_upper_bound sr ->
@@ -5130,6 +5131,7 @@ Proof with eauto.
             {
               subst vs.
               econstructor.
+              { inv HeRestr. simpl_modulus. cbn. simpl_modulus_in H10. lia. }
               now rewrite Pos.mul_comm.
               assumption.
             }

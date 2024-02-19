@@ -25,19 +25,6 @@ $(WASMFILES): tests
 	cp ./run-wasm-template.js $@
 	$(SED) -i 's/{{file}}/$</g' $@
 
-#%.wat: %.wasm
-#	$(WASM2WAT) $< > $@
-
-#convert2wat: $(WATFILES)
-
-# currently: certicoqwasm generates normal calls -> replace them with tailcalls until this is added to wasmcert-coq
-#tailcallify: $(WATFILES) convert2wat
-#	./insert_tailcalls.py
-
-#optimize: $(WASMFILES)
-#	wasm-opt -O2 --enable-tail-call --enable-mutable-globals $< --output tmp
-#	mv tmp $<
-
 runwasm: $(JSFILES)
 	ulimit -s $(STACKSIZE) && ./run_wasm_benchmarks.py
 
