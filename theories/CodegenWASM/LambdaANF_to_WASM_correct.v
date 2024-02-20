@@ -805,34 +805,16 @@ Proof.
   - inv H. econstructor; auto.
   - cbn in H. destruct (instr_local_var_read nenv lenv fenv a) eqn:Hvar. inv H.
   destruct (set_constructor_args nenv lenv fenv l (S n)) eqn:Harg. inv H. inv H.
-  replace ((BI_get_global constr_alloc_ptr
-   :: BI_const
-        (nat_to_value (S (n + S (n + S (n + S (n + 0))))))
-      :: BI_binop T_i32 (Binop_i BOI_add)
-         :: b :: BI_store T_i32 None 2%N 0%N
-               :: BI_get_global global_mem_ptr
-                  :: BI_const (nat_to_value 4)
-                     :: BI_binop T_i32 (Binop_i BOI_add)
-                        :: BI_set_global global_mem_ptr :: l0)) with
-      (([ BI_get_global constr_alloc_ptr
-        ; BI_const (nat_to_value (S (n + S (n + S (n + S (n + 0))))))
-        ; BI_binop T_i32 (Binop_i BOI_add)
-        ; b
-        ; BI_store T_i32 None 2%N 0%N
-        ; BI_get_global global_mem_ptr
-        ; BI_const (nat_to_value 4)
-        ; BI_binop T_i32 (Binop_i BOI_add)
-        ; BI_set_global global_mem_ptr] ++ l0))%list by reflexivity.
-   constructor; auto.
-
+  separate_instr. do 8! rewrite catA. constructor. auto.
   replace ((nat_to_value (S (n + S (n + S (n + S (n + 0))))))) with
-          ((nat_to_value ((1 + n) * 4))). constructor.
+          ((nat_to_value ((1 + n) * 4))) by (f_equal; lia).
+  constructor.
   unfold instr_local_var_read in Hvar.
   destruct (is_function_var fenv a) eqn:Hfn.
   - destruct (translate_var nenv fenv a _) eqn:Hvar'. inv Hvar. inv Hvar.
-    constructor. econstructor. eassumption.
+    constructor. now econstructor.
   - destruct (translate_var nenv lenv a _) eqn:Hloc. inv Hvar. inv Hvar.
-    constructor. econstructor. unfold translate_var. eassumption. f_equal. lia.
+    constructor. now econstructor.
 Qed.
 
 Definition translate_case_branch_expressions nenv cenv lenv fenv :=
@@ -1901,12 +1883,12 @@ Qed.
 
 Ltac dostep :=
   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t]));
-  first apply rt_step; separate_instr.
+  first (apply rt_step; separate_instr).
 
 (* only returns single list of instructions *)
 Ltac dostep' :=
    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s]));
-   first apply rt_step; separate_instr.
+   first (apply rt_step; separate_instr).
 
 (* Print caseConsistent. *)
 Lemma caseConsistent_findtag_In_cenv:
@@ -3774,7 +3756,7 @@ Proof.
 
     exists (wasm_value_to_immediate wal :: args'). cbn. split.
     dostep. elimr_nary_instr 0. apply r_get_local. eassumption.
-    apply app_trans_const; auto.
+    separate_instr. apply app_trans_const; auto.
     econstructor; eauto.
   }
   { (* fun *) destruct vs.
@@ -4816,6 +4798,7 @@ Proof with eauto.
       have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny lh' _ HlenvInjective HenvsDisjoint
                  state s_v f_before_IH _ Hfds' HlocInBound' Hinv_before_IH Hexp Hrel_m_v.
       destruct IH as [s_final [f_final [k'' [lh'' [Hred_IH [Hval [Hfinst [Hsfuncs' [HvalPres H_INV]]]]]]]]].
+      clear IHHev HfenvRho' Hunbound' Hnodup' HlocInBound' Hinv_before_IH Hfds Hfds'.
       cbn in Hfinst.
       rewrite -Heq' in Hred_IH. cbn.
 
@@ -4832,14 +4815,13 @@ Proof with eauto.
       dostep'. constructor. eapply rs_block with (vs := []); auto.
 
       remember (LH_base [] []) as lh'''. cbn.
-      have H' := reduce_trans_label' _ _ _ _ _ _ _ _ _ lh'''. subst lh'''. cbn in H'.
 
       match goal with
       |- context C [clos_refl_trans _ _ (_, _, _, ?es)] =>
-        let H := fresh "Hallo" in
-        have H := H' es ([:: AI_label 0 [::] (map AI_basic e')]); rewrite cats0 in H; apply H; clear H
-         (* lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end *)
-      end. clear H'.
+        let H := fresh "H" in
+        have H := reduce_trans_label' es ([:: AI_label 0 [::] (map AI_basic e')]) _ _ _ _ _ _ _ (LH_base [] []);
+          apply H; clear H
+      end.
 
     unfold to_e_list. cbn.
     repeat rewrite map_cat. cbn. repeat rewrite map_cat.
@@ -4856,7 +4838,7 @@ Proof with eauto.
     assert (f_inst f_before_IH = f_inst fr) as Hfinst'. { subst. reflexivity. }
     dostep'. eapply r_set_local. eassumption.
     apply /ssrnat.leP. apply nth_error_Some. congruence. subst. reflexivity. apply rt_refl. cbn.
-    apply rt_refl. rewrite cats0.
+    apply rt_refl.
     eapply rt_trans. apply Hred_IH. cbn. apply rt_refl.
 
     split. assumption. subst f_before_IH. cbn in Hfinst.
@@ -6532,7 +6514,7 @@ Lemma nth_list_function_types_map : forall fns fr,
                             (List.nth
                                match type x with
                                | Tf args _ => Datatypes.length args
-                               end (list_function_types (Pos.to_nat 100))
+                               end (list_function_types (Z.to_nat max_function_args))
                                (Tf [] [])) (locals x)
                             (body x)) fns =
   map (fun x => FC_func_native (f_inst fr)
