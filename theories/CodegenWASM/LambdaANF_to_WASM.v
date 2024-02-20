@@ -367,18 +367,16 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
   match es with
   | [] => [ BI_unreachable ]
-  | [ (_, instrs) ] => instrs
   | (t, instrs) :: tl =>
       (* if boxed (pointer), then load tag from memory;
          otherwise, obtain tag from unboxed representation ( tag = (repr >> 1) )
        *)
       BI_get_local v ::
         (if boxed then
-           [ BI_load T_i32 None 2%N 0%N ]
+           [ BI_load T_i32 None 2%N 0%N ; BI_const (nat_to_value (Pos.to_nat t)) ]
          else
-           [ BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_S)) ]) ++
-        [ BI_const (nat_to_value (Pos.to_nat t))
-          ; BI_relop T_i32 (Relop_i ROI_eq)
+           [ BI_const (nat_to_value (Pos.to_nat (2 * t + 1))) ]) ++
+        [ BI_relop T_i32 (Relop_i ROI_eq)
           ; BI_if (Tf nil nil) instrs (create_case_nested_if_chain boxed v tl) ]
   end.
 
