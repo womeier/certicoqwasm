@@ -299,15 +299,13 @@ Inductive repr_fun_args_Codegen {lenv} : list LambdaANF.cps.var ->
 
 Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var -> list basic_instruction -> list basic_instruction ->  Prop :=
 | Rconstr_asgn_boxed :
-  forall x' t vs sgrow sargs sres scont arity,
+  forall x' t vs sgrow sargs scont arity,
     get_ctor_arity cenv t = Ret arity ->
     arity > 0 ->
     (* allocate memory *)
     grow_memory_if_necessary page_size = sgrow ->
     (* store args *)
     Forall_statements_in_seq (set_nth_constr_arg (lenv:=lenv)) vs sargs ->
-    (* set result *)
-    sres = [BI_get_global constr_alloc_ptr; BI_set_local x'] ->
 
     repr_asgn_constr_Codegen x' t vs scont
       (sgrow ++
@@ -327,7 +325,7 @@ Inductive repr_asgn_constr_Codegen {lenv} : immediate -> ctor_tag -> list var ->
             ; BI_const (nat_to_value 4)
             ; BI_binop T_i32 (Binop_i BOI_add)
             ; BI_set_global global_mem_ptr
-            ] ++ sargs ++ sres ++ scont)
+            ] ++ sargs ++ [BI_get_global constr_alloc_ptr; BI_set_local x'] ++ scont)
        ])
 
 | Rconstr_asgn_unboxed :
@@ -792,6 +790,13 @@ Proof.
             constructor.  econstructor. eassumption. apply IHl; auto.
 Qed.
 
+Ltac separate_instr :=
+  cbn;
+  repeat match goal with
+  |- context C [?x :: ?l] =>
+     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+  end.
+
 Lemma set_nth_constr_arg_correct {lenv} : forall  l instr n,
   set_constructor_args nenv lenv fenv l n = Ret instr ->
   Forall_statements_in_seq' (@set_nth_constr_arg fenv nenv lenv) l instr n.
@@ -845,6 +850,7 @@ Definition translate_case_branch_expressions nenv cenv lenv fenv :=
           Ret ((t, instrs) :: arms_boxed, arms_unboxed)
     end).
 
+
 Theorem translate_exp_correct {lenv} :
     forall e instructions,
       correct_cenv_of_exp cenv e ->
@@ -872,129 +878,24 @@ Proof.
     { remember (v0 :: l') as l.
       destruct (store_constructor nenv cenv lenv fenv t l) eqn:store_constr.
       inv H1. inv H1. cbn.
-      repeat match goal with
-             |- context C [?x :: ?l] =>
-             lazymatch l with [::] => fail | _ => rewrite <-(cat1s x l) end
-             end.
       rename i into v'.
-      (* TODO do properly *)
-      replace ([:: BI_get_global global_mem_ptr] ++
-               [:: BI_const (N_to_value 65536)] ++
-               [:: BI_binop T_i32 (Binop_i BOI_add)] ++
-               [:: BI_const (Z_to_value 65536)] ++
-               [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
-               [:: BI_current_memory] ++
-               [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
-               [:: BI_if (Tf [::] [::])
-                     ([:: BI_const (nat_to_value 1)] ++
-                      [:: BI_grow_memory] ++
-                      [:: BI_const (Z_to_value (-1))] ++
-                      [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-                      [:: BI_if (Tf [::] [::])
-                            ([:: BI_const (nat_to_value 1)] ++
-                             [:: BI_set_global result_out_of_mem])
-                            [::]])
-                      [::]] ++
-               [:: BI_get_global result_out_of_mem] ++
-               [:: BI_const (nat_to_value 1)] ++
-               [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-               [:: BI_if (Tf [::] [::]) [:: BI_return]
-                     (l1 ++
-                     ([:: BI_get_global constr_alloc_ptr] ++
-                      [:: BI_set_local v'] ++ l0)%SEQ)%list]) with
-              (([:: BI_get_global global_mem_ptr] ++
-                [:: BI_const (N_to_value 65536)] ++
-                [:: BI_binop T_i32 (Binop_i BOI_add)] ++
-                [:: BI_const (Z_to_value 65536)] ++
-                [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
-                [:: BI_current_memory] ++
-                [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
-                [:: BI_if (Tf [::] [::])
-                   ([:: BI_const (nat_to_value 1)] ++
-                      [:: BI_grow_memory] ++
-                      [:: BI_const (Z_to_value (-1))] ++
-                      [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-                      [:: BI_if (Tf [::] [::])
-                         ([:: BI_const (nat_to_value 1)] ++
-                            [:: BI_set_global result_out_of_mem]) []])
-                   []]) ++
-               [:: BI_get_global result_out_of_mem] ++
-               [:: BI_const (nat_to_value 1)] ++
-               [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-               [:: BI_if (Tf [::] [::]) [::BI_return]
-                  (l1 ++
-                     ([:: BI_get_global constr_alloc_ptr] ++
-                        [:: BI_set_local v'] ++ l0)%SEQ)%list]) by reflexivity.
-          remember ([:: BI_get_global global_mem_ptr] ++
-                      [:: BI_const (N_to_value 65536)] ++
-                      [:: BI_binop T_i32 (Binop_i BOI_add)] ++
-                      [:: BI_const (Z_to_value 65536)] ++
-                      [:: BI_binop T_i32 (Binop_i (BOI_div SX_S))] ++
-                      [:: BI_current_memory] ++
-                      [:: BI_relop T_i32 (Relop_i (ROI_ge SX_S))] ++
-                      [:: BI_if (Tf [::] [::])
-                         ([:: BI_const (nat_to_value 1)] ++
-                            [:: BI_grow_memory] ++
-                            [:: BI_const (Z_to_value (-1))] ++
-                            [:: BI_relop T_i32 (Relop_i ROI_eq)] ++
-                            [:: BI_if (Tf [::] [::])
-                               ([:: BI_const (nat_to_value 1)] ++
-                                  [:: BI_set_global result_out_of_mem]) []])
-                         []]) as grow_instr.
-          unfold store_constructor in store_constr.
-          destruct (set_constructor_args nenv lenv fenv (v0 :: l') 0) eqn:Hconstrargs. inv store_constr.
-          remember (grow_memory_if_necessary page_size) as grow.
-          inversion store_constr.
-
-          replace ([:: BI_get_global constr_alloc_ptr, BI_set_local v' & l0]) with
-            ([:: BI_get_global constr_alloc_ptr; BI_set_local v'] ++ l0) by reflexivity.
-
-          replace ([:: BI_get_global global_mem_ptr, BI_set_global constr_alloc_ptr,
-                      BI_get_global global_mem_ptr, BI_const (N_to_value page_size),
-                      BI_binop T_i32 (Binop_i BOI_add), BI_set_global global_mem_ptr,
-                      BI_get_global constr_alloc_ptr, BI_const (nat_to_value (Pos.to_nat t)),
-                      BI_store T_i32 None 2%N 0%N
-                      & l]) with ([:: BI_get_global global_mem_ptr; BI_set_global constr_alloc_ptr;
-                                    BI_get_global global_mem_ptr; BI_const (N_to_value page_size);
-                                    BI_binop T_i32 (Binop_i BOI_add); BI_set_global global_mem_ptr] ++
-                                     [BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
-                                      BI_store T_i32 None 2%N 0%N] ++ l) by reflexivity.
-
-          replace ([:: BI_get_global constr_alloc_ptr] ++ [:: BI_set_local v'] ++ l0) with
-            ([BI_get_global constr_alloc_ptr; BI_set_local v'] ++ l0) by reflexivity.
-          remember ([BI_get_global constr_alloc_ptr; BI_set_local v']) as sres.
-
-          replace ([:: BI_get_global global_mem_ptr,
-                      BI_set_global constr_alloc_ptr,
-                      BI_get_global constr_alloc_ptr,
-                      BI_const (nat_to_value (Pos.to_nat t)),
-                      BI_store T_i32 None 2%N 0%N,
-                      BI_get_global global_mem_ptr,
-                      BI_const (nat_to_value 4),
-                      BI_binop T_i32 (Binop_i BOI_add),
-                      BI_set_global global_mem_ptr
-                      & l]) with ([ BI_get_global global_mem_ptr;
-                                     BI_set_global constr_alloc_ptr ] ++ [
-                                       BI_get_global constr_alloc_ptr; BI_const (nat_to_value (Pos.to_nat t));
-                                       BI_store T_i32 None 2%N 0%N;
-                                       BI_get_global global_mem_ptr;
-                                       BI_const (nat_to_value 4);
-                                       BI_binop T_i32 (Binop_i BOI_add);
-                                       BI_set_global global_mem_ptr
-                                     ] ++ l) by reflexivity.
-          repeat rewrite <- app_assoc.
-          eapply Rconstr_e with (e' := l0); eauto.
-          apply IHe.
-          assert (subterm_e e (Econstr v t (v0 :: l') e) ). { constructor; constructor. }
-          eapply Forall_constructors_subterm. eassumption. assumption. reflexivity.
-          econstructor. eassumption.
-          apply Forall_constructors_in_constr in Hcenv; auto.
-          destruct (cenv ! t) eqn:Hc. 2:auto. destruct c. inv Hcenv.
-          apply Rconstr_asgn_boxed with (arity:=S (length l')); eauto.
-          unfold get_ctor_arity. rewrite Hc. f_equal. cbn. lia. lia.
-          apply set_nth_constr_arg_correct.
-          replace ([:: v0] ++ l') with (v0 :: l') by reflexivity.
-          assumption.
+      unfold store_constructor in store_constr.
+      destruct (set_constructor_args nenv lenv fenv (v0 :: l') 0) eqn:Hconstrargs. inv store_constr.
+      remember (grow_memory_if_necessary page_size) as grow.
+      inversion store_constr.
+      repeat rewrite <- app_assoc.
+      eapply Rconstr_e with (e' := l0); eauto.
+      apply IHe.
+      assert (subterm_e e (Econstr v t (v0 :: l') e) ). { constructor; constructor. }
+      eapply Forall_constructors_subterm. eassumption. assumption. reflexivity.
+      econstructor. eassumption.
+      apply Forall_constructors_in_constr in Hcenv; auto.
+      destruct (cenv ! t) eqn:Hc. 2:auto. destruct c. inv Hcenv.
+      separate_instr. do 7! rewrite catA. (* first 8 instr belong to sgrow *)
+      apply Rconstr_asgn_boxed with (arity:=S (length l')); eauto.
+      unfold get_ctor_arity. rewrite Hc. f_equal. cbn. lia. lia.
+      apply set_nth_constr_arg_correct.
+      assumption.
     }
   - (* Ecase nil *) simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar.
     inv H. inv H. econstructor. econstructor. eauto.
@@ -1845,13 +1746,6 @@ Proof with eassumption.
   eapply update_mem_preserves_types...
 Qed.
 
-
-Ltac separate_instr :=
-  cbn;
-  repeat match goal with
-  |- context C [?x :: ?l] =>
-     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-  end.
 
 (* isolate instr. + n leading args, e.g. with n=2 for add:
    [const 1, const 2, add, remaining instr] => [const 1, const 2, add]  *)
@@ -4947,40 +4841,16 @@ Proof with eauto.
          (* lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end *)
       end. clear H'.
 
-      unfold to_e_list. cbn.
-      repeat rewrite map_cat. cbn. repeat rewrite map_cat.
-      separate_instr. cbn.
-      (* TODO properly *)
-      assert (Heq: [:: AI_basic (BI_get_global global_mem_ptr),
-      AI_basic (BI_set_global constr_alloc_ptr),
-      AI_basic (BI_get_global constr_alloc_ptr),
-      AI_basic (BI_const (nat_to_value (Pos.to_nat t))),
-      AI_basic (BI_store T_i32 None 2%N 0%N),
-      AI_basic (BI_get_global global_mem_ptr),
-      AI_basic (BI_const (nat_to_value 4)),
-      AI_basic (BI_binop T_i32 (Binop_i BOI_add)),
-      AI_basic (BI_set_global global_mem_ptr)
-    & [seq AI_basic i | i <- sargs] ++
-      [seq AI_basic i | i <- sres] ++ [seq AI_basic i | i <- e']] =
-  ([:: AI_basic (BI_get_global global_mem_ptr)] ++
-  [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
-  [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
-  [:: AI_basic (BI_const (nat_to_value (Pos.to_nat t)))] ++
-  [:: AI_basic (BI_store T_i32 None 2%N 0%N)] ++
-  [:: AI_basic (BI_get_global global_mem_ptr)] ++
-  [:: AI_basic (BI_const (nat_to_value 4))] ++
-  [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
-  [:: AI_basic (BI_set_global global_mem_ptr)] ++
-  [seq AI_basic i | i <- sargs]) ++
-  [seq AI_basic i | i <- sres] ++ [seq AI_basic i | i <- e']). { rewrite <- app_assoc. reflexivity. }
-    rewrite Heq.
-    clear Heq. (* replace ([::]) with ([::] ++ [::]: list administrative_instruction) by reflexivity. *)
+    unfold to_e_list. cbn.
+    repeat rewrite map_cat. cbn. repeat rewrite map_cat.
+
+    (* take the first 10 instr lists *)
+    separate_instr. do 9! rewrite catA.
     eapply rt_trans. apply reduce_trans_label0.
-    apply app_trans. apply Hred_v. clear Hred_v. subst sres. cbn.
-    separate_instr.
-    replace ([:: AI_basic (BI_get_global constr_alloc_ptr)] ++ [:: AI_basic (BI_set_local x')]  ++ [seq AI_basic i | i <- e'])
-    with   (([:: AI_basic (BI_get_global constr_alloc_ptr)] ++ [:: AI_basic (BI_set_local x')]) ++ [seq AI_basic i | i <- e'])
-    by reflexivity. eapply rt_trans. apply reduce_trans_label0. apply app_trans.
+    apply app_trans. apply Hred_v.
+
+    clear Hred_v. cbn. separate_instr. rewrite catA.
+    eapply rt_trans. apply reduce_trans_label0. apply app_trans.
     dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
 
     assert (f_inst f_before_IH = f_inst fr) as Hfinst'. { subst. reflexivity. }
