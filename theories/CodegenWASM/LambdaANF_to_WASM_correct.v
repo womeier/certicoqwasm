@@ -4665,7 +4665,7 @@ Qed.
 Theorem repr_bs_LambdaANF_Codegen_related :
   (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
   forall lenv (rho : eval.env) (v : cps.val) (e : exp) (n : nat) (vars : list cps.var) (fds : fundefs)
-                               fAny es k (lh : lholed k),
+                               fAny k (lh : lholed k),
     map_injective lenv ->
     domains_disjoint lenv fenv ->
     vars = (collect_local_variables e) ++ (collect_function_vars (Efun fds e))%list ->
@@ -4681,8 +4681,7 @@ Theorem repr_bs_LambdaANF_Codegen_related :
     (* SSA form, let-bound vars not assigned yet *)
     (forall x, In x (collect_local_variables e) -> rho ! x = None) ->
     bstep_e (M.empty _) cenv rho e v n ->  (* e n-steps to v *)
-    forall (hs : host_state) (sr : store_record) (f : frame)
-           (instructions : list basic_instruction),
+    forall (hs : host_state) (sr : store_record) (f : frame) (e' : list basic_instruction),
 
       (forall a t ys e errMsg, find_def a fds = Some (t, ys, e) ->
           expression_restricted e /\ (forall x, occurs_free e x -> In x ys \/ find_def x fds <> None) /\
@@ -4698,14 +4697,13 @@ Theorem repr_bs_LambdaANF_Codegen_related :
       INV sr f ->
 
       (* translate_exp e returns instructions *)
-      @repr_expr_LambdaANF_Codegen cenv fenv nenv lenv e instructions ->
-
-      lfill lh (map AI_basic instructions) = es ->
+      @repr_expr_LambdaANF_Codegen cenv fenv nenv lenv e e' ->
 
       (* relates a LambdaANF evaluation environment [rho] to a WASM environment [store/frame] (free variables in e) *)
       @rel_env_LambdaANF_Codegen cenv fenv nenv _ lenv e rho sr f fds ->
       exists (sr' : store_record) (f' : frame) k (lh' : lholed k),
-        reduce_trans (hs, sr, fAny, [AI_local 0 f es]) (hs, sr', fAny, [AI_local 0 f' (lfill lh' [::AI_basic BI_return])]) /\
+        reduce_trans (hs, sr,  fAny, [AI_local 0 f (lfill lh (map AI_basic e'))])
+                     (hs, sr', fAny, [AI_local 0 f' (lfill lh' [::AI_basic BI_return])]) /\
         (* value sr'.res points to value related to v *)
         result_val_LambdaANF_Codegen v sr' f' /\
         f_inst f = f_inst f' /\ s_funcs sr = s_funcs sr' /\
@@ -4715,11 +4713,11 @@ Theorem repr_bs_LambdaANF_Codegen_related :
         (* INV holds if program will continue to run *)
         (INV_result_var_out_of_mem_is_zero sr' f' -> INV sr' f').
 Proof with eauto.
-  intros lenv rho v e n vars fds fAny es k lh HlenvInjective HenvsDisjoint Hvars Hnodup
+  intros lenv rho v e n vars fds fAny k lh HlenvInjective HenvsDisjoint Hvars Hnodup
      HfenvWf HfenvRho HeRestr Hunbound Hev. subst vars.
-  generalize dependent lenv. generalize dependent lh. revert es k fAny.
-  induction Hev; intros es k fAny lh lenv HlenvInjective HenvsDisjoint state sr fr instructions
-                        Hfds HlocInBound Hinv Hrepr_e Hlh1 Hrel_m.
+  generalize dependent lenv. generalize dependent lh. revert k fAny.
+  induction Hev; intros k fAny lh lenv HlenvInjective HenvsDisjoint state sr fr instructions
+                        Hfds HlocInBound Hinv Hrepr_e Hrel_m.
   - (* Econstr *)
     inversion Hrepr_e.
     inversion H8.
@@ -4921,18 +4919,16 @@ Proof with eauto.
 
       have H' := lholed_nested_label _ lh. edestruct H' as [k' [lh' Heq']]. clear H'.
 
-      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fAny lh' _ HlenvInjective HenvsDisjoint
-                 state s_v f_before_IH _ Hfds' HlocInBound' Hinv_before_IH Hexp Logic.eq_refl Hrel_m_v.
+      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny lh' _ HlenvInjective HenvsDisjoint
+                 state s_v f_before_IH _ Hfds' HlocInBound' Hinv_before_IH Hexp Hrel_m_v.
       destruct IH as [s_final [f_final [k'' [lh'' [Hred_IH [Hval [Hfinst [Hsfuncs' [HvalPres H_INV]]]]]]]]].
       cbn in Hfinst.
-      rewrite -Heq' in Hred_IH.
-
-      subst es. cbn.
+      rewrite -Heq' in Hred_IH. cbn.
 
       exists s_final, f_final, k'', lh''. split.
       (* steps *)
 
-      subst instrs instructions. rewrite map_cat.
+      subst instrs instructions.
 
       eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
       eapply rt_trans. apply app_trans. apply Hred. cbn.
@@ -4999,8 +4995,7 @@ Proof with eauto.
     apply val_relation_depends_on_finst with (fr:=fr). reflexivity.
     apply HvalPreserved'. apply HvalPreserved. assumption. }}
     { (* grow mem failed *)
-    subst es instructions instrs.
-    rewrite map_cat.
+    subst instructions instrs.
 
     have H' := lholed_nested_label _ lh. edestruct H' as [k' [lh' Heq']]. clear H'.
 
@@ -5156,8 +5151,8 @@ Proof with eauto.
         }
       }
 
-      have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ _ fAny lh _ HlenvInjective HenvsDisjoint
-                 state sr f_before_IH _ Hfds' HlocInBound' Hinv' H6 Logic.eq_refl Hrel_m'.
+      have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ fAny lh _ HlenvInjective HenvsDisjoint
+                 state sr f_before_IH _ Hfds' HlocInBound' Hinv' H6 Hrel_m'.
       destruct IH as [sr' [f' [k' [lh' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]]]].
 
       exists sr', f', k', lh'.
@@ -5348,8 +5343,8 @@ Proof with eauto.
        inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
        apply Hd2 in H10. unfold translate_var in H12. now rewrite H10 in H12. }
 
-     have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fAny lh _ HlenvInjective HenvsDisjoint
-                      state _ _ _ Hfds' HlocInBound' Hinv' H7 Logic.eq_refl Hrm.
+     have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny lh _ HlenvInjective HenvsDisjoint
+                      state _ _ _ Hfds' HlocInBound' Hinv' H7 Hrm.
      destruct IH as [sr' [f' [k' [lh' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]]]]. cbn in Hfinst.
 
      exists sr', f', k', lh'. cbn. split.
@@ -5790,8 +5785,8 @@ Proof with eauto.
     remember (LH_rec [] 0 [] (LH_base [] []) []) as lh_IH.
 
     subst lenv_before_IH.
-    have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fAny lh_IH _ HlenvInjective' HenvsDisjoint'
-                   state _ _ _ Hfds_before_IH HlocInBound_before_IH Hinv_before_IH Hexpr Logic.eq_refl Hrelm.
+    have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny lh_IH _ HlenvInjective' HenvsDisjoint'
+                   state _ _ _ Hfds_before_IH HlocInBound_before_IH Hinv_before_IH Hexpr Hrelm.
 
     destruct IH as [sr_final [fr_final [k' [lh' [Hred [Hval [Hfinst [Hfuncs [HvalPres H_INV]]]]]]]]].
     clear IHHev.
@@ -6077,8 +6072,8 @@ Proof with eauto.
     remember (LH_rec [] 0 [] (LH_base [] []) []) as lh_before_IH.
 
     subst lenv_before_IH.
-    have IH_body := IHHev1 Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fr lh_before_IH _ HlenvInjective' HenvsDisjoint'
-                   state _ _ _ Hfds_before_IH HlocInBound_before_IH Hinv_before_IH Hexpr Logic.eq_refl Hrelm.
+    have IH_body := IHHev1 Hnodup' HfenvRho' HeRestr' Hunbound' _ fr lh_before_IH _ HlenvInjective' HenvsDisjoint'
+                   state _ _ _ Hfds_before_IH HlocInBound_before_IH Hinv_before_IH Hexpr Hrelm.
 
     destruct IH_body as [sr_after_call [fr_after_call [k0 [lh0 [Hred [Hval [Hfinst [Hfuncs [HvalPres H_INV]]]]]]]]].
     clear HfenvRho' Hnodup' Hunbound' HeRestr' IHHev1.
@@ -6284,8 +6279,8 @@ Proof with eauto.
 
         have H' := lholed_nested_label _ lh. edestruct H' as [k' [lh' Heq']]. clear H'.
 
-        have IH_cont := IHHev2 Hnodup' HfenvRho' HeRestr' Hunbound' _ _ fAny lh' lenv HlenvInjective HenvsDisjoint
-                   state _ _ _ Hfds_before_cont_IH HlocInBound_before_cont_IH Hinv_before_cont_IH Hexpr Logic.eq_refl HrelM'.
+        have IH_cont := IHHev2 Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny lh' lenv HlenvInjective HenvsDisjoint
+                   state _ _ _ Hfds_before_cont_IH HlocInBound_before_cont_IH Hinv_before_cont_IH Hexpr HrelM'.
         destruct IH_cont as [sr_final [fr_final [k_final [lh_final [Hred' [Hval' [Hfinst' [Hfuncs' [HvalPres' H_INV']]]]]]]]]. clear IHHev2.
         rewrite -Heq' in Hred'.
 
@@ -8179,9 +8174,9 @@ Proof.
 
     subst lenv.
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv _ host_instance
-                    _ _ _ _ _ _ _ frameInit _ _ lh HlenvInjective
+                    _ _ _ _ _ _ _ frameInit _ lh HlenvInjective
                       HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
-                      HeRestr' Hunbound Hstep hs _ _ _ Hfds HlocInBound Hinv_before_IH Hexpr Logic.eq_refl Hrelm.
+                      HeRestr' Hunbound Hstep hs _ _ _ Hfds HlocInBound Hinv_before_IH Hexpr Hrelm.
 
     destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn.
     subst frameInit.
@@ -8280,8 +8275,8 @@ Proof.
 
     subst lenv.
     have HMAIN := repr_bs_LambdaANF_Codegen_related cenv funenv fenv nenv _ host_instance _ (M.empty _)
-                    _ _ _ _ _ frameInit _ _ lh HlenvInjective HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf
-                      HfenvRho HeRestr Hunbound Hstep hs _ _ _ Hfds HlocInBound Hinv_before_IH Hexpr Logic.eq_refl Hrelm.
+                    _ _ _ _ _ frameInit _ lh HlenvInjective HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf
+                      HfenvRho HeRestr Hunbound Hstep hs _ _ _ Hfds HlocInBound Hinv_before_IH Hexpr Hrelm.
 
     subst lh frameInit.
 
