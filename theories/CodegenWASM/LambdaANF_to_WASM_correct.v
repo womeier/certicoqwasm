@@ -4597,6 +4597,52 @@ Proof.
   Unshelve. all: assumption.
 Qed.
 
+Fixpoint select_nested_if (boxed : bool) (v : immediate) (t : ctor_tag) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
+  match es with
+  | [] => [ BI_unreachable ]
+  | (t0, _) :: es' =>
+      if (M.elt_eq t0 t) then
+        create_case_nested_if_chain boxed v es
+      else
+        select_nested_if boxed v t es'
+  end.
+
+
+Lemma unboxed_nested_if_chain:
+  forall t e v lenv cl brs1 brs2,
+    caseConsistent cenv cl t ->
+    findtag cl t = Some e ->
+    @repr_branches cenv fenv nenv lenv v cl brs1 brs2 ->
+    exists e' e'',
+      select_nested_if false v t brs2 =
+        [ BI_get_local v
+          ; BI_const (nat_to_value (Pos.to_nat (2 * t + 1)))
+          ; BI_relop T_i32 (Relop_i ROI_eq)
+          ; BI_if (Tf nil nil)
+              e'
+              e'' ]
+      /\ @repr_expr_LambdaANF_Codegen cenv fenv nenv lenv e e'.
+Proof.
+Admitted.
+
+Lemma boxed_nested_if_chain:
+  forall t e v lenv cl brs1 brs2,
+    caseConsistent cenv cl t ->
+    findtag cl t = Some e ->
+    @repr_branches cenv fenv nenv lenv v cl brs1 brs2 ->
+    exists e' e'',
+      select_nested_if true v t brs1 =
+        [ BI_get_local v
+          ; BI_load T_i32 None 2%N 0%N
+          ; BI_const (nat_to_value (Pos.to_nat t))
+          ; BI_relop T_i32 (Relop_i ROI_eq)
+          ; BI_if (Tf nil nil)
+              e'
+              e'' ]
+      /\ @repr_expr_LambdaANF_Codegen cenv fenv nenv lenv e e'.
+Proof.
+Admitted.
+
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Codegen_related :
   (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
@@ -5282,7 +5328,188 @@ Proof with eauto.
      do 4 (split; auto).
      intros. apply HvalPres. now apply val_relation_depends_on_finst with (fr:=fr).
     }
-  - (* Ecase *) admit. (*
+  - (* Ecase *)
+    {
+      intros.
+      assert (caseConsistent cenv cl t). { assumption. }
+      inv Hrepr_e.
+      rename H5 into Hy'.
+      assert (Hy : occurs_free (Ecase y cl) y) by constructor.
+      have Hrel_m' := Hrel_m.
+      destruct Hrel_m' as [Hfun1 [Hfun2 Hvar]].
+      assert (HfdNone: find_def y fds = None). {
+        apply HfenvWf_None with (f:=y) in HfenvWf. rewrite HfenvWf.
+        inv Hy'. unfold translate_var in H3. destruct (lenv ! y) eqn:Hy'; inv H1.
+        now apply HenvsDisjoint in Hy'. inv H3.
+      }
+      have Hy0 := Hy.
+      apply Hvar in Hy0; auto.
+      destruct Hy0 as [v0 [wal [Hrho [Hlocals Hval]]]].
+      assert (v0 = (Vconstr t vl)). { rewrite Hrho in H. congruence. }
+      inv H3.
+      assert (Hstep_case:
+               exists e' e'',
+                 reduce_trans
+                     (state, sr, fr,
+                       [seq AI_basic i | i <-
+                                           [:: BI_get_local y'
+                                            ; BI_const (nat_to_value 1)
+                                            ; BI_binop T_i32 (Binop_i BOI_and)
+                                            ; BI_testop T_i32 TO_eqz
+                                            ; BI_if (Tf [::] [::])
+                                                e1'
+                                                e2']])
+                     (state, sr, fr, [seq AI_basic i |
+                                       i <- [:: BI_const (VAL_int32 (Wasm_int.Int32.one))
+                                              ; BI_if (Tf [::] [::])
+                                                   e'
+                                                   e'']])
+                 /\ @repr_expr_LambdaANF_Codegen cenv fenv nenv lenv e e').
+      {
+        inv Hval.
+        (* Unboxed *)
+        {
+          assert (exists e' e'',
+                     select_nested_if false y' t brs2 =
+                       [ BI_get_local y'
+                         ; BI_const (nat_to_value (Pos.to_nat (2 * t + 1)))
+                         ; BI_relop T_i32 (Relop_i ROI_eq)
+                         ; BI_if (Tf nil nil)
+                             e'
+                             e'' ]
+                     /\ @repr_expr_LambdaANF_Codegen cenv fenv nenv lenv e e').
+          { eapply unboxed_nested_if_chain; eauto. }
+          destruct H3 as [e' [e'' [Hif Hrep]]].
+          exists e', e''. split; auto.
+          have Hlocals' := Hlocals.
+          destruct Hlocals' as [i [Htrans_y Hntherror]].
+          assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. }
+          inv H3.
+          dostep. elimr_nary_instr 0. apply r_get_local. eauto.
+          dostep. elimr_nary_instr 2.
+          constructor.
+          apply rs_binop_success.
+          cbn.
+          assert (Wasm_int.Int32.iand (wasm_value_to_i32 (Val_unboxed (Pos.to_nat (t * 2 + 1)))) (nat_to_i32 1) = Wasm_int.Int32.one).
+          { (* TODO *) admit. }
+          rewrite H3. eauto. cbn.
+          dostep. elimr_nary_instr 1. constructor. eapply rs_testop_i32.
+          cbn.
+          dostep'. constructor. apply rs_if_false. reflexivity.
+          dostep'. constructor. eapply rs_block with (vs := []); auto.
+          (* TODO: Need to also get the nesting depth *)
+          admit. (* Idea: Either we hit the case, or we move on to the next *)
+        }
+        { (* Boxed. *)
+          assert (exists e' e'',
+                     select_nested_if true y' t brs1 =
+                       [ BI_get_local y'
+                         ; BI_load T_i32 None 2%N 0%N
+                         ; BI_const (nat_to_value (Pos.to_nat t))
+                         ; BI_relop T_i32 (Relop_i ROI_eq)
+                         ; BI_if (Tf nil nil)
+                             e'
+                             e'' ]
+                     /\ @repr_expr_LambdaANF_Codegen cenv fenv nenv lenv e e').
+          { eapply boxed_nested_if_chain; eauto. }
+          destruct H3 as [e' [e'' [Hif Hrep]]].
+          exists e', e''. split; auto.
+          have Hlocals' := Hlocals.
+          destruct Hlocals' as [i [Htrans_y Hntherror]].
+          assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. }
+          inv H3.
+          admit.
+          (* TODO: Similar to above *)
+
+          (*
+          dostep. elimr_nary_instr 0.
+          apply r_get_local. eassumption.
+
+
+
+          unfold load_i32 in H15.
+          destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hload.
+
+          dostep. elimr_nary_instr 1. apply r_load_success. apply Hlinmem. eassumption.
+          assert (N.of_nat addr = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))).
+          { cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
+          rewrite <- H. apply Hload.
+
+          remember (VAL_int32 (tag_to_i32 t)) as tag.
+
+          dostep. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
+
+          dostep'. constructor. apply rs_if_true.
+          cbn. unfold nat_to_i32. unfold tag_to_i32.
+          unfold Wasm_int.Int32.eq.
+          cbn in Hload. rewrite Hload in H15. subst. injection H15 => H11'.
+          destruct (zeq (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (decode_int b)))
+                      (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (Z.of_nat (Pos.to_nat t))))) eqn:Heq.
+          *)
+
+        }
+      }
+      have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hlinmem [_ [_ [_ [_ [_ [HlocalBound _]]]]]]]]]]]]].
+      have Hlocals' := Hlocals.
+
+      destruct Hlocals' as [i [Htrans_y Hntherror]].
+      assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. }
+
+
+      assert (Hrel: @rel_env_LambdaANF_Codegen cenv fenv nenv host_function lenv e rho sr fr fds).
+      { unfold rel_env_LambdaANF_Codegen.
+        split.
+        intros.
+        eauto.
+        split.
+        eauto.
+        intros.
+        assert (occurs_free (Ecase y cl) x).
+        eapply occurs_free_Ecase_Included.
+        apply findtag_In. eauto. eauto.
+        apply Hvar; auto.
+      }
+
+      assert (HeRestr': expression_restricted e). {
+        inv HeRestr.
+        admit.
+        (* TODO: e is subterm, so should be restricted, tuple makes it slightly annoying *)
+      }
+
+
+      assert (Hunbound': (forall x : var, In x (collect_local_variables e) ->
+                                     rho ! x = None)). {
+        intros. apply Hunbound. cbn.
+        admit.
+        (* TODO: e is a subterm, so should be not be bound, tuple makes it slightly annoying *)
+      }
+
+      assert (Hnodup': NoDup (collect_local_variables e ++
+                                collect_function_vars (Efun fds e))). {
+        intros.
+        cbn in Hnodup.
+        admit.
+        (* TODO: e is a subterm, so there should be no duplicates *)
+      }
+
+      destruct Hstep_case as [e' [ e'' [Hred Hrepre]]].
+
+      have IH := IHHev Hnodup' HfenvRho HeRestr' Hunbound' _ HlenvInjective HenvsDisjoint
+                       state _ _ _ Hfds Hinv Hrepre Hrel.
+      destruct IH as [sr' [fr' [Hstep [Hval_e [Hfinst [HvalPres H_INV]]]]]].
+
+      exists  sr', fr'. split.
+      { (* steps *)
+        eapply rt_trans with (y:= (state, sr, fr, [seq AI_basic i | i <- [:: BI_const (VAL_int32 Wasm_int.Int32.one); BI_if (Tf [::] [::]) e' e'']])).
+        apply Hred.
+        dostep'. constructor. apply rs_if_true. intro. inv H4. dostep'. constructor.
+        eapply rs_block with (vs := []); auto. unfold to_e_list. cbn.
+        eapply reduce_trans_label. apply Hstep.
+      }
+      eauto.
+    }
+
+  (*
     { generalize dependent y. generalize dependent instructions.
       induction cl; intros; subst. inv H1. destruct a. rename c0 into t0.
 
