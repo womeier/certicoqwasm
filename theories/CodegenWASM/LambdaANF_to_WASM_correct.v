@@ -4628,7 +4628,30 @@ Fixpoint select_nested_if (boxed : bool) (v : immediate) (t : ctor_tag) (es : li
         select_nested_if boxed v t es'
   end.
 
+Lemma create_case_nested_if_chain_repr_case_unboxed : forall v brs es,
+    @repr_case_unboxed v brs es ->
+    create_case_nested_if_chain false v brs = es.
+Proof.
+  intros v brs.
+  generalize dependent v.
+  induction brs; intros.
+  - inv H. reflexivity.
+  - destruct a. inv H.
+    cbn. apply IHbrs in H5. now rewrite H5.
+Qed.
 
+
+Lemma create_case_nested_if_chain_repr_case_boxed : forall v brs es,
+    @repr_case_boxed v brs es ->
+    create_case_nested_if_chain true v brs = es.
+Proof.
+  intros v brs.
+  generalize dependent v.
+  induction brs; intros.
+  - inv H. reflexivity.
+  - destruct a. inv H.
+    cbn. apply IHbrs in H5. now rewrite H5.
+Qed.
 
 
 Lemma lholed_nested_label : forall k (lh : lholed k) es,
@@ -4642,6 +4665,19 @@ Proof.
     eexists. exists (LH_rec l n l0 lh' l1). cbn.
     now rewrite Heq.
 Qed.
+
+Lemma and_of_odd_and_1_1 : forall n,
+    Z.land (Zpos (n~1)) 1%Z = 1%Z.
+Proof.
+  destruct n; cbn; reflexivity.
+Qed.
+
+Lemma and_of_even_and_1_0 : forall n,
+    Z.land (Zpos (n~1)) 1%Z = 1%Z.
+Proof.
+  destruct n; cbn; reflexivity.
+Qed.
+
 
 Lemma unboxed_nested_if_chain_reduces:
   forall fAny t e v lenv cl brs1 brs2 e2',
@@ -4662,6 +4698,87 @@ Lemma unboxed_nested_if_chain_reduces:
             reduce_trans (hs, sr, fAny, [AI_local 0 f (lfill lh (map AI_basic e2'))]) (hs, sr, fAny, [AI_local 0 f (lfill lh0 (map AI_basic e'))]))
       /\ @repr_expr_LambdaANF_Codegen cenv fenv nenv lenv e e'.
 Proof.
+  intros fAny t e v lenv cl.
+  generalize dependent fAny.
+  generalize dependent t.
+  generalize dependent e.
+  generalize dependent v.
+  generalize dependent lenv.
+  induction cl.
+  intros. inv H0.
+  intros lenv v e t fAny brs1 brs2 e1' HcaseConsistent Hfindtag Hbranches Hunboxedcase.
+  destruct a. rename c into t0.
+  inv Hbranches. admit. (* TODO *)
+  inv Hfindtag.
+  destruct (M.elt_eq t0 t).
+  {
+    inv H0.
+    inv Hunboxedcase.
+    exists e', instrs_more.
+    split. cbn.
+    assert (create_case_nested_if_chain false v brs3 = instrs_more). { now apply create_case_nested_if_chain_repr_case_unboxed. }
+    rewrite Pos.eqb_refl. rewrite  H.
+    split.
+    split.
+    intros.
+    assert (Hlh: exists k' (lh' : lholed k'),
+               lfill lh [:: AI_label 0 [::] (map AI_basic e')] = lfill lh' (map AI_basic e')). {
+      apply lholed_nested_label. }
+    destruct Hlh as [k' [lh' Hlheq]].
+    exists k', lh'.
+    eapply reduce_trans_local'.
+    eapply rt_trans with (y:=(hs, sr, f, lfill lh [AI_label 0 [] (map AI_basic e')])).
+    apply reduce_trans_label'.
+    dostep. elimr_nary_instr 0. apply r_get_local. admit.
+    dostep. elimr_nary_instr 2. constructor. apply rs_relop.
+    dostep'. constructor. apply rs_if_true. admit.
+    dostep'. constructor. eapply rs_block with (vs:=[]); eauto.
+    unfold to_e_list. cbn.
+    eapply rt_refl.
+    rewrite Hlheq.
+    eapply rt_refl.
+    assumption.
+  }
+  {
+    assert (HcaseConsistent' : caseConsistent cenv cl t). { inv HcaseConsistent. assumption. }
+
+    assert (repr_case_unboxed v brs3 (create_case_nested_if_chain false v brs3)).
+    {
+      inv Hunboxedcase.
+      assert (create_case_nested_if_chain false v brs3 = instrs_more). { now apply create_case_nested_if_chain_repr_case_unboxed. }
+      now rewrite H.
+    }
+    have IH := IHcl lenv v e t fAny brs1 brs3 (create_case_nested_if_chain false v brs3) HcaseConsistent' H0 H2 H.
+    destruct IH as [e0' [e'' [Hsel [Hred Hrep]]]].
+    exists e0', e''.
+    split.
+    unfold select_nested_if. apply Pos.eqb_neq in n. rewrite n. fold select_nested_if. assumption.
+    split.
+    inv Hunboxedcase.
+    intros.
+    assert (Hlh: exists k' (lh' : lholed k'),
+                lfill lh [:: AI_label 0 [::] (map AI_basic instrs_more)] = lfill lh' (map AI_basic instrs_more)). {
+     apply lholed_nested_label. }
+    destruct Hlh as [k' [lh' Hlheq]].
+    have Hred' := Hred hs sr f k' lh'. (* simpl in Hred'. *)
+    destruct Hred' as [k0 [lh0 Hstep]].
+    exists k0, lh0.
+    eapply rt_trans with (y:=(hs, sr, fAny, [AI_local 0 f (lfill lh [AI_label 0 [] (map AI_basic instrs_more)])])).
+    apply reduce_trans_local'.
+    apply reduce_trans_label'.
+    eapply rt_trans.
+    dostep. elimr_nary_instr 0. apply r_get_local. admit.
+    dostep. elimr_nary_instr 2. constructor. apply rs_relop.
+    dostep'. constructor. apply rs_if_false. admit.
+    dostep'. constructor. eapply rs_block with (vs:=[]); eauto.
+    unfold to_e_list. cbn.
+    eapply rt_refl. apply rt_refl.
+    rewrite Hlheq.
+    assert (create_case_nested_if_chain false v brs3 = instrs_more). { now apply create_case_nested_if_chain_repr_case_unboxed. }
+    rewrite H1 in Hstep.
+    apply Hstep.
+    assumption.
+  }
 Admitted.
 
 
@@ -4703,7 +4820,7 @@ Proof.
     inv Hboxedcase.
     exists e', instrs_more.
     split. cbn.
-    assert (create_case_nested_if_chain true v brs0 = instrs_more). { admit. }
+    assert (create_case_nested_if_chain true v brs0 = instrs_more). { now apply create_case_nested_if_chain_repr_case_boxed. }
     rewrite Pos.eqb_refl. rewrite  H.
     split.
     split.
@@ -4729,7 +4846,11 @@ Proof.
   }
   {
     assert (HcaseConsistent' : caseConsistent cenv cl t). { inv HcaseConsistent. assumption. }
-    assert (repr_case_boxed v brs0 (create_case_nested_if_chain true v brs0)). { admit. }
+    assert (repr_case_boxed v brs0 (create_case_nested_if_chain true v brs0)). {
+      inv Hboxedcase.
+      assert (create_case_nested_if_chain true v brs0 = instrs_more). { now apply create_case_nested_if_chain_repr_case_boxed. }
+      now rewrite H.
+    }
     have IH := IHcl lenv v e t fAny brs0 brs2 (create_case_nested_if_chain true v brs0) HcaseConsistent' H0 H2 H.
     destruct IH as [e0' [e'' [Hsel [Hred Hrep]]]].
     exists e0', e''.
@@ -4757,13 +4878,38 @@ Proof.
     unfold to_e_list. cbn.
     eapply rt_refl. apply rt_refl.
     rewrite Hlheq.
-    assert (create_case_nested_if_chain true v brs0 = instrs_more). admit.
+    assert (create_case_nested_if_chain true v brs0 = instrs_more). { now apply create_case_nested_if_chain_repr_case_boxed. }
     rewrite H1 in Hstep.
     apply Hstep.
     assumption.
-
   }
 Admitted.
+
+Lemma same_fds: forall e e' fds,
+    collect_function_vars (Efun fds e) = collect_function_vars (Efun fds e').
+Proof.
+  intros. cbn. f_equal.
+Qed.
+
+Lemma NoDup_case: forall cl t e y,
+    findtag cl t  = Some e ->
+    NoDup (collect_local_variables (Ecase y cl)) ->
+    NoDup (collect_local_variables e).
+Proof.
+  induction cl; intros.
+  - inv H.
+  - destruct a.
+    destruct (M.elt_eq c t). inv H. assert (e = e0). { destruct (M.elt_eq t t). now inv H2. destruct n. reflexivity. }
+    subst e0.
+    cbn in H0.
+    now apply NoDup_app_remove_r in H0.
+    cbn in H0.
+    apply NoDup_app_remove_l in H0.
+    apply IHcl with (t:=t) (e:=e) (y:=y).
+    inv H. destruct (M.elt_eq c t). contradiction. reflexivity.
+    cbn. apply H0.
+Qed.
+
 
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
@@ -5598,35 +5744,55 @@ Proof with eauto.
           apply Hred'.
         }
         { (* Boxed. *)
-          admit.
-          (* TODO: Similar to above *)
-
-          (*
-          dostep. elimr_nary_instr 0.
-          apply r_get_local. eassumption.
-
-
-
-          unfold load_i32 in H15.
-          destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hload.
-
-          dostep. elimr_nary_instr 1. apply r_load_success. apply Hlinmem. eassumption.
-          assert (N.of_nat addr = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))).
-          { cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
-          rewrite <- H. apply Hload.
-
-          remember (VAL_int32 (tag_to_i32 t)) as tag.
-
-          dostep. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
-
-          dostep'. constructor. apply rs_if_true.
-          cbn. unfold nat_to_i32. unfold tag_to_i32.
-          unfold Wasm_int.Int32.eq.
-          cbn in Hload. rewrite Hload in H15. subst. injection H15 => H11'.
-          destruct (zeq (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (decode_int b)))
-                      (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (Z.of_nat (Pos.to_nat t))))) eqn:Heq.
-          *)
-
+          assert (exists e' e'',
+                     select_nested_if true y' t brs1 =
+                       [ BI_get_local y'
+                         ; BI_load T_i32 None 2%N 0%N
+                         ; BI_const (nat_to_value (Pos.to_nat t))
+                         ; BI_relop T_i32 (Relop_i ROI_eq)
+                         ; BI_if (Tf nil nil)
+                             e'
+                             e'' ]
+                     /\ (forall k0 (lh0 : lholed k0),
+                           exists k0' (lh0' : lholed k0'),
+                           reduce_trans
+                             (state, sr, fAny, [AI_local 0 fr (lfill lh0 (map AI_basic e1'))])
+                             (state, sr, fAny, [AI_local 0 fr (lfill lh0' (map AI_basic e'))]))
+                     /\ @repr_expr_LambdaANF_Codegen cenv fenv nenv lenv e e').
+          {
+            have Hif_red := boxed_nested_if_chain_reduces fAny t e y' lenv cl brs1 brs2 e1' H0 H1 H6 H7.
+            destruct Hif_red as [e' [e'' [Hsel [Hred Hrep]]]].
+            have Hred' := Hred state sr fr.
+            exists e', e''.
+            split. auto. split. auto. auto.
+          }
+                    destruct H3 as [e' [e'' [_ [Hred Hrep]]]].
+          have Hholednested := lholed_nested_label k lh (map AI_basic e1').
+          destruct Hholednested as [k0' [lh0' He1']].
+          have Hred' := Hred k0' lh0'.
+          destruct Hred' as [k0 [lh0 Hred']].
+          exists e', k0, lh0. split; auto.
+          have Hlocals' := Hlocals.
+          destruct Hlocals' as [i [Htrans_y Hntherror]].
+          assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. }
+          eapply rt_trans with (y:=(state, sr, fAny, [AI_local 0 fr (lfill lh ([ AI_label 0 [] (map AI_basic e1')]))])).
+          apply reduce_trans_local'.
+          apply reduce_trans_label'.
+          dostep. elimr_nary_instr 0. apply r_get_local. rewrite H3 in Hntherror. eauto.
+          dostep. elimr_nary_instr 2.
+          constructor.
+          apply rs_binop_success.
+          cbn.
+          assert (Wasm_int.Int32.iand (wasm_value_to_i32 (Val_unboxed (Pos.to_nat (t * 2 + 1)))) (nat_to_i32 1) = Wasm_int.Int32.zero). { (* TODO *) admit. }
+          eauto.
+          cbn.
+          dostep. elimr_nary_instr 1. constructor. eapply rs_testop_i32.
+          cbn.
+          dostep'. constructor. apply rs_if_true. (* TODO *) admit.
+          dostep'. constructor. eapply rs_block with (vs := []); auto.
+          unfold to_e_list. cbn. apply rt_refl.
+          rewrite -He1' in  Hred'.
+          apply Hred'.
         }
       }
       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hlinmem [_ [_ [_ [_ [_  _]]]]]]]]]]]].
@@ -5652,27 +5818,42 @@ Proof with eauto.
 
       assert (HeRestr': expression_restricted e). {
         inv HeRestr.
-        admit.
-        (* TODO: e is subterm, so should be restricted, tuple makes it slightly annoying *)
+        have Hforall := Forall_forall (fun p : positive * exp =>
+          (Z.of_nat (Pos.to_nat (fst p)) < Wasm_int.Int32.half_modulus)%Z /\
+            expression_restricted (snd p)) cl.
+        destruct Hforall.
+        apply H3 with (x:=(t,e)) in H5.
+        destruct H5. auto.
+        apply findtag_In. auto.
       }
-
 
       assert (Hunbound': (forall x : var, In x (collect_local_variables e) ->
                                      rho ! x = None)). {
         intros. apply Hunbound. cbn.
-        admit.
-        (* TODO: e is a subterm, so should be not be bound, tuple makes it slightly annoying *)
-      }
-
-      assert (Hnodup': NoDup (collect_local_variables e ++
-                                collect_function_vars (Efun fds e))). {
-        intros.
-        cbn in Hnodup.
-        admit.
-        (* TODO: e is a subterm, so there should be no duplicates *)
+        apply in_flat_map.
+        exists (t,e). split.
+        apply findtag_In. auto.
+        apply H4.
       }
 
       destruct Hstep_case as [e' [k0 [lh0 [Hred Hrepre]]]].
+
+      assert (Hnodup': NoDup (collect_local_variables e ++
+                                collect_function_vars (Efun fds e))). {
+        assert (collect_function_vars (Efun fds (Ecase y cl)) = collect_function_vars (Efun fds e)). { apply same_fds. }
+        rewrite -H4.
+        apply NoDup_incl_NoDup' with (l1:=collect_local_variables (Ecase y cl)) (l2:=collect_function_vars (Efun fds (Ecase y cl))).
+        assumption.
+        apply NoDup_case with (cl:=cl) (t:=t) (y:=y).
+        assumption.
+        apply NoDup_app_remove_r in Hnodup. assumption.
+        assert (In (t, e) cl). { apply findtag_In. assumption. }
+        cbn.
+        unfold incl.
+        intros.
+        apply in_flat_map.
+        exists (t, e). split; assumption.
+      }
 
       assert (lfill lh0 (map AI_basic e') = lfill lh0 (map AI_basic e')) by reflexivity.
       have IH := IHHev Hnodup' HfenvRho HeRestr' Hunbound' _ k0 fAny lh0 _ HlenvInjective HenvsDisjoint
