@@ -21,7 +21,7 @@ Definition max_mem_pages     := 5000%N.
 
 (* ***** RESTRICTIONS ON constructors and functions ****** *)
 Definition max_constr_args   := 1024%Z.      (* should be possible to vary without breaking much *)
-Definition max_function_args := 100%Z.       (* should be possible to vary without breaking much *)
+Definition max_function_args := 20%Z.        (* should be possible to vary without breaking much *)
 Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
 
 
