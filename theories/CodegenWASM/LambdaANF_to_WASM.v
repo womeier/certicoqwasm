@@ -379,7 +379,7 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (
          else
            [ BI_const (nat_to_value (Pos.to_nat (2 * t + 1))) ]) ++
         [ BI_relop T_i32 (Relop_i ROI_eq)
-          ; BI_if (Tf nil nil) instrs (create_case_nested_if_chain boxed v tl) ]
+        ; BI_if (Tf nil nil) instrs (create_case_nested_if_chain boxed v tl) ]
   end.
 
 
@@ -393,25 +393,25 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       x_var <- translate_var nenv lenv x "translate_exp constr";;
       match ys with
       | [] => Ret ([ BI_const (nat_to_value (Pos.to_nat tg)) (* Nullary constructor *)
-                    (* Unboxed representation ( (tag << 1) + 1 ) *)
-                    ; BI_const (nat_to_value 1)
-                    ; BI_binop T_i32 (Binop_i BOI_shl)
-                    ; BI_const (nat_to_value 1)
-                    ; BI_binop T_i32 (Binop_i BOI_add)
-                    ; BI_set_local x_var ] ++ following_instr)
+                  (* Unboxed representation ( (tag << 1) + 1 ) *)
+                  ; BI_const (nat_to_value 1)
+                  ; BI_binop T_i32 (Binop_i BOI_shl)
+                  ; BI_const (nat_to_value 1)
+                  ; BI_binop T_i32 (Binop_i BOI_add)
+                  ; BI_set_local x_var ] ++ following_instr)
       | _ => (* n > 0 ary constructor  *)
           (* Boxed representation *)
           store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
           (* Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++ *)
           Ret (grow_memory_if_necessary page_size ++
                  [ BI_get_global result_out_of_mem
-                   ; BI_const (nat_to_value 1)
-                   ; BI_relop T_i32 (Relop_i ROI_eq)
-                   ; BI_if (Tf [] [])
-                       [ BI_return ]
+                 ; BI_const (nat_to_value 1)
+                 ; BI_relop T_i32 (Relop_i ROI_eq)
+                 ; BI_if (Tf [] [])
+                     [ BI_return ]
                        (store_constr ++
                           [ BI_get_global constr_alloc_ptr
-                            ; BI_set_local x_var
+                          ; BI_set_local x_var
                           ] ++ following_instr)
             ])
       end
@@ -421,7 +421,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
         match arms with
         | [] => Ret ([], [])
         | (t, e)::tl =>
-            instrs <- translate_exp nenv cenv lenv fenv e;;
+            instrs <- translate_exp nenv cenv lenv fenv e ;;
             '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions tl ;;
             arity <- get_ctor_arity cenv t ;;
             if arity =? 0 then
@@ -432,13 +432,14 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       in
       x_var <- translate_var nenv lenv x "translate_exp case" ;;
       '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions arms ;;
-      Ret ([ BI_get_local x_var ;
-             BI_const (nat_to_value 1) ;
-             BI_binop T_i32 (Binop_i BOI_and) ;
-             BI_testop T_i32 TO_eqz ;
-             BI_if (Tf [] [])
+      Ret ([ BI_get_local x_var
+           ; BI_const (nat_to_value 1)
+           ; BI_binop T_i32 (Binop_i BOI_and)
+           ; BI_testop T_i32 TO_eqz
+           ; BI_if (Tf [] [])
                (create_case_nested_if_chain true x_var arms_boxed)
-               (create_case_nested_if_chain false x_var arms_unboxed)])
+               (create_case_nested_if_chain false x_var arms_unboxed)
+           ])
 
    | Eproj x tg n y e' =>
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
