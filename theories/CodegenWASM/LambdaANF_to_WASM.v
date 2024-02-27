@@ -24,6 +24,8 @@ Definition max_constr_args   := 1024%Z.      (* should be possible to vary witho
 Definition max_function_args := 20%Z.        (* should be possible to vary without breaking much *)
 Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
 
+Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes *)
+
 
 Definition assert (b : bool) (err : string) : error Datatypes.unit :=
   if b then Ret tt else Err err.
