@@ -151,6 +151,7 @@ Definition default_opts : Options :=
      debug := false;
      dev := 0;
      Pipeline_utils.prefix := "";
+     Pipeline_utils.body_name := "body";
      prims := [];
   |}.
 
@@ -163,6 +164,7 @@ Definition make_opts
            (debug : bool)                            (* Debug log *)
            (dev : nat)                               (* Extra flag for development purposes *)
            (prefix : string)                         (* Prefix for the FFI. Check why is this needed in the pipeline and not just the plugin *)
+           (toplevel_name : string)                  (* Name of the toplevel function ("body" by default) *)
            (prims : list (kername * string * bool))  (* list of extracted constants *)
   : Options :=
   {| direct := negb cps;
@@ -175,6 +177,7 @@ Definition make_opts
      debug := debug;
      dev := dev;
      Pipeline_utils.prefix := prefix;
+     Pipeline_utils.body_name := toplevel_name;
      prims :=  prims |}.
 
 

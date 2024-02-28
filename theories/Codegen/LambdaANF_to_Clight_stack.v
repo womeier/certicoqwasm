@@ -43,6 +43,7 @@ Variable (limitIdent : ident).
 Variable (gcIdent : ident).
 Variable (mainIdent : ident).
 Variable (bodyIdent : ident).
+Variable (bodyName : string).
 Variable (threadInfIdent : ident).
 Variable (tinfIdent : ident).
 Variable (heapInfIdent : ident).
@@ -799,8 +800,8 @@ Definition compile_float (cenv : ctor_env) (ienv : n_ind_env) (fenv : fun_env) (
 
 Definition compile_primitive (cenv : ctor_env) (ienv : n_ind_env) (fenv : fun_env) (map : fun_info_env) (x : positive) (p : AstCommon.primitive) : statement :=
   match projT1 p as tag return AstCommon.prim_value tag -> statement with
-  | Primitive.primInt => fun i => x ::= Econst_long (to_int64 i) (Tlong Unsigned noattr)
-  | Primitive.primFloat => fun f => compile_float cenv ienv fenv map x (to_float f)
+  | AstCommon.primInt => fun i => x ::= Econst_long (to_int64 i) (Tlong Unsigned noattr)
+  | AstCommon.primFloat => fun f => compile_float cenv ienv fenv map x (to_float f)
   end (projT2 p).
 
 Section Translation.
@@ -1066,7 +1067,7 @@ Fixpoint make_extern_decls
 
 Definition body_external_decl : positive * globdef Clight.fundef type :=
   let params := type_of_params ((tinfIdent, threadInf) :: nil) in
-  (bodyIdent, Gfun (External (EF_external (String.to_string ("body"%bs))
+  (bodyIdent, Gfun (External (EF_external (String.to_string bodyName)
                                 (signature_of_type  params val cc_default))
                              params val cc_default)).
 
@@ -1197,15 +1198,15 @@ Definition make_funinfo (e : exp) (fenv : fun_env) (nenv : name_env)
 
 
 Definition global_defs (e : exp) : list (positive * globdef Clight.fundef type) :=
-  (gcIdent , Gfun (External (EF_external "gc"%string
-                                         (mksignature (val_typ :: nil) AST.Tvoid cc_default))
-                            (Tcons threadInf Tnil)
-                            Tvoid
-                            cc_default )) ::
-  (isptrIdent , Gfun (External (EF_external "is_ptr"
-                                            (mksignature (val_typ :: nil) AST.Tvoid cc_default))
-                               (Tcons val Tnil) (Tint IBool Unsigned noattr)
-                               cc_default )) ::
+  (* (gcIdent , Gfun (External (EF_external "garbage_collect"%string *)
+  (*                                        (mksignature (val_typ :: nil) AST.Tvoid cc_default)) *)
+  (*                           (Tcons threadInf Tnil) *)
+  (*                           Tvoid *)
+  (*                           cc_default )) :: *)
+  (* (isptrIdent , Gfun (External (EF_external "is_ptr" *)
+  (*                                           (mksignature (val_typ :: nil) AST.Tvoid cc_default)) *)
+  (*                              (Tcons val Tnil) (Tint IBool Unsigned noattr) *)
+  (*                              cc_default )) :: *)
   nil.
 
 Definition make_defs (args_opt : bool) (e : exp) (fenv : fun_env) (cenv: ctor_env) (ienv : n_ind_env) (nenv : name_env) :
@@ -1266,7 +1267,7 @@ Definition inf_vars :=
   (limitIdent, (nNamed "limit"%bs)) ::
   (gcIdent, (nNamed "garbage_collect"%bs)) ::
   (mainIdent, (nNamed "main"%bs)) ::
-  (bodyIdent, (nNamed "body"%bs)) ::
+  (bodyIdent, (nNamed bodyName)) ::
   (threadInfIdent, (nNamed "thread_info"%bs)) ::
   (tinfIdent, (nNamed "tinfo"%bs)) ::
   (heapInfIdent, (nNamed "heap"%bs)) ::

@@ -36,6 +36,7 @@ Variable (limitIdent : ident).
 Variable (gcIdent : ident).
 Variable (mainIdent : ident).
 Variable (bodyIdent : ident).
+Variable (bodyName : string).
 Variable (threadInfIdent : ident).
 Variable (tinfIdent : ident).
 Variable (heapInfIdent : ident).
@@ -708,7 +709,9 @@ Program Definition to_float (f : PrimFloat.float) : Floats.float :=
 Next Obligation.
   unfold model_to_ff.
   pose proof (FloatAxioms.Prim2SF_valid f).
-  rewrite Binary.valid_binary_SF2FF; auto.
+  rewrite Binary.valid_binary_SF2FF. exact H.
+  unfold float64_to_model. 
+  unfold FloatOps.Prim2SF. cbn.
   Admitted.
 
 Definition compile_float (cenv : ctor_env) (ienv : n_ind_env) (fenv : fun_env) (map : fun_info_env)
@@ -721,8 +724,8 @@ Definition compile_float (cenv : ctor_env) (ienv : n_ind_env) (fenv : fun_env) (
 
 Definition compile_primitive (cenv : ctor_env) (ienv : n_ind_env) (fenv : fun_env) (map : fun_info_env) (x : positive) (p : AstCommon.primitive) : statement :=
   match projT1 p as tag return AstCommon.prim_value tag -> statement with
-  | Primitive.primInt => fun i => x ::= Econst_long (to_int64 i) (Tlong Unsigned noattr)
-  | Primitive.primFloat => fun f => compile_float cenv ienv fenv map x (to_float f)
+  | AstCommon.primInt => fun i => x ::= Econst_long (to_int64 i) (Tlong Unsigned noattr)
+  | AstCommon.primFloat => fun f => compile_float cenv ienv fenv map x (to_float f)
   end (projT2 p).
 
 Fixpoint translate_body
@@ -1066,7 +1069,7 @@ Fixpoint make_extern_decls
 
 Definition body_external_decl : positive * globdef Clight.fundef type :=
   let params := type_of_params ((tinfIdent, threadInf) :: nil) in
-  (bodyIdent, Gfun (External (EF_external (String.to_string "body")
+  (bodyIdent, Gfun (External (EF_external (String.to_string bodyName)
                                           (signature_of_type  params Tvoid cc_default))
                              params Tvoid cc_default)).
 
@@ -1258,17 +1261,17 @@ Definition global_defs (e : exp)
                                     ((Init_int(Int.zero)) :: nil)
                                     false false))
     :: *)
-  (gcIdent,
-   Gfun (External (EF_external (String.to_string "gc")
-                  (mksignature (val_typ :: nil) AST.Tvoid cc_default))
-      (Tcons (Tpointer val noattr) (Tcons threadInf Tnil))
-      Tvoid
-      cc_default)) ::
-  (isptrIdent,
-   Gfun (External (EF_external (String.to_string "is_ptr")
-                             (mksignature (val_typ :: nil) AST.Tvoid cc_default))
-      (Tcons val Tnil) (Tint IBool Unsigned noattr)
-      cc_default)) ::
+  (* (gcIdent, *)
+  (*  Gfun (External (EF_external (String.to_string "garbage_collect") *)
+  (*                 (mksignature (val_typ :: nil) AST.Tvoid cc_default)) *)
+  (*     (Tcons (Tpointer val noattr) (Tcons threadInf Tnil)) *)
+  (*     Tvoid *)
+  (*     cc_default)) :: *)
+  (* (isptrIdent, *)
+  (*  Gfun (External (EF_external (String.to_string "is_ptr") *)
+  (*                            (mksignature (val_typ :: nil) AST.Tvoid cc_default)) *)
+  (*     (Tcons val Tnil) (Tint IBool Unsigned noattr) *)
+  (*     cc_default)) :: *)
   nil.
 
 
@@ -1350,7 +1353,7 @@ Definition add_inf_vars (nenv : name_env) : name_env :=
                   M.set limitIdent (nNamed "limit"%bs) (
                         M.set gcIdent (nNamed "garbage_collect"%bs) (
                                 M.set mainIdent (nNamed "main"%bs) (
-                                       M.set bodyIdent (nNamed "body"%bs) (
+                                       M.set bodyIdent (nNamed bodyName%bs) (
                                                M.set threadInfIdent (nNamed "thread_info"%bs) (
                                                        M.set tinfIdent (nNamed "tinfo"%bs) (
                                                                M.set heapInfIdent (nNamed "heap"%bs) (

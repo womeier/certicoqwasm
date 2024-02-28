@@ -33,8 +33,8 @@ Import MonadNotation ListNotations.
 Open Scope monad_scope.
 Local Open Scope bs_scope.
 
-Definition valInt : type := val.
 Definition val : type := talignas (if Archi.ptr64 then 3%N else 2%N) (tptr tvoid).
+Definition uval := if Archi.ptr64 then ulongTy else uintTy.
 Definition argvTy : type := tptr val.
 
 Notation "'Field(' t ',' n ')'" :=
@@ -269,12 +269,14 @@ Section Externs.
     _v <- gensym "v" ;;
     ret (gname,
          Gfun (Internal
-                 {| fn_return := tuint
+                 {| fn_return := uval
                   ; fn_callconv := cc_default
                   ; fn_params := (_v, val) :: nil
                   ; fn_vars := nil
                   ; fn_temps := nil
-                  ; fn_body := (Sreturn (Some (Ebinop Oshr (Ecast (var _v) valInt) (make_cint 1 val) val)))
+                  ; fn_body := (Sreturn (Some
+                                 (Ebinop Oshr (Ecast (var _v) uval)
+                                              (make_cint 1 val) val)))
                   |})).
 
   Definition get_boxed_ordinal : glueM def :=
@@ -282,13 +284,16 @@ Section Externs.
     _v <- gensym "v" ;;
     ret (gname,
          Gfun (Internal
-                 {| fn_return := tuint
+                 {| fn_return := uval
                   ; fn_callconv := cc_default
                   ; fn_params := (_v, val) :: nil
                   ; fn_vars := nil
                   ; fn_temps := nil
                   ; fn_body :=
-                      (Sreturn (Some (Ebinop Oand (Field(Ecast (var _v) (tptr valInt), -1)) (make_cint 255 val) val)))
+                      (Sreturn (Some
+                        (Ebinop Oand
+                          (Ecast (Field(Ecast (var _v) (tptr uval), -1)) uval)
+                          (make_cint 255 val) val)))
                   |})).
 
   Definition get_args : glueM def :=
@@ -385,7 +390,7 @@ Section Externs.
       | ANF =>
         Composite _closure Struct
          (Member_plain _func
-                      (tptr (Tfunction (Tcons (Tstruct _thread_info noattr)
+                      (tptr (Tfunction (Tcons (tptr (Tstruct _thread_info noattr))
                                        (Tcons val (Tcons val Tnil))) val cc_default)) ::
           Member_plain _env val :: nil) noattr ::
         (* Composite _stack_frame Struct *)
@@ -403,7 +408,7 @@ Section Externs.
       | CPS =>
         Composite _closure Struct
          (Member_plain _func
-                      (tptr (Tfunction (Tcons (Tstruct _thread_info noattr)
+                      (tptr (Tfunction (Tcons (tptr (Tstruct _thread_info noattr))
                                        (Tcons val (Tcons val Tnil))) Tvoid cc_default)) ::
           Member_plain _env val :: nil) noattr ::
         (* Composite _thread_info Struct *)
@@ -417,7 +422,7 @@ Section Externs.
         {| printf_info :=
               (_printf, Tfunction (Tcons (tptr tschar) Tnil) tint cc_default)
          ; is_ptr_info :=
-              (_is_ptr, Tfunction (Tcons val Tnil) tbool cc_default)
+              (_is_ptr, Tfunction (Tcons val Tnil) tint cc_default)
          ; literals_info := literals
          ; get_unboxed_ordinal_info :=
               (_guo, Tfunction (Tcons val Tnil) tuint cc_default)
@@ -432,17 +437,19 @@ Section Externs.
          |} in
     let dfs :=
       (literal_defs ++
+       (*
        (_printf,
         Gfun (External (EF_external "printf"
                           (mksignature (AST.Tint :: nil)
                                        (Tret AST.Tint)
                                        cc_default))
                         (Tcons (tptr tschar) Tnil) tint cc_default)) ::
+       *)
        (_is_ptr,
          Gfun (External (EF_external "is_ptr"
                           (mksignature (val_typ :: nil) AST.Tvoid cc_default))
                         (Tcons val Tnil)
-                        (Tint IBool Unsigned noattr) cc_default)) ::
+                        tint cc_default)) ::
        (_guo, def_guo) ::
        (_gbo, def_gbo) ::
        (_get_args, def_get_args) ::
@@ -520,7 +527,7 @@ Section L1Types.
         match e with
           | Ast.tProd _ _ e' => check_last e'
           | Ast.tSort u =>
-              MetaCoq.Common.Universes.Universe.is_prop u
+              MetaCoq.Common.Universes.Sort.is_prop u
           | _ => false
         end
     in check_last (Ast.Env.ind_type (ty_body info)).
@@ -954,7 +961,7 @@ Section CtorEnumTag.
     | nil => LSnil
     | (ordinal, tag) :: pairs' =>
       LScons (Some (Z.of_nat ordinal))
-             (Sreturn (Some (Econst_int (Int.repr (Z.of_nat tag)) tuint)))
+             (Sreturn (Some (Econst_int (Int.repr (Z.of_nat tag)) uval)))
              (matches_to_LS pairs')
     end.
 
@@ -973,30 +980,30 @@ Section CtorEnumTag.
         let (boxed, unboxed) := match_ordinals_with_tag (Ast.Env.ind_ctors one) 0 0 0 in
         let (vars, body) := match boxed, unboxed with
           | nil, nil => (* if there are no constructors, just return 0 *)
-             (nil, Sreturn (Some (Econst_int (Int.repr 0) tuint)))
+             (nil, Sreturn (Some (Econst_int (Int.repr 0) uval)))
           | nil, _ => (* if all ctors are unboxed, then just call get_unboxed_ordinal *)
-             ((_t, tuint) :: nil,
+             ((_t, uval) :: nil,
               Scall (Some _t) (Evar _guo ty_guo) (Etempvar _v val :: nil) ;;;
-              Sreturn (Some (Etempvar _t tuint)))
+              Sreturn (Some (Etempvar _t uval)))
           | _, nil => (* if all ctors are unboxed, then just call get_boxed_ordinal *)
-             ((_t, tuint) :: nil,
+             ((_t, uval) :: nil,
               Scall (Some _t) (Evar _gbo ty_gbo) (Etempvar _v val :: nil) ;;;
-              Sreturn (Some (Etempvar _t tuint)))
+              Sreturn (Some (Etempvar _t uval)))
           | _, _ => (* if there are boxed and unboxed constructors, then if and switch *)
             let body :=
               Scall (Some _b) (Evar _is_ptr ty_is_ptr) (Etempvar _v val :: nil) ;;;
               Sifthenelse
                 (Etempvar _b tbool)
                 (Scall (Some _t) (Evar _gbo ty_gbo) (Etempvar _v val :: nil) ;;;
-                Sswitch (Etempvar _t tuint) (matches_to_LS boxed))
+                Sswitch (Etempvar _t uval) (matches_to_LS boxed))
                 (Scall (Some _t) (Evar _guo ty_guo) (Etempvar _v val :: nil) ;;;
-                Sswitch (Etempvar _t tuint) (matches_to_LS unboxed))
-            in ((_b, tbool) :: (_t, tuint) :: nil, body)
+                Sswitch (Etempvar _t uval) (matches_to_LS unboxed))
+            in ((_b, tbool) :: (_t, uval) :: nil, body)
           end in
         gname <- gensym ("get_" ++ sanitize_qualified kn ++ "_tag") ;;
         let f := (gname,
                   Gfun (Internal
-                          {| fn_return := tuint
+                         {| fn_return := uval
                           ; fn_callconv := cc_default
                           ; fn_params := (_v, val) :: nil
                           ; fn_vars := nil
@@ -1043,7 +1050,7 @@ Section CConstructors.
     | (* Unboxed *) {| ctor_name := cname ; ctor_arity := O ; ctor_ordinal := ord |} :: ctors =>
         constr_fun_id <- gensym (make_name cname) ;;
         let body :=
-          Sreturn (Some (Econst_int (Int.repr (Z.add (Z.shiftl (Z.of_nat ord) 1) 1)) val)) in
+          Sreturn (Some (Ecast (Econst_int (Int.repr (Z.add (Z.shiftl (Z.of_nat ord) 1) 1)) val) val)) in
         let f := (constr_fun_id,
                   Gfun (Internal
                           {| fn_return := val
@@ -1286,8 +1293,8 @@ Section FunctionCalls.
     let params := (_tinfo, (threadInf _thread_info)) ::
                   (_clo, val) ::
                   (_arg, val) :: nil in
-    let vars := (_f, valPtr) ::
-                (_env, valPtr) ::
+    let vars := (_f, val) ::
+                (_env, val) ::
                 match backend with
                 | ANF => (_tmp, val) :: nil
                 | CPS => nil
@@ -1322,7 +1329,7 @@ Definition make_glue_program
   let glob_defs := (externs ++ name_defs ++ ctor_defs ++ get_tag_defs ++
                    printer_defs ++ halt_defs ++ call_def :: nil)%list in
   let pi := map fst glob_defs in
-  ret (mk_prog_opt composites (make_extern_decls nenv glob_defs true)
+  ret (mk_prog_opt nil (make_extern_decls nenv glob_defs true)
                    main_ident true,
        mk_prog_opt composites glob_defs
                    main_ident true).
