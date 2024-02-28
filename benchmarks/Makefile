@@ -21,11 +21,7 @@ all: lib tests runwasm
 
 $(WASMFILES): tests
 
-%.js: %.wasm
-	cp ./run-wasm-template.js $@
-	$(SED) -i 's/{{file}}/$</g' $@
-
-runwasm: $(JSFILES)
+runwasm: $(WASMFILES)
 	ulimit -s $(STACKSIZE) && ./run_wasm_benchmarks.py
 
 clean:
