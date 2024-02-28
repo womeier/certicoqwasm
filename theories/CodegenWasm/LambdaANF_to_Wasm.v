@@ -14,7 +14,7 @@ Require Import LambdaANF.cps LambdaANF.cps_show.
 Import MonadNotation.
 
 
-(* Main file for compiler backend targeting WASM. *)
+(* Main file for compiler backend targeting Wasm. *)
 
 (* memory can grow to at most 64KB * max_mem_pages *)
 Definition max_mem_pages     := 5000%N.
@@ -471,8 +471,8 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
 
       Ret instr_call
 
-   | Eprim_val x p e' => Err "translating prim_val to WASM not supported yet"
-   | Eprim x p ys e' => Err "translating prim to WASM not supported yet"
+   | Eprim_val x p e' => Err "translating prim_val to Wasm not supported yet"
+   | Eprim x p ys e' => Err "translating prim to Wasm not supported yet"
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_exp halt";;
      Ret [ BI_get_local x_var; BI_set_global result_var; BI_return ]
@@ -561,7 +561,7 @@ Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_elemen
   end.
 
 
-Definition LambdaANF_to_WASM (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
+Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
   _ <- check_restrictions e;;
 
   let fname_mapping := create_fname_mapping e in

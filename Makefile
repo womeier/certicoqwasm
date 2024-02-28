@@ -51,11 +51,11 @@ docs: docs/compilation.html docs/proof.html
 	echo "<html> <body> <h1> Alectryon files for CertiCoq Wasm backend (`git rev-parse --short HEAD`, `date +'%d %B %Y'`)</h1> - \
 		<a href='compilation.html'> Compilation </a> <br> <br> - <a href='proof.html'> Correctness proof </a> (This file is big) </body </html>" > docs/index.html
 
-docs/compilation.html: theories/CodegenWASM/LambdaANF_to_WASM.v
-	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWASM/LambdaANF_to_WASM.v -o ../docs/compilation.html
+docs/compilation.html: theories/CodegenWasm/LambdaANF_to_Wasm.v
+	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWasm/LambdaANF_to_Wasm.v -o ../docs/compilation.html
 
-docs/proof.html: theories/CodegenWASM/LambdaANF_to_WASM_correct.v
-	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWASM/LambdaANF_to_WASM_correct.v -o ../docs/proof.html
+docs/proof.html: theories/CodegenWasm/LambdaANF_to_Wasm_correct.v
+	cd theories && alectryon $(ALECTRYON_FLAGS) --frontend coq CodegenWasm/LambdaANF_to_Wasm_correct.v -o ../docs/proof.html
 
 #install: plugin cplugin bootstrap
 install: plugin

@@ -8,7 +8,7 @@ Require Import Coq.Logic.Decidable Coq.Lists.ListDec
                Coq.Relations.Relations Relations.Relation_Operators.
 
 Require Import compcert.lib.Integers compcert.common.Memory.
-Require Import CodegenWASM.LambdaANF_to_WASM.
+Require Import CodegenWasm.LambdaANF_to_Wasm.
 
 From Wasm Require Import datatypes operations host instantiation_spec memory_list opsem properties.
 

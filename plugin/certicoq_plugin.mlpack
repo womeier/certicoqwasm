@@ -266,7 +266,7 @@ Datatypes0
 Datatypes_properties
 Operations
 Binary_format_printer
-LambdaANF_to_WASM
+LambdaANF_to_Wasm
 Toplevel3
 
 Glue_utils

@@ -405,7 +405,7 @@ module CompileFunctor (CI : CompilerInterface) = struct
     let term = quote opts gr in
     let debug = opts.debug in
     let options = make_pipeline_options opts in
-    let p = Pipeline.compile_WASM options (Obj.magic term) in
+    let p = Pipeline.compile_Wasm options (Obj.magic term) in
     match p with
     | (CompM.Ret prg, dbg) ->
       debug_msg debug "Finished compiling, printing to file.";
