@@ -35,16 +35,16 @@ let increment_subscript id =
         add (carrypos-1)
       end
       else begin
-        let newid = Bytes.of_string id in
-        Bytes.fill newid (carrypos+1) (len-1-carrypos) '0';
-        Bytes.set newid carrypos (Char.chr (Char.code c + 1));
+        let newid = Stdlib.Bytes.of_string id in
+        Stdlib.Bytes.fill newid (carrypos+1) (len-1-carrypos) '0';
+        Stdlib.Bytes.set newid carrypos (Char.chr (Char.code c + 1));
         newid
       end
     else begin
-      let newid = Bytes.of_string (id^"0") in
+      let newid = Stdlib.Bytes.of_string (id^"0") in
       if carrypos < len-1 then begin
-        Bytes.fill newid (carrypos+1) (len-1-carrypos) '0';
-        Bytes.set newid (carrypos+1) '1'
+        Stdlib.Bytes.fill newid (carrypos+1) (len-1-carrypos) '0';
+        Stdlib.Bytes.set newid (carrypos+1) '1'
       end;
       newid
     end
@@ -504,9 +504,6 @@ module CompileFunctor (CI : CompilerInterface) = struct
       | Unix.WSIGNALED n | Unix.WSTOPPED n -> CErrors.user_err Pp.(str"Compiler was signaled with code " ++ int n))
     | Unix.WEXITED n -> CErrors.user_err Pp.(str"Compiler exited with code " ++ int n ++ str" while running " ++ str cmd)
     | Unix.WSIGNALED n | Unix.WSTOPPED n -> CErrors.user_err Pp.(str"Compiler was signaled with code " ++ int n  ++ str" while running " ++ str cmd)
-<<<<<<< HEAD
-
-=======
     
   type reifyable_type =
   | IsInductive of Names.inductive * Univ.Instance.t * Constr.t list
@@ -832,7 +829,7 @@ module CompileFunctor (CI : CompilerInterface) = struct
     | (CompM.Err s, dbg) ->
       debug_msg debug "Pipeline debug:";
       debug_msg debug (string_of_bytestring dbg);
-      CErrors.user_err ~hdr:"compile_wasm" (str "Could not compile: " ++ (pr_string s) ++ str "\n")
+      CErrors.user_err Pp.(str "compile_wasm" ++ (str "Could not compile: " ++ (pr_string s) ++ str "\n"))
 
 
   (* Quote Coq inductive type *)
