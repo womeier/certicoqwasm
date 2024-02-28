@@ -54,6 +54,7 @@ jobs:
             startGroup "Install some more opam packages"
               cd ~/repo
               opam pin -n -y  submodules/metacoq # was pinned to the submodule at the same path in the dockerfile before -> is not rebuilt
+              opam install /github/workspace/submodules/metacoq/ -y
 
               # remove again once proposals in upstream WasmCert
               opam pin -y -y  submodules/wasmcert
