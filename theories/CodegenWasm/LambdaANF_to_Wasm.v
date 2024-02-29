@@ -204,34 +204,33 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : 
                   ] ++ (gen_rec_calls calls' arity)
     end in
 
-  let get_ctor_id_instrs (arity : nat) :=
-    if arity =? 0 then
-      [ BI_const (nat_to_value 1) ; BI_binop T_i32 (Binop_i (BOI_shr SX_S)) ]
-    else
-      [ BI_load T_i32 None 2%N 0%N ] (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-  in
-
-  let get_ctor_print_instrs (name  : string) (arity : nat) :=
-    if arity =? 0 then
-      instr_write_string (String.append " " name) ++ [ BI_return ]
-    else
-      instr_write_string (String.append " (" name) ++
-        BI_get_local constr_ptr :: BI_set_local tmp :: gen_rec_calls arity arity
-  in
-
   let gen_print_constr_block (c : ctor_tag) : error (list basic_instruction) :=
     let ctor_id := Pos.to_nat c in
     let ctor_name := show_tree (show_con cenv c) in
     ctor_arity <- get_ctor_arity cenv c ;;
-    ctor_id_instrs <- Ret (get_ctor_id_instrs ctor_arity) ;;
-    ctor_print_instrs <- Ret (get_ctor_print_instrs ctor_name ctor_arity) ;;
-    Ret ([ BI_const (nat_to_value ctor_id) ; BI_get_local constr_ptr ] ++
-           ctor_id_instrs ++
-           [ BI_relop T_i32 (Relop_i ROI_eq) ;
-             BI_if (Tf nil nil)
-               ctor_print_instrs
-               []
-           ])
+    if ctor_arity =? 0 then
+      Ret([ BI_const (nat_to_value ctor_id)
+          ; BI_get_local constr_ptr
+          ; BI_const (nat_to_value 1)
+          ; BI_binop T_i32 (Binop_i (BOI_shr SX_S))
+          ; BI_relop T_i32 (Relop_i ROI_eq)
+          ; BI_if (Tf nil nil)
+              ((instr_write_string (String.append " " ctor_name)) ++ [ BI_return ])
+              []
+          ])
+    else
+      Ret([ BI_const (nat_to_value ctor_id)
+          ; BI_get_local constr_ptr
+          ; BI_load T_i32 None 2%N 0%N
+          ; BI_relop T_i32 (Relop_i ROI_eq)
+          ; BI_if (Tf nil nil)
+                (instr_write_string (String.append " (" ctor_name) ++
+                   [ BI_get_local constr_ptr
+                   ; BI_set_local tmp
+                   ] ++
+                   (gen_rec_calls ctor_arity ctor_arity))
+                []
+          ])
   in
 
   blocks <- sequence (map gen_print_constr_block tags) ;;
