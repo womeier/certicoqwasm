@@ -466,13 +466,11 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
                             ([BI_get_global result_var; BI_set_local x_var] ++ following_instr)
                          ])
 
-   | Eapp f ft ys =>
-      instr_call <- translate_call nenv lenv fenv f ys true ;;
-
-      Ret instr_call
+   | Eapp f ft ys => translate_call nenv lenv fenv f ys true
 
    | Eprim_val x p e' => Err "translating prim_val to Wasm not supported yet"
    | Eprim x p ys e' => Err "translating prim to Wasm not supported yet"
+
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_exp halt";;
      Ret [ BI_get_local x_var; BI_set_global result_var; BI_return ]
