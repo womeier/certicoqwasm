@@ -1529,24 +1529,6 @@ Ltac elimr_nary_instr n :=
           end
   end.
 
-(* TODO use the one from WasmCert *)
-Lemma reduce_nil_false : forall state s f,
-  ~ exists y,
-  (reduce_tuple (host_instance:=host_instance))
-  (state, s, f, []) y.
-Proof.
-  intros ? ? ? [[[[hs' s'] f'] instr'] Hcontra]. cbn in Hcontra.
-  remember [] as l. revert Heql.
-  induction Hcontra; intros; subst; try discriminate.
-  { inv H. destruct vs; inv H0. destruct vs; inv H0.
-    destruct lh; cbn in H1; destruct (v_to_e_list l); inv H1. }
-  { destruct vcs; inv Heql. }
-  { destruct vcs; inv Heql. }
-  { destruct vcs; inv Heql. }
-  { destruct lh; cbn in Heql; destruct (v_to_e_list l); inv Heql.
-    destruct es; auto. inv H0. }
-Qed.
-
 Lemma reduce_const_false : forall state state' s s' f f' c instr,
   ~ (reduce_tuple (host_instance:=host_instance)) (state, s, f, [AI_basic (BI_const c)])
                                                   (state', s', f', instr).
@@ -1565,9 +1547,9 @@ Proof.
   { subst.
     destruct lh; cbn in Heqinstr'.
     destruct (v_to_e_list l). 2:{ inv Heqinstr'. destruct l1, es, l0; inv H1.
-    eapply reduce_nil_false. eexists (hs', s', f', es'). eassumption. }
+    eapply reduce_not_nil; eauto. }
     destruct es; inv Heqinstr'. cbn in H.
-    eapply reduce_nil_false. eexists (hs', s', f', es'). eassumption.
+    eapply reduce_not_nil; eauto.
     now destruct es, l0; inv H1.
     destruct (v_to_e_list l); inv Heqinstr'. destruct l2; inv H1. }
 Qed.

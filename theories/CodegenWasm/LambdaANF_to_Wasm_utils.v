@@ -25,6 +25,8 @@ Import seq.
 
 Section LambdaANF.
 
+(* taken from C backend *)
+
 Inductive dsubval_v: LambdaANF.cps.val -> LambdaANF.cps.val -> Prop :=
 | dsubval_constr: forall v vs c,
   List.In v vs ->
