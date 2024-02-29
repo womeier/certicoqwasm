@@ -1823,7 +1823,7 @@ Proof.
     have H'' := value_bounds wal.
     unfold wasm_deserialise. f_equal. f_equal.
     have H' := decode_int_bounds _ _ _ Hl. simpl_eq.
-    rewrite Wasm_int.Int32.Z_mod_modulus_id in H9; auto.
+    rewrite Wasm_int.Int32.Z_mod_modulus_id in H8; auto.
     eapply value_bounds; eauto. assumption.
   - (* n = S n0 *)
     cbn in H7.
@@ -1843,10 +1843,6 @@ Proof.
     destruct H8 as [wal' [Hl [Heq Hval]]].
     exists x. exists wal'. split. rewrite -Hl. f_equal. lia. split; eauto.
 Qed.
-
-(* Import Nnat Znat.
-Export numerics. *)
-
 
 Lemma memory_grow_success : forall m sr fr,
   INV_linear_memory sr fr ->
