@@ -768,7 +768,7 @@ Proof.
 Qed.
 
 
-(* TODO move somewhere else, rename, build up more automation *)
+(* TODO move somewhere else *)
 Ltac simpl_eq :=
   repeat lazymatch goal with
   | H: nat_to_i32 _ = nat_to_i32 _ |- _ =>
@@ -776,16 +776,27 @@ Ltac simpl_eq :=
   | H: _ = Wasm_int.Int32.Z_mod_modulus _ |- _ =>
          rewrite Wasm_int.Int32.Z_mod_modulus_id in H; last lia
   | H: Wasm_int.Int32.Z_mod_modulus _ = _ |- _ =>
-         rewrite Wasm_int.Int32.Z_mod_modulus_id in H; last lia
+          rewrite Wasm_int.Int32.Z_mod_modulus_id in H; last lia
   | H: Z.of_nat _ = Z.of_nat _ |- _ =>
          apply Nat2Z.inj in H
   end.
 
-Ltac solve_simpl_eq :=
+Ltac solve_eq_global x y :=
+  assert (x = y); first
+    (try assert (nat_to_i32 x = nat_to_i32 y) by congruence; simpl_eq; done); subst y.
+
+(* TODO add case when global was updated etc. *)
+Ltac solve_eq_mem m1 m2 :=
+  assert (m1 = m2) by congruence; subst m2.
+
+(* proves and substitutes equality on given vars, the first one is kept *)
+Ltac solve_eq x y :=
   lazymatch goal with
-  | H: _ |- ?x = ?y => assert (nat_to_i32 x = nat_to_i32 y) by congruence; by simpl_eq
-  end;
-  simpl_eq; try lia.
+  (* equality on global mems *)
+  | H: nth_error (s_mems ?s) 0 = Some x |- _ => solve_eq_mem x y
+  (* equality on globals *)
+  | H: _ |- _ => solve_eq_global x y
+  end.
 
 Lemma val_relation_depends_on_mem_smaller_than_gmp_and_funcs :
   forall v sr sr' m m' fr fr' gmp gmp' value,
@@ -843,25 +854,22 @@ Proof.
              repr_val_constr_args_LambdaANF_Wasm l s' f' i)
   ). have H19' := H19.
     eapply indPrinciple in H19; intros; clear indPrinciple; try eassumption; try lia.
-    { assert (gmp = gmp0) by solve_simpl_eq. subst gmp0.
-      assert (m = m0) by congruence; subst m0.
+    { solve_eq gmp0 gmp.
+      solve_eq m m0.
       econstructor; try eassumption. lia. lia. reflexivity.
       rewrite <- H8. assumption. lia. }
     { now constructor. }
-    { assert (gmp = gmp0) by solve_simpl_eq. subst gmp0.
-      assert (gmp = gmp1) by solve_simpl_eq. subst gmp1.
-      assert (m = m0) by congruence. subst m0.
-      assert (m1 = m2) by congruence. subst m2. subst.
+    { solve_eq gmp gmp0. solve_eq gmp gmp1.
+      solve_eq m m0. solve_eq m1 m2.
       econstructor; eauto. lia. rewrite <- H28; auto; try lia. }
     { econstructor; eauto. congruence. }
     { econstructor. }
-    { assert (gmp = gmp0) by solve_simpl_eq. subst gmp0.
-      assert (gmp1 = gmp) by solve_simpl_eq. subst gmp1.
+    { solve_eq gmp gmp0. solve_eq gmp gmp1.
       econstructor; eauto; try lia.
       rewrite <- H29. assert (m1 = m2) by congruence. subst m2. eassumption.
       lia. eapply H9; eauto; lia. }
-    { assert (m = m0) by congruence. subst m0. lia. }
-    { assert (m = m0) by congruence; subst m0. apply H8. lia. }
+    { solve_eq m m0. lia. }
+    { solve_eq m m0. apply H8. lia. }
   }
   (* function *)
   { econstructor; eauto. rewrite <- H0. rewrite -H. eassumption. }
@@ -1183,7 +1191,7 @@ Proof.
   subst m0. destruct (Nat.eq_dec j global_mem_ptr).
   { (* g = global_mem_ptr *)
      subst. have H' := update_global_get_same _ _ _ _ _ Hupd.
-     rewrite H' in Hglob. injection Hglob as Hglob. simpl_eq. subst gmp_v.
+     rewrite H' in Hglob. injection Hglob as Hglob. solve_eq num gmp_v.
      assert (num + 4 < N.to_nat (mem_length m) /\ (exists n : nat, num = 2 * n)) by now apply Hj.
      destruct H0 as [_ [n Hn]]. by exists n.
   }
@@ -1806,19 +1814,19 @@ Proof.
   intros n vs v sr fr addr m Hinv H H1 H2. generalize dependent v.
   generalize dependent n. generalize dependent m.
   induction H2; intros. 1: inv H.
-  assert (n = N.of_nat (N.to_nat n)) by lia. rewrite H8 in H7. generalize dependent v0.
-  induction (N.to_nat n); intros.
+  assert (n = N.of_nat (N.to_nat n)) as Heq by lia. rewrite Heq in H7. generalize dependent v0. revert Heq.
+  induction (N.to_nat n); intros; rewrite ->Heq in *; clear Heq.
   - (* n = 0 *)
     inv H7. assert (m = m0) by congruence. subst m0. rewrite N.add_comm. unfold load_i32 in H3.
     destruct (load m (N.of_nat addr) 0%N 4) eqn:Hl; inv H3. exists b. exists wal.
-    repeat split. rewrite <- Hl. reflexivity. unfold wasm_value_to_i32.
+    repeat split. rewrite <- Hl. now rewrite N.add_comm. unfold wasm_value_to_i32.
     have H'' := value_bounds wal.
     unfold wasm_deserialise. f_equal. f_equal.
     have H' := decode_int_bounds _ _ _ Hl. simpl_eq.
     rewrite Wasm_int.Int32.Z_mod_modulus_id in H8; auto.
     eapply value_bounds; eauto. assumption.
   - (* n = S n0 *)
-    rewrite Nnat.Nat2N.inj_succ in H8. cbn in H7.
+    cbn in H7.
     replace (match
          match Pos.of_succ_nat n0 with
          | (p~1)%positive => Pos.IsPos p~0
@@ -1832,13 +1840,9 @@ Proof.
     2: { destruct (N.succ (N.of_nat n0)) eqn:Heqn. lia.
          destruct (Pos.of_succ_nat n0) eqn:Har; lia. }
     edestruct IHrepr_val_constr_args_LambdaANF_Wasm; try eassumption.
-    destruct H9 as [wal' [Hl [Heq Hval]]].
+    destruct H8 as [wal' [Hl [Heq Hval]]].
     exists x. exists wal'. split. rewrite -Hl. f_equal. lia. split; eauto.
 Qed.
-
-(* Import Nnat Znat.
-Export numerics. *)
-
 
 Lemma memory_grow_success : forall m sr fr,
   INV_linear_memory sr fr ->
@@ -3272,52 +3276,29 @@ Proof.
     inv H0. inv H3.
   } { (* Ecase cons *)
     inv Hexpr. inv H3.
-    - (* boxed *) {
-      have H' := IHe_body _ H13.
+    - (* boxed *)
       inv H4.
-      assert (
-          @repr_expr_LambdaANF_Wasm lenv (Ecase v  l)
-            [ BI_get_local y' ;
-              BI_const (nat_to_value 1) ;
-              BI_binop T_i32 (Binop_i BOI_and) ;
-              BI_testop T_i32 TO_eqz ;
-              BI_if (Tf [] [])
-                instrs_more
-                e2' ]). { eapply Rcase_e; eauto. }
-      have H'' := IHe_body0 _ H0.
-
-      apply rt_then_t_or_eq in H. destruct H as [H | H]. congruence.
+      apply rt_then_t_or_eq in H. destruct H as [H | H]; first congruence.
       apply clos_trans_tn1 in H. inv H.
-      { inv H1. cbn in H4. destruct H4 as [H4 | H4].
-        - inv H4. eapply H'. apply rt_refl.
-        - eapply H''. eapply rt_step. now econstructor. }
-
-      apply clos_tn1_trans in H3. inv H1. destruct H5 as [H5 | H5].
-      - inv H5. eapply H'. now apply t_then_rt.
-      - eapply H''. eapply rt_trans. now apply t_then_rt.
-        apply rt_step. now econstructor. }
+      { inv H0. destruct H3 as [H3 | H3].
+        - inv H3. eapply IHe_body; first eassumption. apply rt_refl.
+        - eapply IHe_body0. eapply Rcase_e; eauto. eapply rt_step. now econstructor. }
+      { apply clos_tn1_trans in H1. inv H0. destruct H4 as [H4 | H4].
+        - inv H4. eapply IHe_body; try eassumption. now apply t_then_rt.
+        - eapply IHe_body0. eapply Rcase_e; eauto. eapply rt_trans. now apply t_then_rt.
+          apply rt_step. now econstructor. }
     - (* unboxed *)
-    { have H' := IHe_body _ H13.
       inv H6.
-      assert (
-          @repr_expr_LambdaANF_Wasm lenv (Ecase v  l)
-            [ BI_get_local y' ;
-              BI_const (nat_to_value 1) ;
-              BI_binop T_i32 (Binop_i BOI_and) ;
-              BI_testop T_i32 TO_eqz ;
-              BI_if (Tf [] [])
-                e1'
-                instrs_more ]). { eapply Rcase_e; eauto. }
-      have H'' := IHe_body0 _ H0.
-      apply rt_then_t_or_eq in H. destruct H as [H | H]. congruence.
-      apply clos_trans_tn1 in H.  inv H.
-      { inv H1. cbn in H5. destruct H5 as [H5 | H5].
-        - inv H5. eapply H'. apply rt_refl.
-        - eapply H''. eapply rt_step. now econstructor. }
-      apply clos_tn1_trans in H3. inv H1. destruct H6 as [H6 | H6].
-      - inv H6. eapply H'. now apply t_then_rt.
-      - eapply H''. eapply rt_trans. now apply t_then_rt.
-        apply rt_step. now econstructor. }
+      apply rt_then_t_or_eq in H. destruct H as [? | H]; first congruence.
+      apply clos_trans_tn1 in H. inv H.
+      { inv H0. destruct H3 as [H3 | H3].
+        - inv H3. eapply IHe_body; try eassumption. apply rt_refl.
+        - eapply IHe_body0. eapply Rcase_e; eauto.
+          eapply rt_step. now econstructor. }
+      { apply clos_tn1_trans in H1. inv H0. destruct H5 as [H5 | H5].
+        - inv H5. eapply IHe_body; try eassumption. now apply t_then_rt.
+        - eapply IHe_body0. eapply Rcase_e; eauto. eapply rt_trans. now apply t_then_rt.
+          apply rt_step. now econstructor. }
   } { (* Eproj *)
     inv Hexpr.
     have H' := IHe_body _ H6.
@@ -3581,8 +3562,7 @@ Proof.
         rewrite zeq_false. reflexivity. lia.
       }
       dostep'. constructor. eapply rs_block with (vs:=[]); eauto.
-      unfold to_e_list. cbn.
-      eapply rt_refl. apply rt_refl.
+      apply rt_refl. apply rt_refl.
       rewrite Hlheq.
       apply Hstep.
     }
@@ -3653,7 +3633,7 @@ Proof.
     apply reduce_trans_label'.
     dostep. elimr_nary_instr 0. apply r_get_local. eauto.
     inv Hval.
-    assert (m0 = m) by congruence. subst m0.
+    solve_eq m m0.
     unfold load_i32 in H18.
     destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hload. 2: { cbn in Hload. rewrite Hload in H18. inv H18. }
     dostep. elimr_nary_instr 1. eapply r_load_success; try eassumption.
@@ -3708,7 +3688,7 @@ Proof.
       apply reduce_trans_local'. apply reduce_trans_label'. eapply rt_trans.
       dostep. elimr_nary_instr 0. apply r_get_local. eauto.
       inv Hval.
-      assert (m0 = m) by congruence. subst m0.
+      solve_eq m m0.
       unfold load_i32 in H18.
       destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hload. 2: { cbn in Hload. rewrite Hload in H18. inv H18. }
       dostep. elimr_nary_instr 1. eapply r_load_success; try eassumption.
@@ -3867,8 +3847,7 @@ Proof with eauto.
                                               Some (VAL_int32 (nat_to_i32 gmp_v)) ->
         (-1 < Z.of_nat gmp_v < Wasm_int.Int32.modulus)%Z ->
         (Z.of_nat gmp_v + Z.of_N page_size < Z.of_N (mem_length m))%Z)).
-      { intros. assert (m' = m0) by congruence. subst m0.
-        assert (gmp_v = gmp_v') by solve_simpl_eq. subst gmp_v'. lia. }
+      { intros. solve_eq m' m0. solve_eq gmp_v gmp_v'. lia. }
 
      assert (HfVal' : (forall (y : positive) (y' : immediate) (v : cps.val),
            rho ! y = Some v ->
@@ -4444,7 +4423,7 @@ Proof with eauto.
        unfold load in Hload.
        destruct ((N.of_nat (4 + addr) + 4 * n + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Heqn. 2: inv Hload.
        apply N.leb_le in Heqn.
-       destruct Hlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. assert (m' = m) by congruence. subst.
+       destruct Hlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. solve_eq m m'. subst.
        apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
        repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia). }
        rewrite Har. apply Hload.
