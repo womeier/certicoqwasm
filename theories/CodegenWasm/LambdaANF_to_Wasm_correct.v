@@ -1501,34 +1501,6 @@ Proof.
   eapply r_label with (lh:=LH_base [] les); eauto.
 Qed.
 
-(* isolate instr. + n leading args, e.g. with n=2 for add:
-   [const 1, const 2, add, remaining instr] => [const 1, const 2, add]  *)
-Ltac elimr_nary_instr n :=
-  let H := fresh "H" in
-  match n with
-  | 0 => lazymatch goal with
-         | |- reduce _ _ _ ([:: ?instr] ++ ?l3) _ _ _ ?l4 => apply r_elimr
-          end
-  | 1 => lazymatch goal with
-         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++
-                            [::AI_basic ?instr] ++ ?l3) _ _ _ ?l4 =>
-            assert ([:: AI_basic (BI_const c1)] ++ [:: AI_basic instr] ++ l3
-                  = [:: AI_basic (BI_const c1);
-                        AI_basic instr] ++ l3) as H by reflexivity; rewrite H;
-                                                       apply r_elimr; clear H
-          end
-  | 2 => lazymatch goal with
-         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++
-                            [::AI_basic (BI_const ?c2)] ++
-                            [::AI_basic ?instr] ++ ?l3) _ _ _ ?l4 =>
-            assert ([:: AI_basic (BI_const c1)] ++ [:: AI_basic (BI_const c2)] ++
-                    [:: AI_basic instr] ++ l3 =
-                    [:: AI_basic (BI_const c1); AI_basic (BI_const c2)
-                    ;   AI_basic instr] ++ l3) as H by reflexivity; rewrite H;
-                                                       apply r_elimr; clear H
-          end
-  end.
-
 Lemma reduce_const_false : forall state state' s s' f f' c instr,
   ~ (reduce_tuple (host_instance:=host_instance)) (state, s, f, [AI_basic (BI_const c)])
                                                   (state', s', f', instr).
@@ -1692,6 +1664,31 @@ Proof.
     eapply rt_step. now eapply r_local.
 Qed.
 
+(* isolate instr. + n leading args, e.g. with n=2 for add:
+   [const 1, const 2, add, remaining instr] => [const 1, const 2, add]  *)
+Ltac elimr_nary_instr n :=
+  let H := fresh "H" in
+  match n with
+  | 0 => lazymatch goal with
+         | |- reduce _ _ _ ([:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([:: ?instr] ++ ?l3) _ _ _ _ => apply r_elimr
+         end
+  | 1 => lazymatch goal with
+         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([:: AI_basic (BI_const c1)] ++ [:: instr] ++ l3 =
+                    [:: AI_basic (BI_const c1); instr] ++ l3) as H by reflexivity; rewrite H;
+                                                       apply r_elimr; clear H
+         end
+  | 2 => lazymatch goal with
+         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++ [::AI_basic (BI_const ?c2)] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++ [::AI_basic (BI_const ?c2)] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([:: AI_basic (BI_const c1)] ++ [:: AI_basic (BI_const c2)] ++ [:: instr] ++ l3 =
+                    [:: AI_basic (BI_const c1); AI_basic (BI_const c2); instr] ++ l3) as H by reflexivity; rewrite H;
+                                                       apply r_elimr; clear H
+         end
+  end.
+
 Ltac dostep :=
   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t]));
   first (apply rt_step; separate_instr).
@@ -1700,6 +1697,12 @@ Ltac dostep :=
 Ltac dostep' :=
    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s]));
    first (apply rt_step; separate_instr).
+
+Ltac dostep_nary n :=
+  dostep; first elimr_nary_instr n.
+
+Ltac dostep_nary' n :=
+  dostep'; first elimr_nary_instr n.
 
 (* Print caseConsistent. *)
 Lemma caseConsistent_findtag_In_cenv:
@@ -1894,12 +1897,10 @@ Proof with eauto.
   destruct Hgrow.
   { eexists. split.
     (* load global_mem_ptr *)
-    dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
+    dostep_nary 0. apply r_get_global. eassumption.
     (* add required bytes *)
-    dostep. elimr_nary_instr 2. constructor.
-    apply rs_binop_success. reflexivity.
-    dostep. elimr_nary_instr 2. constructor.
-    apply rs_binop_success. cbn. unfold is_left.
+    dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
+    dostep_nary 2. constructor. apply rs_binop_success. cbn. unfold is_left.
     rewrite zeq_false. reflexivity.
     { (*TODO code duplication *)
       intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
@@ -1914,17 +1915,15 @@ Proof with eauto.
     dostep. apply r_eliml; auto.
     elimr_nary_instr 0. eapply r_current_memory...
 
-    dostep. elimr_nary_instr 2.
-    constructor. apply rs_relop.
+    dostep_nary 2. constructor. apply rs_relop.
 
     dostep'. constructor. subst.
     rewrite HneedMoreMem. apply rs_if_true. intro H3'. inv H3'.
 
     dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
-    cbn.
-    apply reduce_trans_label.
-    dostep'. elimr_nary_instr 1. eapply r_grow_memory_success; eauto.
-    dostep'. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
+    cbn. apply reduce_trans_label.
+    dostep_nary 1. eapply r_grow_memory_success; eauto.
+    dostep_nary 2. constructor. apply rs_relop. cbn.
     dostep'. constructor. apply rs_if_false.
 
     assert (size >= 0)%N. { subst. cbn. auto. lia. }
@@ -1972,11 +1971,11 @@ Proof with eauto.
 
     eexists. split.
     (* load global_mem_ptr *)
-    dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
+    dostep_nary 0. apply r_get_global. eassumption.
     (* add required bytes *)
-    dostep. elimr_nary_instr 2. constructor.
+    dostep_nary 2. constructor.
     apply rs_binop_success. reflexivity.
-    dostep. elimr_nary_instr 2. constructor.
+    dostep_nary 2. constructor.
     apply rs_binop_success. cbn. unfold is_left.
     rewrite zeq_false. reflexivity.
     { (*TODO code duplication *)
@@ -1992,13 +1991,13 @@ Proof with eauto.
     dostep. apply r_eliml; auto.
     elimr_nary_instr 0. eapply r_current_memory...
 
-    dostep. elimr_nary_instr 2. constructor. apply rs_relop.
+    dostep_nary 2. constructor. apply rs_relop.
 
     dostep'. constructor. subst. rewrite HneedMoreMem. apply rs_if_true. discriminate.
     dostep'. constructor. apply rs_block with (vs:=[])(n:= 0); auto.
     apply reduce_trans_label.
-    dostep. elimr_nary_instr 1. eapply r_grow_memory_failure; try eassumption.
-    dostep. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
+    dostep_nary 1. eapply r_grow_memory_failure; try eassumption.
+    dostep_nary 2. constructor. apply rs_relop. cbn.
     dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
     dostep'. constructor. eapply rs_block with (vs:=[]); auto.
     apply reduce_trans_label. cbn.
@@ -2058,11 +2057,11 @@ Proof with eauto.
   (* enough space already *)
   exists sr. split.
   (* load global_mem_ptr *)
-  dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
+  dostep_nary 0. apply r_get_global. eassumption.
   (* add required bytes *)
-  dostep. elimr_nary_instr 2. constructor.
+  dostep_nary 2. constructor.
   apply rs_binop_success. reflexivity.
-  dostep. elimr_nary_instr 2. constructor.
+  dostep_nary 2. constructor.
   apply rs_binop_success. cbn. unfold is_left.
   rewrite zeq_false. reflexivity.
   { (*TODO code duplication *)
@@ -2078,8 +2077,7 @@ Proof with eauto.
   dostep. apply r_eliml; auto.
   elimr_nary_instr 0. eapply r_current_memory...
 
-  dostep. elimr_nary_instr 2.
-  constructor. apply rs_relop.
+  dostep_nary 2. constructor. apply rs_relop.
 
   dostep'. constructor. subst.
   rewrite HenoughMem. apply rs_if_false. reflexivity.
@@ -2498,14 +2496,14 @@ Proof.
 
       eexists. split.
       (* reduce *)
-      dostep. elimr_nary_instr 0. apply r_get_global. rewrite Hglob_cap. eassumption.
-      dostep. elimr_nary_instr 2. constructor. constructor. reflexivity.
+      dostep_nary 0. apply r_get_global. rewrite Hglob_cap. eassumption.
+      dostep_nary 2. constructor. constructor. reflexivity.
       eapply rt_trans. apply app_trans_const; auto. apply app_trans. eassumption.
 
-      dostep. elimr_nary_instr 2. eapply r_store_success; try eassumption; auto.
-      dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
-      dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-      dostep. elimr_nary_instr 1. apply r_set_global. subst. eassumption.
+      dostep_nary 2. eapply r_store_success; try eassumption; auto.
+      dostep_nary 0. apply r_get_global. eassumption.
+      dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
+      dostep_nary 1. apply r_set_global. subst. eassumption.
       apply Hred.
       split. assumption. split. assumption. split. simpl_modulus. cbn. lia. split.
       econstructor. apply Hm1. eassumption. { simpl_modulus.
@@ -2828,22 +2826,22 @@ Proof.
 
   exists s_final. split.
   (* steps *)
-  dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
-  dostep. elimr_nary_instr 1. apply r_set_global. eassumption. cbn.
-  dostep. elimr_nary_instr 0. apply r_get_global. eapply update_global_get_same. eassumption.
+  dostep_nary 0. apply r_get_global. eassumption.
+  dostep_nary 1. apply r_set_global. eassumption. cbn.
+  dostep_nary 0. apply r_get_global. eapply update_global_get_same. eassumption.
   (* write tag *)
-  dostep. elimr_nary_instr 2. eapply r_store_success. 4: eassumption.
+  dostep_nary 2. eapply r_store_success. 4: eassumption.
   reflexivity. eassumption. assumption.
 
-  dostep. elimr_nary_instr 0. apply r_get_global.
+  dostep_nary 0. apply r_get_global.
   replace (sglob_val (upd_s_mem (host_function:=host_function) s' (set_nth m' (s_mems s') 0 m')))
      with (sglob_val s') by reflexivity.
   eapply update_global_get_other with (j:= constr_alloc_ptr). assumption.
   unfold global_mem_ptr, constr_alloc_ptr. lia.
   2: eassumption. eassumption. cbn.
 
-  dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-  dostep. elimr_nary_instr 1. apply r_set_global. subst. rewrite HgmpEq. eassumption.
+  dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
+  dostep_nary 1. apply r_set_global. subst. rewrite HgmpEq. eassumption.
   cbn. apply Hred. split. assumption.
   split. apply update_global_preserves_funcs in H0, H1. subst s_tag. cbn in H1. congruence.
   split. { intros. apply HvalPreserved.
@@ -2974,7 +2972,7 @@ Proof.
     destruct Hlocs as [a'' [Ha'' HlVar]]. destruct H. rewrite Ha'' in H. inv H.
 
     exists (wasm_value_to_immediate wal :: args'). cbn. split.
-    dostep. elimr_nary_instr 0. apply r_get_local. eassumption.
+    dostep_nary 0. apply r_get_local. eassumption.
     separate_instr. apply app_trans_const; auto.
     econstructor; eauto.
   }
@@ -3423,8 +3421,8 @@ Proof.
     eapply reduce_trans_local'.
     eapply rt_trans with (y:=(hs, sr, f, lfill lh [AI_label 0 [] (map AI_basic e')])).
     apply reduce_trans_label'.
-    dostep. elimr_nary_instr 0. apply r_get_local. eauto.
-    dostep. elimr_nary_instr 2. constructor. apply rs_relop.
+    dostep_nary 0. apply r_get_local. eauto.
+    dostep_nary 2. constructor. apply rs_relop.
     dostep'. constructor. apply rs_if_true.
     { (* Check that (t0 << 1) + 1 = (t << 1) + 1 *)
       rewrite Pos.mul_comm.
@@ -3469,8 +3467,8 @@ Proof.
       apply reduce_trans_local'.
       apply reduce_trans_label'.
       eapply rt_trans.
-      dostep. elimr_nary_instr 0. apply r_get_local. eauto.
-      dostep. elimr_nary_instr 2. constructor. apply rs_relop.
+      dostep_nary 0. apply r_get_local. eauto.
+      dostep_nary 2. constructor. apply rs_relop.
       dostep'. constructor. apply rs_if_false.
       (* Check that (t0 << 1) + 1 <> (t << 1);
          requires some arithmetic gymnastics  *)
@@ -3568,17 +3566,17 @@ Proof.
     eapply reduce_trans_local'.
     eapply rt_trans with (y:=(hs, sr, f, lfill lh [AI_label 0 [] (map AI_basic e')])).
     apply reduce_trans_label'.
-    dostep. elimr_nary_instr 0. apply r_get_local. eauto.
+    dostep_nary 0. apply r_get_local. eauto.
     inv Hval.
     solve_eq m m0.
     unfold load_i32 in H18.
     destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hload. 2: { cbn in Hload. rewrite Hload in H18. inv H18. }
-    dostep. elimr_nary_instr 1. eapply r_load_success; try eassumption.
+    dostep_nary 1. eapply r_load_success; try eassumption.
     assert (N.of_nat addr = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))). {
       cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia.
     }
     rewrite <- H. apply Hload.
-    dostep. elimr_nary_instr 2. constructor. apply rs_relop.
+    dostep_nary 2. constructor. apply rs_relop.
     dostep'. constructor. apply rs_if_true. {
       (* Check that t0 = t *)
       cbn.
@@ -3623,17 +3621,17 @@ Proof.
       (* Step through the if-then-else into the else-branch *)
       eapply rt_trans with (y:=(hs, sr, fAny, [AI_local 0 f (lfill lh [AI_label 0 [] (map AI_basic instrs_more)])])).
       apply reduce_trans_local'. apply reduce_trans_label'. eapply rt_trans.
-      dostep. elimr_nary_instr 0. apply r_get_local. eauto.
+      dostep_nary 0. apply r_get_local. eauto.
       inv Hval.
       solve_eq m m0.
       unfold load_i32 in H18.
       destruct (load m (N.of_nat addr) (N.of_nat 0) 4) eqn:Hload. 2: { cbn in Hload. rewrite Hload in H18. inv H18. }
-      dostep. elimr_nary_instr 1. eapply r_load_success; try eassumption.
+      dostep_nary 1. eapply r_load_success; try eassumption.
       assert (N.of_nat addr = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr)))) as H. {
         cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia.
       }
       rewrite <- H. apply Hload.
-      dostep. elimr_nary_instr 2. constructor. apply rs_relop.
+      dostep_nary 2. constructor. apply rs_relop.
       dostep'. constructor. apply rs_if_false.
       { (* Check that t0 <> t;
          requires some arithmetic gymnastics  *)
@@ -3953,8 +3951,8 @@ Proof with eauto.
 
       eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
       eapply rt_trans. apply app_trans. apply Hred. cbn.
-      dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
-      dostep. elimr_nary_instr 2. constructor. apply rs_relop. cbn.
+      dostep_nary 0. apply r_get_global. eassumption.
+      dostep_nary 2. constructor. apply rs_relop. cbn.
       dostep'. constructor. apply rs_if_false. reflexivity.
       dostep'. constructor. eapply rs_block with (vs := []); auto.
 
@@ -3977,7 +3975,7 @@ Proof with eauto.
 
     clear Hred_v. cbn. separate_instr. rewrite catA.
     eapply rt_trans. apply reduce_trans_label0. apply app_trans.
-    dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
+    dostep_nary 0. apply r_get_global. eassumption.
 
     assert (f_inst f_before_IH = f_inst fr) as Hfinst'. { subst. reflexivity. }
     dostep'. eapply r_set_local. eassumption.
@@ -4001,8 +3999,8 @@ Proof with eauto.
     eapply reduce_trans_local'. eapply rt_trans.
     eapply reduce_trans_label'. eapply app_trans. apply Hred. cbn.
     apply reduce_trans_label'.
-    dostep. elimr_nary_instr 0. apply r_get_global. eassumption.
-    dostep. elimr_nary_instr 2. constructor. apply rs_relop.
+    dostep_nary 0. apply r_get_global. eassumption.
+    dostep_nary 2. constructor. apply rs_relop.
     dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
     dostep'. constructor. eapply rs_block with (vs:=[]); auto. apply rt_refl. cbn.
     rewrite Heq'. apply rt_refl.
@@ -4145,9 +4143,9 @@ Proof with eauto.
 
       exists sr', f', k', lh'.
       split. eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
-      dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-      dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-      dostep. elimr_nary_instr 1. eapply r_set_local with (f':=f_before_IH).
+      dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
+      dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
+      dostep_nary 1. eapply r_set_local with (f':=f_before_IH).
         subst f_before_IH. reflexivity.
         have I := Hinv.
         apply /ssrnat.leP.
@@ -4340,16 +4338,13 @@ Proof with eauto.
 
        eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
        (* get_local y' *)
-       dostep. elimr_nary_instr 0.
-       apply r_get_local. apply H1.
+       dostep_nary 0. apply r_get_local. apply H1.
 
        (* add offset n *)
-       dostep. elimr_nary_instr 2.
-       constructor. apply rs_binop_success. cbn. reflexivity.
+       dostep_nary 2. constructor. apply rs_binop_success. cbn. reflexivity.
 
        inv Hrepr.
-       dostep. elimr_nary_instr 1.
-       eapply r_load_success.
+       dostep_nary 1. eapply r_load_success.
 
        destruct Hlinmem as [Hmem1 [m' Hmem2]].
        eassumption. apply H9.
@@ -4455,8 +4450,8 @@ Proof with eauto.
           inv H3.
           eapply rt_trans with (y:=(state, sr, fAny, [AI_local 0 fr (lfill lh ([ AI_label 0 [] (map AI_basic e2')]))])).
           apply reduce_trans_local'. apply reduce_trans_label'.
-          dostep. elimr_nary_instr 0. apply r_get_local. eauto.
-          dostep. elimr_nary_instr 2. constructor. apply rs_binop_success.
+          dostep_nary 0. apply r_get_local. eauto.
+          dostep_nary 2. constructor. apply rs_binop_success.
           cbn.
           assert (Wasm_int.Int32.iand (wasm_value_to_i32 (Val_unboxed (Pos.to_nat (t * 2 + 1)))) (nat_to_i32 1) = Wasm_int.Int32.one).
           {
@@ -4466,7 +4461,7 @@ Proof with eauto.
             eapply and_of_odd_and_1_1. rewrite Pos.mul_comm in H8. auto.
           }
           rewrite H3. eauto. cbn.
-          dostep. elimr_nary_instr 1. constructor. eapply rs_testop_i32.
+          dostep_nary 1. constructor. eapply rs_testop_i32.
           cbn.
           dostep'. constructor. apply rs_if_false. reflexivity.
           dostep'. constructor. eapply rs_block with (vs := []); auto.
@@ -4512,7 +4507,7 @@ Proof with eauto.
           eapply rt_trans with (y:=(state, sr, fAny, [AI_local 0 fr (lfill lh ([ AI_label 0 [] (map AI_basic e1')]))])).
           apply reduce_trans_local'.
           apply reduce_trans_label'.
-          dostep. elimr_nary_instr 0. apply r_get_local. rewrite H3 in Hntherror. eauto.
+          dostep_nary 0. apply r_get_local. rewrite H3 in Hntherror. eauto.
           assert (Hand : Wasm_int.Int32.iand (wasm_value_to_i32 (Val_ptr addr)) (nat_to_i32 1) = Wasm_int.Int32.zero). {
             destruct H13 as [n0 Hn0].
             rewrite Hn0.
@@ -4520,8 +4515,8 @@ Proof with eauto.
             apply and_of_even_and_1_0.
             lia.
           }
-          dostep. elimr_nary_instr 2. constructor. apply rs_binop_success. cbn. eauto. cbn.
-          dostep. elimr_nary_instr 1. constructor. apply rs_testop_i32. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn. eauto. cbn.
+          dostep_nary 1. constructor. apply rs_testop_i32. cbn.
           dostep'. constructor. apply rs_if_true. by rewrite Hand.
           dostep'. constructor. eapply rs_block with (vs := []); auto.
           unfold to_e_list. cbn. apply rt_refl.
@@ -5319,8 +5314,8 @@ Proof with eauto.
         dostep'. constructor. apply rs_if_false. reflexivity.
         dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn.
         apply reduce_trans_label0.
-        dostep'. elimr_nary_instr 0. apply r_get_global. rewrite -Hfinst in Hres. subst f_before_IH. eassumption.
-        dostep'. elimr_nary_instr 1. eapply r_set_local with (f' := f_before_cont).
+        dostep_nary' 0. apply r_get_global. rewrite -Hfinst in Hres. subst f_before_IH. eassumption.
+        dostep_nary' 1. eapply r_set_local with (f' := f_before_cont).
         subst f_before_cont. reflexivity.
         apply /ssrnat.leP. eapply HlocInBound. eassumption.
         subst f_before_cont w. reflexivity.
@@ -5347,7 +5342,7 @@ Proof with eauto.
 
         eapply rt_trans.
         apply reduce_trans_local'. apply reduce_trans_label'.
-        dostep. elimr_nary_instr 0. apply r_get_global. rewrite -Hfinst in HOutOfMem. subst f_before_IH. eassumption.
+        dostep_nary 0. apply r_get_global. rewrite -Hfinst in HOutOfMem. subst f_before_IH. eassumption.
         dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
         dostep'. constructor. eapply rs_block with (vs := []); eauto. cbn. apply rt_refl.
         rewrite Heq'. apply rt_refl.
@@ -5404,7 +5399,7 @@ Proof with eauto.
     (* apply IH1: function body *)
     eapply rt_trans. apply app_trans. apply Hred. apply rt_refl.
     eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
-    dostep. elimr_nary_instr 0. constructor. apply rs_return with (lh:=lh0) (vs:=[::]) => //.
+    dostep_nary 0. constructor. apply rs_return with (lh:=lh0) (vs:=[::]) => //.
     cbn. apply rt_refl.
     (* apply IH2: continuation *)
     eapply rt_trans. apply Hred_final. apply rt_refl.
@@ -5439,8 +5434,8 @@ Proof with eauto.
 
     (* execute wasm instructions *)
     apply reduce_trans_local'. apply reduce_trans_label'.
-    dostep. elimr_nary_instr 0. eapply r_get_local. eassumption.
-    dostep'. elimr_nary_instr 1. apply r_set_global. eassumption. apply rt_refl.
+    dostep_nary 0. eapply r_get_local. eassumption.
+    dostep_nary' 1. apply r_set_global. eassumption. apply rt_refl.
 
     split.
     left. exists (wasm_value_to_i32 wal). exists wal.
