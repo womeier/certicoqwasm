@@ -99,7 +99,7 @@ Inductive expression_restricted : cps.exp -> Prop :=
 
 Local Hint Constructors expression_restricted : core.
 
-Lemma check_restrictions_expression_restricted : forall e e',
+Theorem check_restrictions_expression_restricted : forall e e',
   check_restrictions e = Ret () ->
   subterm_or_eq e' e -> expression_restricted e'.
 Proof.
@@ -3035,38 +3035,13 @@ Proof.
 Qed.
 
 
-
-Lemma nthN_nth_error {A} : forall (l : list A) i,
-  nthN l (N.of_nat i) = nth_error l i.
-Proof.
-  induction l; intros.
-  - destruct i; reflexivity.
-  - destruct i; try reflexivity.
-    replace (N.of_nat (S i)) with (1 + N.of_nat i)%N by lia.
-    cbn. rewrite -IHl. cbn.
-    destruct (N.of_nat i) eqn:Heqn; auto.
-    destruct p; auto.
-    replace (N.pos (Pos.succ p)~0 - 1)%N with (N.pos p~1)%N by lia. reflexivity.
-Qed.
-
-Lemma map_repeat_eq {A} {B} : forall (l : list A) (v : B),
-  repeat v (Datatypes.length l) = map (fun _ => v) l.
-Proof.
-  induction l; cbn; intros; auto. f_equal. apply IHl.
-Qed.
-
-Lemma map_map_seq {A B C}: forall (l:seq A) (f: A -> B) (g : B -> C),
-   [seq g (f a) | a <- l] = [seq (g v) | v <- [seq f a | a <- l]].
-Proof.
-  induction l; intros; cbn; auto. f_equal. now apply IHl.
-Qed.
-
 Lemma collect_function_vars_length_numOf_fundefs_eq : forall fds e,
   length (collect_function_vars (Efun fds e)) = numOf_fundefs fds.
 Proof.
   induction fds; intros; auto. cbn. f_equal. now eapply IHfds with (e:=e).
 Qed.
 
+(* a bit stronger than set_lists_In *)
 Lemma set_lists_nth_error {A} : forall xs (vs : list A) rho rho' x v,
   set_lists xs vs rho = Some rho' ->
   In x xs ->
@@ -3086,7 +3061,6 @@ Proof.
         destruct (IHxs _ _ _ _ _ Heqn H0 H1) as [k [Hk1 Hk2]]. exists (S k). now cbn.
      }
 Qed.
-
 
 (* for fn values returned by the fn body of Eletapp, it holds that rho=M.empty etc. *)
 Lemma step_preserves_empty_env_fds : forall rho e v c fds rho' fds' f',
@@ -3245,20 +3219,20 @@ Lemma repr_expr_LambdaANF_Wasm_no_Efun_subterm {lenv} : forall e_body eAny,
 Proof.
   intros ? ? Hexpr. revert eAny Hexpr.
   induction e_body using exp_ind'; intros.
-  { (* Econstr *)
+  - (* Econstr *)
     inv Hexpr.
     have H' := IHe_body _ H5.
     apply rt_then_t_or_eq in H. destruct H as [H | H]. congruence.
     apply clos_trans_tn1 in H. inv H. inv H0.
     eapply H'. apply rt_refl. inv H0.
-    apply clos_tn1_trans in H1. eapply H'. now apply t_then_rt.
-  } { (* Ecase [] *)
+    apply clos_tn1_trans in H1. eapply H'. by apply t_then_rt.
+  - (* Ecase [] *)
     apply rt_then_t_or_eq in H. destruct H; first congruence.
     apply clos_trans_tn1 in H. inv H. { inv H0. inv H2. }
-    inv H0. inv H3.
-  } { (* Ecase cons *)
+    inv H0. by inv H3.
+  - (* Ecase cons *)
     inv Hexpr. inv H3.
-    - (* boxed *)
+    + (* boxed *)
       inv H4.
       apply rt_then_t_or_eq in H. destruct H as [H | H]; first congruence.
       apply clos_trans_tn1 in H. inv H.
@@ -3269,7 +3243,7 @@ Proof.
         - inv H4. eapply IHe_body; try eassumption. now apply t_then_rt.
         - eapply IHe_body0. eapply Rcase_e; eauto. eapply rt_trans. now apply t_then_rt.
           apply rt_step. now econstructor. }
-    - (* unboxed *)
+    + (* unboxed *)
       inv H6.
       apply rt_then_t_or_eq in H. destruct H as [? | H]; first congruence.
       apply clos_trans_tn1 in H. inv H.
@@ -3281,47 +3255,28 @@ Proof.
         - inv H5. eapply IHe_body; try eassumption. now apply t_then_rt.
         - eapply IHe_body0. eapply Rcase_e; eauto. eapply rt_trans. now apply t_then_rt.
           apply rt_step. now econstructor. }
-  } { (* Eproj *)
+  - (* Eproj *)
     inv Hexpr.
     have H' := IHe_body _ H6.
     apply rt_then_t_or_eq in H. destruct H as [H | H]. congruence.
     apply clos_trans_tn1 in H. inv H. inv H0.
     eapply H'. apply rt_refl. inv H0.
-    apply clos_tn1_trans in H1. eapply H'. now apply t_then_rt.
-  } { (* Eletapp *)
+    apply clos_tn1_trans in H1. eapply H'. by apply t_then_rt.
+  - (* Eletapp *)
     inv Hexpr.
     have H' := IHe_body _ H7. apply rt_then_t_or_eq in H.
     destruct H as [H|H]; first congruence. apply clos_trans_tn1 in H. inv H.
     inv H0. eapply H'. apply rt_refl. inv H0.
-    eapply H'. apply clos_tn1_trans in H1. now apply t_then_rt.
-  } { (* Efun *) inv Hexpr.
-  } { (* Eapp *)
+    eapply H'. apply clos_tn1_trans in H1. by apply t_then_rt.
+  - (* Efun *) by inv Hexpr.
+  - (* Eapp *)
     apply rt_then_t_or_eq in H. inv H; first congruence.
-    apply clos_trans_tn1 in H0. inv H0. inv H. inv H.
-  } { (* Eprim_val *) inv Hexpr.
-  } { (* Eprim *) inv Hexpr.
-  } { (* Ehalt *)
+    apply clos_trans_tn1 in H0. inv H0. inv H. by inv H.
+  - (* Eprim_val *) by inv Hexpr.
+  - (* Eprim *) by inv Hexpr.
+  - (* Ehalt *)
     apply rt_then_t_or_eq in H. destruct H; first congruence.
-    apply clos_trans_tn1 in H. inv H. inv H0. inv H0.
-  }
-Qed.
-
-(* TODO: move up to find_def_dsubterm_fds_e *)
-Lemma dsubterm_fds_e_find_def : forall (fds : fundefs) (e : exp) (eAny : exp),
-  NoDup (collect_function_vars (Efun fds eAny)) ->
-  dsubterm_fds_e e fds ->
-  exists f ys t, find_def f fds = Some (t, ys, e).
-Proof.
-  induction fds; intros. 2: inv H0.
-  inv H0. { exists v, l, f. cbn. now destruct (M.elt_eq v v). }
-  eapply IHfds in H3. destruct H3 as [f' [ys' [t' H']]].
-  assert (f' <> v). { intro. subst.
-    assert (find_def v fds <> None). { now apply notNone_Some. }
-    eapply find_def_in_collect_function_vars in H0.
-    now inv H. } exists f'.
-  cbn. now destruct (M.elt_eq f' v).
-  now inv H.
-  Unshelve. all: assumption.
+    apply clos_trans_tn1 in H. inv H. inv H0. by inv H0.
 Qed.
 
 Fixpoint select_nested_if (boxed : bool) (v : immediate) (t : ctor_tag) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=

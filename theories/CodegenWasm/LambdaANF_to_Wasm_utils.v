@@ -23,238 +23,6 @@ Import ssreflect ssrbool eqtype.
 Import ListNotations.
 Import seq.
 
-Section LambdaANF.
-
-(* taken from C backend *)
-
-Inductive dsubval_v: LambdaANF.cps.val -> LambdaANF.cps.val -> Prop :=
-| dsubval_constr: forall v vs c,
-  List.In v vs ->
-  dsubval_v v (Vconstr c vs)
-| dsubval_fun : forall x fds rho f,
-  name_in_fundefs fds x ->
-    dsubval_v (Vfun rho fds x) (Vfun rho fds f).
-
-Definition subval_v := clos_trans _ dsubval_v.
-Definition subval_or_eq := clos_refl_trans _ dsubval_v.
-
-Lemma t_then_rt:
-  forall A R (v v':A),
-  clos_trans _ R v v'  ->
-  clos_refl_trans _ R v v'.
-Proof.
-  intros. induction H.
-  apply rt_step. auto.
-  eapply rt_trans; eauto.
-Qed.
-
-Lemma rt_then_t_or_eq:
-  forall A R (v v':A),
-    clos_refl_trans _ R v v' ->
-    v = v' \/ clos_trans _ R v v'.
-Proof.
-  intros. induction H.
-  right. apply t_step; auto.
-  left; auto.
-  inv IHclos_refl_trans1; inv IHclos_refl_trans2.
-  left; auto.
-  right; auto.
-  right; auto. right.
-  eapply t_trans; eauto.
-Qed.
-
-Lemma dsubterm_case_cons:
-  forall v l e',
-    dsubterm_e e' (Ecase v l) ->
-  forall a, dsubterm_e e' (Ecase v (a:: l)).
-Proof.
-  intros. inv H. econstructor.
-  right; eauto.
-Qed.
-
-Lemma subterm_case:
-forall v l e',
-  subterm_e e' (Ecase v l) ->
-  forall a, subterm_e e' (Ecase v (a:: l)).
-Proof.
-  intros. remember (Ecase v l) as y.
-  revert dependent v. revert l. induction H.
-  - intros. subst. constructor.
-    eapply dsubterm_case_cons; eauto.
-  - intros. apply IHclos_trans2 in Heqy.
-    eapply t_trans. apply H. eauto.
-Qed.
-
-Lemma subval_fun: forall v rho fl x,
-    name_in_fundefs fl x ->
-        subval_or_eq v (Vfun rho fl x) ->
-        exists l, v = Vfun rho fl l /\ name_in_fundefs fl l.
-Proof.
-  intros. apply rt_then_t_or_eq in H0.
-  inv H0.
-  exists x; auto.
-  remember (Vfun rho fl x) as y.
-  assert (exists x, y = Vfun rho fl x /\ name_in_fundefs fl x ) by eauto.
-  clear H. clear Heqy. clear x.
-  induction H1.  destructAll. subst. inv H. eauto.
-  destructAll.
-  assert (exists x, Vfun rho fl x0 = Vfun rho fl x /\ name_in_fundefs fl x) by eauto.
-  apply IHclos_trans2 in H. apply IHclos_trans1 in H. auto.
-Qed.
-
-Lemma subval_or_eq_constr:
-forall v v' vs c,
-  subval_or_eq v v' ->
-  List.In v' vs ->
-  subval_or_eq v (Vconstr c vs).
-Proof.
-  intros.
-  eapply rt_trans; eauto.
-  apply rt_step. constructor; auto.
-Qed.
-
-Lemma subval_v_constr:
-  forall v vs t,
-  subval_v v (Vconstr t vs) ->
-  exists v',
-    subval_or_eq v v' /\ List.In v' vs.
-Proof.
-  intros.
-  remember (Vconstr t vs) as v'. revert t vs Heqv'.
-  induction H; intros; subst.
-  - inv H. exists x. split.
-    apply rt_refl. apply H2.
-  -  specialize (IHclos_trans2 t vs Logic.eq_refl).
-     destruct IHclos_trans2.
-     exists x0. destruct H1. split.
-     apply t_then_rt in H.
-     eapply rt_trans; eauto.
-     auto.
-Qed.
-
-Lemma subval_or_eq_fun:
-  forall rho' fds f vs t,
-  subval_or_eq (Vfun rho' fds f) (Vconstr t vs) ->
-  exists v',
-    subval_or_eq (Vfun rho' fds f) v' /\ List.In v' vs.
-Proof.
-  intros.
-  apply rt_then_t_or_eq in H. destruct H.
-  inv H.
-  eapply subval_v_constr; eauto.
-Qed.
-
-Lemma subval_or_eq_fun_not_prim :
- forall v p,
-  (forall p', v <> Vprim p') ->
-  ~ subval_or_eq v (Vprim p).
-Proof.
-  intros ? ? HnotPrim Hcontra.
-  remember (Vprim p) as v'.
-  generalize dependent p.
-  apply clos_rt_rt1n in Hcontra. induction Hcontra; intros; subst.
-  now specialize HnotPrim with p.
-  eapply IHHcontra; eauto.
-  intros p' Hcontra'. subst. inv H.
-Qed.
-
-Lemma find_def_dsubterm_fds_e : forall fds f t ys e,
-   find_def f fds = Some (t, ys, e) ->
-   dsubterm_fds_e e fds.
-Proof.
-  induction fds; intros. 2: inv H.
-  cbn in H. destruct (M.elt_eq f0 v).
-  (* f0=v *) inv H. constructor.
-  (* f0<>v *) constructor. eapply IHfds; eauto.
-Qed.
-
-Lemma set_lists_In:
-  forall {A} x xs (v:A) vs rho rho' ,
-    List.In x xs ->
-    M.get x rho' = Some v ->
-    set_lists xs vs rho = Some rho' ->
-    List.In  v vs.
-Proof.
-  induction xs; intros.
-  -   inv H.
-  - destruct vs. simpl in H1; inv H1. simpl in H1.
-    destruct (set_lists xs vs rho) eqn:Hsl; inv H1.
-    destruct (var_dec x a).
-    + subst.
-      rewrite M.gss in H0. inv H0. constructor; reflexivity.
-    + rewrite M.gso in H0=>//.
-      constructor 2.
-      inv H. exfalso; apply n; reflexivity.
-      eapply IHxs; eauto.
-Qed.
-
-
-(* TODO: move this to cps_util *)
-Definition Forall_constructors_in_e (P: var -> ctor_tag -> list var -> Prop) (e:exp) :=
-  forall x t  ys e',
-    subterm_or_eq (Econstr x t ys e') e -> P x t ys.
-
-Definition Forall_exp_in_caselist (P: exp -> Prop) (cl:list (ctor_tag * exp)) :=
-  forall g e, List.In (g, e) cl -> P e.
-
-Lemma crt_incl_ct:
-          forall T P e e',
-          clos_trans T P e e' ->
-          clos_refl_trans T P e e'.
-Proof.
-  intros. induction H. constructor; auto.
-  eapply rt_trans; eauto.
-Qed.
-
-Lemma Forall_constructors_subterm:
-  forall P e e' ,
-  Forall_constructors_in_e P e ->
-  subterm_e e' e ->
-  Forall_constructors_in_e P e'.
-Proof.
-  intros. intro; intros.
-  eapply H.
-  assert (subterm_or_eq e' e).
-  apply crt_incl_ct.
-  apply H0.
-  eapply rt_trans; eauto.
-Qed.
-(* END TODO move *)
-
-
-Lemma Forall_constructors_in_constr:
-  forall P x t ys e,
-  Forall_constructors_in_e P (Econstr x t ys e) ->
-  P x t ys.
-Proof.
-  intros.
-  unfold Forall_constructors_in_e in *.
-  eapply H.
-  apply rt_refl.
-Qed.
-
-(* TODO: consider using def_funs_eq, def_funs_neq instead *)
-Lemma def_funs_find_def : forall fds fds' rho f,
-  find_def f fds <> None ->
-    (def_funs fds' fds rho rho) ! f = Some (Vfun rho fds' f).
-Proof.
-  induction fds; intros; last contradiction.
-  cbn in H. destruct (M.elt_eq f0 v).
-  (* f0 = v *) subst. cbn. now rewrite M.gss.
-  (* f0 <> v *) cbn. now rewrite M.gso.
-Qed.
-
-Lemma def_funs_not_find_def : forall fds fds' rho f,
-  find_def f fds = None ->
-    (def_funs fds' fds rho rho) ! f = rho ! f.
-Proof.
-  induction fds; intros ? ? ? H; auto.
-  cbn in H. destruct (M.elt_eq f0 v).
-  (* f0 = v *) inv H.
-  (* f0 <> v *) cbn. now rewrite M.gso.
-Qed.
-
-End LambdaANF.
 
 
 Section General.
@@ -299,7 +67,6 @@ Proof.
     now eapply IHl1'.
 Qed.
 
-
 Lemma set_nth_nth_error_same : forall {X:Type} (l:seq X) e e' i vd,
     nth_error l i = Some e ->
     nth_error (set_nth vd l i e') i = Some e'.
@@ -330,6 +97,31 @@ Proof.
   - discriminate (Hnth 0).
   - injection (Hnth 0) as ->. f_equal. apply IHl.
     intro n. exact (Hnth (S n)).
+Qed.
+
+Lemma nthN_nth_error {A} : forall (l : list A) i,
+  nthN l (N.of_nat i) = nth_error l i.
+Proof.
+  induction l; intros.
+  - destruct i; reflexivity.
+  - destruct i; try reflexivity.
+    replace (N.of_nat (S i)) with (1 + N.of_nat i)%N by lia.
+    cbn. rewrite -IHl. cbn.
+    destruct (N.of_nat i) eqn:Heqn; auto.
+    destruct p; auto.
+    replace (N.pos (Pos.succ p)~0 - 1)%N with (N.pos p~1)%N by lia. reflexivity.
+Qed.
+
+Lemma map_repeat_eq {A} {B} : forall (l : list A) (v : B),
+  repeat v (Datatypes.length l) = map (fun _ => v) l.
+Proof.
+  induction l; cbn; intros; auto. f_equal. apply IHl.
+Qed.
+
+Lemma map_map_seq {A B C}: forall (l:seq A) (f: A -> B) (g : B -> C),
+   [seq g (f a) | a <- l] = [seq (g v) | v <- [seq f a | a <- l]].
+Proof.
+  induction l; intros; cbn; auto. f_equal. now apply IHl.
 Qed.
 
 Lemma drop_is_skipn {A} : forall l n, @drop A n l = List.skipn n l.
@@ -374,7 +166,6 @@ Proof.
     rewrite MCList.nth_error_skipn. cbn.
     now replace (a + (n - a)) with n by lia. }
 Qed.
-
 
 End General.
 
@@ -641,6 +432,257 @@ Proof.
 Qed.
 
 End Vars.
+
+
+Section LambdaANF.
+
+(* some of the following taken from C backend *)
+
+Inductive dsubval_v: LambdaANF.cps.val -> LambdaANF.cps.val -> Prop :=
+| dsubval_constr: forall v vs c,
+  List.In v vs ->
+  dsubval_v v (Vconstr c vs)
+| dsubval_fun : forall x fds rho f,
+  name_in_fundefs fds x ->
+    dsubval_v (Vfun rho fds x) (Vfun rho fds f).
+
+Definition subval_v := clos_trans _ dsubval_v.
+Definition subval_or_eq := clos_refl_trans _ dsubval_v.
+
+Lemma t_then_rt:
+  forall A R (v v':A),
+  clos_trans _ R v v'  ->
+  clos_refl_trans _ R v v'.
+Proof.
+  intros. induction H.
+  apply rt_step. auto.
+  eapply rt_trans; eauto.
+Qed.
+
+Lemma rt_then_t_or_eq:
+  forall A R (v v':A),
+    clos_refl_trans _ R v v' ->
+    v = v' \/ clos_trans _ R v v'.
+Proof.
+  intros. induction H.
+  right. apply t_step; auto.
+  left; auto.
+  inv IHclos_refl_trans1; inv IHclos_refl_trans2.
+  left; auto.
+  right; auto.
+  right; auto. right.
+  eapply t_trans; eauto.
+Qed.
+
+Lemma dsubterm_case_cons:
+  forall v l e',
+    dsubterm_e e' (Ecase v l) ->
+  forall a, dsubterm_e e' (Ecase v (a:: l)).
+Proof.
+  intros. inv H. econstructor.
+  right; eauto.
+Qed.
+
+Lemma subterm_case:
+forall v l e',
+  subterm_e e' (Ecase v l) ->
+  forall a, subterm_e e' (Ecase v (a:: l)).
+Proof.
+  intros. remember (Ecase v l) as y.
+  revert dependent v. revert l. induction H.
+  - intros. subst. constructor.
+    eapply dsubterm_case_cons; eauto.
+  - intros. apply IHclos_trans2 in Heqy.
+    eapply t_trans. apply H. eauto.
+Qed.
+
+Lemma subval_fun: forall v rho fl x,
+    name_in_fundefs fl x ->
+        subval_or_eq v (Vfun rho fl x) ->
+        exists l, v = Vfun rho fl l /\ name_in_fundefs fl l.
+Proof.
+  intros. apply rt_then_t_or_eq in H0.
+  inv H0.
+  exists x; auto.
+  remember (Vfun rho fl x) as y.
+  assert (exists x, y = Vfun rho fl x /\ name_in_fundefs fl x ) by eauto.
+  clear H. clear Heqy. clear x.
+  induction H1.  destructAll. subst. inv H. eauto.
+  destructAll.
+  assert (exists x, Vfun rho fl x0 = Vfun rho fl x /\ name_in_fundefs fl x) by eauto.
+  apply IHclos_trans2 in H. apply IHclos_trans1 in H. auto.
+Qed.
+
+Lemma subval_or_eq_constr:
+forall v v' vs c,
+  subval_or_eq v v' ->
+  List.In v' vs ->
+  subval_or_eq v (Vconstr c vs).
+Proof.
+  intros.
+  eapply rt_trans; eauto.
+  apply rt_step. constructor; auto.
+Qed.
+
+Lemma subval_v_constr:
+  forall v vs t,
+  subval_v v (Vconstr t vs) ->
+  exists v',
+    subval_or_eq v v' /\ List.In v' vs.
+Proof.
+  intros.
+  remember (Vconstr t vs) as v'. revert t vs Heqv'.
+  induction H; intros; subst.
+  - inv H. exists x. split.
+    apply rt_refl. apply H2.
+  -  specialize (IHclos_trans2 t vs Logic.eq_refl).
+     destruct IHclos_trans2.
+     exists x0. destruct H1. split.
+     apply t_then_rt in H.
+     eapply rt_trans; eauto.
+     auto.
+Qed.
+
+Lemma subval_or_eq_fun:
+  forall rho' fds f vs t,
+  subval_or_eq (Vfun rho' fds f) (Vconstr t vs) ->
+  exists v',
+    subval_or_eq (Vfun rho' fds f) v' /\ List.In v' vs.
+Proof.
+  intros.
+  apply rt_then_t_or_eq in H. destruct H.
+  inv H.
+  eapply subval_v_constr; eauto.
+Qed.
+
+Lemma subval_or_eq_fun_not_prim :
+ forall v p,
+  (forall p', v <> Vprim p') ->
+  ~ subval_or_eq v (Vprim p).
+Proof.
+  intros ? ? HnotPrim Hcontra.
+  remember (Vprim p) as v'.
+  generalize dependent p.
+  apply clos_rt_rt1n in Hcontra. induction Hcontra; intros; subst.
+  now specialize HnotPrim with p.
+  eapply IHHcontra; eauto.
+  intros p' Hcontra'. subst. inv H.
+Qed.
+
+Lemma find_def_dsubterm_fds_e : forall fds f t ys e,
+   find_def f fds = Some (t, ys, e) ->
+   dsubterm_fds_e e fds.
+Proof.
+  induction fds; intros. 2: inv H.
+  cbn in H. destruct (M.elt_eq f0 v).
+  (* f0=v *) inv H. constructor.
+  (* f0<>v *) constructor. eapply IHfds; eauto.
+Qed.
+
+Lemma dsubterm_fds_e_find_def : forall (fds : fundefs) (e : exp) (eAny : exp),
+  NoDup (collect_function_vars (Efun fds eAny)) ->
+  dsubterm_fds_e e fds ->
+  exists f ys t, find_def f fds = Some (t, ys, e).
+Proof.
+  induction fds; intros. 2: inv H0.
+  inv H0. { exists v, l, f. cbn. now destruct (M.elt_eq v v). }
+  eapply IHfds in H3. destruct H3 as [f' [ys' [t' H']]].
+  assert (f' <> v). { intro. subst.
+    assert (find_def v fds <> None). { now apply notNone_Some. }
+    eapply find_def_in_collect_function_vars in H0.
+    now inv H. } exists f'.
+  cbn. now destruct (M.elt_eq f' v).
+  now inv H.
+  Unshelve. all: assumption.
+Qed.
+
+Lemma set_lists_In:
+  forall {A} x xs (v:A) vs rho rho' ,
+    List.In x xs ->
+    M.get x rho' = Some v ->
+    set_lists xs vs rho = Some rho' ->
+    List.In  v vs.
+Proof.
+  induction xs; intros.
+  -   inv H.
+  - destruct vs. simpl in H1; inv H1. simpl in H1.
+    destruct (set_lists xs vs rho) eqn:Hsl; inv H1.
+    destruct (var_dec x a).
+    + subst.
+      rewrite M.gss in H0. inv H0. constructor; reflexivity.
+    + rewrite M.gso in H0=>//.
+      constructor 2.
+      inv H. exfalso; apply n; reflexivity.
+      eapply IHxs; eauto.
+Qed.
+
+
+(* TODO: move this to cps_util *)
+Definition Forall_constructors_in_e (P: var -> ctor_tag -> list var -> Prop) (e:exp) :=
+  forall x t  ys e',
+    subterm_or_eq (Econstr x t ys e') e -> P x t ys.
+
+Definition Forall_exp_in_caselist (P: exp -> Prop) (cl:list (ctor_tag * exp)) :=
+  forall g e, List.In (g, e) cl -> P e.
+
+Lemma crt_incl_ct:
+          forall T P e e',
+          clos_trans T P e e' ->
+          clos_refl_trans T P e e'.
+Proof.
+  intros. induction H. constructor; auto.
+  eapply rt_trans; eauto.
+Qed.
+
+Lemma Forall_constructors_subterm:
+  forall P e e' ,
+  Forall_constructors_in_e P e ->
+  subterm_e e' e ->
+  Forall_constructors_in_e P e'.
+Proof.
+  intros. intro; intros.
+  eapply H.
+  assert (subterm_or_eq e' e).
+  apply crt_incl_ct.
+  apply H0.
+  eapply rt_trans; eauto.
+Qed.
+(* END TODO move *)
+
+
+Lemma Forall_constructors_in_constr:
+  forall P x t ys e,
+  Forall_constructors_in_e P (Econstr x t ys e) ->
+  P x t ys.
+Proof.
+  intros.
+  unfold Forall_constructors_in_e in *.
+  eapply H.
+  apply rt_refl.
+Qed.
+
+(* TODO: consider using def_funs_eq, def_funs_neq instead *)
+Lemma def_funs_find_def : forall fds fds' rho f,
+  find_def f fds <> None ->
+    (def_funs fds' fds rho rho) ! f = Some (Vfun rho fds' f).
+Proof.
+  induction fds; intros; last contradiction.
+  cbn in H. destruct (M.elt_eq f0 v).
+  (* f0 = v *) subst. cbn. now rewrite M.gss.
+  (* f0 <> v *) cbn. now rewrite M.gso.
+Qed.
+
+Lemma def_funs_not_find_def : forall fds fds' rho f,
+  find_def f fds = None ->
+    (def_funs fds' fds rho rho) ! f = rho ! f.
+Proof.
+  induction fds; intros ? ? ? H; auto.
+  cbn in H. destruct (M.elt_eq f0 v).
+  (* f0 = v *) inv H.
+  (* f0 <> v *) cbn. now rewrite M.gso.
+Qed.
+
+End LambdaANF.
 
 
 Section Wasm.
