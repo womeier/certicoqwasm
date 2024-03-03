@@ -442,6 +442,32 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
                  ; BI_if (Tf nil nil) [ BI_return ]
                      ([BI_get_global result_var; BI_set_local x'] ++ e')]))
 
+(* TODO
+| R_prim_val : forall x x' p sgrow e e',
+    repr_var (lenv:=lenv) x x' ->
+    repr_expr_LambdaANF_Wasm e e' ->
+    (* TODO: Relation for compilation of primitive values *)
+    grow_memory_if_necessary page_size = sgrow ->
+    repr_expr_LambdaANF_Wasm (Eprim_val x p e)
+      (sgrow ++
+       [ BI_get_global result_out_of_mem
+       ; BI_const (nat_to_value 1)
+       ; BI_relop T_i32 (Relop_i ROI_eq)
+       ; BI_if (Tf [] [])
+           [ BI_return ]
+           ([ BI_get_global global_mem_ptr
+            ; BI_const (VAL_int64 val)
+            ; BI_store T_i64 None 2%N 0%N
+            ; BI_get_global global_mem_ptr
+            ; BI_set_local x_var
+            ; BI_get_global global_mem_ptr
+            ; BI_const (nat_to_value 8)
+            ; BI_binop T_i32 (Binop_i BOI_add)
+            ; BI_set_global global_mem_ptr
+            ] ++ e')
+      ])
+*)
+
 with repr_branches {lenv}: immediate -> list (ctor_tag * exp) -> list (ctor_tag * list basic_instruction) -> list (ctor_tag * list basic_instruction) -> Prop :=
 | Rbranch_nil : forall x, repr_branches x [] [ ] [ ]
 
@@ -502,22 +528,6 @@ Proof.
   - destruct (translate_var nenv lenv a _) eqn:Hloc. inv Hvar. inv Hvar.
     constructor. now econstructor.
 Qed.
-
-Definition translate_case_branch_expressions nenv cenv lenv fenv :=
-  (fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
-    : error (list (ctor_tag * list basic_instruction) * list (ctor_tag  * list basic_instruction)) :=
-    match arms with
-    | [] => Ret ([], [])
-    | (t, e)::tl =>
-        instrs <- translate_exp nenv cenv lenv fenv e;;
-        '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions tl ;;
-        arity <- get_ctor_arity cenv t ;;
-        if arity =? 0 then
-          Ret (arms_boxed, (t, instrs) :: arms_unboxed)
-        else
-          Ret ((t, instrs) :: arms_boxed, arms_unboxed)
-    end).
-
 
 Theorem translate_exp_correct {lenv} :
     forall e instructions,
@@ -634,12 +644,14 @@ Proof.
       constructor. now econstructor.
     + destruct (translate_var  nenv lenv v _) eqn:var_var; inv Hloc.
       constructor. now econstructor.
+  - (* Eprim_val *)
+    admit. (* inv H. by inv H. *)
   - (* Eprim *)
-    inv H. by inv H.
+    by inv H.
   - (* Ehalt *)
     simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
     injection H => instr'. subst. constructor. now econstructor.
-Qed.
+Admitted. (* Qed. *)
 
 End CODEGEN.
 
@@ -703,8 +715,26 @@ Inductive repr_val_LambdaANF_Wasm:
       body = e' ->
       repr_expr_LambdaANF_Wasm (create_local_variable_mapping (xs ++ collect_local_variables e)) e e'
          ->
-      repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f) sr fr (Val_funidx idx)
+           repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f) sr fr (Val_funidx idx)
+(* TODO
+|  Rprim_v : forall p v sr fr gmp m addr,
+    sglob_val sr (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
 
+    (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
+
+    (addr <= gmp) ->
+
+    (exists n, addr = 2 * n) ->
+
+    List.nth_error sr.(s_mems) 0 = Some m ->
+
+    (* TODO: primitive representation? *)
+    v = compile_primitive p ->
+
+    load_i32 m (N.of_nat addr) = Some (VAL_int64 v) ->
+
+    repr_val_LambdaANF_Wasm (Vprim p) sr fr (Val_ptr addr) (* TODO: Distinguish primitive value pointers? *)
+*)
 with repr_val_constr_args_LambdaANF_Wasm : list LambdaANF.cps.val ->
                                               store_record ->
                                               frame ->

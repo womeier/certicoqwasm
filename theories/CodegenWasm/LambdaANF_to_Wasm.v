@@ -4,7 +4,7 @@ From CertiCoq Require Import LambdaANF.toplevel LambdaANF.cps_util.
 From CertiCoq Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import ExtLib.Structures.Monad.
 From MetaCoq.Utils Require Import bytestring MCString.
-From Coq Require Import ZArith List.
+From Coq Require Import ZArith List Lia.
 
 Require Import MSets.MSetAVL.
 From Coq Require Import FMapAVL.
@@ -26,6 +26,21 @@ Definition max_num_functions := 1_000_000%Z. (* should be possible to vary witho
 
 Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes *)
 
+
+(* NOTE: Altered slightly from C-backend, may need to reverted (WIP) *)
+Definition to_int64 (i : PrimInt63.int) : Wasm_int.Int64.T.
+  exists (Uint63.to_Z i)%Z. (* Was i * 2 + 1 *)
+  pose proof (Uint63.to_Z_bounded i).
+  unfold Uint63.wB in H. unfold Wasm_int.Int64.modulus, Wasm_int.Int64.wordsize, Integers.Wordsize_64.wordsize.
+  unfold Uint63.size in H. rewrite two_power_nat_correct. unfold Zpower_nat. simpl.
+  destruct H. split; lia.
+Defined.
+
+Definition compile_primitive (p : AstCommon.primitive) :=
+  match projT1 p as tag return prim_value tag -> error Wasm_int.Int64.T with
+  | AstCommon.primInt => fun i => Ret (to_int64 i)
+  | AstCommon.primFloat => fun f => Err "TODO"
+  end (projT2 p).
 
 Definition assert (b : bool) (err : string) : error Datatypes.unit :=
   if b then Ret tt else Err err.
@@ -467,7 +482,28 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
 
    | Eapp f ft ys => translate_call nenv lenv fenv f ys true
 
-   | Eprim_val x p e' => Err "translating prim_val to Wasm not supported yet"
+   | Eprim_val x p e' =>
+       following_instrs <- translate_exp nenv cenv lenv fenv e' ;;
+       x_var <- translate_var nenv lenv x "translate_exp prim val" ;;
+       val <- compile_primitive p ;;
+           Ret (grow_memory_if_necessary page_size ++
+                 [ BI_get_global result_out_of_mem
+                 ; BI_const (nat_to_value 1)
+                 ; BI_relop T_i32 (Relop_i ROI_eq)
+                 ; BI_if (Tf [] [])
+                     [ BI_return ]
+                     ([ BI_get_global global_mem_ptr
+                        ; BI_const (VAL_int64 val)
+                        ; BI_store T_i64 None 2%N 0%N
+                        ; BI_get_global global_mem_ptr
+                        ; BI_set_local x_var
+                        ; BI_get_global global_mem_ptr
+                        ; BI_const (nat_to_value 8)
+                        ; BI_binop T_i32 (Binop_i BOI_add)
+                        ; BI_set_global global_mem_ptr
+                       ] ++ following_instrs)
+                 ])
+
    | Eprim x p ys e' => Err "translating prim to Wasm not supported yet"
 
    | Ehalt x =>
