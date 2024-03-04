@@ -1,5 +1,5 @@
 This repo contains a WebAssembly-backend for CertiCoq ([CoqPL'24](https://popl24.sigplan.org/details/CoqPL-2024-papers/3/CertiCoq-Wasm-Verified-compilation-from-Coq-to-WebAssembly))
-targeting the AST of the [WasmCert](https://github.com/WasmCert/WasmCert-Coq) mechanisation.
+targeting the AST of the [WasmCert](https://github.com/WasmCert/WasmCert-Coq) mechanisation. (It is not yet available in upstream CertiCoq.)
 Backend and correctness proof are in `theories/CodegenWasm/`,
 there are no substantial changes to the rest, essentially only adjustments for testing and CI. <br>
 
