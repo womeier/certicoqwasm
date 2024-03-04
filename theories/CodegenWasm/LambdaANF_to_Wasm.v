@@ -649,7 +649,11 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                      |} ::
                     {| modexp_name := String.print "result"
                      ; modexp_desc := MED_global (Mk_globalidx result_var)
-                     |} :: nil in
+                    |} ::
+                    {| modexp_name := String.print "memory"
+                    ; modexp_desc := MED_mem (Mk_memidx 0)
+                    |} :: nil
+  in
 
   let elements := table_element_mapping (length fns + 4) 0 in
 

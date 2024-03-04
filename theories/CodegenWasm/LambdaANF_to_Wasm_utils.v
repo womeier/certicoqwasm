@@ -849,6 +849,17 @@ Definition load_i32 m addr : option value :=
 Definition store_i32 mem addr (v : value) : option memory :=
   store mem addr 0%N (bits v) 4.
 
+
+Definition load_i64 m addr : option value :=
+  match load m addr 0%N 8 with (* offset: 0, 4 bytes *)
+  | None => None
+  | Some bs => Some (wasm_deserialise bs T_i64)
+  end.
+
+Definition store_i64 mem addr (v : value) : option memory :=
+    store mem addr 0%N (bits v) 8.
+
+
 Definition tag_to_i32 (t : ctor_tag) :=
   Wasm_int.Int32.repr (BinInt.Z.of_nat (Pos.to_nat t)).
 

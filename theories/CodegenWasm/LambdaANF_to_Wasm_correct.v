@@ -442,11 +442,11 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
                  ; BI_if (Tf nil nil) [ BI_return ]
                      ([BI_get_global result_var; BI_set_local x'] ++ e')]))
 
-(* TODO
-| R_prim_val : forall x x' p sgrow e e',
+| R_prim_val : forall x x' p v sgrow e e',
     repr_var (lenv:=lenv) x x' ->
     repr_expr_LambdaANF_Wasm e e' ->
     (* TODO: Relation for compilation of primitive values *)
+    compile_primitive p = Ret v ->
     grow_memory_if_necessary page_size = sgrow ->
     repr_expr_LambdaANF_Wasm (Eprim_val x p e)
       (sgrow ++
@@ -456,17 +456,16 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
        ; BI_if (Tf [] [])
            [ BI_return ]
            ([ BI_get_global global_mem_ptr
-            ; BI_const (VAL_int64 val)
+            ; BI_const (VAL_int64 v)
             ; BI_store T_i64 None 2%N 0%N
             ; BI_get_global global_mem_ptr
-            ; BI_set_local x_var
+            ; BI_set_local x'
             ; BI_get_global global_mem_ptr
             ; BI_const (nat_to_value 8)
             ; BI_binop T_i32 (Binop_i BOI_add)
             ; BI_set_global global_mem_ptr
             ] ++ e')
       ])
-*)
 
 with repr_branches {lenv}: immediate -> list (ctor_tag * exp) -> list (ctor_tag * list basic_instruction) -> list (ctor_tag * list basic_instruction) -> Prop :=
 | Rbranch_nil : forall x, repr_branches x [] [ ] [ ]
@@ -645,13 +644,28 @@ Proof.
     + destruct (translate_var  nenv lenv v _) eqn:var_var; inv Hloc.
       constructor. now econstructor.
   - (* Eprim_val *)
-    admit. (* inv H. by inv H. *)
+    inv H.
+    destruct (translate_exp nenv cenv lenv fenv e) eqn:H_eqTranslate. inv H1.
+    destruct (translate_var nenv lenv v _) eqn:Hvar. inv H1.
+    destruct (compile_primitive p) eqn:Hprim. inv H1.
+    remember (grow_memory_if_necessary page_size) as grow.
+    inversion H1.
+    separate_instr. do 7! rewrite catA. (* first 8 instr belong to sgrow *)
+    apply R_prim_val.
+    + econstructor; eauto.
+    + assert (Hcenv': correct_cenv_of_exp cenv e). {
+        intro; intros. eapply Hcenv. eapply rt_trans. eauto. constructor.
+        now econstructor.
+      }
+      now eapply IHe.
+    + now assumption.
+    + now eauto.
   - (* Eprim *)
     by inv H.
   - (* Ehalt *)
     simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
     injection H => instr'. subst. constructor. now econstructor.
-Admitted. (* Qed. *)
+Qed.
 
 End CODEGEN.
 
@@ -716,25 +730,25 @@ Inductive repr_val_LambdaANF_Wasm:
       repr_expr_LambdaANF_Wasm (create_local_variable_mapping (xs ++ collect_local_variables e)) e e'
          ->
            repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f) sr fr (Val_funidx idx)
-(* TODO
+
 |  Rprim_v : forall p v sr fr gmp m addr,
     sglob_val sr (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
 
     (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
 
-    (addr <= gmp) ->
+    (addr+8 <= gmp) ->
 
     (exists n, addr = 2 * n) ->
 
     List.nth_error sr.(s_mems) 0 = Some m ->
 
     (* TODO: primitive representation? *)
-    v = compile_primitive p ->
+    compile_primitive p = Ret v ->
 
-    load_i32 m (N.of_nat addr) = Some (VAL_int64 v) ->
+    load_i64 m (N.of_nat addr) = Some (VAL_int64 v) ->
 
     repr_val_LambdaANF_Wasm (Vprim p) sr fr (Val_ptr addr) (* TODO: Distinguish primitive value pointers? *)
-*)
+
 with repr_val_constr_args_LambdaANF_Wasm : list LambdaANF.cps.val ->
                                               store_record ->
                                               frame ->
@@ -791,10 +805,12 @@ Proof.
     { econstructor; eauto. }
     { econstructor; eauto. congruence. }
     { econstructor; eauto. rewrite -H0. eassumption. }
+    { econstructor; eauto. rewrite -H0. eassumption. }
     { econstructor; eauto. }
     { econstructor; eauto. congruence. }
   }
   (* function *)
+  { econstructor; eauto. rewrite -H. eassumption. }
   { econstructor; eauto. rewrite -H. eassumption. }
 Qed.
 
@@ -846,16 +862,17 @@ Lemma val_relation_depends_on_mem_smaller_than_gmp_and_funcs :
     nth_error sr'.(s_mems) 0 = Some m' ->
     (* memories agree on values < gmp *)
     sglob_val sr  (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
-    (Z.of_nat gmp + 4 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
+    (Z.of_nat gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
     sglob_val sr' (f_inst fr') global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp')) ->
-    (Z.of_nat gmp' + 4 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
+    (Z.of_nat gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
     gmp' >= gmp ->
     (forall a, (a + 4 <= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
+    (forall a, (a + 8 <= N.of_nat gmp)%N -> load_i64 m a = load_i64 m' a) ->
 
     repr_val_LambdaANF_Wasm v sr fr value ->
     repr_val_LambdaANF_Wasm v sr' fr' value.
 Proof.
-  intros. inv H9.
+  intros. inv H10.
   (* Nullary constructor value *)
   { now constructor.  }
   (* Non-nullary constructor value *)
@@ -870,11 +887,12 @@ Proof.
           nth_error s'.(s_mems) 0 = Some m' ->
           (* memories agree on values < gmp *)
           sglob_val s (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
-          (Z.of_nat gmp + 4 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
+          (Z.of_nat gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
           sglob_val s' (f_inst f') global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp')) ->
-          (Z.of_nat gmp' + 4 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
+          (Z.of_nat gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
           gmp' >= gmp ->
           (forall a, (a + 4<= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
+          (forall a, (a + 8<= N.of_nat gmp)%N -> load_i64 m a = load_i64 m' a) ->
               repr_val_LambdaANF_Wasm v s' f' w)
     )
   (fun (l : seq cps.val) (s : datatypes.store_record host_function) (f : frame) (i : immediate)
@@ -886,14 +904,15 @@ Proof.
           nth_error s'.(s_mems) 0 = Some m' ->
           (* memories agree on values < gmp *)
           sglob_val s (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
-          (Z.of_nat gmp + 4 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
+          (Z.of_nat gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
           sglob_val s' (f_inst f') global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp')) ->
-          (Z.of_nat gmp' + 4 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
+          (Z.of_nat gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
           gmp' >= gmp ->
           (forall a, (a + 4 <= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
+          (forall a, (a + 8 <= N.of_nat gmp)%N -> load_i64 m a = load_i64 m' a) ->
              repr_val_constr_args_LambdaANF_Wasm l s' f' i)
-  ). have H19' := H19.
-    eapply indPrinciple in H19; intros; clear indPrinciple; try eassumption; try lia.
+  ). have H20' := H20.
+    eapply indPrinciple in H20; intros; clear indPrinciple; try eassumption; try lia.
     { solve_eq gmp0 gmp.
       solve_eq m m0.
       econstructor; try eassumption. lia. lia. reflexivity.
@@ -901,18 +920,24 @@ Proof.
     { now constructor. }
     { solve_eq gmp gmp0. solve_eq gmp gmp1.
       solve_eq m m0. solve_eq m1 m2.
-      econstructor; eauto. lia. rewrite <- H28; auto; try lia. }
+      econstructor; eauto. lia. rewrite <- H29; auto; try lia. }
     { econstructor; eauto. congruence. }
+    { econstructor; eauto.
+      solve_eq gmp gmp1. lia.
+      solve_eq m1 m2. rewrite <- H29. assumption. solve_eq gmp gmp1. lia. }
     { econstructor. }
     { solve_eq gmp gmp0. solve_eq gmp gmp1.
       econstructor; eauto; try lia.
-      rewrite <- H29. assert (m1 = m2) by congruence. subst m2. eassumption.
-      lia. eapply H9; eauto; lia. }
+      rewrite <- H30. assert (m1 = m2) by congruence. subst m2. eassumption.
+      lia. eapply H10; eauto; lia. }
     { solve_eq m m0. lia. }
     { solve_eq m m0. apply H8. lia. }
+    { solve_eq m m0. apply H9. lia. }
   }
   (* function *)
   { econstructor; eauto. rewrite <- H0. rewrite -H. eassumption. }
+  (* primitive value *)
+  { econstructor; eauto. lia. solve_eq gmp gmp0. lia. solve_eq m m0. rewrite <- H9. assumption. solve_eq gmp gmp0. lia. }
 Qed.
 
 
@@ -1010,7 +1035,7 @@ Definition INV_global_mem_ptr_in_linear_memory s f := forall gmp_v m,
   @sglob_val host_function s (f_inst f) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp_v)) ->
   (-1 < Z.of_nat gmp_v < Wasm_int.Int32.modulus)%Z ->
   (* enough space to store an i32 *)
-  (N.of_nat gmp_v + 4 <= mem_length m)%N.
+  (N.of_nat gmp_v + 8 <= mem_length m)%N.
 
 Definition INV_constr_alloc_ptr_in_linear_memory s f := forall addr t m,
   @sglob_val host_function s (f_inst f) constr_alloc_ptr = Some (VAL_int32 addr) ->
@@ -1152,7 +1177,7 @@ Lemma update_global_preserves_global_mem_ptr_in_linear_memory : forall j sr sr' 
   INV_inst_globs_nodup f ->
   nth_error (s_mems sr) 0 = Some m ->
   (-1 < Z.of_nat num < Wasm_int.Int32.modulus)%Z ->
-  (j = global_mem_ptr -> num + 4 < N.to_nat (mem_length m)) ->
+  (j = global_mem_ptr -> num + 8 < N.to_nat (mem_length m)) ->
   @supdate_glob host_function sr (f_inst f) j (VAL_int32 (nat_to_i32 num)) = Some sr' ->
   INV_global_mem_ptr_in_linear_memory sr' f.
 Proof.
@@ -1186,7 +1211,7 @@ Lemma update_global_preserves_table_id : forall j sr sr' f m num,
   INV_inst_globs_nodup f ->
   nth_error (s_mems sr) 0 = Some m ->
   (-1 < Z.of_nat num < Wasm_int.Int32.modulus)%Z ->
-  (j = global_mem_ptr -> num + 4 < N.to_nat (mem_length m)) ->
+  (j = global_mem_ptr -> num + 8 < N.to_nat (mem_length m)) ->
   supdate_glob sr (f_inst f) j (VAL_int32 (nat_to_i32 num)) = Some sr' ->
   INV_table_id sr' f.
 Proof.
@@ -1203,7 +1228,7 @@ Lemma update_global_preserves_types : forall j sr sr' f m num,
   INV_inst_globs_nodup f ->
   nth_error (s_mems sr) 0 = Some m ->
   (-1 < Z.of_nat num < Wasm_int.Int32.modulus)%Z ->
-  (j = global_mem_ptr -> num + 4 < N.to_nat (mem_length m)) ->
+  (j = global_mem_ptr -> num + 8 < N.to_nat (mem_length m)) ->
   supdate_glob (host_function:=host_function) sr (f_inst f) j
              (VAL_int32 (nat_to_i32 num)) = Some sr' ->
   INV_types sr' f.
@@ -1220,7 +1245,7 @@ Lemma update_global_preserves_global_mem_ptr_multiple_of_two : forall j sr sr' f
     INV_inst_globs_nodup f ->
     nth_error (s_mems sr) 0 = Some m ->
     (-1 < Z.of_nat num < Wasm_int.Int32.modulus)%Z ->
-    (j = global_mem_ptr -> num + 4 < N.to_nat (mem_length m) /\ exists n, num = 2  * n) ->
+    (j = global_mem_ptr -> num + 8 < N.to_nat (mem_length m) /\ exists n, num = 2  * n) ->
     @supdate_glob host_function sr (f_inst f) j (VAL_int32 (nat_to_i32 num)) = Some sr' ->
     INV_global_mem_ptr_multiple_of_two sr' f.
 Proof.
@@ -1232,7 +1257,7 @@ Proof.
   { (* g = global_mem_ptr *)
      subst. have H' := update_global_get_same _ _ _ _ _ Hupd.
      rewrite H' in Hglob. injection Hglob as Hglob. solve_eq num gmp_v.
-     assert (num + 4 < N.to_nat (mem_length m) /\ (exists n : nat, num = 2 * n)) by now apply Hj.
+     assert (num + 8 < N.to_nat (mem_length m) /\ (exists n : nat, num = 2 * n)) by now apply Hj.
      destruct H0 as [_ [n Hn]]. by exists n.
   }
   { (* g <> global_mem_ptr *)
@@ -1261,7 +1286,7 @@ Corollary update_global_preserves_INV : forall sr sr' i f m num,
   (* if updated gmp, new value in mem *)
   nth_error (s_mems sr) 0 = Some m ->
   (-1 < Z.of_nat num < Wasm_int.Int32.modulus)%Z ->
-  (i = global_mem_ptr -> num + 4 < N.to_nat (mem_length m)) ->
+  (i = global_mem_ptr -> num + 8 < N.to_nat (mem_length m)) ->
   (i = global_mem_ptr -> exists n, num = 2 * n) ->
   (* upd. global var *)
   supdate_glob (host_function:=host_function) sr (f_inst f) i
@@ -1424,7 +1449,7 @@ Proof.
   eapply update_mem_preserves_global_var_w in Hinv; eauto.
   apply global_var_w_implies_global_var_r in Hinv.
     2: now eapply update_mem_preserves_all_mut_i32.
-  assert (N.of_nat gmp_v + 4 <= mem_length m)%N. { apply H; auto. } lia.
+  assert (N.of_nat gmp_v + 8 <= mem_length m)%N. { apply H; auto. } lia.
   Unshelve. assumption. assumption.
 Qed.
 
@@ -1818,6 +1843,31 @@ Proof.
         cbn in *; lia.
 Qed.
 
+Lemma decode_int64_bounds : forall b m addr,
+  load m (N.of_nat addr) 0%N 8 = Some b ->
+  (-1 < decode_int b < Wasm_int.Int64.modulus)%Z.
+Proof.
+  intros.
+  (* length b = 8 bytes *)
+  unfold load, those in H.
+  destruct (N.of_nat addr + (0 + N.of_nat 8) <=? mem_length m)%N. 2: inv H.
+  unfold read_bytes in H. cbn in H.
+  destruct (memory_list.mem_lookup (N.of_nat addr + 0 + 0)%N (mem_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (N.of_nat addr + 0 + 1)%N (mem_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (N.of_nat addr + 0 + 2)%N (mem_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (N.of_nat addr + 0 + 3)%N (mem_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (N.of_nat addr + 0 + 4)%N (mem_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (N.of_nat addr + 0 + 5)%N (mem_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (N.of_nat addr + 0 + 6)%N (mem_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (N.of_nat addr + 0 + 7)%N (mem_data m)). 2: inv H.
+  inv H.
+  unfold decode_int, int_of_bytes, rev_if_be, Wasm_int.Int64.modulus, two_power_nat.
+  destruct Archi.big_endian;
+    destruct b0, b1, b2, b3, b4, b5, b6, b7; cbn;
+      unfold Byte.modulus, Byte.wordsize, two_power_nat, Wordsize_8.wordsize in *;
+        cbn in *; lia.
+Qed.
+
 Lemma value_bounds : forall wal v sr fr,
   INV_num_functions_upper_bound sr ->
   repr_val_LambdaANF_Wasm v sr fr wal ->
@@ -1831,6 +1881,7 @@ Proof.
     cbn.
     assert (idx < length (s_funcs sr)). { apply nth_error_Some. congruence. }
     unfold INV_num_functions_upper_bound in Hinv. lia.
+  - (* prim. value boxed *) cbn. lia.
 Qed.
 
 Lemma extract_constr_arg : forall n vs v sr fr addr m,
