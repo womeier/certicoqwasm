@@ -4844,7 +4844,7 @@ Proof with eauto.
       now rewrite map_repeat_eq. } apply rt_refl. apply rt_refl.
 
     (* TODO cleanup *)
-    dostep'. eapply r_return_invoke =>//=. eassumption. reflexivity.
+    dostep'. eapply r_return_invoke with (a:=fidx); try eassumption; try reflexivity.
     apply map_const_const_list.
     do 2! rewrite map_length.
     apply const_val_list_length_eq in HfargsRes.
