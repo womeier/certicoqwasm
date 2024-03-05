@@ -858,8 +858,8 @@ Definition immediate_to_i32 (i : immediate) :=
 (* TODO use ref types (WasmGC) instead *)
 Inductive wasm_value :=
   | Val_unboxed : immediate -> wasm_value
-  | Val_ptr : immediate -> wasm_value
-  | Val_funidx : immediate -> wasm_value.
+  | Val_ptr     : immediate -> wasm_value
+  | Val_funidx  : immediate -> wasm_value.
 
 Definition wasm_value_to_immediate (v : wasm_value) :=
     match v with
@@ -1077,9 +1077,10 @@ Lemma mem_length_upper_bound : forall m,
   (mem_length m <= (max_mem_pages + 1) * page_size)%N.
 Proof.
   intros.
-  unfold mem_size, page_size, max_mem_pages in H. unfold page_size. cbn in *.
+  unfold mem_size, page_size in H. unfold page_size. cbn in *.
   remember (mem_length m) as n. clear Heqn m.
-  assert (Z.of_N n / 65536 <= 5000)%Z as Hn by lia. clear H.
+  assert (Z.of_N n / 65536 <= Z.of_N max_mem_pages)%Z as Hn by lia. clear H.
+  unfold max_mem_pages in Hn.
   assert (Hs: (65536 > 0)%Z) by lia.
   destruct (Zdiv_eucl_exist Hs (Z.of_N n)) as [[z z0] [H1 H2]].
   rewrite H1 in Hn.
@@ -1300,10 +1301,10 @@ Proof.
 Qed.
 
 Lemma small_signed_repr_n_n : forall n,
-  (0 <= n <= 5000)%Z->
+  (0 <= n <= Z.of_N max_mem_pages)%Z->
   Wasm_int.Int32.signed (Wasm_int.Int32.repr n) = n.
 Proof.
-  intros n H.
+  intros n H. unfold max_mem_pages in H.
   unfold Wasm_int.Int32.signed. cbn.
   rewrite zlt_true.
   rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.

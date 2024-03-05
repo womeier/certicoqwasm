@@ -2090,7 +2090,7 @@ Proof with eauto.
            (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
     apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
     have H'' := signed_upper_bound (Wasm_int.Int32.intval (nat_to_i32 gmp) + Z.of_N page_size).
-    simpl_modulus_in H''. cbn. lia. cbn in H. lia. }
+    simpl_modulus_in H''. cbn. lia. cbn in H. lia. } 
   dostep. apply r_eliml; auto.
   elimr_nary_instr 0. eapply r_current_memory...
 
@@ -2137,16 +2137,17 @@ Proof with eauto.
     subst y. unfold Wasm_int.Int32.signed in Ha. cbn in Ha.
 
     rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: {
-      assert ((Z.of_nat v_gmp ÷ 65536 < 6000)%Z) as H''. { apply Z.quot_lt_upper_bound; lia. }
+      assert ((Z.of_nat v_gmp ÷ 65536 < 100000)%Z) as H''. { apply Z.quot_lt_upper_bound; lia. }
       simpl_modulus. cbn.
       assert (Z.of_nat v_gmp ÷ 65536  >= 0)%Z. {
         rewrite Zquot.Zquot_Zdiv_pos; try lia. apply Z_div_ge0; lia.
       } lia. }
 
-    rewrite small_signed_repr_n_n in Heqn; try lia.
+    rewrite small_signed_repr_n_n in Heqn; last by unfold max_mem_pages; lia.
     unfold Wasm_int.Int32.signed in Heqn. cbn in Heqn.
 
-    assert ((Z.of_nat v_gmp ÷ 65536 < 6000)%Z) as H''. { apply Z.quot_lt_upper_bound; lia. }
+    (* 100000 arbitrary *)
+    assert ((Z.of_nat v_gmp ÷ 65536 < 100000)%Z) as H''. { apply Z.quot_lt_upper_bound; lia. }
     assert (Z.of_nat v_gmp ÷ 65536  >= 0)%Z. { rewrite Zquot.Zquot_Zdiv_pos; try lia.
     apply Z_div_ge0; lia. }
 

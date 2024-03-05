@@ -17,14 +17,14 @@ Import MonadNotation.
 (* Main file for compiler backend targeting Wasm. *)
 
 (* memory can grow to at most 64KB * max_mem_pages *)
-Definition max_mem_pages     := 5000%N.
+Definition max_mem_pages     := 30000%N.
 
 (* ***** RESTRICTIONS ON constructors and functions ****** *)
-Definition max_constr_args   := 1024%Z.      (* should be possible to vary without breaking much *)
 Definition max_function_args := 20%Z.        (* should be possible to vary without breaking much *)
 Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
+Definition max_constr_args   := 1024%Z.      (* should be possible to vary without breaking much *)
 
-Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes *)
+Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes, don't change this *)
 
 
 Definition assert (b : bool) (err : string) : error Datatypes.unit :=
