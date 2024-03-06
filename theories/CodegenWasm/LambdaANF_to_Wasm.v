@@ -507,22 +507,28 @@ Definition create_local_variable_mapping (vars : list cps.var) : localvar_env :=
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
                               (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
-
   let locals := collect_local_variables body in
   let lenv := create_local_variable_mapping (args ++ locals) in
 
-  body_res <- translate_exp nenv cenv lenv fenv body ;;
-
-  let arg_types := map (fun _ => T_i32) args in
   fn_var <- translate_var nenv fenv name "translate function" ;;
+  body_res <- translate_exp nenv cenv lenv fenv body ;;
+  Ret {| fidx := fn_var
+       ; export_name := show_tree (show_var nenv name)
+       ; type := Tf (map (fun _ => T_i32) args) []
+       ; locals := map (fun _ => T_i32) locals
+       ; body := body_res
+       |}.
 
-  Ret
-  {| fidx := fn_var
-   ; export_name := show_tree (show_var nenv name)
-   ; type := Tf arg_types []
-   ; locals := map (fun _ => T_i32) locals
-   ; body := body_res
-   |}.
+Fixpoint translate_functions (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
+                             (fds : fundefs) : error (list wasm_function) :=
+  match fds with
+  | Fnil => Ret []
+  | Fcons x tg xs e fds' =>
+      fn <- translate_function nenv cenv fenv x xs e ;;
+      following <- translate_functions nenv cenv fenv fds' ;;
+      Ret (fn :: following)
+  end.
+
 
 (* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
 
@@ -566,33 +572,23 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : err
 
   constr_pp_function <- generate_constr_pp_function cenv nenv e;;
 
+  (* ensure toplevel exp is an Efun*)
   let top_exp := match e with
                  | Efun _ _ => e
                  | _ => Efun Fnil e
                  end in
 
-  fns <-
-    match top_exp with
-    | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
-      (fix iter (fds : fundefs) : error (list wasm_function) :=
-          match fds with
-          | Fnil => Ret []
-          | Fcons x tg xs e fds' =>
-             fn <- translate_function nenv cenv fname_mapping x xs e ;;
-             following <- iter fds' ;;
-             Ret (fn :: following)
-          end) fds
-    | _ => Err "unreachable"
-  end ;;
+  fns <- match top_exp with
+         | Efun fds exp => translate_functions nenv cenv fname_mapping fds
+         | _ => Err "unreachable"
+         end ;;
 
   main_expr <- match top_exp with
                | Efun _ exp => Ret exp
                | _ => Err "unreachable"
                end;;
-
   let main_vars := collect_local_variables main_expr in
   let main_lenv := create_local_variable_mapping main_vars in
-
   main_instr <- translate_exp nenv cenv main_lenv fname_mapping main_expr ;;
 
   let main_function := {| fidx := main_function_idx
