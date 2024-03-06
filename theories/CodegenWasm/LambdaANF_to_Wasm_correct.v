@@ -459,6 +459,10 @@ with repr_branches {lenv}: immediate -> list (ctor_tag * exp) -> list (ctor_tag 
     repr_expr_LambdaANF_Wasm e e' ->
     repr_branches x ((t, e) :: cl) brs1 ((t,e') :: brs2).
 
+Scheme repr_expr_LambdaANF_Wasm_mut := Induction for repr_expr_LambdaANF_Wasm Sort Prop
+    with repr_branches_mut :=
+      Induction for repr_branches Sort Prop.
+
 
 Lemma pass_function_args_correct {lenv} : forall l instr,
   pass_function_args nenv lenv fenv l = Ret instr ->

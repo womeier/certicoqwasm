@@ -184,67 +184,68 @@ Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
   | _ => Err "found constructor without ctor_arity set"
   end.
 
-(* prints constructors as S-expressions *)
-Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : cps.exp) : error wasm_function :=
-  let constr_ptr := 0 (* fun param *) in
-  let tmp := 1        (* local var *) in
-  let tags := collect_constr_tags e in
-  let self_fn_idx := constr_pp_function_idx in
+(* Generation of PP function for constructors
 
-  let fix gen_rec_calls (calls : nat) (arity : nat) : list basic_instruction :=
+  Function takes as an argument (local 0) the pointer to a constructor, its name is printed.
+  To print the args, set the tmp var (local 1) to the input param, then for each argument:
+  - local 1 += 4
+  - call constr_pp_function with the current local recursively
+*)
+Fixpoint generate_constr_pp_constr_args (calls : nat) (arity : nat) : list basic_instruction :=
     match calls with
-    | 0 => if arity =? 0 then [ BI_return ] else (instr_write_string ")") ++ [ BI_return ]
-    | S calls' => [ BI_get_local tmp
+    | 0        => []
+    | S calls' => [ BI_get_local 1
                   ; BI_const (nat_to_value 4)
                   ; BI_binop T_i32 (Binop_i BOI_add)
-                  ; BI_set_local tmp
-                  ; BI_get_local tmp
-                  ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-                  ; BI_call self_fn_idx
-                  ] ++ (gen_rec_calls calls' arity)
-    end in
+                  ; BI_set_local 1
+                  ; BI_get_local 1
+                  ; BI_load T_i32 None 2%N 0%N     (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+                  ; BI_call constr_pp_function_idx (* call self *)
+                  ] ++ (generate_constr_pp_constr_args calls' arity)
+    end.
 
-  let gen_print_constr_block (c : ctor_tag) : error (list basic_instruction) :=
+Definition generate_constr_pp_single_constr (cenv : ctor_env) (nenv : name_env) (c : ctor_tag) : error (list basic_instruction) :=
     let ctor_id := Pos.to_nat c in
     let ctor_name := show_tree (show_con cenv c) in
     ctor_arity <- get_ctor_arity cenv c ;;
     if ctor_arity =? 0 then
       Ret([ BI_const (nat_to_value ctor_id)
-          ; BI_get_local constr_ptr
+          ; BI_get_local 0
           ; BI_const (nat_to_value 1)
           ; BI_binop T_i32 (Binop_i (BOI_shr SX_S))
           ; BI_relop T_i32 (Relop_i ROI_eq)
           ; BI_if (Tf nil nil)
-              ((instr_write_string (String.append " " ctor_name)) ++ [ BI_return ])
+              (instr_write_string (" " ++ ctor_name) ++ [ BI_return ])
               []
           ])
     else
       Ret([ BI_const (nat_to_value ctor_id)
-          ; BI_get_local constr_ptr
+          ; BI_get_local 0
           ; BI_load T_i32 None 2%N 0%N
           ; BI_relop T_i32 (Relop_i ROI_eq)
           ; BI_if (Tf nil nil)
-                (instr_write_string (String.append " (" ctor_name) ++
-                   [ BI_get_local constr_ptr
-                   ; BI_set_local tmp
-                   ] ++
-                   (gen_rec_calls ctor_arity ctor_arity))
+                (instr_write_string (" (" ++ ctor_name) ++
+                   [ BI_get_local 0
+                   ; BI_set_local 1
+                   ] ++ (generate_constr_pp_constr_args ctor_arity ctor_arity) ++ (instr_write_string ")") ++ [ BI_return ])
                 []
-          ])
-  in
+          ]).
 
-  blocks <- sequence (map gen_print_constr_block tags) ;;
+Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : cps.exp) : error wasm_function :=
+  let tags := collect_constr_tags e in
+
+  blocks <- sequence (map (generate_constr_pp_single_constr cenv nenv) tags) ;;
 
   let body := (concat blocks) ++
               (instr_write_string " <can't print constr: ") ++ (* e.g. could be fn-pointer or env-pointer *)
-              [ BI_get_local constr_ptr
+              [ BI_get_local 0 (* param: ptr to constructor *)
               ; BI_call write_int_function_idx
               ] ++ instr_write_string ">" in
 
   let _ := ")"  (* hack to fix syntax highlighting bug *)
 
   in
-  Ret {| fidx := self_fn_idx
+  Ret {| fidx := constr_pp_function_idx
        ; export_name := constr_pp_function_name
        ; type := Tf [T_i32] []
        ; locals := [T_i32]
