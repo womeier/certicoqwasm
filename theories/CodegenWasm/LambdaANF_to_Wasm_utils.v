@@ -1059,28 +1059,40 @@ Lemma mem_grow_preserves_original_values : forall a m m' maxlim,
   (maxlim <= page_limit)%N ->
   (mem_size m + 1 <= maxlim)%N ->
   mem_grow m 1 = Some m' ->
-  (a + 4 <= mem_length m)%N ->
-  load_i32 m a = load_i32 m' a.
+  (a + 8 <= mem_length m)%N ->
+  load_i32 m a = load_i32 m' a /\ load_i64 m a = load_i64 m' a.
 Proof.
   intros ? ? ? ? Hlim1 Hlim2 Hlim3 Hgrow Ha.
   have Hg := Hgrow. apply mem_grow_increases_length in Hg.
   unfold mem_grow in Hgrow.
   assert (Hlim4: (mem_size m + 1 <= page_limit)%N) by lia. apply N.leb_le in Hlim4, Hlim3.
   rewrite Hlim4 in Hgrow. rewrite Hlim1 in Hgrow. rewrite Hlim3 in Hgrow. inv Hgrow.
-
-  unfold load_i32, load, memory_list.mem_grow, read_bytes, those. cbn.
-  apply N.leb_le in Ha. rewrite Ha. apply N.leb_le in Ha.
-  assert (Hlen: (a + 4 <=?
+  assert (Hlen: (a + 8 <=?
      mem_length {| mem_data := {| ml_init := ml_init (mem_data m);
                                   ml_data := ml_data (mem_data m) ++
                                              repeat (ml_init (mem_data m)) (Pos.to_nat 65536) |};
-                   mem_max_opt := Some maxlim |})%N). {
-     unfold mem_length, memory_list.mem_length. cbn. rewrite app_length. rewrite repeat_length.
-     unfold mem_length, memory_list.mem_length in Ha. apply N.leb_le. lia. }
-  rewrite Hlen.
-  unfold mem_length, memory_list.mem_length in Ha.
-  unfold mem_lookup.
-  repeat rewrite nth_error_app1; try lia. reflexivity.
+                  mem_max_opt := Some maxlim |})%N). {
+    unfold mem_length, memory_list.mem_length. cbn. rewrite app_length. rewrite repeat_length.
+    unfold mem_length, memory_list.mem_length in Ha. apply N.leb_le. lia. }
+  remember ((mem_length {| mem_data := {| ml_init := ml_init (mem_data m);
+                                  ml_data := ml_data (mem_data m) ++
+                                             repeat (ml_init (mem_data m)) (Pos.to_nat 65536) |};
+                  mem_max_opt := Some maxlim |})%N) as mem_len.
+  split.
+  - assert (Ha': (a+4 <= mem_length m)%N) by lia.
+    unfold load_i32, load, memory_list.mem_grow, read_bytes, those. cbn.
+    apply N.leb_le in Ha'. rewrite Ha'. apply N.leb_le in Ha'.
+    assert (Hlen': (a + 4 <=? mem_len)%N). { apply N.leb_le in Hlen. apply N.leb_le. lia. }
+    rewrite -Heqmem_len. rewrite Hlen'.
+    unfold mem_length, memory_list.mem_length in Ha'.
+    unfold mem_lookup.
+    repeat rewrite nth_error_app1; try lia. reflexivity.
+  - unfold load_i64, load, memory_list.mem_grow, read_bytes, those. cbn.
+    rewrite -Heqmem_len. rewrite Hlen.
+    apply N.leb_le in Ha. rewrite Ha. apply N.leb_le in Ha.
+    unfold mem_length, memory_list.mem_length in Ha.
+    unfold mem_lookup.
+    repeat rewrite nth_error_app1; try lia. reflexivity.
 Qed.
 
 Lemma mem_length_upper_bound : forall m,
@@ -1179,6 +1191,471 @@ Proof.
   rewrite Hl1 Hl2 Hl3 Hl4. reflexivity. all: solve_arith_load_store.
 Qed.
 
+Lemma load_store_load_extra1 : forall m m' a1 a2 v w,
+  length w = 4 ->
+  (a1 + 8 <= a2)%N ->
+  load_i64 m a1 = Some v ->
+  store m a2 0%N w 4 = Some m' ->
+  load_i64 m' a1 = Some v.
+Proof.
+  intros ? ? ? ? ? ? Hlw Harith Hload Hstore.
+  cbn in Harith. unfold store in Hstore.
+  destruct (a2 + 0 + N.of_nat 4 <=? mem_length m)%N eqn:Ha. 2: inv Hstore.
+  apply N.leb_le in Ha. cbn in Ha. unfold mem_length, memory_list.mem_length in Ha.
+  destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw. destruct w.
+  inv Hlw. destruct w. 2: inv Hlw.
+  clear Hlw. unfold write_bytes in Hstore. cbn in Hstore.
+  unfold mem_update in Hstore. cbn in Hstore.
+  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N eqn:Ha1.
+  2: { apply N.ltb_nlt in Ha1. lia. }
+  cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
+  rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 1 <? N.of_nat (Datatypes.length (set_nth b (ml_data (mem_data m))
+                  (N.to_nat (a2 + 0 + 0)) b)))%N) as Ha2. { solve_arith_load_store. }
+ rewrite Ha2 in Hstore. cbn in Hstore. repeat rewrite take_drop_is_set_nth in Hstore.
+ 2: solve_arith_load_store.
+ assert ((a2 + 0 + 2 <?
+                N.of_nat
+                  (Datatypes.length
+                     (set_nth b0
+                        (set_nth b (ml_data (mem_data m))
+                          (N.to_nat (a2 + 0 + 0)) b)
+                        (N.to_nat (a2 + 0 + 1)) b0)))%N) as Ha3. { solve_arith_load_store. }
+  rewrite Ha3 in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 3 <?
+           N.of_nat (Datatypes.length
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)))%N) as Ha4. { solve_arith_load_store. }
+  rewrite Ha4 in Hstore. inv Hstore.
+
+  unfold load_i64, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
+  destruct ((a1 + 8 <=? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hr1. 2: discriminate.
+  cbn in Ha4. unfold read_bytes, those, mem_lookup in Hload. cbn in Hload.
+
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 0))) eqn:Hl1. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (a1 + 0 + 1))) eqn:Hl2. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (a1 + 0 + 2))) eqn:Hl3. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (a1 + 0 + 3))) eqn:Hl4. 2: discriminate.
+                cbn in Hload. rewrite -Hload.
+
+  rewrite length_is_size in Ha2. rewrite size_set_nth in Ha2.
+  rewrite maxn_nat_max in Ha2.
+  assert ((a1 + 8 <=?
+     N.of_nat
+       (Datatypes.length
+          (set_nth b2
+             (set_nth b1
+                (set_nth b0
+                   (set_nth b (ml_data (mem_data m))
+                      (N.to_nat (a2 + 0 + 0)) b) (N.to_nat (a2 + 0 + 1)) b0) (N.to_nat (a2 + 0 + 2)) b1)
+             (N.to_nat (a2 + 0 + 3)) b2)))%N) as Hdf. { solve_arith_load_store. }  rewrite Hdf. cbn.
+
+  unfold read_bytes, those, mem_lookup. cbn.
+  repeat rewrite set_nth_nth_error_other; try by lia.
+  rewrite Hl1 Hl2 Hl3 Hl4. reflexivity. all: solve_arith_load_store.
+Qed.
+
+Lemma load_store_load_extra2 : forall m m' a1 a2 v w,
+  length w = 8 ->
+  (a1 + 4 <= a2)%N ->
+  load_i32 m a1 = Some v ->
+  store m a2 0%N w 8 = Some m' ->
+  load_i32 m' a1 = Some v.
+Proof.
+  intros ? ? ? ? ? ? Hlw Harith Hload Hstore.
+  cbn in Harith. unfold store in Hstore.
+  destruct (a2 + 0 + N.of_nat 8 <=? mem_length m)%N eqn:Ha. 2: inv Hstore.
+  apply N.leb_le in Ha. cbn in Ha. unfold mem_length, memory_list.mem_length in Ha.
+  destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw.
+  destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw.
+  destruct w. 2: inv Hlw.
+  clear Hlw. unfold write_bytes in Hstore. cbn in Hstore.
+  unfold mem_update in Hstore. cbn in Hstore.
+  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N eqn:Ha1.
+  2: { apply N.ltb_nlt in Ha1. lia. }
+  cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
+  rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 1 <? N.of_nat (Datatypes.length (set_nth b (ml_data (mem_data m))
+                  (N.to_nat (a2 + 0 + 0)) b)))%N) as Ha2. { solve_arith_load_store. }
+ rewrite Ha2 in Hstore. cbn in Hstore. repeat rewrite take_drop_is_set_nth in Hstore.
+ 2: solve_arith_load_store.
+ assert ((a2 + 0 + 2 <?
+                N.of_nat
+                  (Datatypes.length
+                     (set_nth b0
+                        (set_nth b (ml_data (mem_data m))
+                          (N.to_nat (a2 + 0 + 0)) b)
+                        (N.to_nat (a2 + 0 + 1)) b0)))%N) as Ha3. { solve_arith_load_store. }
+  rewrite Ha3 in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 3 <?
+           N.of_nat (Datatypes.length
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)))%N) as Ha4. { solve_arith_load_store. }
+  rewrite Ha4 in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 4 <?
+             N.of_nat (Datatypes.length
+                         (set_nth b2
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)
+               (N.to_nat (a2 + 0 + 3)) b2)))%N) as Ha5. { solve_arith_load_store. }
+  rewrite Ha5 in Hstore. cbn in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 5 <?
+             N.of_nat (Datatypes.length
+                         (set_nth b3
+                         (set_nth b2
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)
+                       (N.to_nat (a2 + 0 + 3)) b2)
+               (N.to_nat (a2 + 0 + 4)) b3)))%N) as Ha6. { solve_arith_load_store. }
+  rewrite Ha6 in Hstore. cbn in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 6 <?
+             N.of_nat (Datatypes.length
+                         (set_nth b4
+                         (set_nth b3
+                         (set_nth b2
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)
+                       (N.to_nat (a2 + 0 + 3)) b2)
+                         (N.to_nat (a2 + 0 + 4)) b3)
+               (N.to_nat (a2 + 0 + 5)) b4)))%N) as Ha7. { solve_arith_load_store. }
+  rewrite Ha7 in Hstore. cbn in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 7 <?
+             N.of_nat (Datatypes.length
+                         (set_nth b5
+                         (set_nth b4
+                         (set_nth b3
+                         (set_nth b2
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)
+                       (N.to_nat (a2 + 0 + 3)) b2)
+                         (N.to_nat (a2 + 0 + 4)) b3)
+                         (N.to_nat (a2 + 0 + 5)) b4)
+               (N.to_nat (a2 + 0 + 6)) b5)))%N) as Ha8. { solve_arith_load_store. }
+  rewrite Ha8 in Hstore. cbn in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore.
+
+  inv Hstore.
+
+  unfold load_i32, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
+  destruct ((a1 + 4 <=? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hr1. 2: discriminate.
+  cbn in Ha8. unfold read_bytes, those, mem_lookup in Hload. cbn in Hload.
+
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 0))) eqn:Hl1. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (a1 + 0 + 1))) eqn:Hl2. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (a1 + 0 + 2))) eqn:Hl3. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 3))) eqn:Hl4. 2: discriminate.
+  cbn in Hload. rewrite -Hload.
+
+  (*
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 4))) eqn:Hl5. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 5))) eqn:Hl6. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 6))) eqn:Hl7. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (a1 + 0 + 7))) eqn:Hl8. 2: discriminate.
+
+
+
+
+  cbn in Hload. rewrite -Hload.
+*)
+  rewrite length_is_size in Ha3. rewrite size_set_nth in Ha3.
+  rewrite maxn_nat_max in Ha3.
+
+
+  assert ((a1 + 4 <=?
+             N.of_nat (Datatypes.length
+                         (set_nth b6
+                         (set_nth b5
+                         (set_nth b4
+                         (set_nth b3
+                         (set_nth b2
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)
+                       (N.to_nat (a2 + 0 + 3)) b2)
+                         (N.to_nat (a2 + 0 + 4)) b3)
+                         (N.to_nat (a2 + 0 + 5)) b4)
+                         (N.to_nat (a2 + 0 + 6)) b5)
+               (N.to_nat (a2 + 0 + 7)) b6)))%N) as Hdf. { solve_arith_load_store. }
+  rewrite Hdf. cbn.
+
+
+  (* assert ((a1 + 4 <=? *)
+  (*            N.of_nat (Datatypes.length (set_nth b2 *)
+  (*                      (set_nth b1 *)
+  (*                         (set_nth b0 *)
+  (*                            (set_nth b (ml_data (mem_data m)) *)
+  (*                               (N.to_nat (a2 + 0 + 0)) b) *)
+  (*                            (N.to_nat (a2 + 0 + 1)) b0) *)
+  (*                         (N.to_nat (a2 + 0 + 2)) b1) *)
+  (*                      (N.to_nat (a2 + 0 + 3)) b2)))%N) as Hdf. { solve_arith_load_store. }  *)
+  (* rewrite Hdf. cbn. *)
+
+  (* assert ((a1 + 8 <=? *)
+  (*            N.of_nat (Datatypes.length *)
+  (*                        (set_nth b6 *)
+  (*                        (set_nth b5 *)
+  (*                        (set_nth b4 *)
+  (*                        (set_nth b3 *)
+  (*                        (set_nth b2 *)
+  (*                      (set_nth b1 *)
+  (*                         (set_nth b0 *)
+  (*                            (set_nth b (ml_data (mem_data m)) *)
+  (*                               (N.to_nat (a2 + 0 + 0)) b) *)
+  (*                            (N.to_nat (a2 + 0 + 1)) b0) *)
+  (*                         (N.to_nat (a2 + 0 + 2)) b1) *)
+  (*                      (N.to_nat (a2 + 0 + 3)) b2) *)
+  (*                        (N.to_nat (a2 + 0 + 4)) b3) *)
+  (*                        (N.to_nat (a2 + 0 + 5)) b4) *)
+  (*                        (N.to_nat (a2 + 0 + 6)) b5) *)
+  (*              (N.to_nat (a2 + 0 + 7)) b6)))%N) as Hdf. { solve_arith_load_store. } *)
+  (* rewrite Hdf. cbn. *)
+  unfold read_bytes, those, mem_lookup. cbn.
+  repeat rewrite set_nth_nth_error_other; try by lia.
+  cbn.
+  rewrite Hl1 Hl2 Hl3 Hl4 (* Hl5 Hl6 Hl7 Hl8 *). cbn. reflexivity. all: solve_arith_load_store.
+Qed.
+
+Lemma load_store_load_extra3 : forall m m' a1 a2 v w,
+  length w = 8 ->
+  (a1 + 8 <= a2)%N ->
+  load_i64 m a1 = Some v ->
+  store m a2 0%N w 8 = Some m' ->
+  load_i64 m' a1 = Some v.
+Proof.
+  intros ? ? ? ? ? ? Hlw Harith Hload Hstore.
+  cbn in Harith. unfold store in Hstore.
+  destruct (a2 + 0 + N.of_nat 8 <=? mem_length m)%N eqn:Ha. 2: inv Hstore.
+  apply N.leb_le in Ha. cbn in Ha. unfold mem_length, memory_list.mem_length in Ha.
+  destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw.
+  destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw.
+  destruct w. 2: inv Hlw.
+  clear Hlw. unfold write_bytes in Hstore. cbn in Hstore.
+  unfold mem_update in Hstore. cbn in Hstore.
+  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N eqn:Ha1.
+  2: { apply N.ltb_nlt in Ha1. lia. }
+  cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
+  rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 1 <? N.of_nat (Datatypes.length (set_nth b (ml_data (mem_data m))
+                  (N.to_nat (a2 + 0 + 0)) b)))%N) as Ha2. { solve_arith_load_store. }
+ rewrite Ha2 in Hstore. cbn in Hstore. repeat rewrite take_drop_is_set_nth in Hstore.
+ 2: solve_arith_load_store.
+ assert ((a2 + 0 + 2 <?
+                N.of_nat
+                  (Datatypes.length
+                     (set_nth b0
+                        (set_nth b (ml_data (mem_data m))
+                          (N.to_nat (a2 + 0 + 0)) b)
+                        (N.to_nat (a2 + 0 + 1)) b0)))%N) as Ha3. { solve_arith_load_store. }
+  rewrite Ha3 in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 3 <?
+           N.of_nat (Datatypes.length
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)))%N) as Ha4. { solve_arith_load_store. }
+  rewrite Ha4 in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 4 <?
+             N.of_nat (Datatypes.length
+                         (set_nth b2
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)
+               (N.to_nat (a2 + 0 + 3)) b2)))%N) as Ha5. { solve_arith_load_store. }
+  rewrite Ha5 in Hstore. cbn in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 5 <?
+             N.of_nat (Datatypes.length
+                         (set_nth b3
+                         (set_nth b2
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)
+                       (N.to_nat (a2 + 0 + 3)) b2)
+               (N.to_nat (a2 + 0 + 4)) b3)))%N) as Ha6. { solve_arith_load_store. }
+  rewrite Ha6 in Hstore. cbn in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 6 <?
+             N.of_nat (Datatypes.length
+                         (set_nth b4
+                         (set_nth b3
+                         (set_nth b2
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)
+                       (N.to_nat (a2 + 0 + 3)) b2)
+                         (N.to_nat (a2 + 0 + 4)) b3)
+               (N.to_nat (a2 + 0 + 5)) b4)))%N) as Ha7. { solve_arith_load_store. }
+  rewrite Ha7 in Hstore. cbn in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
+  assert ((a2 + 0 + 7 <?
+             N.of_nat (Datatypes.length
+                         (set_nth b5
+                         (set_nth b4
+                         (set_nth b3
+                         (set_nth b2
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)
+                       (N.to_nat (a2 + 0 + 3)) b2)
+                         (N.to_nat (a2 + 0 + 4)) b3)
+                         (N.to_nat (a2 + 0 + 5)) b4)
+               (N.to_nat (a2 + 0 + 6)) b5)))%N) as Ha8. { solve_arith_load_store. }
+  rewrite Ha8 in Hstore. cbn in Hstore.
+  repeat rewrite take_drop_is_set_nth in Hstore.
+
+  inv Hstore.
+
+  unfold load_i64, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
+  destruct ((a1 + 8 <=? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hr1. 2: discriminate.
+  cbn in Ha8. unfold read_bytes, those, mem_lookup in Hload. cbn in Hload.
+
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 0))) eqn:Hl1. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (a1 + 0 + 1))) eqn:Hl2. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (a1 + 0 + 2))) eqn:Hl3. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 3))) eqn:Hl4. 2: discriminate.
+
+
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 4))) eqn:Hl5. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 5))) eqn:Hl6. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+              (N.to_nat (a1 + 0 + 6))) eqn:Hl7. 2: discriminate.
+  destruct (nth_error (ml_data (mem_data m))
+                (N.to_nat (a1 + 0 + 7))) eqn:Hl8. 2: discriminate.
+
+
+
+
+  cbn in Hload. rewrite -Hload.
+
+  rewrite length_is_size in Ha3. rewrite size_set_nth in Ha3.
+  rewrite maxn_nat_max in Ha3.
+
+
+  assert ((a1 + 8 <=?
+             N.of_nat (Datatypes.length
+                         (set_nth b6
+                         (set_nth b5
+                         (set_nth b4
+                         (set_nth b3
+                         (set_nth b2
+                       (set_nth b1
+                          (set_nth b0
+                             (set_nth b (ml_data (mem_data m))
+                                (N.to_nat (a2 + 0 + 0)) b)
+                             (N.to_nat (a2 + 0 + 1)) b0)
+                          (N.to_nat (a2 + 0 + 2)) b1)
+                       (N.to_nat (a2 + 0 + 3)) b2)
+                         (N.to_nat (a2 + 0 + 4)) b3)
+                         (N.to_nat (a2 + 0 + 5)) b4)
+                         (N.to_nat (a2 + 0 + 6)) b5)
+               (N.to_nat (a2 + 0 + 7)) b6)))%N) as Hdf. { solve_arith_load_store. }
+  rewrite Hdf. cbn.
+
+
+  (* assert ((a1 + 4 <=? *)
+  (*            N.of_nat (Datatypes.length (set_nth b2 *)
+  (*                      (set_nth b1 *)
+  (*                         (set_nth b0 *)
+  (*                            (set_nth b (ml_data (mem_data m)) *)
+  (*                               (N.to_nat (a2 + 0 + 0)) b) *)
+  (*                            (N.to_nat (a2 + 0 + 1)) b0) *)
+  (*                         (N.to_nat (a2 + 0 + 2)) b1) *)
+  (*                      (N.to_nat (a2 + 0 + 3)) b2)))%N) as Hdf. { solve_arith_load_store. }  *)
+  (* rewrite Hdf. cbn. *)
+
+  (* assert ((a1 + 8 <=? *)
+  (*            N.of_nat (Datatypes.length *)
+  (*                        (set_nth b6 *)
+  (*                        (set_nth b5 *)
+  (*                        (set_nth b4 *)
+  (*                        (set_nth b3 *)
+  (*                        (set_nth b2 *)
+  (*                      (set_nth b1 *)
+  (*                         (set_nth b0 *)
+  (*                            (set_nth b (ml_data (mem_data m)) *)
+  (*                               (N.to_nat (a2 + 0 + 0)) b) *)
+  (*                            (N.to_nat (a2 + 0 + 1)) b0) *)
+  (*                         (N.to_nat (a2 + 0 + 2)) b1) *)
+  (*                      (N.to_nat (a2 + 0 + 3)) b2) *)
+  (*                        (N.to_nat (a2 + 0 + 4)) b3) *)
+  (*                        (N.to_nat (a2 + 0 + 5)) b4) *)
+  (*                        (N.to_nat (a2 + 0 + 6)) b5) *)
+  (*              (N.to_nat (a2 + 0 + 7)) b6)))%N) as Hdf. { solve_arith_load_store. } *)
+  (* rewrite Hdf. cbn. *)
+  unfold read_bytes, those, mem_lookup. cbn.
+  repeat rewrite set_nth_nth_error_other; try by lia.
+  cbn.
+  rewrite Hl1 Hl2 Hl3 Hl4 Hl5 Hl6 Hl7 Hl8. cbn. reflexivity. all: solve_arith_load_store.
+Qed.
+
+
 (* taken from iriswasm *)
 Lemma deserialise_bits v t :
   types_agree t v -> wasm_deserialise (bits v) t = v.
@@ -1203,6 +1680,7 @@ Proof.
   rewrite Memdata.decode_encode_int_8.
   by rewrite Wasm_float.FloatSize64.of_to_bits.
 Qed.
+
 
 
 (* global vars *)
