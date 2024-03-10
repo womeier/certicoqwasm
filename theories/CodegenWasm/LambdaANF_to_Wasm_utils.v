@@ -10,7 +10,7 @@ Require Import Coq.Logic.Decidable Coq.Lists.ListDec
 Require Import compcert.lib.Integers compcert.common.Memory.
 Require Import CodegenWasm.LambdaANF_to_Wasm.
 
-From Wasm Require Import datatypes operations host instantiation_spec memory_list opsem properties.
+From Wasm Require Import datatypes operations host instantiation_spec instantiation_properties memory_list opsem properties.
 
 Require Import Libraries.maps_util.
 From Coq Require Import List.
@@ -24,7 +24,6 @@ Import ListNotations.
 Import seq.
 
 
-
 Section General.
 
 Lemma notNone_Some {A} : forall (o : option A),
@@ -32,6 +31,19 @@ Lemma notNone_Some {A} : forall (o : option A),
 Proof.
   intros. destruct o; split; intros.
   eauto. congruence. contradiction. now destruct H.
+Qed.
+
+Lemma Some_notNone {A} : forall (o : option A) v,
+  o = Some v -> o <> None.
+Proof.
+  congruence.
+Qed.
+
+Lemma In_map {A} {B} (f : A -> B) x xs : In x xs -> In (f x) (map f xs).
+Proof.
+  induction xs; auto; simpl.
+  intros [Heq|Hin]; auto.
+  intuition congruence.
 Qed.
 
 Lemma NoDup_app_In {A} : forall l1 l2 (x:A),
@@ -122,6 +134,16 @@ Lemma map_map_seq {A B C}: forall (l:seq A) (f: A -> B) (g : B -> C),
    [seq g (f a) | a <- l] = [seq (g v) | v <- [seq f a | a <- l]].
 Proof.
   induction l; intros; cbn; auto. f_equal. now apply IHl.
+Qed.
+
+Lemma imap_aux_offset : forall l a a' b b',
+  a + a' = b + b' ->
+  imap_aux (fun i x : nat => i + a + x) l a' =
+  imap_aux (fun i x : nat => i + b + x) l b'.
+Proof.
+  induction l; intros ???? Heq=>//.
+  cbn. replace (a' + a0 + a) with (b' + b + a) by lia.
+  f_equal. apply IHl. lia.
 Qed.
 
 Lemma drop_is_skipn {A} : forall l n, @drop A n l = List.skipn n l.
@@ -281,6 +303,11 @@ Proof.
   by apply find_def_in_collect_function_vars in Hcontra.
 Qed.
 
+Lemma collect_function_vars_length : forall fds e,
+  length (collect_function_vars (Efun fds e)) = numOf_fundefs fds.
+Proof.
+  induction fds; intros; auto. cbn. f_equal. now eapply IHfds with (e:=e).
+Qed.
 
 (* Var maps: var -> local idx / fn idx *)
 
@@ -687,6 +714,12 @@ End LambdaANF.
 
 Section Wasm.
 Import Nnat Znat.
+
+Variable host_function : eqType.
+Let host := host host_function.
+Let store_record := store_record host_function.
+Variable host_instance : host.
+Let host_state := host_state host_instance.
 
 (* taken from iriswasm *)
 Lemma mem_update_length dat dat' k b:
@@ -1197,7 +1230,7 @@ Qed.
 
 (* global vars *)
 
-Lemma update_global_get_same {host_function} : forall sr sr' i val fr,
+Lemma update_global_get_same : forall sr sr' i val fr,
   supdate_glob sr (f_inst fr) i (VAL_int32 val) = Some sr' ->
      @sglob_val host_function sr' (f_inst fr) i = Some (VAL_int32 val).
 Proof.
@@ -1207,7 +1240,7 @@ Proof.
   erewrite set_nth_nth_error_same; auto. eassumption.
 Qed.
 
-Lemma update_global_get_other {host_function}: forall i j sr sr' fr num val,
+Lemma update_global_get_other : forall i j sr sr' fr num val,
   NoDup (inst_globs (f_inst fr)) ->
   i <> j ->
   sglob_val sr (f_inst fr) i = Some (VAL_int32 val) ->
@@ -1230,7 +1263,7 @@ Proof.
     lia.
 Qed.
 
-Lemma update_global_preserves_memory {host_function} : forall sr sr' fr v j,
+Lemma update_global_preserves_memory : forall sr sr' fr v j,
   @supdate_glob host_function sr (f_inst fr) j v = Some sr' ->
     sr.(s_mems) = sr'.(s_mems).
 Proof.
@@ -1240,7 +1273,7 @@ Proof.
   destruct (nth_error (s_globals sr) g). inv H. reflexivity. inv H.
 Qed.
 
-Lemma update_global_preserves_funcs {host_function} : forall sr sr' fr v j,
+Lemma update_global_preserves_funcs : forall sr sr' fr v j,
   @supdate_glob host_function sr (f_inst fr) j v = Some sr' ->
     sr.(s_funcs) = sr'.(s_funcs).
 Proof.
