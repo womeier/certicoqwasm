@@ -3503,8 +3503,7 @@ Proof.
     exists k', lh'.
     (* Step through the if-then-else into the then-branch *)
     eapply reduce_trans_local'.
-    eapply rt_trans with (y:=(hs, sr, f, lfill lh [AI_label 0 [] (map AI_basic e')])).
-    apply reduce_trans_label'.
+    eapply rt_trans. apply reduce_trans_label'.
     dostep_nary 0. apply r_get_local. eauto.
     dostep_nary 2. constructor. apply rs_relop.
     dostep'. constructor. apply rs_if_true.
@@ -3518,7 +3517,7 @@ Proof.
       intro Hcontra. inv Hcontra.
     }
     dostep'. constructor. eapply rs_block with (vs:=[]); eauto.
-    unfold to_e_list. simpl. apply rt_refl.
+    apply rt_refl.
     rewrite Hlheq. apply rt_refl.
   }
   { (* t0 <> t, enter the else branch (induction hypothesis) *)
@@ -3547,10 +3546,7 @@ Proof.
       destruct Hred' as [k0 [lh0 Hstep]].
       exists k0, lh0.
       (* Step through the if-then-else into the else-branch *)
-      eapply rt_trans with (y:=(hs, sr, fAny, [AI_local 0 f (lfill lh [AI_label 0 [] (map AI_basic instrs_more)])])).
-      apply reduce_trans_local'.
-      apply reduce_trans_label'.
-      eapply rt_trans.
+      eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'. eapply rt_trans.
       dostep_nary 0. apply r_get_local. eauto.
       dostep_nary 2. constructor. apply rs_relop.
       dostep'. constructor. apply rs_if_false.
@@ -3647,8 +3643,7 @@ Proof.
 
     (* Step through the if-then-else into the then-branch *)
     eapply reduce_trans_local'.
-    eapply rt_trans with (y:=(hs, sr, f, lfill lh [AI_label 0 [] (map AI_basic e')])).
-    apply reduce_trans_label'.
+    eapply rt_trans. apply reduce_trans_label'.
     dostep_nary 0. apply r_get_local. eauto.
     inv Hval.
     solve_eq m m0.
@@ -3702,8 +3697,7 @@ Proof.
       exists k0, lh0.
 
       (* Step through the if-then-else into the else-branch *)
-      eapply rt_trans with (y:=(hs, sr, fAny, [AI_local 0 f (lfill lh [AI_label 0 [] (map AI_basic instrs_more)])])).
-      apply reduce_trans_local'. apply reduce_trans_label'. eapply rt_trans.
+      eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'. eapply rt_trans.
       dostep_nary 0. apply r_get_local. eauto.
       inv Hval.
       solve_eq m m0.
@@ -3747,18 +3741,16 @@ Proof.
         rewrite Hload in H18.
         injection H18 => H18'.
         destruct (zeq (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (decode_int b)))
-                    (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (Z.of_nat (Pos.to_nat t0))))) eqn:Heq.
-        clear Heq.
+                    (Wasm_int.Int32.unsigned (Wasm_int.Int32.repr (Z.of_nat (Pos.to_nat t0))))); auto.
         inv e1.
         rewrite H18' in H15.
         rewrite Wasm_int.Int32.Z_mod_modulus_id in H15.
         2: { simpl_modulus. cbn. simpl_modulus_in H. lia. }
         rewrite Wasm_int.Int32.Z_mod_modulus_id in H15.
         2: { simpl_modulus. cbn. simpl_modulus_in H1. lia. }
-        lia. reflexivity.
+        lia.
       }
       dostep'. constructor. eapply rs_block with (vs:=[]); eauto.
-      unfold to_e_list. cbn.
       eapply rt_refl. apply rt_refl.
       rewrite Hlheq.
       apply Hstep.
@@ -4475,8 +4467,7 @@ Proof with eauto.
       have Hy0 := Hy.
       apply Hvar in Hy0; auto.
       destruct Hy0 as [v0 [wal [Hrho [Hlocals Hval]]]].
-      assert (v0 = (Vconstr t vl)). { rewrite Hrho in H. congruence. }
-      inv H3.
+      assert (v0 = (Vconstr t vl)) by congruence. subst v0.
       (* Assert that we can step into either
          the unboxed or boxed cases,
          and from there into the correct branch *)
@@ -4493,12 +4484,10 @@ Proof with eauto.
                                                 e1'
                                                 e2']]))])
                      (state, sr, fAny, [AI_local 0 fr (lfill lh0 (map AI_basic e'))])
-                 /\ @repr_expr_LambdaANF_Wasm lenv e e').
-      {
+                 /\ @repr_expr_LambdaANF_Wasm lenv e e'). {
         have Hval' := Hval.
         inv Hval.
-        (* Unboxed cases (nullary) *)
-        {
+        { (* Unboxed cases (nullary) *)
           assert (exists e' e'',
                      select_nested_if false y' t brs2 =
                        [ BI_get_local y'
@@ -4518,8 +4507,7 @@ Proof with eauto.
             assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. } subst i.
             have Hif_red := unboxed_nested_if_chain_reduces cl fAny y t e y' lenv brs1 brs2 e2' fr state sr Hlocs HeRestr H2 H1 H13 H6 H9.
             destruct Hif_red as [e' [e'' [Hsel [Hred Hrep]]]].
-            exists e', e''.
-            split. auto. split. auto. auto.
+            by exists e', e''.
           }
           destruct H3 as [e' [e'' [_ [Hred Hrep]]]].
           have Hholednested := lholed_nested_label k lh (map AI_basic e2').
@@ -4529,28 +4517,24 @@ Proof with eauto.
           exists e', k0, lh0. split; auto.
           have Hlocals' := Hlocals.
           destruct Hlocals' as [i [Htrans_y Hntherror]].
-          assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. }
-          inv H3.
-          eapply rt_trans with (y:=(state, sr, fAny, [AI_local 0 fr (lfill lh ([ AI_label 0 [] (map AI_basic e2')]))])).
-          apply reduce_trans_local'. apply reduce_trans_label'.
+          assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. } subst i.
+          eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
           dostep_nary 0. apply r_get_local. eauto.
           dostep_nary 2. constructor. apply rs_binop_success.
           cbn.
-          assert (Wasm_int.Int32.iand (wasm_value_to_i32 (Val_unboxed (Pos.to_nat (t * 2 + 1)))) (nat_to_i32 1) = Wasm_int.Int32.one).
+          assert (Heq: Wasm_int.Int32.iand (wasm_value_to_i32 (Val_unboxed (Pos.to_nat (t * 2 + 1)))) (nat_to_i32 1) = Wasm_int.Int32.one).
           {
             rewrite Pos.mul_comm.
             unfold wasm_value_to_i32; unfold wasm_value_to_immediate; unfold nat_to_i32.
             cbn.
-            eapply and_of_odd_and_1_1. rewrite Pos.mul_comm in H8. auto.
+            eapply and_of_odd_and_1_1. by rewrite Pos.mul_comm in H8.
           }
-          rewrite H3. eauto. cbn.
+          rewrite Heq. reflexivity.
           dostep_nary 1. constructor. eapply rs_testop_i32.
-          cbn.
           dostep'. constructor. apply rs_if_false. reflexivity.
           dostep'. constructor. eapply rs_block with (vs := []); auto.
-          unfold to_e_list. cbn. apply rt_refl.
-          rewrite -He2' in  Hred'.
-          apply Hred'.
+          apply rt_refl.
+          rewrite -He2' in Hred'. apply Hred'.
         }
         { (* Boxed cases (non-nullary) *)
           assert (exists e' e'',
@@ -4575,21 +4559,16 @@ Proof with eauto.
             have Hif_red := boxed_nested_if_chain_reduces cl fAny y t vl e addr y' lenv brs1 brs2 e1' state sr fr Hmem Hval' Hlocs HeRestr H0 H1 H6 H7.
             destruct Hif_red as [e' [e'' [Hsel [Hred Hrep]]]].
             have Hred' := Hred k lh.
-            exists e', e''.
-            split. auto. split. auto. auto.
+            by exists e', e''.
           }
-                    destruct H3 as [e' [e'' [_ [Hred Hrep]]]].
+          destruct H3 as [e' [e'' [_ [Hred Hrep]]]].
           have Hholednested := lholed_nested_label k lh (map AI_basic e1').
           destruct Hholednested as [k0' [lh0' He1']].
-          have Hred' := Hred k0' lh0'.
-          destruct Hred' as [k0 [lh0 Hred']].
+          destruct (Hred k0' lh0') as [k0 [lh0 Hred']].
           exists e', k0, lh0. split; auto.
-          have Hlocals' := Hlocals.
-          destruct Hlocals' as [i [Htrans_y Hntherror]].
+          destruct Hlocals as [i [Htrans_y Hntherror]].
           assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. }
-          eapply rt_trans with (y:=(state, sr, fAny, [AI_local 0 fr (lfill lh ([ AI_label 0 [] (map AI_basic e1')]))])).
-          apply reduce_trans_local'.
-          apply reduce_trans_label'.
+          eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
           dostep_nary 0. apply r_get_local. rewrite H3 in Hntherror. eauto.
           assert (Hand : Wasm_int.Int32.iand (wasm_value_to_i32 (Val_ptr addr)) (nat_to_i32 1) = Wasm_int.Int32.zero). {
             destruct H13 as [n0 Hn0].
@@ -4598,21 +4577,15 @@ Proof with eauto.
             apply and_of_even_and_1_0.
             lia.
           }
-          dostep_nary 2. constructor. apply rs_binop_success. cbn. eauto. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
           dostep_nary 1. constructor. apply rs_testop_i32. cbn.
           dostep'. constructor. apply rs_if_true. by rewrite Hand.
           dostep'. constructor. eapply rs_block with (vs := []); auto.
-          unfold to_e_list. cbn. apply rt_refl.
-          rewrite -He1' in  Hred'.
-          apply Hred'.
+          apply rt_refl.
+          rewrite -He1' in Hred'. apply Hred'.
         }
       }
       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [Hlinmem [_ [_ [_ [_ [_  _]]]]]]]]]]]].
-      have Hlocals' := Hlocals.
-
-      destruct Hlocals' as [i [Htrans_y Hntherror]].
-      assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. }
-
 
       assert (Hrel: @rel_env_LambdaANF_Wasm lenv e rho sr fr fds).
       { unfold rel_env_LambdaANF_Wasm.
@@ -4626,22 +4599,17 @@ Proof with eauto.
 
       assert (HeRestr': expression_restricted e). {
         inv HeRestr.
-        have Hforall := Forall_forall (fun p : positive * exp =>
-          (Z.of_nat (Pos.to_nat (fst p)) < Wasm_int.Int32.half_modulus)%Z /\
-            expression_restricted (snd p)) cl.
-        destruct Hforall.
-        apply H3 with (x:=(t,e)) in H5.
-        destruct H5. auto.
-        apply findtag_In. auto.
+        rewrite Forall_forall in H4.
+        apply H4 with (x:=(t,e)).
+        by apply findtag_In.
       }
 
       assert (Hunbound': (forall x : var, In x (collect_local_variables e) ->
                                      rho ! x = None)). {
         intros. apply Hunbound. cbn.
         apply in_flat_map.
-        exists (t,e). split.
-        apply findtag_In. auto.
-        apply H4.
+        exists (t,e). split; auto.
+        by apply findtag_In.
       }
 
       destruct Hstep_case as [e' [k0 [lh0 [Hred Hrepre]]]].

@@ -1039,8 +1039,7 @@ Proof.
   have Hu6 := mem_update_length _ _ _ _ Hupd6.
   have Hu7 := mem_update_length _ _ _ _ Hupd7.
   have Hu8 := mem_update_length _ _ _ _ Hupd8.
-  rewrite -Hu8 -Hu7 -Hu6
-    -Hu5 -Hu4 -Hu3 -Hu2 -Hu1.
+  rewrite -Hu8 -Hu7 -Hu6 -Hu5 -Hu4 -Hu3 -Hu2 -Hu1.
   cbn. rewrite Heq.
   apply N.leb_le in Heq.
   unfold mem_update in Hupd1, Hupd2, Hupd3, Hupd4, Hupd5, Hupd6, Hupd7, Hupd8.
@@ -1427,8 +1426,9 @@ Proof.
 Qed.
 
 (* TODO: The following helper lemmas may be removed in the future
-   once the new memory model in WasmCert has been finalized. *)
-
+   once the new memory model in WasmCert has been finalized.
+   Then reduce verbosity.
+*)
 Lemma load_store_load_i32' : forall m m' a1 a2 v w,
   length w = 8 ->
   (a1 + 4 <= a2)%N ->
@@ -1773,7 +1773,6 @@ Proof.
   destruct (nth_error (ml_data (mem_data m))
               (N.to_nat (a1 + 0 + 3))) eqn:Hl4. 2: discriminate.
 
-
   destruct (nth_error (ml_data (mem_data m))
               (N.to_nat (a1 + 0 + 4))) eqn:Hl5. 2: discriminate.
   destruct (nth_error (ml_data (mem_data m))
@@ -1783,14 +1782,10 @@ Proof.
   destruct (nth_error (ml_data (mem_data m))
                 (N.to_nat (a1 + 0 + 7))) eqn:Hl8. 2: discriminate.
 
-
-
-
   cbn in Hload. rewrite -Hload.
 
   rewrite length_is_size in Ha3. rewrite size_set_nth in Ha3.
   rewrite maxn_nat_max in Ha3.
-
 
   assert ((a1 + 8 <=?
              N.of_nat (Datatypes.length
