@@ -1785,7 +1785,7 @@ Proof.
     apply IHHred; auto.
 Qed.
 
-Lemma decode_int_bounds : forall b m addr,
+Lemma decode_int32_bounds : forall b m addr,
   load m (N.of_nat addr) 0%N 4 = Some b ->
   (-1 < decode_int b < Wasm_int.Int32.modulus)%Z.
 Proof.
@@ -1868,7 +1868,7 @@ Proof.
     repeat split. rewrite <- Hl. now rewrite N.add_comm. unfold wasm_value_to_i32.
     have H'' := value_bounds wal.
     unfold wasm_deserialise. f_equal. f_equal.
-    have H' := decode_int_bounds _ _ _ Hl. simpl_eq.
+    have H' := decode_int32_bounds _ _ _ Hl. simpl_eq.
     rewrite Wasm_int.Int32.Z_mod_modulus_id in H8; auto.
     eapply value_bounds; eauto. assumption.
   - (* n = S n0 *)
@@ -2519,33 +2519,17 @@ Proof.
           lia.
           intros. assert (Hex: exists v, load_i32 m a = Some v). {
             apply enough_space_to_load. lia. } destruct Hex.
-          rewrite H14. symmetry. erewrite load_store_load; try apply Hm0; auto.
+          rewrite H14. symmetry. erewrite load_store_load_i32; try apply Hm0; auto.
           unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add. remember (S (S (S (S (offset * 4))))) as n.
           cbn. subst.
-          repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id).
-          cbn.
-          cbn in H11. lia.
-          cbn in H11. lia.
-          lia.
-          lia.
-          lia.
-          lia.
-          intros.
-
-          assert (Hex: exists v, load_i64 m a = Some v). {
+          repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id); try lia.
+          intros. assert (Hex: exists v, load_i64 m a = Some v). {
             apply enough_space_to_load_i64. lia. } destruct Hex.
-          rewrite H14. symmetry. erewrite load_store_load_extra1; try apply Hm0; auto.
+          rewrite H14. symmetry. erewrite load_store_load_i64; try apply Hm0; auto.
           unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add. remember (S (S (S (S (offset * 4))))) as n.
           cbn. subst.
-          repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id).
-          cbn.
-          cbn in H11. lia.
-          cbn in H11. lia.
-          lia.
-          lia.
-          lia.
-          lia.
-          } }
+          repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id); try lia. }
+      }
       assert (Hgmp_before_IH: sglob_val (host_function:=host_function) s_before_IH (f_inst f)
            global_mem_ptr = Some (VAL_int32 (nat_to_i32 (4 + 4 * S offset + v_cap)))). {
         subst.
@@ -2596,7 +2580,7 @@ Proof.
 
       { (* load val *)
         rewrite -H12; try lia.
-        apply store_load in Hm0.
+        apply store_load_i32 in Hm0.
         assert ((N.of_nat (S (S (S (S (offset + (offset + (offset + (offset + 0))) + cap)))))) =
                 (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 cap)
                             (nat_to_i32 (S (S (S (S (offset * 4))))))))) as Har. {
@@ -2632,7 +2616,7 @@ Proof.
             apply enough_space_to_load.
             unfold page_size in Hlen; cbn in Hlen. cbn in Hoffset. lia.
           } destruct Hex.
-          symmetry. erewrite load_store_load; try apply Hm0 ; eauto.
+          symmetry. erewrite load_store_load_i32; try apply Hm0 ; eauto.
           remember (S (S (S (S (offset * 4))))) as n. cbn in Hoffset. cbn.
           repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.
         - intros.
@@ -2640,9 +2624,9 @@ Proof.
             apply enough_space_to_load_i64.
             unfold page_size in Hlen; cbn in Hlen. cbn in Hoffset. lia.
           } destruct Hex.
-          symmetry. erewrite load_store_load_extra1; try apply Hm0 ; eauto.
+          symmetry. erewrite load_store_load_i64; try apply Hm0 ; eauto.
           remember (S (S (S (S (offset * 4))))) as n. cbn in Hoffset. cbn.
-          repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.
+          repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
       }
 
       (* TODO: contains duplication: cleanup *)
@@ -2692,7 +2676,7 @@ Proof.
             cbn in Hoffset.
             repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia. }
 
-          have Ht := load_store_load _ _ _ _ _ _ _ Har H16 Hm0.
+          have Ht := load_store_load_i32 _ _ _ _ _ _ _ Har H16 Hm0.
           clear Har. rewrite Ht; auto. }
         { intros.
           assert (Hex: exists v, load_i64 m a = Some v). {
@@ -2710,9 +2694,9 @@ Proof.
             unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
             remember ((S (S (S (S (offset * 4)))))) as o. cbn.
             cbn in Hoffset.
-            repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia. }
+            repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. }
 
-          have Ht := load_store_load_extra1 _ _ _ _ _ _ _ Har H16 Hm0.
+          have Ht := load_store_load_i64 _ _ _ _ _ _ _ Har H16 Hm0.
           clear Har. rewrite Ht; auto. }
       }
 
@@ -2730,7 +2714,7 @@ Proof.
         } destruct H14. rewrite -H12; try lia.
 
         cbn in Hoffset. unfold max_constr_args in Hmaxargs.
-        symmetry. erewrite load_store_load; try apply Hm0; eauto.
+        symmetry. erewrite load_store_load_i32; try apply Hm0; eauto.
         remember (S (S (S (S (offset * 4))))) as n.
         cbn. repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia. }}}
 Qed.
@@ -2912,14 +2896,14 @@ Proof.
       assert (Hv: exists v, load_i32 m a = Some v). { apply enough_space_to_load. subst.
         simpl_modulus_in HenoughM'. apply mem_store_preserves_length in Hstore. lia. }
       destruct Hv as [? Hv].
-      assert (load_i32 m' a = Some x). { eapply load_store_load ; try apply Hstore; eauto. cbn.
-                                         rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. } congruence. }
+      assert (load_i32 m' a = Some x). { eapply load_store_load_i32 ; try apply Hstore; eauto. cbn.
+      rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. } congruence. }
     { intros.
       assert (Hv: exists v, load_i64 m a = Some v). { apply enough_space_to_load_i64. subst.
         simpl_modulus_in HenoughM'. apply mem_store_preserves_length in Hstore. lia. }
       destruct Hv as [? Hv].
-      assert (load_i64 m' a = Some x). { eapply load_store_load_extra1 ; try apply Hstore; eauto. cbn.
-                                         rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. } congruence. }
+      assert (load_i64 m' a = Some x). { eapply load_store_load_i64 ; try apply Hstore; eauto. cbn.
+      rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. } congruence. }
   }
 
   assert (Hgmp_before_args : sglob_val  s_before_args (f_inst f) global_mem_ptr =
@@ -2977,14 +2961,14 @@ Proof.
         destruct ((Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v) + 0 +
             N.of_nat (t_length T_i32) <=?
             mem_length m)%N). 2: inv Hstore. lia. } destruct H5.
-      symmetry. erewrite load_store_load; try apply Hstore; eauto.
+      symmetry. erewrite load_store_load_i32; try apply Hstore; eauto.
       cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
     { intros. assert (exists v, load_i64 m a = Some v). {
         apply enough_space_to_load_i64. unfold store in Hstore.
         destruct ((Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v) + 0 +
             N.of_nat (t_length T_i32) <=?
             mem_length m)%N). 2: inv Hstore. lia. } destruct H5.
-      symmetry. erewrite load_store_load_extra1; try apply Hstore; eauto.
+      symmetry. erewrite load_store_load_i64; try apply Hstore; eauto.
       cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
   }
   (* constr value in memory *)
@@ -2997,7 +2981,7 @@ Proof.
     unfold max_constr_args in Hmaxargs. simpl_modulus. cbn. lia. }
   lia. exists n0. auto.
   reflexivity.
-  apply store_load in Hstore.
+  apply store_load_i32 in Hstore.
   rewrite deserialise_bits in Hstore; auto.
   assert ((Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v)) = (N.of_nat gmp_v)) as Heq. {
   unfold nat_to_i32. cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
@@ -5512,7 +5496,8 @@ Proof with eauto.
 
       have Hgrowmem := memory_grow_reduce _ state sr fr Heqgrow Hinv.
       destruct Hgrowmem as [s' [Hred [Hsfuncs [HvalPreserved [[Hinv' Henoughmem] | HoutofM]]]]].
-      { have I := Hinv'. destruct I as [_ [_ [HresM0 [Hgmp [_ [Hmuti32 [Hlinmem' [INVgmp_M _]]]]]]]].
+      { (* Successfully grow memory if necessary *)
+        have I := Hinv'. destruct I as [_ [_ [HresM0 [Hgmp [_ [Hmuti32 [Hlinmem' [INVgmp_M _]]]]]]]].
         destruct Hlinmem' as [Hmem1' [m' [Hmem2' [size' [Hmem3' [Hmem4' Hmem5']]]]]].
 
         have INVgmp_r' := global_var_w_implies_global_var_r _ _ _ Hmuti32 Hgmp.
@@ -5521,7 +5506,7 @@ Proof with eauto.
         assert ((Z.of_nat gmp_v' < Wasm_int.Int32.modulus)%Z) by lia.
         have HenoughM := Henoughmem _ _ Hmem2' Hgmp' H0. clear Henoughmem H0.
 
-
+        (* There exists memory containing the new value *)
         assert (exists mem, store m' (Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v')) 0%N
                               (bits (VAL_int64 v0))
                               (t_length T_i64) = Some mem) as Htest.
@@ -5533,38 +5518,9 @@ Proof with eauto.
           have Htest := INVgmp_M _ _ Hmem2' Hgmp' H.
           lia. }
         clear INVgmp_M.
-
         destruct Htest as [m_after_store Hm_after_store].
 
         remember (upd_s_mem s' (set_nth m_after_store s'.(s_mems) 0 m_after_store)) as s_prim.
-
-        assert (Hinv_prim : INV s_prim fr). {
-          subst.
-          assert (mem_length m' = mem_length m_after_store). { apply mem_store_preserves_length in Hm_after_store. congruence. }
-          assert (mem_max_opt m' = mem_max_opt m_after_store). { apply mem_store_preserves_max_pages in Hm_after_store. congruence. }
-          eapply update_mem_preserves_INV. apply Hinv'. eassumption. erewrite <- H0. lia.
-          congruence. exists (mem_size m'); split; auto. unfold mem_size. congruence.  reflexivity. }
-
-        remember ({|f_locs := set_nth (VAL_int32 (nat_to_i32 gmp_v')) (f_locs fr) x' (VAL_int32 (nat_to_i32 gmp_v'));
-                    f_inst := f_inst fr|}) as f_before_IH.
-
-
-        have I := Hinv_prim. destruct I as [_ [_ [_ [Hgmp_w _]]]].
-
-        destruct (Hgmp_w (Wasm_int.Int32.iadd (nat_to_i32 gmp_v') (nat_to_i32 8))) as [s_before_IH Hs_before_IH].
-        edestruct i32_exists_nat as [gmp [HgmpEq HgmpBound]].
-        erewrite HgmpEq in Hs_before_IH.
-        assert (gmp = gmp_v' + 8). {
-          inversion HgmpEq.
-          repeat rewrite Wasm_int.Int32.Z_mod_modulus_id in H1; try lia.
-          unfold store in Hm_after_store.
-          destruct ((Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v') + 0 + N.of_nat (t_length T_i64)
-                     <=? mem_length m')%N) eqn:Har. 2: by now inv Har.
-          apply N.leb_le in Har. cbn in Har.
-          rewrite Wasm_int.Int32.Z_mod_modulus_id in Har; try lia.
-          rewrite -Hmem3' in Hmem5'. apply mem_length_upper_bound in Hmem5'. cbn in Hmem5'.
-          simpl_modulus. cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
-        subst gmp.
 
         assert (HgmpPreserved: sglob_val (host_function:=host_function) s_prim (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp_v'))). {
           subst s_prim.
@@ -5586,6 +5542,36 @@ Proof with eauto.
           subst s_prim. cbn.
           destruct (s_mems s'). inv Hmem2'. reflexivity.
         }
+
+        assert (Hinv_prim : INV s_prim fr). {
+          subst.
+          assert (mem_length m' = mem_length m_after_store). { apply mem_store_preserves_length in Hm_after_store. congruence. }
+          assert (mem_max_opt m' = mem_max_opt m_after_store). { apply mem_store_preserves_max_pages in Hm_after_store. congruence. }
+          eapply update_mem_preserves_INV. apply Hinv'. eassumption. erewrite <- H0. lia.
+          congruence. exists (mem_size m'); split; auto. unfold mem_size. congruence.  reflexivity. }
+
+        remember ({|f_locs := set_nth (VAL_int32 (nat_to_i32 gmp_v')) (f_locs fr) x' (VAL_int32 (nat_to_i32 gmp_v'));
+                    f_inst := f_inst fr|}) as f_before_IH.
+
+
+        have I := Hinv_prim. destruct I as [_ [_ [_ [Hgmp_w _]]]].
+
+        (* New store with gmp incremented by 8 *)
+        destruct (Hgmp_w (Wasm_int.Int32.iadd (nat_to_i32 gmp_v') (nat_to_i32 8))) as [s_before_IH Hs_before_IH].
+        edestruct i32_exists_nat as [gmp [HgmpEq HgmpBound]].
+        erewrite HgmpEq in Hs_before_IH.
+        assert (gmp = gmp_v' + 8). {
+          inversion HgmpEq.
+          repeat rewrite Wasm_int.Int32.Z_mod_modulus_id in H1; try lia.
+          unfold store in Hm_after_store.
+          destruct ((Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v') + 0 + N.of_nat (t_length T_i64)
+                     <=? mem_length m')%N) eqn:Har. 2: by now inv Har.
+          apply N.leb_le in Har. cbn in Har.
+          rewrite Wasm_int.Int32.Z_mod_modulus_id in Har; try lia.
+          rewrite -Hmem3' in Hmem5'. apply mem_length_upper_bound in Hmem5'. cbn in Hmem5'.
+          simpl_modulus. cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
+        subst gmp.
+
 
         assert (Hinv_before_IH : INV s_before_IH f_before_IH). {
           assert (INV s_prim f_before_IH). { eapply update_local_preserves_INV; eauto. }
@@ -5641,6 +5627,7 @@ Proof with eauto.
           apply Hx in H0. contradiction.
         }
 
+        (* Equivalence of store functions *)
         assert (HfsEq1: s_funcs s' = s_funcs s_prim) by now subst.
 
         assert (HfsEq2: s_funcs s_prim = s_funcs s_before_IH) by now apply update_global_preserves_funcs in Hs_before_IH.
@@ -5702,15 +5689,17 @@ Proof with eauto.
           unfold page_size in H'. lia.
         }
 
+        (* Before the continuation, the gmp global contains the old gmp value incremented by 8 *)
         assert (HglobalUpdatedGmp: sglob_val (host_function:=host_function) s_before_IH (f_inst fr) global_mem_ptr = Some (VAL_int32 (nat_to_i32 (gmp_v' + 8)))) by now apply update_global_get_same with (sr:=s_prim) (sr':=s_before_IH).
 
+        (* All values in memory below the gmp are preserved *)
         assert (HvalsInMemPreserved: forall a, (a + 4 <= N.of_nat gmp_v')%N -> load_i32 m' a = load_i32 m_after_store a). {
           intros a Ha.
           assert (Hex: exists v, load_i32 m' a = Some v). {
             apply enough_space_to_load. lia. }
           destruct Hex as [v' Hv'].
           rewrite Hv'. symmetry.
-          apply (load_store_load_extra2 m' m_after_store a (Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v')) v' (bits (VAL_int64 v0))); auto.
+          apply (load_store_load_i32' m' m_after_store a (Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v')) v' (bits (VAL_int64 v0))); auto.
           cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia.
         }
 
@@ -5720,7 +5709,7 @@ Proof with eauto.
             apply enough_space_to_load_i64. lia. }
           destruct Hex as [v' Hv'].
           rewrite Hv'. symmetry.
-          apply (load_store_load_extra3 m' m_after_store a (Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v')) v' (bits (VAL_int64 v0))); auto.
+          apply (load_store_load_i64' m' m_after_store a (Wasm_int.N_of_uint i32m (nat_to_i32 gmp_v')) v' (bits (VAL_int64 v0))); auto.
           cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia.
         }
 
@@ -5738,7 +5727,7 @@ Proof with eauto.
               assert (~ subval_or_eq (Vfun rho' fds' f) (Vprim p)). { apply subval_or_eq_fun_not_prim. intros. congruence. }
               contradiction.
             }
-            { rewrite M.gso in H0; eauto. }
+            { (* x <> x1 *) rewrite M.gso in H0; eauto. }
           } split.
           { intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd.
             destruct Hnfd as [i [Htrans Hval]].
@@ -5749,7 +5738,7 @@ Proof with eauto.
           }
           {
             intros. destruct (var_dec x x1).
-            {
+            { (* x = x1 *)
               subst x1. exists (Vprim p), (Val_ptr gmp_v').
               rewrite M.gss. split; auto. split.
               subst f_before_IH. exists x'. cbn. split.
@@ -5758,7 +5747,7 @@ Proof with eauto.
               subst f_before_IH.
               eapply val_relation_depends_on_finst; eauto.
             }
-            {
+            { (* x <> x1 *)
               assert (Hocc : occurs_free (Eprim_val x p e) x1) by now apply Free_Eprim_val.
               have H' := Hvar _ Hocc H1.
               destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
@@ -5800,6 +5789,7 @@ Proof with eauto.
         split.
         eapply rt_trans. apply reduce_trans_local'. apply reduce_trans_label'.
         eapply rt_trans. apply app_trans. apply Hred. cbn.
+
         dostep_nary 0. apply r_get_global. eassumption.
         dostep_nary 2. constructor. apply rs_relop. cbn.
         dostep'. constructor. apply rs_if_false. reflexivity.
@@ -5817,6 +5807,7 @@ Proof with eauto.
         repeat rewrite map_cat. cbn. repeat rewrite map_cat.
         separate_instr.
         apply reduce_trans_label0.
+
         dostep_nary 0. apply r_get_global. eassumption.
         dostep_nary 2. eapply r_store_success; eauto. rewrite -Heqs_prim. cbn.
         dostep_nary 0. apply r_get_global. apply HgmpPreserved.
@@ -5847,23 +5838,23 @@ Proof with eauto.
         lia.
         eapply val_relation_depends_on_finst with (fr:=fr). subst f_before_IH. reflexivity. assumption.
         assumption.
-      } { assert (Hlh: exists k' (lh' : lholed k'),
-                     lfill lh [:: AI_label 0 [::] [ AI_basic BI_return ]] = lfill lh' [ AI_basic BI_return ]) by apply lholed_nested_label.
-          destruct Hlh as [k' [lh' Heq']].
+      } { (* Growing the memory failed *)
+        assert (Hlh: exists k' (lh' : lholed k'),
+                   lfill lh [:: AI_label 0 [::] [ AI_basic BI_return ]] = lfill lh' [ AI_basic BI_return ]) by apply lholed_nested_label.
+        destruct Hlh as [k' [lh' Heq']].
 
-          do 3! eexists. exists lh'. split. eapply rt_trans.
-          eapply reduce_trans_local'. eapply rt_trans.
-          eapply reduce_trans_label'. eapply app_trans. apply Hred. cbn.
-          apply reduce_trans_label'.
-          dostep_nary 0. apply r_get_global. eassumption.
-          dostep_nary 2. constructor. apply rs_relop.
-          dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
-          dostep'. constructor. eapply rs_block with (vs:=[]); auto. apply rt_refl. cbn.
-          rewrite Heq'. apply rt_refl.
-          split. right. assumption. split. reflexivity. split. congruence.
-          split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }
+        do 3! eexists. exists lh'. split. eapply rt_trans.
+        eapply reduce_trans_local'. eapply rt_trans.
+        eapply reduce_trans_label'. eapply app_trans. apply Hred. cbn.
+        apply reduce_trans_label'.
+        dostep_nary 0. apply r_get_global. eassumption.
+        dostep_nary 2. constructor. apply rs_relop.
+        dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
+        dostep'. constructor. eapply rs_block with (vs:=[]); auto. apply rt_refl. cbn.
+        rewrite Heq'. apply rt_refl.
+        split. right. assumption. split. reflexivity. split. congruence.
+        split. auto. intro Hcontra. rewrite Hcontra in HoutofM. inv HoutofM. }
     }
-
   - (* Eprim *) inv Hrepr_e.
   - (* Ehalt *)
     cbn. inv Hrepr_e. destruct HrelE as [_ [_ Hvar]].

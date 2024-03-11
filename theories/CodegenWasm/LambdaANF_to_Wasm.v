@@ -494,15 +494,15 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
                  ; BI_if (Tf [] [])
                      [ BI_return ]
                      ([ BI_get_global global_mem_ptr
-                        ; BI_const (VAL_int64 val)
-                        ; BI_store T_i64 None 2%N 0%N
-                        ; BI_get_global global_mem_ptr
-                        ; BI_set_local x_var
-                        ; BI_get_global global_mem_ptr
-                        ; BI_const (nat_to_value 8)
-                        ; BI_binop T_i32 (Binop_i BOI_add)
-                        ; BI_set_global global_mem_ptr
-                       ] ++ following_instrs)
+                      ; BI_const (VAL_int64 val)
+                      ; BI_store T_i64 None 2%N 0%N
+                      ; BI_get_global global_mem_ptr
+                      ; BI_set_local x_var
+                      ; BI_get_global global_mem_ptr
+                      ; BI_const (nat_to_value 8)
+                      ; BI_binop T_i32 (Binop_i BOI_add)
+                      ; BI_set_global global_mem_ptr
+                      ] ++ following_instrs)
                  ])
 
    | Eprim x p ys e' => Err "translating prim to Wasm not supported yet"
