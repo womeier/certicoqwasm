@@ -5772,7 +5772,7 @@ Proof with eauto.
             }
             cbn in H9.
             lia.
-            apply (update_global_get_same  _ _ _ _ _ H0).
+            apply (update_global_get_same  _ _ _ _ _ _ H0).
             assert (mem_length m' = mem_length m_after_store). { apply (mem_store_preserves_length _ _ _ _ _ Hm_after_store). }
             assert ((Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z). {
               rewrite -Hmem3' in Hmem5'.
@@ -5885,7 +5885,7 @@ Proof with eauto.
       lia.
       subst f_before_IH.
       cbn.
-      apply (update_global_get_same  _ _ _ _ _ H0).
+      apply (update_global_get_same  _ _ _ _ _ _ H0).
       assert (mem_length m' = mem_length m_after_store). { apply (mem_store_preserves_length _ _ _ _ _ Hm_after_store). }
       assert ((Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z). {
         rewrite -Hmem3' in Hmem5'.
