@@ -1426,6 +1426,10 @@ Proof.
   rewrite Hl1 Hl2 Hl3 Hl4. reflexivity. all: solve_arith_load_store.
 Qed.
 
+
+(* TODO: The following helper lemmas may be removed in the future
+   once the new memory model in WasmCert has been finalized. *)
+
 Lemma load_store_load_extra1 : forall m m' a1 a2 v w,
   length w = 4 ->
   (a1 + 8 <= a2)%N ->
