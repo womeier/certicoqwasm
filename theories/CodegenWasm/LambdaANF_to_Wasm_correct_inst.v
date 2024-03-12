@@ -95,7 +95,7 @@ Ltac solve_bet Hcontext :=
   | |- be_typing _ [:: BI_testop T_i32 _] (Tf [:: _] _) => apply bet_testop; by simpl
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_i32; T_i32] _) => apply bet_binop; apply Binop_i32_agree
   | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_i32; T_i32] _) => apply bet_relop; apply Relop_i32_agree
-  | |- be_typing _ [:: BI_store T_i32 None _ _] (Tf [:: T_i32; T_i32] _) => apply bet_store; simpl; auto; by apply Hcontext
+  | |- be_typing _ [:: BI_store _ None _ _] (Tf [:: T_i32; _] _) => apply bet_store; simpl; auto; by apply Hcontext
   | |- be_typing _ [:: BI_load T_i32 None _ _] (Tf [:: T_i32] _) => apply bet_load; simpl; auto; by apply Hcontext
   | |- be_typing _ [:: BI_unreachable] _ => apply bet_unreachable
   | |- be_typing _ [:: BI_return] _ => apply bet_return with (t1s:=[::]); by apply Hcontext
@@ -300,24 +300,24 @@ Proof.
   apply IH with (c:=c) in Hexpr; clear IH; auto.
   - (* Ehalt *)
     intros ???? Hcontext' Hrestr'.
-    { prepare_solve_bet. all: solve_bet Hcontext'. }
+    by prepare_solve_bet; solve_bet Hcontext'.
   - (* Eproj *)
     intros ???????? Hexpr' IH ??? Hcontext' Hrestr'.
-    { prepare_solve_bet. all: try solve_bet Hcontext'. inv Hrestr'. now apply IH. }
+    prepare_solve_bet; try solve_bet Hcontext'. inv Hrestr'. now apply IH.
   - (* Econstr *)
     intros ??????? Hexpr' IH ? Hargs ? Hcontext' Hrestr'.
     inv Hargs.
     + (* boxed constr. *)
-      prepare_solve_bet. all: try solve_bet Hcontext'.
+      prepare_solve_bet; try solve_bet Hcontext'.
       * now eapply constr_args_store_typing.
       * inv Hrestr'. now eapply IH.
     + (* unboxed constr. *)
-      prepare_solve_bet. all: try solve_bet Hcontext'. inv Hrestr'. now apply IH.
+      prepare_solve_bet; try solve_bet Hcontext'. inv Hrestr'. now apply IH.
   - (* Ecase *)
     intros ???????? Hbranch IH ??? Hcontext' Hrestr'.
     have Hcontext'' := Hcontext'. apply update_label_preserves_context_restr in Hcontext''.
     have Htyping := IH _ _ _ _ Hcontext'' Hrestr' r r0 r1. destruct Htyping as [Hty1 Hty2]. clear IH Hcontext''.
-    { prepare_solve_bet. all: solve_bet Hcontext'. assumption. assumption. }
+    by prepare_solve_bet; solve_bet Hcontext' =>//.
   - (* Eapp *)
     intros ????? Hargs Hv ? Hcontext' Hrestr'.
     assert (be_typing c0 [::instr] (Tf [::] [::T_i32])) as Ht. { inv Hv; solve_bet Hcontext'. }
@@ -335,19 +335,24 @@ Proof.
     eapply bet_call_indirect; try by apply Hcontext'. apply /ssrnat.leP.
     assert (Z.of_nat (length (tc_types_t c0)) > max_function_args)%Z by apply Hcontext'. lia.
     solve_bet Hcontext'. solve_bet Hcontext'. inv Hrestr'. now eapply IH.
+  - (* Eprim_val *)
+    intros ???????? Hexpr' IH ? Hprim ? Hcontext' Hrestr'.
+    eapply bet_composition'. now eapply grow_memory_if_necessary_typing.
+    prepare_solve_bet; try solve_bet Hcontext'.
+    inv Hrestr'. by apply IH.
   - (* repr_branches nil *)
     intros ????? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
     inv Hboxed. inv Hunboxed. by split; solve_bet Hcontext'.
   - (* repr_branches cons_boxed *)
     intros ???????? Hbranch IH1 ?? Hexpr' IH2 ???? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
     inv Hboxed. split. 2:{ inv Hrestr'. inv H0. eapply IH1; eauto. by constructor. }
-    prepare_solve_bet. all: try solve_bet Hcontext'.
+    prepare_solve_bet; try solve_bet Hcontext'.
     + apply IH2=>//. inv Hrestr'. now inv H0.
     + eapply IH1 in H4; try apply Hunboxed; eauto. now destruct H4. inv Hrestr'. inv H0. by constructor.
   - (* repr_branches cons_unboxed *)
     intros ???????? Hbranch IH1 ?? Hexpr' IH2 ???? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
     inv Hunboxed. split. { eapply IH1 in Hboxed; eauto. now destruct Hboxed. inv Hrestr'. inv H0. by constructor. }
-    prepare_solve_bet. all: try solve_bet Hcontext'.
+    prepare_solve_bet; try solve_bet Hcontext'.
     + apply IH2=>//. inv Hrestr'. now inv H0.
     + eapply IH1 in H4; try apply Hunboxed; eauto. now destruct H4. inv Hrestr'. inv H0. by constructor.
 Qed.
@@ -467,7 +472,8 @@ Proof.
          (map (fun f => ET_func f.(type)) fns) ++                     (* all fns exported *)
          [:: ET_glob {| tg_mut := MUT_mut; tg_t := T_i32 |}
            ; ET_glob {| tg_mut := MUT_mut; tg_t := T_i32 |}
-           ; ET_glob {| tg_mut := MUT_mut; tg_t := T_i32 |}]).        (* global vars *)
+           ; ET_glob {| tg_mut := MUT_mut; tg_t := T_i32 |}           (* global vars *)
+           ; ET_mem {| lim_min := 1%N; lim_max := Some max_mem_pages|}]). (* global mem TODO consider not exporting *)
   exists hs.
   exists s'. (* store after init_mems TODO update to new WasmCert *)
   (* initial values of globals: 0 *)
@@ -501,7 +507,7 @@ Proof.
         apply translate_exp_correct in Hexpr.
         2:{ destruct e; inv He =>//. eapply Forall_constructors_subterm. eassumption.
             apply t_step. by apply dsubterm_fds2. }
-        eapply repr_expr_LambdaANF_Wasm_typing; last eassumption.
+        eapply repr_expr_LambdaANF_Wasm_typing =>//; last by eassumption.
         repeat split =>//.
         * (* locals in bound *)
           intros ?? Hvar. cbn.
@@ -560,7 +566,7 @@ Proof.
                  rewrite map_length.
                  destruct e; inv He; try by inv Hfd.
                   inv Hrestr. apply H2 in Hfd. destruct Hfd as [Hfd _]. lia. }
-        eapply repr_expr_LambdaANF_Wasm_typing; last apply Hexpr'.
+        eapply repr_expr_LambdaANF_Wasm_typing =>//; last by apply Hexpr'.
         { (* context restrictions *)
           repeat split =>//.
           * (* locs i32 *)
@@ -617,7 +623,7 @@ Proof.
         rewrite Nat.sub_0_r in Hnth. cbn.
         rewrite nth_error_map. rewrite Hnth. by apply /eqfunction_typeP.
       }
-      (* global vars *)
+      (* global vars, memory *)
       repeat apply Forall2_cons =>//. }
   - (* imports typing *)
     apply Forall2_cons. eapply ETY_func; cbn; eauto.
