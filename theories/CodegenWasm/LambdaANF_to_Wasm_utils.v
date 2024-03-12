@@ -1354,21 +1354,14 @@ Ltac solve_arith_load_store :=
           try (apply N.max_lt_iff; right); try (apply Nat.max_lt_iff; right);
           rewrite -length_is_size; try lia).
 
-Ltac assert_store_condition_and_rewrite :=
+Ltac assert_store_condition_and_rewrite Hname :=
   match goal with
   | [H : context[match (if ?E then _ else _) with | Some _ => _ | None => _ end] |- _] =>
-      let H' := fresh "H" in
+      let H' := fresh Hname in
       assert E as H' by solve_arith_load_store;
-      cbn in H';
-      match goal with
-      | [H : context[match (if (_ <? _)%N then _ else _) with | Some _ => _ | None => _ end], H' : _ |- _] =>
-          rewrite H' in H;
-          repeat rewrite take_drop_is_set_nth in H;
-          [| try solve_arith_load_store]
-      end
-  | [H : match (if ?E then _ else _) with | Some _ => _ | None => _ end = Some _ |- _] =>
-      let H' := fresh "H" in
-      assert E as H' by solve_arith_load_store
+      rewrite H' in H;
+      try rewrite take_drop_is_set_nth in H;
+      solve_arith_load_store
   end.
 
 
@@ -1389,10 +1382,10 @@ Proof.
   destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N eqn:Ha1.
   2: discriminate. cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
   rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
-  assert_store_condition_and_rewrite. rename H into Ha2.
-  assert_store_condition_and_rewrite. rename H into Ha3.
-  assert_store_condition_and_rewrite. rename H into Ha4.
-  rewrite Ha4 in Hstore. inv Hstore.
+  assert_store_condition_and_rewrite Ha2.
+  assert_store_condition_and_rewrite Ha3.
+  assert_store_condition_and_rewrite Ha4.
+  inv Hstore.
 
   unfold load_i32, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
   destruct ((a1 + 4 <=? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hr1. 2: discriminate.
@@ -1450,16 +1443,13 @@ Proof.
   2: { apply N.ltb_nlt in Ha1. lia. }
   cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
   rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
-  assert_store_condition_and_rewrite. rename H into Ha2.
-  assert_store_condition_and_rewrite. rename H into Ha3.
-  assert_store_condition_and_rewrite. rename H into Ha4.
-  assert_store_condition_and_rewrite. rename H into Ha5.
-  assert_store_condition_and_rewrite. rename H into Ha6.
-  assert_store_condition_and_rewrite. rename H into Ha7.
-  assert_store_condition_and_rewrite. rename H into Ha8.
-  rewrite Ha8 in Hstore. cbn in Hstore.
-  repeat rewrite take_drop_is_set_nth in Hstore.
-
+  assert_store_condition_and_rewrite Ha2.
+  assert_store_condition_and_rewrite Ha3.
+  assert_store_condition_and_rewrite Ha4.
+  assert_store_condition_and_rewrite Ha5.
+  assert_store_condition_and_rewrite Ha6.
+  assert_store_condition_and_rewrite Ha7.
+  assert_store_condition_and_rewrite Ha8.
   inv Hstore.
 
   unfold load_i32, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
@@ -1478,7 +1468,6 @@ Proof.
 
   rewrite length_is_size in Ha3. rewrite size_set_nth in Ha3.
   rewrite maxn_nat_max in Ha3.
-
 
   assert ((a1 + 4 <=?
              N.of_nat (Datatypes.length
@@ -1526,10 +1515,10 @@ Proof.
   2: { apply N.ltb_nlt in Ha1. lia. }
   cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
   rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
-  assert_store_condition_and_rewrite. rename H into Ha2.
-  assert_store_condition_and_rewrite. rename H into Ha3.
-  assert_store_condition_and_rewrite. rename H into Ha4.
-  rewrite Ha4 in Hstore. inv Hstore.
+  assert_store_condition_and_rewrite Ha2.
+  assert_store_condition_and_rewrite Ha3.
+  assert_store_condition_and_rewrite Ha4.
+  inv Hstore.
 
   unfold load_i64, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
   destruct ((a1 + 8 <=? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hr1. 2: discriminate.
@@ -1582,16 +1571,13 @@ Proof.
   2: { apply N.ltb_nlt in Ha1. lia. }
   cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
   rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
-  assert_store_condition_and_rewrite. rename H into Ha2.
-  assert_store_condition_and_rewrite. rename H into Ha3.
-  assert_store_condition_and_rewrite. rename H into Ha4.
-  assert_store_condition_and_rewrite. rename H into Ha5.
-  assert_store_condition_and_rewrite. rename H into Ha6.
-  assert_store_condition_and_rewrite. rename H into Ha7.
-  assert_store_condition_and_rewrite. rename H into Ha8.
-  rewrite Ha8 in Hstore. cbn in Hstore.
-  repeat rewrite take_drop_is_set_nth in Hstore.
-
+  assert_store_condition_and_rewrite Ha2.
+  assert_store_condition_and_rewrite Ha3.
+  assert_store_condition_and_rewrite Ha4.
+  assert_store_condition_and_rewrite Ha5.
+  assert_store_condition_and_rewrite Ha6.
+  assert_store_condition_and_rewrite Ha7.
+  assert_store_condition_and_rewrite Ha8.
   inv Hstore.
 
   unfold load_i64, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
