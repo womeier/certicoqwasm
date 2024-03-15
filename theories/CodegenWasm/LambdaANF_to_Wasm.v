@@ -26,22 +26,6 @@ Definition max_constr_args   := 1024%Z.      (* should be possible to vary witho
 
 Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes, don't change this *)
 
-
-(* NOTE: Altered slightly from C-backend, may need to reverted (WIP) *)
-Definition to_int64 (i : PrimInt63.int) : Wasm_int.Int64.T.
-  exists (Uint63.to_Z i)%Z. (* Was i * 2 + 1 *)
-  pose proof (Uint63.to_Z_bounded i).
-  unfold Uint63.wB in H. unfold Wasm_int.Int64.modulus, Wasm_int.Int64.wordsize, Integers.Wordsize_64.wordsize.
-  unfold Uint63.size in H. rewrite two_power_nat_correct. unfold Zpower_nat. simpl.
-  destruct H. split; lia.
-Defined.
-
-Definition compile_primitive (p : AstCommon.primitive) :=
-  match projT1 p as tag return prim_value tag -> error Wasm_int.Int64.T with
-  | AstCommon.primInt => fun i => Ret (to_int64 i)
-  | AstCommon.primFloat => fun f => Err "TODO"
-  end (projT2 p).
-
 Definition assert (b : bool) (err : string) : error Datatypes.unit :=
   if b then Ret tt else Err err.
 
@@ -303,6 +287,21 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
   let call := if tailcall then BI_return_call_indirect else BI_call_indirect in
   Ret (instr_pass_params ++ [instr_fidx] ++ [call (length args)]). (* all fns return nothing, typeidx = num args *)
 
+(* **** Translate primitive values to Wasm values **** *)
+
+Definition to_int64 (i : PrimInt63.int) : Wasm_int.Int64.T.
+  exists (Uint63.to_Z i)%Z.
+  pose proof (Uint63.to_Z_bounded i).
+  unfold Uint63.wB in H. unfold Wasm_int.Int64.modulus, Wasm_int.Int64.wordsize, Integers.Wordsize_64.wordsize.
+  unfold Uint63.size in H. rewrite two_power_nat_correct. unfold Zpower_nat. simpl.
+  destruct H. split; lia.
+Defined.
+
+Definition translate_primitive (p : AstCommon.primitive) :=
+  match projT1 p as tag return prim_value tag -> error Wasm_int.Int64.T with
+  | AstCommon.primInt => fun i => Ret (to_int64 i)
+  | AstCommon.primFloat => fun f => Err "TODO"
+  end (projT2 p).
 
 (* Example placement of constructors in the linear memory:
      data Bintree := Leaf | Node Bintree Value Bintree
@@ -486,7 +485,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    | Eprim_val x p e' =>
        following_instrs <- translate_exp nenv cenv lenv fenv e' ;;
        x_var <- translate_var nenv lenv x "translate_exp prim val" ;;
-       val <- compile_primitive p ;;
+       val <- translate_primitive p ;;
            Ret (grow_memory_if_necessary page_size ++
                  [ BI_get_global result_out_of_mem
                  ; BI_const (nat_to_value 1)

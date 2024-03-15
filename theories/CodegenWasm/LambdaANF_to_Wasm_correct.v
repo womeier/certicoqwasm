@@ -445,7 +445,7 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
 | R_prim_val : forall x x' p v sgrow e e',
     repr_var (lenv:=lenv) x x' ->
     repr_expr_LambdaANF_Wasm e e' ->
-    compile_primitive p = Ret v ->
+    translate_primitive p = Ret v ->
     grow_memory_if_necessary page_size = sgrow ->
     repr_expr_LambdaANF_Wasm (Eprim_val x p e)
       (sgrow ++
@@ -650,7 +650,7 @@ Proof.
     inv H.
     destruct (translate_exp nenv cenv lenv fenv e) eqn:H_eqTranslate. inv H1.
     destruct (translate_var nenv lenv v _) eqn:Hvar. inv H1.
-    destruct (compile_primitive p) eqn:Hprim. inv H1.
+    destruct (translate_primitive p) eqn:Hprim. inv H1.
     remember (grow_memory_if_necessary page_size) as grow.
     inversion H1.
     separate_instr. do 7! rewrite catA. (* first 8 instr belong to sgrow *)
@@ -745,7 +745,7 @@ Inductive repr_val_LambdaANF_Wasm:
 
     List.nth_error sr.(s_mems) 0 = Some m ->
 
-    compile_primitive p = Ret v ->
+    translate_primitive p = Ret v ->
 
     load_i64 m (N.of_nat addr) = Some (VAL_int64 v) ->
 
