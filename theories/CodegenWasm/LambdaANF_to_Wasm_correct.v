@@ -6114,8 +6114,7 @@ Qed.
 Lemma table_element_mapping_length : forall len i,
   Datatypes.length (table_element_mapping len i) = len.
 Proof.
-  induction len; intros; cbn; auto.
-  now rewrite IHlen.
+  by induction len; intros; cbn; auto.
 Qed.
 
 Lemma e_offs_increasing : forall e_offs len state s fr,
