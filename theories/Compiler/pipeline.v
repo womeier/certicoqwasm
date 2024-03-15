@@ -112,7 +112,7 @@ Section Pipeline.
 
   Definition CertiCoq_pipeline (p : Ast.Env.program) :=
     o <- get_options ;;
-    p <- compile_LambdaBoxMut p ;;
+    p <- compile_LambdaBoxMut o.(erasure_config) p ;;
     check_axioms p ;;
     p <- compile_LambdaBoxLocal prims p ;;
     p <- (if direct o then compile_LambdaANF_ANF next_id prims p else compile_LambdaANF_CPS next_id prims p) ;;
@@ -141,7 +141,8 @@ Definition pipeline_Wasm (p : Template.Ast.Env.program) :=
      compile_LambdaANF_to_Wasm prs p.
 
 Definition default_opts : Options :=
-  {| direct := false;
+  {| erasure_config := Erasure.default_erasure_config;
+     direct := false;
      c_args := 5;
      anf_conf := 0;
      show_anf := false;
@@ -156,6 +157,7 @@ Definition default_opts : Options :=
   |}.
 
 Definition make_opts
+           (erasure_config : Erasure.erasure_configuration)
            (cps : bool)                              (* CPS or direct *)
            (args : nat)                              (* number of C args *)
            (conf : nat)                              (* λ_ANF configuration *)
@@ -167,7 +169,8 @@ Definition make_opts
            (toplevel_name : string)                  (* Name of the toplevel function ("body" by default) *)
            (prims : list (kername * string * bool))  (* list of extracted constants *)
   : Options :=
-  {| direct := negb cps;
+  {| erasure_config := erasure_config; 
+     direct := negb cps;
      c_args := args;
      anf_conf := conf;
      show_anf := false;
