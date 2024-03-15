@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 DOCLEAN=$1
 
@@ -11,18 +12,17 @@ clean() {
 }
 
 cd submodules
-
-cd Equations
-echo "Rebuilding Equations"
-clean
-./configure.sh
-make
-make install
 cd ..
 
-cd metacoq
-echo "Rebuilding MetaCoq"
-clean
-./configure.sh local
-make -j 2 translations all
-make install
+pwd -P
+ls -l
+ls -l submodules
+cd submodules
+
+# cd metacoq
+# echo "Rebuilding MetaCoq"
+# clean
+# ./configure.sh local
+# make -j 2 translations all
+# make install
+# cd ..

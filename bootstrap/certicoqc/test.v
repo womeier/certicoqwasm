@@ -1,7 +1,6 @@
 From MetaCoq.Template Require Import All.
 From MetaCoq.Utils Require Import bytestring.
 From MetaCoq.Common Require Import Primitive.
-
 From Coq Require Import PrimFloat PrimInt63.
 From CertiCoq.CertiCoqC Require Import CertiCoqC.
 
@@ -32,7 +31,7 @@ From CertiCoq.Common Require Import Pipeline_utils.
 From CertiCoq.CertiCoqC Require Import CertiCoqC.
 From CertiCoq.CertiCoqC Require Import Loader.
 
-Definition certicoqc (opts : Options) (p : Template.Ast.Env.program) := 
+Definition certicoqc (opts : Options) (p : Template.Ast.Env.program) :=
   let () := coq_msg_info "certicoqc called" in
   compile opts p.
 

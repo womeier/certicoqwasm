@@ -144,8 +144,8 @@ extraction/uint0.mli
 extraction/uint0.ml
 extraction/show.mli
 extraction/show.ml
-# extraction/decimalString.mli
-# extraction/decimalString.ml
+extraction/decimalString.mli
+extraction/decimalString.ml
 # extraction/hexadecimalString.mli
 # extraction/hexadecimalString.ml
 extraction/primitive.mli
@@ -158,6 +158,8 @@ extraction/ctypes.ml
 extraction/ctypes.mli
 extraction/datatypes.ml
 extraction/datatypes.mli
+extraction/operations.ml
+extraction/operations.mli
 extraction/dead_param_elim.ml
 extraction/dead_param_elim.mli
 extraction/decimal.ml
@@ -302,6 +304,32 @@ extraction/lambdaANF_to_Clight.ml
 extraction/lambdaANF_to_Clight.mli
 extraction/lambdaANF_to_Clight_stack.ml
 extraction/lambdaANF_to_Clight_stack.mli
+
+extraction/ssrnat.ml
+extraction/ssrnat.mli
+extraction/numerics.ml
+extraction/numerics.mli
+extraction/eqtype.ml
+extraction/eqtype.mli
+extraction/common0.ml
+extraction/common0.mli
+extraction/datatypes0.ml
+extraction/datatypes0.mli
+extraction/datatypes_properties.ml
+extraction/datatypes_properties.mli
+extraction/leb128.ml
+extraction/leb128.mli
+extraction/seq.ml
+extraction/seq.mli
+extraction/bytes.ml
+extraction/bytes.mli
+extraction/binary_format_printer.ml
+extraction/binary_format_printer.mli
+extraction/lambdaANF_to_Wasm.ml
+extraction/lambdaANF_to_Wasm.mli
+extraction/toplevel3.ml
+extraction/toplevel3.mli
+
 extraction/lambda_lifting.ml
 extraction/lambda_lifting.mli
 extraction/list0.ml

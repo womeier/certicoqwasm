@@ -1,9 +1,13 @@
 .PHONY: all submodules plugin cplugin install clean bootstrap
 
 
+OS=$(shell uname)
+
+CORES=$(if $(filter Linux,$(OS)),$(shell nproc),$(shell sysctl -n hw.logicalcpu))
+
 all theories/Extraction/extraction.vo: theories/Makefile libraries/Makefile
-	$(MAKE) -C libraries -j1
-	$(MAKE) -C theories -j1
+	$(MAKE) -C libraries -j $(CORES)
+	$(MAKE) -C theories -j $(CORES)
 
 theories/Makefile: theories/_CoqProject
 	cd theories;coq_makefile -f _CoqProject -o Makefile
@@ -13,8 +17,7 @@ libraries/Makefile: libraries/_CoqProject
 
 
 submodules:
-	git submodule update
-	./make_submodules.sh
+	./make_submodules.sh noclean
 
 plugins: plugin cplugin
 
@@ -38,12 +41,13 @@ cplugin/CertiCoq.vo: all cplugin/Makefile theories/ExtractionVanilla/extraction.
 bootstrap: plugin cplugin
 	$(MAKE) -C bootstrap all
 
-install: plugin cplugin bootstrap
+#install: plugin cplugin bootstrap
+install: plugin
 	$(MAKE) -C libraries install
 	$(MAKE) -C theories install
 	$(MAKE) -C plugin install
-	$(MAKE) -C cplugin install
-	$(MAKE) -C bootstrap install
+#	$(MAKE) -C cplugin install
+#	$(MAKE) -C bootstrap install
 
 # Clean generated makefiles
 mrproper: theories/Makefile libraries/Makefile plugin/Makefile cplugin/Makefile
@@ -60,5 +64,6 @@ clean: theories/Makefile libraries/Makefile plugin/Makefile cplugin/Makefile
 	$(MAKE) -C bootstrap clean
 	rm -f `find theories -name "*.ml*"`
 	rm -rf plugin/extraction
+	rm -rf docs/
 	rm -rf cplugin/extraction
 	$(MAKE) mrproper
