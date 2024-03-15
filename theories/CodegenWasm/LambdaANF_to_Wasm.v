@@ -19,7 +19,7 @@ Import MonadNotation.
 (* memory can grow to at most 64KB * max_mem_pages *)
 Definition max_mem_pages     := 30000%N.
 
-(* ***** RESTRICTIONS ON constructors and functions ****** *)
+(* ***** RESTRICTIONS ON lANF EXPRESSIONS ****** *)
 Definition max_function_args := 20%Z.        (* should be possible to vary without breaking much *)
 Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
 Definition max_constr_args   := 1024%Z.      (* should be possible to vary without breaking much *)
@@ -287,7 +287,7 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
   let call := if tailcall then BI_return_call_indirect else BI_call_indirect in
   Ret (instr_pass_params ++ [instr_fidx] ++ [call (length args)]). (* all fns return nothing, typeidx = num args *)
 
-(* **** Translate primitive values to Wasm values **** *)
+(* **** TRANSLATE PRIMITIVE VALUES **** *)
 
 Definition to_int64 (i : PrimInt63.int) : Wasm_int.Int64.T.
   exists (Uint63.to_Z i)%Z.
@@ -302,6 +302,8 @@ Definition translate_primitive (p : AstCommon.primitive) :=
   | AstCommon.primInt => fun i => Ret (to_int64 i)
   | AstCommon.primFloat => fun f => Err "TODO"
   end (projT2 p).
+
+(* ***** TRANSLATE CONSTRUCTOR ALLOCATION ****** *)
 
 (* Example placement of constructors in the linear memory:
      data Bintree := Leaf | Node Bintree Value Bintree
