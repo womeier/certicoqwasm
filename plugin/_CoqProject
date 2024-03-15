@@ -144,8 +144,8 @@ extraction/uint0.mli
 extraction/uint0.ml
 extraction/show.mli
 extraction/show.ml
-extraction/decimalString.mli
-extraction/decimalString.ml
+# extraction/decimalString.mli
+# extraction/decimalString.ml
 # extraction/hexadecimalString.mli
 # extraction/hexadecimalString.ml
 extraction/primitive.mli
