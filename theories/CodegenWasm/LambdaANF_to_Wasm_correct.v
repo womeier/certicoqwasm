@@ -6505,19 +6505,6 @@ Proof.
   exists t'. repeat (split; auto).
 Qed.
 
-Lemma list_function_types_nth_error : forall i maxargs,
-  i <= maxargs ->
-  nth_error (list_function_types maxargs) i =
-    Some (Tf (repeat T_i32 i) []).
-Proof.
-  intros. generalize dependent i.
-  induction maxargs; intros; destruct i; cbn; auto.
-  inv H. cbn.
-  rewrite nth_error_map. rewrite IHmaxargs; try lia.
-  reflexivity.
-Qed.
-
-
 Lemma translate_functions_exists_original_fun : forall fds fds'' fns wasmFun e eAny fenv,
   NoDup (collect_function_vars (Efun fds e)) ->
   translate_functions nenv cenv fenv fds = Ret fns ->
@@ -7052,7 +7039,9 @@ Proof.
   }
   split. (* types *)
   { unfold INV_types. intros. unfold stypes. cbn. unfold max_function_args in H.
-    rewrite F4. apply list_function_types_nth_error. lia. }
+    rewrite F4. erewrite nth_error_nth'.
+    rewrite nth_list_function_types =>//. lia.
+    rewrite length_list_function_types. lia. }
   (* gmp multiple of two *)
   { unfold INV_global_mem_ptr_multiple_of_two.
     intros.
@@ -7135,11 +7124,11 @@ Proof.
 	            | _ => Efun Fnil e
 	            end) by now destruct e.
 	rewrite HtopExp'. split. reflexivity.
-	split. rewrite -Hexpr.
+	split=>//. rewrite -Hexpr.
 	replace (match e with | Efun _ exp => exp
                         | _ => e end) with e0 by now destruct e.
   reflexivity.
-  rewrite -HtransFns. by destruct e; inv HtopExp'.
+Unshelve. apply (Tf [] []).
 Qed.
 
 Lemma repeat0_n_zeros : forall l,
