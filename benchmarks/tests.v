@@ -5,7 +5,12 @@ Require Import CertiCoq.Benchmarks.lib.Color.
 Require Import CertiCoq.Benchmarks.lib.sha256.
 Require Import CertiCoq.Benchmarks.lib.coind.
 From MetaCoq.Utils Require Import bytestring MCString.
-From CertiCoq.Plugin Require Import CertiCoq.
+(* From CertiCoq.Plugin Require Import CertiCoq. *)
+
+From Coq Require Import Bool.
+From Coq Require Import Extraction.
+From Coq Require Import List.
+From Coq Require Import Program.
 
 Definition foo := 0.
 
@@ -14,7 +19,7 @@ Open Scope bs.
 Import ListNotations.
 Import VeriStar.
 
-CertiCoq -help.
+(* CertiCoq -help. *)
 
 
 (* Demo 1 *)
@@ -78,19 +83,27 @@ Definition sha := sha256.SHA_256 (sha256.str_to_bytes test).
 
 Definition sha_fast := sha256.SHA_256' (sha256.str_to_bytes test).
 
+
+From RustExtraction Require Import Loader ExtrRustBasic.
+From RustExtraction Require Import ExtrRustUncheckedArith.
+
 Eval compute in "Compiling demo1".
 
-CertiCoq Compile Wasm -cps -debug demo1.
+Redirect "rust/demo1.rs" Rust Extract demo1.
+
+
+(* CertiCoq Compile Wasm -cps -debug demo1. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo1. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
-CertiCoq Generate Glue -file "glue_demo1" [ list, bool ].
+(* CertiCoq Generate Glue -file "glue_demo1" [ list, bool ]. *)
 
+(*
 Eval compute in "Compiling demo2".
 
-CertiCoq Compile Wasm -cps -debug demo2.
+(* CertiCoq Compile Wasm -cps -debug demo2.*)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo2. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo2. *)
-CertiCoq Generate Glue -file "glue_demo2" [ list, bool ].
+(* CertiCoq Generate Glue -file "glue_demo2" [ list, bool ]. *)
 
 (*
 Eval compute in "Compiling demo3".
@@ -99,40 +112,40 @@ CertiCoq Compile Wasm -cps -debug demo3.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo3. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo3. *)
 *)
-CertiCoq Generate Glue -file "glue_demo3" [ list, bool ].
+(* CertiCoq Generate Glue -file "glue_demo3" [ list, bool ]. *)
 
 Eval compute in "Compiling list_sum".
 
-CertiCoq Compile Wasm -debug list_sum.
+(* CertiCoq Compile Wasm -debug list_sum. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" list_sum. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" list_sum. *)
-CertiCoq Generate Glue -file "glue_list_sum" [ nat ].
+(* CertiCoq Generate Glue -file "glue_list_sum" [ nat ]. *)
 
 
 Eval compute in "Compiling vs_easy".
 
 (* CertiCoq Compile Wasm -cps -time -debug vs_easy. *)
-CertiCoq Compile Wasm -time -debug vs_easy.
+(* CertiCoq Compile Wasm -time -debug vs_easy. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" -time_anf vs_easy. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" vs_easy. *)
-CertiCoq Generate Glue -file "glue_vs_easy" [ list, bool, vs.space_atom, vs.clause ].
+(* CertiCoq Generate Glue -file "glue_vs_easy" [ list, bool, vs.space_atom, vs.clause ]. *)
 
 Eval compute in "Compiling vs_hard".
 
 (* CertiCoq Compile Wasm -cps -time -debug vs_hard. *)
-CertiCoq Compile Wasm -time -debug vs_hard.
+(* CertiCoq Compile Wasm -time -debug vs_hard. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" vs_hard. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" vs_hard. *)
-CertiCoq Generate Glue -file "glue_vs_hard" [ list, bool ].
+(* CertiCoq Generate Glue -file "glue_vs_hard" [ list, bool ]. *)
 
 
 Eval compute in "Compiling binom".
 
 (* CertiCoq Compile Wasm -cps -time -debug binom. *)
-CertiCoq Compile Wasm -time -debug binom.
+(* CertiCoq Compile Wasm -time -debug binom. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" binom. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" binom. *)
-CertiCoq Generate Glue -file "glue_binom" [ nat ].
+(* CertiCoq Generate Glue -file "glue_binom" [ nat ]. *)
 
 (* Eval compute in "Compiling lazy factorial". *)
 
@@ -151,7 +164,7 @@ Require Import ZArith.
 (* CertiCoq Compile Wasm -cps -time -debug color. *)
 (* CertiCoq Compile -O 0 -time -cps -ext "_cps" color. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" color. *)
-CertiCoq Generate Glue -file "glue_color" [ prod, Z ].
+(* CertiCoq Generate Glue -file "glue_color" [ prod, Z ]. *)
 
 (* Don't compile slow sha *)
 (* Eval compute in "Compiling sha". *)
@@ -165,7 +178,7 @@ CertiCoq Generate Glue -file "glue_color" [ prod, Z ].
 Eval compute in "Compiling sha_fast".
 
 (* CertiCoq Compile Wasm -cps -time -debug sha_fast. *)
-CertiCoq Compile Wasm -time -debug sha_fast.
+(* CertiCoq Compile Wasm -time -debug sha_fast. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" sha_fast. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
-CertiCoq Generate Glue -file "glue_sha_fast" [ ].
+(* CertiCoq Generate Glue -file "glue_sha_fast" [ ]. *) *)

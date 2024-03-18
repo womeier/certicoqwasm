@@ -15,11 +15,16 @@ STACKSIZE=$(if $(filter Linux,$(OS)),unlimited,65532)
 
 SED=$(if $(filter Linux,$(OS)),sed,gsed)
 
-all: lib tests runwasm
+all: lib tests runrust
+#all: lib tests runwasm
 
 .PHONY: all default clean lib cleanlib tests $(TESTS)
 
 $(WASMFILES): tests
+
+runrust: tests
+	bash ./process-rust-extraction.sh
+	cd rust/demo1-extracted && cargo run
 
 runwasm: $(WASMFILES)
 	ulimit -s $(STACKSIZE) && ./run_wasm_benchmarks.py
