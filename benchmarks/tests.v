@@ -88,97 +88,27 @@ From RustExtraction Require Import Loader ExtrRustBasic.
 From RustExtraction Require Import ExtrRustUncheckedArith.
 
 Eval compute in "Compiling demo1".
-
 Redirect "rust/demo1.rs" Rust Extract demo1.
 
-
-(* CertiCoq Compile Wasm -cps -debug demo1. *)
-(* CertiCoq Compile -O 0 -cps -ext "_cps" demo1. *)
-(* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
-(* CertiCoq Generate Glue -file "glue_demo1" [ list, bool ]. *)
-
-(*
 Eval compute in "Compiling demo2".
-
-(* CertiCoq Compile Wasm -cps -debug demo2.*)
-(* CertiCoq Compile -O 0 -cps -ext "_cps" demo2. *)
-(* CertiCoq Compile -cps -ext "_cps_opt" demo2. *)
-(* CertiCoq Generate Glue -file "glue_demo2" [ list, bool ]. *)
-
-(*
-Eval compute in "Compiling demo3".
-
-CertiCoq Compile Wasm -cps -debug demo3.
-(* CertiCoq Compile -O 0 -cps -ext "_cps" demo3. *)
-(* CertiCoq Compile -cps -ext "_cps_opt" demo3. *)
-*)
-(* CertiCoq Generate Glue -file "glue_demo3" [ list, bool ]. *)
+Redirect "rust/demo2.rs" Rust Extract demo2.
 
 Eval compute in "Compiling list_sum".
-
-(* CertiCoq Compile Wasm -debug list_sum. *)
-(* CertiCoq Compile -O 0 -cps -ext "_cps" list_sum. *)
-(* CertiCoq Compile -cps -ext "_cps_opt" list_sum. *)
-(* CertiCoq Generate Glue -file "glue_list_sum" [ nat ]. *)
-
+Redirect "rust/list_sum.rs" Rust Extract list_sum.
 
 Eval compute in "Compiling vs_easy".
-
-(* CertiCoq Compile Wasm -cps -time -debug vs_easy. *)
-(* CertiCoq Compile Wasm -time -debug vs_easy. *)
-(* CertiCoq Compile -O 0 -cps -ext "_cps" -time_anf vs_easy. *)
-(* CertiCoq Compile -time -cps -ext "_cps_opt" vs_easy. *)
-(* CertiCoq Generate Glue -file "glue_vs_easy" [ list, bool, vs.space_atom, vs.clause ]. *)
+Redirect "rust/vs_easy.rs" Rust Extract vs_easy.
 
 Eval compute in "Compiling vs_hard".
-
-(* CertiCoq Compile Wasm -cps -time -debug vs_hard. *)
-(* CertiCoq Compile Wasm -time -debug vs_hard. *)
-(* CertiCoq Compile -O 0 -cps -ext "_cps" vs_hard. *)
-(* CertiCoq Compile -cps -ext "_cps_opt" vs_hard. *)
-(* CertiCoq Generate Glue -file "glue_vs_hard" [ list, bool ]. *)
-
+Redirect "rust/vs_hard.rs" Rust Extract vs_hard.
 
 Eval compute in "Compiling binom".
-
-(* CertiCoq Compile Wasm -cps -time -debug binom. *)
-(* CertiCoq Compile Wasm -time -debug binom. *)
-(* CertiCoq Compile -O 0 -cps -ext "_cps" binom. *)
-(* CertiCoq Compile -cps -ext "_cps_opt" binom. *)
-(* CertiCoq Generate Glue -file "glue_binom" [ nat ]. *)
-
-(* Eval compute in "Compiling lazy factorial". *)
-
-(* CertiCoq Compile -O 1 lazy_factorial.
-CertiCoq Compile -ext "_opt" lazy_factorial.
-CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
-(* CertiCoq Compile -O 0 -cps -ext "_cps" demo1. *)
-(* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
-(* CertiCoq Generate Glue -file "glue_lazy_factorial" [ ]. *)
-
+Redirect "rust/binom.rs" Rust Extract binom.
 
 (* Eval compute in "Compiling color". *)
 Eval compute in "Compiling color".
-Require Import ZArith.
-
-(* CertiCoq Compile Wasm -cps -time -debug color. *)
-(* CertiCoq Compile -O 0 -time -cps -ext "_cps" color. *)
-(* CertiCoq Compile -time -cps -ext "_cps_opt" color. *)
-(* CertiCoq Generate Glue -file "glue_color" [ prod, Z ]. *)
-
-(* Don't compile slow sha *)
-(* Eval compute in "Compiling sha". *)
-
-(* CertiCoq Compile -cps -ext "_cps" sha. *)
-(* CertiCoq Compile sha. *)
-(* CertiCoq Compile -O 1 -cps -ext "_cps_opt" sha. *)
-(* CertiCoq Compile -O 1 -ext "_opt" sha. *)
-(* CertiCoq Generate Glue -file "glue_sha" [ ]. *)
+(* Require Import ZArith. *)
+Redirect "rust/color.rs" Rust Extract color.
 
 Eval compute in "Compiling sha_fast".
-
-(* CertiCoq Compile Wasm -cps -time -debug sha_fast. *)
-(* CertiCoq Compile Wasm -time -debug sha_fast. *)
-(* CertiCoq Compile -O 0 -cps -ext "_cps" sha_fast. *)
-(* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
-(* CertiCoq Generate Glue -file "glue_sha_fast" [ ]. *) *)
+Redirect "rust/sha_fast.rs" Rust Extract sha_fast.

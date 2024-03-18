@@ -344,6 +344,12 @@ extraction/monad0.mli
 # extraction/monadExc.mli
 extraction/monadState.ml
 extraction/monadState.mli
+extraction/utils.ml
+extraction/utils.mli
+extraction/show.ml
+extraction/show.mli
+extraction/ePretty.ml
+extraction/ePretty.mli
 extraction/monad_utils.ml
 extraction/monad_utils.mli
 extraction/mSetDecide.ml

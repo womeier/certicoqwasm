@@ -24,7 +24,8 @@ $(WASMFILES): tests
 
 runrust: tests
 	bash ./process-rust-extraction.sh
-	cd rust/demo1-extracted && cargo run
+	cd rust/demo1-extracted && cargo run > /dev/null
+	cd rust/demo2-extracted && cargo run > /dev/null
 
 runwasm: $(WASMFILES)
 	ulimit -s $(STACKSIZE) && ./run_wasm_benchmarks.py
