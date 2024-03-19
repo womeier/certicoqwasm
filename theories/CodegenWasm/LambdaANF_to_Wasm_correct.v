@@ -6959,7 +6959,7 @@ Proof.
   destruct H' as [t' [Ht' [HtVal' [NtNone' [Htables [Hfuncs [Hmems Hglobals]]]]]]].
   rewrite -Hinst in Hglobals, Hmems, Hfuncs.
 
-  assert (Hw: type w = Tf [T_i32] [] /\ locals w = [T_i32]). {
+  assert (Hw: type w = Tf [T_i32] [] /\ locals w = []). {
     unfold generate_constr_pp_function in HgenPP. cbn in HgenPP.
     destruct (sequence _). inv HgenPP. inv HgenPP.
     split; reflexivity.
@@ -7096,7 +7096,7 @@ Proof.
     rewrite H1. cbn. f_equal. f_equal. rewrite H4.
     now rewrite map_repeat_eq -map_map_seq.
   }
-  exists (FC_func_native (f_inst f) (Tf [T_i32] []) [T_i32] (body w)), e', fns.
+  exists (FC_func_native (f_inst f) (Tf [T_i32] []) [] (body w)), e', fns.
   subst s'; cbn; cbn in Hglobals, Hfuncs, Hmems. rewrite Hfuncs.
 
   assert (HfRepeat: (fun x : wasm_function =>
