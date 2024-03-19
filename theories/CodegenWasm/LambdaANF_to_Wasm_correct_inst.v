@@ -76,7 +76,7 @@ Ltac solve_bet Hcontext :=
       apply Hcontext in H; apply bet_get_local; last eassumption; apply /ssrnat.leP; simpl in *; now apply nth_error_Some
   | H: repr_var _ _ ?x' |- be_typing _ [:: BI_set_local ?x'] (Tf [::_] _) =>
       apply Hcontext in H; apply bet_set_local; last eassumption; apply /ssrnat.leP; simpl in *; now apply nth_error_Some
-  (* locals for pp *)
+  (* param for pp *)
   | H: nth_error (tc_local _) ?i = Some T_i32 |- be_typing _ [:: BI_get_local ?i] (Tf [::] _) =>
       apply bet_get_local; last eassumption; apply /ssrnat.leP; apply nth_error_Some; simpl in *; congruence
   | H: nth_error (tc_local _) ?i = Some T_i32 |- be_typing _ [:: BI_set_local ?i] (Tf [::_] _) =>
@@ -132,9 +132,8 @@ Definition context_restr_pp (c: t_context) :=
   (nth_error (tc_func_t c) write_char_function_idx = Some (Tf [:: T_i32] [::])) /\
   (nth_error (tc_func_t c) write_int_function_idx = Some (Tf [:: T_i32] [::])) /\
   (nth_error (tc_func_t c) constr_pp_function_idx = Some (Tf [:: T_i32] [::])) /\
-  (* param + local var *)
-  (nth_error (tc_local c) 0 = Some T_i32) /\
-  (nth_error (tc_local c) 1 = Some T_i32).
+  (* param *)
+  (nth_error (tc_local c) 0 = Some T_i32).
 
 Lemma update_label_preserves_context_restr_pp c :
   context_restr_pp c ->
@@ -158,7 +157,7 @@ Proof.
   induction calls; intros ?? Hcontext.
   - apply bet_empty.
   - simpl.
-    assert (nth_error (tc_local c) 1 = Some T_i32) as Hloc1 by apply Hcontext.
+    assert (nth_error (tc_local c) 0 = Some T_i32) as Hloc1 by apply Hcontext.
     prepare_solve_bet. all: try solve_bet Hcontext.
     by apply IHcalls.
 Qed.
@@ -175,7 +174,6 @@ Proof.
   remember (instr_write_string _) as s2 in Hconstr.
   destruct (get_ctor_arity cenv tag) eqn:Har =>//. simpl in Hconstr.
   assert (nth_error (tc_local c) 0 = Some T_i32) as Hloc0 by apply Hcontext.
-  assert (nth_error (tc_local c) 1 = Some T_i32) as Hloc1 by apply Hcontext.
   destruct (n =? 0) eqn:?; inversion Hconstr; subst instr; clear Hconstr.
   - prepare_solve_bet. all: try solve_bet Hcontext.
     + apply bet_weakening with(ts:=[::T_i32]). solve_bet Hcontext.
@@ -499,8 +497,7 @@ Proof.
         eapply pp_function_body_typing; eauto. repeat split =>//=.
         unfold write_char_function_idx. lia.
         unfold write_int_function_idx. lia.
-        unfold constr_pp_function_idx. lia.
-        unfold generate_constr_pp_function in Hpp; destruct (sequence _); now inv Hpp. }
+        unfold constr_pp_function_idx. lia. }
       apply Forall2_cons.
       { (* main func *)
         subst ts. cbn. rewrite length_list_function_types. repeat split =>//.
@@ -518,7 +515,8 @@ Proof.
           by repeat destruct Hin as [|Hin]; subst =>//.
         * (* types *)
           intros ? Hmax. cbn. unfold max_function_args in Hmax.
-          apply list_function_types_nth_error. lia.
+          erewrite nth_error_nth'; first rewrite nth_list_function_types =>//. lia.
+          rewrite length_list_function_types. lia.
         * (* expr restr *)
           destruct e; inv He =>//. by inv Hrestr. }
       { (* funcs *)
@@ -577,7 +575,9 @@ Proof.
           * (* globals *)
             intros ? Hin'. cbn. by repeat destruct Hin' as [|Hin']; subst =>//.
           * (* types *)
-            intros ? Hmax. rewrite list_function_types_nth_error=>//. lia.
+            intros ? Hmax.
+            erewrite nth_error_nth'. rewrite nth_list_function_types. reflexivity. lia.
+            rewrite length_list_function_types. lia.
         }
         { destruct e; inv He; try by inv Hfd. inv Hrestr. now eapply H2. }
       }
