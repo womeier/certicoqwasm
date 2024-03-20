@@ -81,13 +81,13 @@ Definition sha_fast := sha256.SHA_256' (sha256.str_to_bytes test).
 
 Eval compute in "Compiling demo1".
 
-CertiCoq Generate WASM -cps -debug demo1.
+CertiCoq Generate WASM -debug demo1.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo1. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
 
 Eval compute in "Compiling demo2".
 
-CertiCoq Generate WASM -cps -debug demo2.
+CertiCoq Generate WASM -debug demo2.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo2. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo2. *)
 
@@ -137,9 +137,8 @@ CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
 
 
-(* Eval compute in "Compiling color". *)
-
-(* CertiCoq Generate WASM -cps -time -debug color. *)
+Eval compute in "Compiling color".
+CertiCoq Generate WASM -time -debug color.
 (* CertiCoq Compile -O 0 -time -cps -ext "_cps" color. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" color. *)
 
