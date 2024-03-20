@@ -9,24 +9,21 @@ WASMFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wasm, $(TESTS))
 JSFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.js, $(TESTS))
 WASM2WAT=wasm2wat --enable-tail-call
 
-all: lib tests convert2wat tailcallify runwasm
+all: lib tests convert2wat runwasm
 
 .PHONY: all default clean lib cleanlib tests $(TESTS)
-
-$(WASMFILES): tests
 
 %.js: %.wasm
 	cp ./run-wasm-template.js $@
 	sed -i 's/{{file}}/$</g' $@
 
 %.wat: %.wasm
-	$(WASM2WAT) $< > $@
+	$(WASM2WAT) $< > tmp.wat
+	cat tmp.wat | tqdm --bytes | ./insert_tailcalls.py > $@
+	rm tmp.wat
+	wasm-tools parse $@ -o $<	
 
 convert2wat: $(WATFILES)
-
-# currently: certicoqwasm generates normal calls -> replace them with tailcalls until this is added to wasmcert-coq
-tailcallify: $(WATFILES) convert2wat
-	./insert_tailcalls.py
 
 runwasm: $(JSFILES)
 	ulimit -s unlimited && ./run_wasm_benchmarks.py
