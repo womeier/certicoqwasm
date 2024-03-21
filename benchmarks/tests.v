@@ -78,16 +78,39 @@ Definition sha := sha256.SHA_256 (sha256.str_to_bytes test).
 
 Definition sha_fast := sha256.SHA_256' (sha256.str_to_bytes test).
 
-Eval compute in "Compiling demo1".
+Fixpoint ack (n m : nat) : nat :=
+  match n with
+  | O => S m
+  | S p => let fix ackn (m : nat) :=
+            match m with
+            | O => ack p 1
+            | S q => ack p (ackn q)
+            end
+          in ackn m
+  end.
+Definition ack_3_3 := ack 3 3.
 
-CertiCoq Compile Wasm -cps -debug demo1.
+Fixpoint even n :=
+  match n with
+  | O => true
+  | S m => odd m
+  end
+  with odd n :=
+    match n with
+    | O => false
+    | S k => even k
+    end.
+Definition even_10000 := even 10000.
+
+Eval compute in "Compiling demo1".
+CertiCoq Compile Wasm -debug demo1.
+
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo1. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
 CertiCoq Generate Glue -file "glue_demo1" [ list, bool ].
 
 Eval compute in "Compiling demo2".
-
-CertiCoq Compile Wasm -cps -debug demo2.
+CertiCoq Compile Wasm -debug demo2.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo2. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo2. *)
 CertiCoq Generate Glue -file "glue_demo2" [ list, bool ].
@@ -143,15 +166,12 @@ CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
 (* CertiCoq Generate Glue -file "glue_lazy_factorial" [ ]. *)
 
-
-(* Eval compute in "Compiling color". *)
 Eval compute in "Compiling color".
-Require Import ZArith.
+CertiCoq Compile Wasm -time -debug color.
 
-(* CertiCoq Compile Wasm -cps -time -debug color. *)
 (* CertiCoq Compile -O 0 -time -cps -ext "_cps" color. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" color. *)
-CertiCoq Generate Glue -file "glue_color" [ prod, Z ].
+(* CertiCoq Generate Glue -file "glue_color" [ prod, Z ]. *)
 
 (* Don't compile slow sha *)
 (* Eval compute in "Compiling sha". *)
@@ -163,9 +183,15 @@ CertiCoq Generate Glue -file "glue_color" [ prod, Z ].
 (* CertiCoq Generate Glue -file "glue_sha" [ ]. *)
 
 Eval compute in "Compiling sha_fast".
+CertiCoq Compile Wasm -time -debug sha_fast.
 
 (* CertiCoq Compile Wasm -cps -time -debug sha_fast. *)
-CertiCoq Compile Wasm -time -debug sha_fast.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" sha_fast. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
 CertiCoq Generate Glue -file "glue_sha_fast" [ ].
+
+Eval compute in "Compiling ack".
+CertiCoq Compile Wasm -debug ack_3_3.
+
+Eval compute in "Compiling even".
+CertiCoq Compile Wasm -debug even_10000.
