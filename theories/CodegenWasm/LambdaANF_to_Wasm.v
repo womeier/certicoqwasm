@@ -18,7 +18,7 @@ Import MonadNotation.
 (* memory can grow to at most 64KB * max_mem_pages *)
 Definition max_mem_pages     := 30000%N.
 
-(* ***** RESTRICTIONS ON constructors and functions ****** *)
+(* ***** RESTRICTIONS ON lANF EXPRESSIONS ****** *)
 Definition max_function_args := 20%Z.        (* should be possible to vary without breaking much *)
 Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
 Definition max_constr_args   := 1024%Z.      (* should be possible to vary without breaking much *)
@@ -185,18 +185,18 @@ Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
 (* Generation of PP function for constructors
 
   Function takes as an argument (local 0) the pointer to a constructor, its name is printed.
-  To print the args, set the tmp var (local 1) to the input param, then for each argument:
-  - local 1 += 4
-  - call constr_pp_function with the current local recursively
+  To print the args, for each argument:
+  - local 0 += 4
+  - call constr_pp_function recursively
 *)
 Fixpoint generate_constr_pp_constr_args (calls : nat) (arity : nat) : list basic_instruction :=
     match calls with
     | 0        => []
-    | S calls' => [ BI_get_local 1
+    | S calls' => [ BI_get_local 0
                   ; BI_const (nat_to_value 4)
                   ; BI_binop T_i32 (Binop_i BOI_add)
-                  ; BI_set_local 1
-                  ; BI_get_local 1
+                  ; BI_set_local 0
+                  ; BI_get_local 0
                   ; BI_load T_i32 None 2%N 0%N     (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
                   ; BI_call constr_pp_function_idx (* call self *)
                   ] ++ (generate_constr_pp_constr_args calls' arity)
@@ -223,9 +223,7 @@ Definition generate_constr_pp_single_constr (cenv : ctor_env) (nenv : name_env) 
           ; BI_relop T_i32 (Relop_i ROI_eq)
           ; BI_if (Tf nil nil)
                 (instr_write_string (" (" ++ ctor_name) ++
-                   [ BI_get_local 0
-                   ; BI_set_local 1
-                   ] ++ (generate_constr_pp_constr_args ctor_arity ctor_arity) ++ (instr_write_string ")") ++ [ BI_return ])
+                (generate_constr_pp_constr_args ctor_arity ctor_arity) ++ (instr_write_string ")") ++ [ BI_return ])
                 []
           ]).
 
@@ -246,7 +244,7 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : 
   Ret {| fidx := constr_pp_function_idx
        ; export_name := constr_pp_function_name
        ; type := Tf [T_i32] []
-       ; locals := [T_i32]
+       ; locals := []
        ; body := body
        |}.
 
@@ -286,7 +284,7 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
   let call := if tailcall then BI_return_call_indirect else BI_call_indirect in
   Ret (instr_pass_params ++ [instr_fidx] ++ [call (length args)]). (* all fns return nothing, typeidx = num args *)
 
-(* **** Translate primitive values to Wasm values **** *)
+(* **** TRANSLATE PRIMITIVE VALUES **** *)
 
 Definition to_int64 (i : PrimInt63.int) : Wasm_int.Int64.T.
   exists (Uint63.to_Z i)%Z.
@@ -301,6 +299,8 @@ Definition translate_primitive (p : AstCommon.primitive) :=
   | AstCommon.primInt => fun i => Ret (to_int64 i)
   | AstCommon.primFloat => fun f => Err "TODO"
   end (projT2 p).
+
+(* ***** TRANSLATE CONSTRUCTOR ALLOCATION ****** *)
 
 (* Example placement of constructors in the linear memory:
      data Bintree := Leaf | Node Bintree Value Bintree

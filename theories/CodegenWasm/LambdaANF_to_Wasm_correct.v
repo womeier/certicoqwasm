@@ -6114,8 +6114,7 @@ Qed.
 Lemma table_element_mapping_length : forall len i,
   Datatypes.length (table_element_mapping len i) = len.
 Proof.
-  induction len; intros; cbn; auto.
-  now rewrite IHlen.
+  by induction len; intros; cbn; auto.
 Qed.
 
 Lemma e_offs_increasing : forall e_offs len state s fr,
@@ -6505,19 +6504,6 @@ Proof.
   destruct H' as [H1' [H2' H3']].
   exists t'. repeat (split; auto).
 Qed.
-
-Lemma list_function_types_nth_error : forall i maxargs,
-  i <= maxargs ->
-  nth_error (list_function_types maxargs) i =
-    Some (Tf (repeat T_i32 i) []).
-Proof.
-  intros. generalize dependent i.
-  induction maxargs; intros; destruct i; cbn; auto.
-  inv H. cbn.
-  rewrite nth_error_map. rewrite IHmaxargs; try lia.
-  reflexivity.
-Qed.
-
 
 Lemma translate_functions_exists_original_fun : forall fds fds'' fns wasmFun e eAny fenv,
   NoDup (collect_function_vars (Efun fds e)) ->
@@ -6973,7 +6959,7 @@ Proof.
   destruct H' as [t' [Ht' [HtVal' [NtNone' [Htables [Hfuncs [Hmems Hglobals]]]]]]].
   rewrite -Hinst in Hglobals, Hmems, Hfuncs.
 
-  assert (Hw: type w = Tf [T_i32] [] /\ locals w = [T_i32]). {
+  assert (Hw: type w = Tf [T_i32] [] /\ locals w = []). {
     unfold generate_constr_pp_function in HgenPP. cbn in HgenPP.
     destruct (sequence _). inv HgenPP. inv HgenPP.
     split; reflexivity.
@@ -7053,7 +7039,9 @@ Proof.
   }
   split. (* types *)
   { unfold INV_types. intros. unfold stypes. cbn. unfold max_function_args in H.
-    rewrite F4. apply list_function_types_nth_error. lia. }
+    rewrite F4. erewrite nth_error_nth'.
+    rewrite nth_list_function_types =>//. lia.
+    rewrite length_list_function_types. lia. }
   (* gmp multiple of two *)
   { unfold INV_global_mem_ptr_multiple_of_two.
     intros.
@@ -7108,7 +7096,7 @@ Proof.
     rewrite H1. cbn. f_equal. f_equal. rewrite H4.
     now rewrite map_repeat_eq -map_map_seq.
   }
-  exists (FC_func_native (f_inst f) (Tf [T_i32] []) [T_i32] (body w)), e', fns.
+  exists (FC_func_native (f_inst f) (Tf [T_i32] []) [] (body w)), e', fns.
   subst s'; cbn; cbn in Hglobals, Hfuncs, Hmems. rewrite Hfuncs.
 
   assert (HfRepeat: (fun x : wasm_function =>
@@ -7136,11 +7124,11 @@ Proof.
 	            | _ => Efun Fnil e
 	            end) by now destruct e.
 	rewrite HtopExp'. split. reflexivity.
-	split. rewrite -Hexpr.
+	split=>//. rewrite -Hexpr.
 	replace (match e with | Efun _ exp => exp
                         | _ => e end) with e0 by now destruct e.
   reflexivity.
-  rewrite -HtransFns. by destruct e; inv HtopExp'.
+Unshelve. apply (Tf [] []).
 Qed.
 
 Lemma repeat0_n_zeros : forall l,
