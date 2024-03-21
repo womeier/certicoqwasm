@@ -267,7 +267,7 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
                           (f : cps.var) (args : list cps.var) (tailcall : bool) : error (list basic_instruction) :=
   instr_pass_params <- pass_function_args nenv lenv fenv args;;
   instr_fidx <- instr_local_var_read nenv lenv fenv f;;
-  let call := if tailcall then BI_return_call_indirect else BI_return_call in
+  let call := if tailcall then BI_return_call_indirect else BI_call_indirect in
   Ret (instr_pass_params ++ [instr_fidx] ++ [call (length args)]).
 
 (* Example placement of constructors in the linear memory:
@@ -412,7 +412,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    | Eletapp x f ft ys e' =>
       x_var <- translate_var nenv lenv x "translate_exp proj x";;
       following_instr <- translate_exp nenv cenv lenv fenv e' ;;
-      instr_call <- translate_call nenv lenv fenv f ys true ;;
+      instr_call <- translate_call nenv lenv fenv f ys false;;
 
       Ret (instr_call ++ [ BI_get_global result_out_of_mem
                          ; BI_if (Tf nil nil)
@@ -420,11 +420,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
                             ([BI_get_global result_var; BI_set_local x_var] ++ following_instr)
                          ])
 
-   | Eapp f ft ys =>
-      instr_call <- translate_call nenv lenv fenv f ys false ;;
-
-      Ret instr_call (* tail calls are not supported in Wasm 1.0: normal function, TODO once WasmCert has tailcalls, generate one here *)
-
+   | Eapp f ft ys => translate_call nenv lenv fenv f ys true
    | Eprim_val x p e' => Err "translating prim_val to WASM not supported yet"
    | Eprim x p ys e' => Err "translating prim to WASM not supported yet"
    | Ehalt x =>
