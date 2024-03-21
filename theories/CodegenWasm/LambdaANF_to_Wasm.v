@@ -13,7 +13,6 @@ Require Import POrderedType.
 Require Import LambdaANF.cps LambdaANF.cps_show.
 Import MonadNotation.
 
-
 (* Main file for compiler backend targeting Wasm. *)
 
 (* memory can grow to at most 64KB * max_mem_pages *)
@@ -536,21 +535,126 @@ Fixpoint create_var_mapping (start_id : nat) (vars : list cps.var) (env : M.tree
                 M.set v start_id mapping
    end.
 
+Fixpoint used_in (x : var) (e : exp) : bool :=
+    match e with
+    | Efun _ e' =>
+        used_in x e'
+
+    | Econstr _ _ ys e' =>
+        orb (match find (fun y => if M.elt_eq x y then true else false) ys with Some _ => true | _ => false end) (used_in x e')
+
+    | Ecase y arms =>
+        orb (if M.elt_eq x y then true else false)
+          (fold_left (fun a p => orb a (used_in x (snd p))) arms false)
+
+    | Eproj _ _ _ y e' =>
+        orb (if M.elt_eq x y then true else false) (used_in x e')
+
+    | Eletapp _ f _ ys e' =>
+        orb (if M.elt_eq x f then true else false)
+          (orb (match find (fun y => if M.elt_eq x y then true else false) ys with Some _ => true | _ => false end) (used_in x e'))
+
+    | Eprim _ _ ys e' =>
+        (orb (match find (fun y => if M.elt_eq x y then true else false) ys with Some _ => true | _ => false end) (used_in x e'))
+
+    | Eprim_val _ _ e' =>
+        used_in x e'
+
+    | Eapp f _ ys =>
+        orb (if M.elt_eq x f then true else false)
+          (match find (fun y => if M.elt_eq x y then true else false) ys with Some _ => true | _ => false end)
+    | Ehalt y =>
+        (if M.elt_eq x y then true else false)
+    end.
+
+Definition free_unused (in_use : list (var * nat)) (e : exp) : ((list nat) * list (var * nat)) :=
+  let f :=
+    fun (a : list nat) (p : var * nat) =>
+      if (used_in (fst p) e) then
+        a
+      else
+        (snd p) :: a
+  in
+  let free : list nat := fold_left f in_use [] in
+  let in_use' := List.filter (fun p => match find (fun n => n =? (snd p)) free with Some _ => false | _ => true end) in_use in
+  (free, in_use').
+
+
+Definition get_id (x : var) (next_id : nat) (free : list nat) : (nat * nat * list nat) :=
+    match free with
+    | [] =>
+        (next_id, next_id + 1, [])
+    | l :: free' =>
+        (l, next_id, free')
+    end.
+
+Fixpoint create_var_mapping' (next_id : nat) (env : M.tree nat) (in_use : list (var * nat)) (free : list nat) (e : exp) : M.tree nat :=
+  match e with
+  | Efun _ e' =>
+      let '(free', in_use') := free_unused in_use e' in
+      create_var_mapping' next_id env in_use' (free ++ free') e'
+
+  | Econstr x _ _ e' =>
+      let '(free', in_use') := free_unused in_use e' in
+      let '(id, next_id', free'') := get_id x next_id (free' ++ free) in
+      let env' := M.set x id env in
+      create_var_mapping' next_id' env' ((x, id) :: in_use') free'' e'
+
+  | Ecase x arms =>
+      fold_left (fun env' '(t, e') =>
+                   let '(free', in_use') := free_unused in_use e' in
+                   create_var_mapping' next_id env' in_use' (free' ++ free) e') arms env
+
+  | Eproj x _ _ _ e' =>
+      let '(free', in_use') := free_unused in_use e in
+      let '(id, next_id', free'') := get_id x next_id (free' ++ free) in
+      let env' := M.set x id env in
+      create_var_mapping' next_id' env' ((x, id) :: in_use') free'' e'
+
+  | Eletapp x _ _ _ e' =>
+      let '(free', in_use') := free_unused in_use e' in
+      let '(id, next_id', free'') := get_id x next_id (free' ++ free) in
+      let env' := M.set x id env in
+      create_var_mapping' next_id' env' ((x, id) :: in_use') free'' e'
+
+  | Eprim x _ _ e' =>
+      let '(free', in_use') := free_unused in_use e' in
+      let '(id, next_id', free'') := get_id x next_id (free' ++ free) in
+      let env' := M.set x id env in
+      create_var_mapping' next_id' env' ((x, id) :: in_use') free'' e'
+
+  | Eprim_val x _ e' =>
+      let '(free', in_use') := free_unused in_use e' in
+      let '(id, next_id', free'') := get_id x next_id (free' ++ free) in
+      let env' := M.set x id env in
+      create_var_mapping' next_id' env' ((x, id) :: in_use') free'' e'
+
+  | Eapp _ _ _ => env
+
+  | Ehalt _ => env
+  end.
+
 Definition create_local_variable_mapping (vars : list cps.var) : localvar_env :=
   create_var_mapping 0 vars (M.empty _).
 
-
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
                               (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
-  let locals := collect_local_variables body in
-  let lenv := create_local_variable_mapping (args ++ locals) in
+  (* let locals := collect_local_variables body in *)
+
+  let (next_id, lenv) := fold_left (fun '(next_id, env) v => (next_id + 1, M.set v next_id env)) args (0, M.empty _) in
+
+  let lenv' := create_var_mapping' next_id lenv [] [] body in
+
+  let max_id := M.fold1 (fun n id => if n <? id then id else n) lenv' next_id in
+
+  (* let lenv := create_local_variable_mapping (args ++ locals) in *)
 
   fn_var <- translate_var nenv fenv name "translate function" ;;
-  body_res <- translate_exp nenv cenv lenv fenv body ;;
+  body_res <- translate_exp nenv cenv lenv' fenv body ;;
   Ret {| fidx := fn_var
        ; export_name := show_tree (show_var nenv name)
        ; type := Tf (map (fun _ => T_i32) args) []
-       ; locals := map (fun _ => T_i32) locals
+       ; locals := List.repeat T_i32 ((max_id + 1) - next_id)
        ; body := body_res
        |}.
 
@@ -622,14 +726,22 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                | Efun _ exp => Ret exp
                | _ => Err "unreachable"
                end;;
-  let main_vars := collect_local_variables main_expr in
-  let main_lenv := create_local_variable_mapping main_vars in
+
+  (* let main_vars := collect_local_variables main_expr in *)
+  (* let main_lenv := create_local_variable_mapping main_vars in *)
+
+  (* let (next_id, lenv) := fold_left (fun '(next_id, env) v => (next_id + 1, M.set v next_id env)) args (0, M.empty _) in *)
+
+  let main_lenv := create_var_mapping' 0 (M.empty _) [] [] main_expr in
+
+  let max_id := M.fold1 (fun n id => if n <? id then id else n) main_lenv 0 in
+
   main_instr <- translate_exp nenv cenv main_lenv fname_mapping main_expr ;;
 
   let main_function := {| fidx := main_function_idx
                         ; export_name := main_function_name
                         ; type := Tf [] []
-                        ; locals := map (fun _ => T_i32) main_vars
+                        ; locals := List.repeat T_i32 (max_id + 1) (* map (fun _ => T_i32) main_vars *)
                         ; body := main_instr
                         |}
   in
