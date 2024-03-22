@@ -418,18 +418,17 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       | _ => (* n > 0 ary constructor  *)
           (* Boxed representation *)
           store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
-          (* Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++ *)
           Ret (grow_memory_if_necessary page_size ++
-                 [ BI_get_global result_out_of_mem
-                 ; BI_const (nat_to_value 1)
-                 ; BI_relop T_i32 (Relop_i ROI_eq)
-                 ; BI_if (Tf [] [])
-                     [ BI_return ]
-                       (store_constr ++
-                          [ BI_get_global constr_alloc_ptr
-                          ; BI_set_local x_var
-                          ] ++ following_instr)
-            ])
+              [ BI_get_global result_out_of_mem
+              ; BI_const (nat_to_value 1)
+              ; BI_relop T_i32 (Relop_i ROI_eq)
+              ; BI_if (Tf [] [])
+                [ BI_return ]
+                []
+              ] ++ store_constr ++
+              [ BI_get_global constr_alloc_ptr
+              ; BI_set_local x_var
+              ] ++ following_instr)
       end
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
@@ -477,8 +476,10 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       Ret (instr_call ++ [ BI_get_global result_out_of_mem
                          ; BI_if (Tf nil nil)
                             [ BI_return ]
-                            ([BI_get_global result_var; BI_set_local x_var] ++ following_instr)
-                         ])
+                            []
+                         ; BI_get_global result_var
+                         ; BI_set_local x_var
+                         ] ++ following_instr)
 
    | Eapp f ft ys => translate_call nenv lenv fenv f ys true
 
@@ -486,23 +487,23 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
        following_instrs <- translate_exp nenv cenv lenv fenv e' ;;
        x_var <- translate_var nenv lenv x "translate_exp prim val" ;;
        val <- translate_primitive p ;;
-           Ret (grow_memory_if_necessary page_size ++
-                 [ BI_get_global result_out_of_mem
-                 ; BI_const (nat_to_value 1)
-                 ; BI_relop T_i32 (Relop_i ROI_eq)
-                 ; BI_if (Tf [] [])
-                     [ BI_return ]
-                     ([ BI_get_global global_mem_ptr
-                      ; BI_const (VAL_int64 val)
-                      ; BI_store T_i64 None 2%N 0%N
-                      ; BI_get_global global_mem_ptr
-                      ; BI_set_local x_var
-                      ; BI_get_global global_mem_ptr
-                      ; BI_const (nat_to_value 8)
-                      ; BI_binop T_i32 (Binop_i BOI_add)
-                      ; BI_set_global global_mem_ptr
-                      ] ++ following_instrs)
-                 ])
+       Ret (grow_memory_if_necessary page_size ++
+           [ BI_get_global result_out_of_mem
+           ; BI_const (nat_to_value 1)
+           ; BI_relop T_i32 (Relop_i ROI_eq)
+           ; BI_if (Tf [] [])
+               [ BI_return ]
+               []
+           ; BI_get_global global_mem_ptr
+           ; BI_const (VAL_int64 val)
+           ; BI_store T_i64 None 2%N 0%N
+           ; BI_get_global global_mem_ptr
+           ; BI_set_local x_var
+           ; BI_get_global global_mem_ptr
+           ; BI_const (nat_to_value 8)
+           ; BI_binop T_i32 (Binop_i BOI_add)
+           ; BI_set_global global_mem_ptr
+           ] ++ following_instrs)
 
    | Eprim x p ys e' => Err "translating prim to Wasm not supported yet"
 
