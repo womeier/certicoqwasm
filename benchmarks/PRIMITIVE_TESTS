@@ -1,2 +1,12 @@
-one
-large_number
+addition
+addition_primitive
+subtraction
+subtraction_primitive
+multiplication
+multiplication_primitive
+division
+division_primitive
+modulus
+modulus_primitive
+list_sum
+list_sum_primitive

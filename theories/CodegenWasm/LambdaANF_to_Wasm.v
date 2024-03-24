@@ -85,13 +85,21 @@ Fixpoint check_restrictions (e : exp) : error Datatypes.unit :=
 (* imported, for printing result *)
 Definition write_char_function_idx : immediate := 0.
 Definition write_char_function_name := "$write_char".
-Definition write_int_function_idx : immediate := 1.
-Definition write_int_function_name := "$write_int".
+
+Definition write_int32_function_idx : immediate := 1.
+Definition write_int32_function_name := "$write_int32".
+
+Definition write_int64_function_idx : immediate := 2.
+Definition write_int64_function_name := "$write_int64".
 
 Definition constr_pp_function_name : string := "$pretty_print_constructor".
-Definition constr_pp_function_idx : immediate := 2.
+Definition constr_pp_function_idx : immediate := 3.
+
+Definition i64_pp_function_name : string := "$pretty_print_i64".
+Definition i64_pp_function_idx : immediate := 4.
+
 Definition main_function_name := "$main_function".
-Definition main_function_idx : immediate := 3.
+Definition main_function_idx : immediate := 5.
 
 (* ***** MAPPINGS ****** *)
 Definition localvar_env := M.tree nat. (* maps variables to their id (id=index in list of local vars) *)
@@ -142,6 +150,177 @@ Definition translate_var (nenv : name_env) (lenv : localvar_env) (v : cps.var) (
   | Some n => Ret n
   | None => Err ("expected to find id for variable " ++ (show_tree (show_var nenv v)) ++ " in var/fvar mapping: " ++ err)
   end.
+
+Definition prim_op_wrap gmp res tag instrs : list basic_instruction :=
+        [ BI_get_global gmp
+          ; BI_const (VAL_int32 (Wasm_int.Int32.repr (BinInt.Z.of_nat tag)))
+          ; BI_store T_i32 None 2%N 0%N
+          ; BI_get_global gmp ] ++
+          instrs ++
+          [ BI_get_global gmp
+          ; BI_set_global res
+          ; BI_get_global gmp
+          ; BI_const (VAL_int32 (Wasm_int.Int32.repr 12%Z))
+          ; BI_binop T_i32 (Binop_i BOI_add)
+          ; BI_set_global gmp ].
+
+
+
+Definition prim_int63_add : (string * (nat -> nat -> nat -> (function_type * list basic_instruction))) :=
+  let gen_def :=
+    fun gmp res tag =>
+      let body :=
+        prim_op_wrap gmp res tag
+          [ BI_get_local 0
+          ; BI_load T_i64 None 2%N 4%N
+          ; BI_get_local 1
+          ; BI_load T_i64 None 2%N 4%N
+          ; BI_binop T_i64 (Binop_i BOI_add)
+          ; BI_store T_i64 None 2%N 4%N
+        ]
+      in
+      (Tf [T_i32 ; T_i32] [], body)
+  in
+  ("prim_int63_add", gen_def).
+
+Definition prim_int63_sub : (string * (nat -> nat -> nat -> (function_type * list basic_instruction))) :=
+  let gen_def :=
+    fun gmp res tag =>
+      let body :=
+        prim_op_wrap gmp res tag
+          [ BI_get_local 0
+          ; BI_load T_i64 None 2%N 4%N
+          ; BI_get_local 1
+          ; BI_load T_i64 None 2%N 4%N
+          ; BI_binop T_i64 (Binop_i BOI_sub)
+          ; BI_store T_i64 None 2%N 4%N
+        ]
+      in
+      (Tf [T_i32 ; T_i32] [], body)
+  in
+  ("prim_int63_sub", gen_def).
+
+
+Definition prim_int63_mul : (string * (nat -> nat -> nat -> (function_type * list basic_instruction))) :=
+  let gen_def :=
+    fun gmp res tag =>
+      let body :=
+        prim_op_wrap gmp res tag
+          [ BI_get_local 0
+          ; BI_load T_i64 None 2%N 4%N
+          ; BI_get_local 1
+          ; BI_load T_i64 None 2%N 4%N
+          ; BI_binop T_i64 (Binop_i BOI_mul)
+          ; BI_store T_i64 None 2%N 4%N
+        ]
+      in
+      (Tf [T_i32 ; T_i32] [], body)
+  in
+  ("prim_int63_mul", gen_def).
+
+Definition prim_int63_mod : (string * (nat -> nat -> nat -> (function_type * list basic_instruction))) :=
+  let gen_def :=
+    fun gmp res tag =>
+      let body :=
+        prim_op_wrap gmp res tag
+          [ BI_get_local 0
+          ; BI_load T_i64 None 2%N 4%N
+          ; BI_get_local 1
+          ; BI_load T_i64 None 2%N 4%N
+          ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
+          ; BI_store T_i64 None 2%N 4%N
+        ]
+      in
+      (Tf [T_i32 ; T_i32] [], body)
+  in
+  ("prim_int63_mod", gen_def).
+
+
+Definition prim_int63_div : (string * (nat -> nat -> nat -> (function_type * list basic_instruction))) :=
+  let gen_def :=
+    fun gmp res tag =>
+      let body :=
+        prim_op_wrap gmp res tag
+          [ BI_get_local 0
+          ; BI_load T_i64 None 2%N 4%N
+          ; BI_get_local 1
+          ; BI_load T_i64 None 2%N 4%N
+          ; BI_binop T_i64 (Binop_i (BOI_div SX_U))
+          ; BI_store T_i64 None 2%N 4%N
+        ]
+      in
+      (Tf [T_i32 ; T_i32] [], body)
+  in
+  ("prim_int63_div", gen_def).
+
+(* Definition prim_int63_eq : (string * (nat -> nat -> nat -> (function_type * list basic_instruction))) := *)
+(*   let gen_def := *)
+(*     fun gmp res tag => *)
+(*       let body := *)
+(*         [ BI_get_global gmp *)
+(*           ; BI_get_local 0 *)
+(*           ; BI_load T_i64 None 2%N 4%N *)
+(*           ; BI_get_local 1 *)
+(*           ; BI_load T_i64 None 2%N 4%N *)
+(*           ; BI_relop T_i64 (Relop_i ROI_eq) *)
+(*           ; BI_store T_i32 None 2%N 0%N *)
+(*           ; BI_get_global gmp *)
+(*           ; BI_set_global res *)
+(*           ; BI_get_global gmp *)
+(*           ; BI_const (VAL_int32 (Wasm_int.Int32.repr 4%Z)) *)
+(*           ; BI_binop T_i32 (Binop_i BOI_add) *)
+(*           ; BI_set_global gmp ] *)
+(*       in *)
+(*       (Tf [T_i32 ; T_i32] [], body) *)
+(*   in *)
+(*   ("prim_int63_eq", gen_def). *)
+
+(* Definition prim_int63_le : (string * (nat -> nat -> nat -> (function_type * list basic_instruction))) := *)
+(*   let gen_def := *)
+(*     fun gmp res tag => *)
+(*       let body := *)
+(*         [ BI_get_global gmp *)
+(*           ; BI_get_local 0 *)
+(*           ; BI_load T_i64 None 2%N 4%N *)
+(*           ; BI_get_local 1 *)
+(*           ; BI_load T_i64 None 2%N 4%N *)
+(*           ; BI_relop T_i64 (Relop_i (ROI_le SX_U)) *)
+(*           ; BI_store T_i32 None 2%N 0%N *)
+(*           ; BI_get_global gmp *)
+(*           ; BI_set_global res *)
+(*           ; BI_get_global gmp *)
+(*           ; BI_const (VAL_int32 (Wasm_int.Int32.repr 4%Z)) *)
+(*           ; BI_binop T_i32 (Binop_i BOI_add) *)
+(*           ; BI_set_global gmp ] *)
+(*       in *)
+(*       (Tf [T_i32 ; T_i32] [], body) *)
+(*   in *)
+(*   ("prim_int63_le", gen_def). *)
+
+(* Definition prim_int63_lt : (string * (nat -> nat -> nat -> (function_type * list basic_instruction))) := *)
+(*   let gen_def := *)
+(*     fun gmp res tag => *)
+(*       let body := *)
+(*         [ BI_get_global gmp *)
+(*           ; BI_get_local 0 *)
+(*           ; BI_load T_i64 None 2%N 4%N *)
+(*           ; BI_get_local 1 *)
+(*           ; BI_load T_i64 None 2%N 4%N *)
+(*           ; BI_relop T_i64 (Relop_i (ROI_lt SX_U)) *)
+(*           ; BI_store T_i32 None 2%N 0%N *)
+(*           ; BI_get_global gmp *)
+(*           ; BI_set_global res *)
+(*           ; BI_get_global gmp *)
+(*           ; BI_const (VAL_int32 (Wasm_int.Int32.repr 4%Z)) *)
+(*           ; BI_binop T_i32 (Binop_i BOI_add) *)
+(*           ; BI_set_global gmp ] *)
+(*       in *)
+(*       (Tf [T_i32 ; T_i32] [], body) *)
+(*   in *)
+(*   ("prim_int63_lt", gen_def). *)
+
+Definition prim_int63_map : list (string * (nat-> nat -> nat -> (function_type * list basic_instruction))) :=
+  [ prim_int63_add ; prim_int63_sub ; prim_int63_mul ; prim_int63_mod ; prim_int63_div ].
 
 (* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)
 
@@ -228,16 +407,37 @@ Definition generate_constr_pp_single_constr (cenv : ctor_env) (nenv : name_env) 
                 []
           ]).
 
-Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : cps.exp) : error wasm_function :=
+Definition i64_pp_function : wasm_function :=
+  let body :=
+    [ BI_get_local 0
+      ; BI_load T_i64 None 2%N 4%N
+      ; BI_call write_int64_function_idx ]
+  in
+  {| fidx := i64_pp_function_idx
+  ; export_name := i64_pp_function_name
+  ; type := Tf [T_i32] []
+  ; locals := []
+  ; body := body
+  |}.
+
+Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (prim_tag : ctor_tag) (e : cps.exp) : error wasm_function :=
   let tags := collect_constr_tags e in
 
   blocks <- sequence (map (generate_constr_pp_single_constr cenv nenv) tags) ;;
 
   let body := (concat blocks) ++
-              (instr_write_string " <can't print constr: ") ++ (* e.g. could be fn-pointer or env-pointer *)
-              [ BI_get_local 0 (* param: ptr to constructor *)
-              ; BI_call write_int_function_idx
-              ] ++ instr_write_string ">" in
+                [ BI_get_local 0
+                  ; BI_load T_i32 None 2%N 0%N
+                  ; BI_const (nat_to_value (Pos.to_nat prim_tag))
+                  ; BI_relop T_i32 (Relop_i ROI_eq)
+                  ; BI_if (Tf nil nil)
+                      ( (instr_write_string " ") ++ [ BI_get_local 0
+                        ; BI_load T_i64 None 2%N 4%N
+                        ; BI_call write_int64_function_idx ])
+                      ((instr_write_string " <can't print constr: ") ++ (* e.g. could be fn-pointer or env-pointer *)
+                          [ BI_get_local 0 (* param: ptr to constructor *)
+                            ; BI_call write_int32_function_idx
+                          ] ++ instr_write_string ">" ) ] in
 
   let _ := ")"  (* hack to fix syntax highlighting bug *)
 
@@ -295,11 +495,12 @@ Definition to_int64 (i : PrimInt63.int) : Wasm_int.Int64.T.
   destruct H. split; lia.
 Defined.
 
-Definition translate_primitive (p : AstCommon.primitive) :=
+Definition translate_primitive_value (p : AstCommon.primitive) :=
   match projT1 p as tag return prim_value tag -> error Wasm_int.Int64.T with
   | AstCommon.primInt => fun i => Ret (to_int64 i)
   | AstCommon.primFloat => fun f => Err "TODO"
   end (projT2 p).
+
 
 (* ***** TRANSLATE CONSTRUCTOR ALLOCATION ****** *)
 
@@ -382,6 +583,20 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 
        ] ++ set_constr_args).
 
+(* **** TRANSLATE PRIMITIVE OPERATIONS **** *)
+
+Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (x : var) (p : prim) (ys : list var) : error (list basic_instruction) :=
+  arg_instrs <-
+    pass_function_args nenv lenv fenv ys ;;
+  x_var <- translate_var nenv lenv x "TODO" ;;
+  fidx <- translate_var nenv fenv p "TODO" ;;
+  Ret (arg_instrs ++
+        [ BI_const (nat_to_value fidx)
+          ; BI_call_indirect (length ys)
+          ; BI_get_global result_var
+          ; BI_set_local x_var
+        ]).
+
 Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
   match es with
   | [] => [ BI_unreachable ]
@@ -401,11 +616,11 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (
 
 (* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
 
-Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (e : exp) : error (list basic_instruction) :=
+Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (penv : prim_env) (prim_tag : ctor_tag) (e : exp) : error (list basic_instruction) :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' =>
-      following_instr <- translate_exp nenv cenv lenv fenv e' ;;
+      following_instr <- translate_exp nenv cenv lenv fenv penv prim_tag e' ;;
       x_var <- translate_var nenv lenv x "translate_exp constr";;
       match ys with
       | [] => Ret ([ BI_const (nat_to_value (Pos.to_nat tg)) (* Nullary constructor *)
@@ -437,7 +652,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
         match arms with
         | [] => Ret ([], [])
         | (t, e)::tl =>
-            instrs <- translate_exp nenv cenv lenv fenv e ;;
+            instrs <- translate_exp nenv cenv lenv fenv penv prim_tag e ;;
             '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions tl ;;
             arity <- get_ctor_arity cenv t ;;
             if arity =? 0 then
@@ -458,7 +673,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
            ])
 
    | Eproj x tg n y e' =>
-      following_instr <- translate_exp nenv cenv lenv fenv e' ;;
+      following_instr <- translate_exp nenv cenv lenv fenv penv prim_tag e' ;;
       y_var <- translate_var nenv lenv y "translate_exp proj y";;
       x_var <- translate_var nenv lenv x "translate_exp proj x";;
 
@@ -471,7 +686,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
 
    | Eletapp x f ft ys e' =>
       x_var <- translate_var nenv lenv x "translate_exp proj x";;
-      following_instr <- translate_exp nenv cenv lenv fenv e' ;;
+      following_instr <- translate_exp nenv cenv lenv fenv penv prim_tag e' ;;
       instr_call <- translate_call nenv lenv fenv f ys false;;
 
       Ret (instr_call ++ [ BI_get_global result_out_of_mem
@@ -483,28 +698,40 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    | Eapp f ft ys => translate_call nenv lenv fenv f ys true
 
    | Eprim_val x p e' =>
-       following_instrs <- translate_exp nenv cenv lenv fenv e' ;;
-       x_var <- translate_var nenv lenv x "translate_exp prim val" ;;
-       val <- translate_primitive p ;;
+       following_instrs <- translate_exp nenv cenv lenv fenv penv prim_tag e' ;;
+       x_var <- translate_var nenv lenv x "translate_exp prim val x" ;;
+       val <- translate_primitive_value p ;;
            Ret (grow_memory_if_necessary page_size ++
                  [ BI_get_global result_out_of_mem
-                 ; BI_const (nat_to_value 1)
-                 ; BI_relop T_i32 (Relop_i ROI_eq)
                  ; BI_if (Tf [] [])
                      [ BI_return ]
                      ([ BI_get_global global_mem_ptr
-                      ; BI_const (VAL_int64 val)
-                      ; BI_store T_i64 None 2%N 0%N
-                      ; BI_get_global global_mem_ptr
-                      ; BI_set_local x_var
-                      ; BI_get_global global_mem_ptr
-                      ; BI_const (nat_to_value 8)
-                      ; BI_binop T_i32 (Binop_i BOI_add)
-                      ; BI_set_global global_mem_ptr
+                        ; BI_const (nat_to_value (Pos.to_nat prim_tag))
+                        ; BI_store T_i32 None 2%N 0%N
+                        ; BI_get_global global_mem_ptr
+                        ; BI_set_local x_var
+                        ; BI_get_global global_mem_ptr
+                        ; BI_const (VAL_int64 val)
+                        ; BI_store T_i64 None 2%N 4%N
+                        ; BI_get_global global_mem_ptr
+                        ; BI_const (nat_to_value 12)
+                        ; BI_binop T_i32 (Binop_i BOI_add)
+                        ; BI_set_global global_mem_ptr
                       ] ++ following_instrs)
                  ])
 
-   | Eprim x p ys e' => Err "translating prim to Wasm not supported yet"
+   | Eprim x p ys e' =>
+       match M.get p penv with
+       | None => Err "TODO"
+       | Some _ =>
+           following_instrs <- translate_exp nenv cenv lenv fenv penv prim_tag e';;
+           prim_op_instrs <- translate_primitive_operation nenv lenv fenv x p ys ;;
+           Ret (grow_memory_if_necessary page_size ++
+                 [ BI_get_global result_out_of_mem
+                 ; BI_if (Tf [] [])
+                     [ BI_return ]
+                     (prim_op_instrs ++ following_instrs) ])
+       end
 
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_exp halt";;
@@ -539,14 +766,28 @@ Fixpoint create_var_mapping (start_id : nat) (vars : list cps.var) (env : M.tree
 Definition create_local_variable_mapping (vars : list cps.var) : localvar_env :=
   create_var_mapping 0 vars (M.empty _).
 
+Definition translate_primitive_function (nenv : name_env) (fenv : fname_env) (prim_tag : ctor_tag) (prim : var * (kername * string * bool * nat)) : error wasm_function :=
+  let '(p, (_, name, _, _)) := prim in
+  fn_var <- translate_var nenv fenv p "translate function" ;;
+  '(fn_type, body) <- match find (fun '(pname, _) => String.eqb name pname) prim_int63_map with
+                      | Some (_, gen_def) => Ret (gen_def global_mem_ptr result_var (Pos.to_nat prim_tag))
+                      | _ => Err "TODO"
+                      end ;;
 
-Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
-                              (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
+  Ret ({| fidx := fn_var
+       ; export_name := name
+       ; type := fn_type
+       ; locals := []
+       ; body := body
+       |}).
+
+Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env) (penv : prim_env)
+                              (name : cps.var) (args : list cps.var) (prim_tag : ctor_tag)  (body : exp) : error wasm_function :=
   let locals := collect_local_variables body in
   let lenv := create_local_variable_mapping (args ++ locals) in
 
   fn_var <- translate_var nenv fenv name "translate function" ;;
-  body_res <- translate_exp nenv cenv lenv fenv body ;;
+  body_res <- translate_exp nenv cenv lenv fenv penv prim_tag body  ;;
   Ret {| fidx := fn_var
        ; export_name := show_tree (show_var nenv name)
        ; type := Tf (map (fun _ => T_i32) args) []
@@ -554,34 +795,44 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
        ; body := body_res
        |}.
 
-Fixpoint translate_functions (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
+Fixpoint translate_functions (nenv : name_env) (cenv : ctor_env) (fenv : fname_env) (penv : prim_env) (prim_tag : ctor_tag)
                              (fds : fundefs) : error (list wasm_function) :=
   match fds with
   | Fnil => Ret []
   | Fcons x tg xs e fds' =>
-      fn <- translate_function nenv cenv fenv x xs e ;;
-      following <- translate_functions nenv cenv fenv fds' ;;
+      fn <- translate_function nenv cenv fenv penv x xs prim_tag e ;;
+      following <- translate_functions nenv cenv fenv penv prim_tag fds' ;;
       Ret (fn :: following)
   end.
 
 
+
+
 (* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
 
-Definition collect_function_vars (e : cps.exp) : list cps.var :=
+Fixpoint collect_function_vars (e : cps.exp) : list cps.var :=
     match e with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
       (fix iter (fds : fundefs) : list cps.var :=
           match fds with
           | Fnil => []
-          | Fcons x _ _ _ fds' => x :: (iter fds')
+          | Fcons x _ _ e' fds' =>
+              x :: (iter fds') ++ collect_function_vars e'
           end) fds
+    | Eprim _ p _ e' => p :: collect_function_vars e'
+    | Ecase _ arms =>
+        flat_map (fun a => collect_function_vars (snd a)) arms
+    | Econstr _ _ _ e'
+    | Eproj _ _ _ _ e'
+    | Eletapp _ _ _ _ e'
+    | Eprim_val _ _ e' => collect_function_vars e'
     | _ => []
     end.
 
 (* maps function names to ids (id=index in function list of module) *)
 Definition create_fname_mapping (e : exp) : fname_env :=
   let fun_vars := collect_function_vars e in
-  create_var_mapping 4 fun_vars (M.empty _).
+  create_var_mapping 6 fun_vars (M.empty _).
 
 Fixpoint list_function_types (n : nat) : list function_type :=
   match n with
@@ -599,13 +850,18 @@ Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_elemen
                |} :: (table_element_mapping len' (S startidx))
   end.
 
-
-Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : error (module * fname_env * localvar_env) :=
+Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_env) (e : exp) : error (module * fname_env * localvar_env) :=
   _ <- check_restrictions e;;
+
+  let prim_tag := Pos.add 1%positive (M.fold (fun n t _ => Pos.max n t) cenv 1%positive) in
 
   let fname_mapping := create_fname_mapping e in
 
-  constr_pp_function <- generate_constr_pp_function cenv nenv e;;
+  (* let next_fn_id : nat := M.fold1 (fun n n' => max n n') fname_mapping 4 in *)
+
+  (* let '(fname_mapping', _) := M.fold (fun '(m, next_id) p _ => (M.set p next_id m, next_id + 1)) penv (fname_mapping, next_fn_id) in *)
+
+  constr_pp_function <- generate_constr_pp_function cenv nenv prim_tag e;;
 
   (* ensure toplevel exp is an Efun*)
   let top_exp := match e with
@@ -614,9 +870,11 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                  end in
 
   fns <- match top_exp with
-         | Efun fds exp => translate_functions nenv cenv fname_mapping fds
+         | Efun fds exp => translate_functions nenv cenv fname_mapping penv prim_tag fds
          | _ => Err "unreachable"
          end ;;
+
+  prim_fns <- sequence (List.map (translate_primitive_function nenv fname_mapping prim_tag) (List.filter (fun '(p, _) => match fname_mapping ! p with Some _ => true | _ => false end) (M.elements penv))) ;;
 
   main_expr <- match top_exp with
                | Efun _ exp => Ret exp
@@ -624,7 +882,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                end;;
   let main_vars := collect_local_variables main_expr in
   let main_lenv := create_local_variable_mapping main_vars in
-  main_instr <- translate_exp nenv cenv main_lenv fname_mapping main_expr ;;
+  main_instr <- translate_exp nenv cenv main_lenv fname_mapping penv prim_tag main_expr ;;
 
   let main_function := {| fidx := main_function_idx
                         ; export_name := main_function_name
@@ -633,7 +891,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                         ; body := main_instr
                         |}
   in
-  let functions := [constr_pp_function; main_function] ++ fns in
+  let functions := [constr_pp_function; i64_pp_function; main_function] ++ fns ++ prim_fns in
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (Mk_funcidx f.(fidx))
                                 |}) functions (* function exports for debug names *)
@@ -645,23 +903,19 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                      |} ::
                     {| modexp_name := String.print "result"
                      ; modexp_desc := MED_global (Mk_globalidx result_var)
-                    |} ::
-                    {| modexp_name := String.print "memory"
-                    ; modexp_desc := MED_mem (Mk_memidx 0)
                     |} :: nil
   in
-
-  let elements := table_element_mapping (length fns + 4) 0 in
+  let elements := table_element_mapping (length (fns ++ prim_fns) + 6) 0 in
 
   let functions_final := map (fun f => {| modfunc_type := Mk_typeidx (match f.(type) with Tf args _ => length args end)
                                         ; modfunc_locals := f.(locals)
                                         ; modfunc_body := f.(body)
-                                        |}) functions in
+                                       |}) functions in
   let module :=
-      {| mod_types := list_function_types (Z.to_nat max_function_args) (* more than required, doesn't hurt*)
+      {| mod_types := (list_function_types (Z.to_nat max_function_args)) ++ [Tf [T_i64] []] (* more than required, doesn't hurt*)
 
        ; mod_funcs := functions_final
-       ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length fns + 4)
+       ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length (fns ++ prim_fns) + 6)
                                                             ; lim_max := None |}
                                             ; tt_elem_type := ELT_funcref
                                             |} |}]
@@ -692,8 +946,12 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                          ; imp_desc := ID_func 1
                          |} ::
                         {| imp_module := String.print "env"
-                         ; imp_name := String.print write_int_function_name
+                         ; imp_name := String.print write_int32_function_name
                          ; imp_desc := ID_func 1
+                         |} ::
+                        {| imp_module := String.print "env"
+                         ; imp_name := String.print write_int64_function_name
+                         ; imp_desc := ID_func (Z.to_nat max_function_args + 1)
                          |} :: nil
 
        ; mod_exports := exports

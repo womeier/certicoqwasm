@@ -23,7 +23,8 @@ function write_char (value) {
 let importObject = {
     env: {
         $write_char: write_char,
-        $write_int: write_int,
+        $write_int32: write_int,
+        $write_int64: write_int,
     }
 };
 
