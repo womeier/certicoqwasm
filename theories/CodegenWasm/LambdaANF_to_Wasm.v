@@ -416,11 +416,12 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (
 
 (* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
 
-Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (e : exp) : error (list basic_instruction) :=
+(* param depth: of current label-nesting so *br depth* is equivalent to *return* *)
+Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (e : exp) (depth : nat) : error (list basic_instruction) :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' =>
-      following_instr <- translate_exp nenv cenv lenv fenv e' ;;
+      following_instr <- translate_exp nenv cenv lenv fenv e' depth;;
       x_var <- translate_var nenv lenv x "translate_exp constr";;
       match ys with
       | [] => Ret ([ BI_const (nat_to_value (Pos.to_nat tg)) (* Nullary constructor *)
@@ -438,9 +439,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
                ; BI_get_global result_out_of_mem
                ; BI_const (nat_to_value 1)
                ; BI_relop T_i32 (Relop_i ROI_eq)
-               ; BI_if (Tf [] [])
-                 [ BI_return ]
-                 []
+               ; BI_br_if depth
                ] ++ store_constr ++
                [ BI_get_global constr_alloc_ptr
                ; BI_set_local x_var
@@ -452,7 +451,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
         match arms with
         | [] => Ret ([], [])
         | (t, e)::tl =>
-            instrs <- translate_exp nenv cenv lenv fenv e ;;
+            instrs <- translate_exp nenv cenv lenv fenv e (1 + depth);;
             '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions tl ;;
             arity <- get_ctor_arity cenv t ;;
             if arity =? 0 then
@@ -473,7 +472,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
            ])
 
    | Eproj x tg n y e' =>
-      following_instr <- translate_exp nenv cenv lenv fenv e' ;;
+      following_instr <- translate_exp nenv cenv lenv fenv e' depth;;
       y_var <- translate_var nenv lenv y "translate_exp proj y";;
       x_var <- translate_var nenv lenv x "translate_exp proj x";;
 
@@ -486,13 +485,11 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
 
    | Eletapp x f ft ys e' =>
       x_var <- translate_var nenv lenv x "translate_exp proj x";;
-      following_instr <- translate_exp nenv cenv lenv fenv e' ;;
+      following_instr <- translate_exp nenv cenv lenv fenv e' depth;;
       instr_call <- translate_call nenv lenv fenv f ys false;;
 
       Ret (instr_call ++ [ BI_get_global result_out_of_mem
-                         ; BI_if (Tf nil nil)
-                            [ BI_return ]
-                            []
+                         ; BI_br_if depth
                          ; BI_get_global result_var
                          ; BI_set_local x_var
                          ] ++ following_instr)
@@ -500,7 +497,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    | Eapp f ft ys => translate_call nenv lenv fenv f ys true
 
    | Eprim_val x p e' =>
-       following_instrs <- translate_exp nenv cenv lenv fenv e' ;;
+       following_instrs <- translate_exp nenv cenv lenv fenv e' depth;;
        x_var <- translate_var nenv lenv x "translate_exp prim val" ;;
        val <- translate_primitive p ;;
        Ret ([ BI_const (N_to_value page_size)
@@ -508,9 +505,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
             ; BI_get_global result_out_of_mem
             ; BI_const (nat_to_value 1)
             ; BI_relop T_i32 (Relop_i ROI_eq)
-            ; BI_if (Tf [] [])
-                [ BI_return ]
-                []
+            ; BI_br_if depth
             ; BI_get_global global_mem_ptr
             ; BI_const (VAL_int64 val)
             ; BI_store T_i64 None 2%N 0%N
@@ -564,7 +559,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   let lenv := create_local_variable_mapping (args ++ locals) in
 
   fn_idx <- translate_var nenv fenv name "translate function" ;;
-  body_res <- translate_exp nenv cenv lenv fenv body ;;
+  body_res <- translate_exp nenv cenv lenv fenv body 0;;
   Ret {| fidx := fn_idx
        ; export_name := show_tree (show_var nenv name)
        ; type := Tf (map (fun _ => T_i32) args) []
@@ -643,7 +638,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (e : exp) : err
                end;;
   let main_vars := collect_local_variables main_expr in
   let main_lenv := create_local_variable_mapping main_vars in
-  main_instr <- translate_exp nenv cenv main_lenv fname_mapping main_expr ;;
+  main_instr <- translate_exp nenv cenv main_lenv fname_mapping main_expr 0;;
 
   let main_function := {| fidx := main_function_idx
                         ; export_name := main_function_name
