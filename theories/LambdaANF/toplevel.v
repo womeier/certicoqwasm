@@ -74,7 +74,9 @@ Section IDENT.
                                 let prim_env := make_prim_env prims in
                                 match convert_top_anf prim_env fun_fun_tag default_ctor_tag default_ind_tag next_var p with
                                 | (compM.Ret e, data) =>
-                                  let (_, ctag, itag, ftag, cenv, fenv, nenv, _, _) := data in
+                                    let (_, ctag, itag, ftag, cenv, fenv, nenv, _, _) := data in
+
+
                                   Ret (M.empty _, prim_env, cenv, ctag, itag, nenv, fenv, M.empty _, e)
                                 | (compM.Err s, _) => Err s
                                 end) src.
@@ -206,8 +208,9 @@ Section IDENT.
       | compM.Err s =>
         (Err ("Failed compiling LambdaANF program: " ++ s)%bs, "")
       | compM.Ret e =>
-        let (_, ctag, itag, ftag, cenv, fenv, nenv, _, log) := c_data' in
-        (Ret (prims, cenv, ctag, itag, nenv, fenv, M.empty _, e), log_to_string log)
+          let (_, ctag, itag, ftag, cenv, fenv, nenv, _, log) := c_data' in
+          let s := cps_show.show_cenv cenv tt in              
+        (Ret (prims, cenv, ctag, itag, nenv, fenv, M.empty _, e), s)
       end%positive.
     
   End Pipeline.

@@ -56,7 +56,7 @@ let importObject = {
 
             const start_pp = Date.now();
 	    
-            // obj.instance.exports.$pretty_print_constructor(res_value); console.log(""); // newline
+            obj.instance.exports.$pretty_print_constructor(res_value); console.log(""); // newline
             const stop_pp = Date.now();
             time_pp = stop_pp - start_pp;
         }
