@@ -1,3 +1,11 @@
-fn main() {
-  println!("{:?}", Program::new().CertiCoq_Benchmarks_tests_color())
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+extern "C" {
+  fn write_string(s: &str);
+}
+
+#[wasm_bindgen]
+pub fn main() {
+  write_string(&format!("{:?}", Program::new().CertiCoq_Benchmarks_tests_color()))
 }
