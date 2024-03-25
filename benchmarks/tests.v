@@ -4,6 +4,8 @@ Require Import CertiCoq.Benchmarks.lib.Binom.
 Require Import CertiCoq.Benchmarks.lib.Color.
 Require Import CertiCoq.Benchmarks.lib.sha256.
 Require Import CertiCoq.Benchmarks.lib.coind.
+Require Import CertiCoq.Benchmarks.lib.BersteinYangTermination.
+
 From MetaCoq.Utils Require Import bytestring MCString.
 From CertiCoq.Plugin Require Import CertiCoq.
 
@@ -81,6 +83,47 @@ Definition sha := sha256.SHA_256 (sha256.str_to_bytes test).
 
 Definition sha_fast := sha256.SHA_256' (sha256.str_to_bytes test).
 
+
+(*******************************************************************)
+(* from https://github.com/AU-COBRA/coq-rust-extraction/blob/master/tests/theories/InternalFix.v *)
+
+Fixpoint ack (n m : nat) : nat :=
+  match n with
+  | O => S m
+  | S p => let fix ackn (m : nat) :=
+            match m with
+            | O => ack p 1
+            | S q => ack p (ackn q)
+            end
+          in ackn m
+  end.
+Definition ack_3_9 := ack 3 9.
+
+Fixpoint even n :=
+  match n with
+  | O => true
+  | S m => odd m
+  end
+  with odd n :=
+    match n with
+    | O => false
+    | S k => even k
+    end.
+Definition even_10000 := even 10000.
+
+Definition bernstein_yang := W 1.
+
+Eval compute in "Compiling ack".
+CertiCoq Compile Wasm -debug ack_3_9.
+
+Eval compute in "Compiling even_10000".
+CertiCoq Compile Wasm -debug even_10000.
+
+Eval compute in "Bernstein yang termination".
+CertiCoq Compile Wasm -debug bernstein_yang.
+(* bernstein_yang: compilation fine, runs for quite long *)
+
+(*******************************************************************)
 Eval compute in "Compiling demo1".
 CertiCoq Compile Wasm -debug demo1.
 
@@ -130,6 +173,7 @@ CertiCoq Compile Wasm -time -debug vs_hard.
 
 Eval compute in "Compiling binom".
 CertiCoq Compile Wasm -time -debug binom.
+(* CertiCoq Show IR -file "binom" binom. *)
 (* CertiCoq Compile Wasm -cps -time -debug binom. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" binom. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" binom. *)
@@ -144,10 +188,9 @@ CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
 (* CertiCoq Generate Glue -file "glue_lazy_factorial" [ ]. *)
 
-
-(* Eval compute in "Compiling color". *)
 Eval compute in "Compiling color".
 CertiCoq Compile Wasm -time -debug color.
+
 (* CertiCoq Compile -O 0 -time -cps -ext "_cps" color. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" color. *)
 (* CertiCoq Generate Glue -file "glue_color" [ prod, Z ]. *)

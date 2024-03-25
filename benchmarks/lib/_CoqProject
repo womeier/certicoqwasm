@@ -8,3 +8,4 @@ sha256.v
 # bignum.v
 # SqlQueries.v
 coind.v
+BersteinYangTermination.v
