@@ -44,12 +44,15 @@ CertiCoq Compile Wasm modulus.
 
 CertiCoq Compile Wasm modulus_primitive.
 
-Definition list_sum := List.fold_left plus (List.repeat 1 10000) 0.
+Definition list_sum := List.fold_left plus (List.repeat 1 (10 * 1000)) 0.
 
 Definition list_sum_primitive :=
-  List.fold_left Uint63.add (List.repeat 1%uint63 10000) 0%uint63.
+  List.fold_left Uint63.add (List.repeat 1%uint63 (10 * 1000)) 0%uint63.
 
 CertiCoq Compile Wasm list_sum.
 
 CertiCoq Compile Wasm list_sum_primitive.
+
+
+
 
