@@ -1,4 +1,4 @@
-Require Import Arith List String.
+Require Import Arith List String (* Uint63 *).
 Require Import CertiCoq.Benchmarks.lib.vs.
 Require Import CertiCoq.Benchmarks.lib.Binom.
 Require Import CertiCoq.Benchmarks.lib.Color.
@@ -38,6 +38,9 @@ Definition demo3 := andb.
 (* List sum *)
 
 Definition list_sum := List.fold_left plus (List.repeat 1 100) 0.
+
+(* Definition list_sum_primitive :=
+List.fold_left Uint63.add (List.repeat 1%uint63 100) 0%uint63. *)
 
 (* Veristar *)
 
@@ -107,6 +110,8 @@ CertiCoq Compile Wasm -debug list_sum.
 (* CertiCoq Compile -cps -ext "_cps_opt" list_sum. *)
 (* CertiCoq Generate Glue -file "glue_list_sum" [ nat ]. *)
 
+(* Eval compute in "Compiling list_sum_primitive".
+CertiCoq Compile Wasm -debug list_sum_primitive. *)
 
 Eval compute in "Compiling vs_easy".
 CertiCoq Compile Wasm -time -debug vs_easy.
