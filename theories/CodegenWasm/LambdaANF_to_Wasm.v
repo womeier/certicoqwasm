@@ -68,21 +68,10 @@ Fixpoint check_restrictions (e : exp) : error Datatypes.unit :=
   | Ehalt _ => Ret tt
    end.
 
-(* ***** HARDCODED FUNCTION IDs ****** *)
-(*  In Wasm, functions are referred to by their index (in the list of functions of a module).
+(* ***** FUNCTIONS and GLOBALS ****** *)
+(*  In Wasm, functions and globals are referred to by their index in the order they are listed *)
 
-    _idx  : idx in list of wasm functions
-    _var  : cps.var
-    _name : export name
-
-    first 4 functions hardcoded:
-    0,1) imported: print char/int to stdout
-      2) debug: write S-expr of constr to stdout
-      3) main function: contains the translated main expression
-     ... then follow the translated functions
- *)
-
-(* imported, for printing result *)
+(* imported, print char/int to stdout *)
 Definition write_char_function_idx : immediate := 0.
 Definition write_char_function_name := "$write_char".
 
@@ -92,14 +81,28 @@ Definition write_int32_function_name := "$write_int32".
 Definition write_int64_function_idx : immediate := 2.
 Definition write_int64_function_name := "$write_int64".
 
+(* write S-expr of constr to stdout *)
 Definition constr_pp_function_name : string := "$pretty_print_constructor".
 Definition constr_pp_function_idx : immediate := 3.
 
-Definition i64_pp_function_name : string := "$pretty_print_i64".
-Definition i64_pp_function_idx : immediate := 4.
+(* grow_mem: grow linear mem by number of bytes if necessary *)
+Definition grow_mem_function_name := "$grow_mem_if_necessary".
+Definition grow_mem_function_idx := 4.
 
+(* main function: contains the translated main expression *)
 Definition main_function_name := "$main_function".
 Definition main_function_idx : immediate := 5.
+
+(* then follow the translated functions,
+   index of first translated lANF fun, a custom fun should be added before, and this var increased by 1
+   (the proof will still break at various places)  *)
+Definition num_custom_funs := 6.
+
+(* global vars *)
+Definition global_mem_ptr    : immediate := 0. (* ptr to free memory, increased when new 'objects' are allocated, there is no GC *)
+Definition constr_alloc_ptr  : immediate := 1. (* ptr to beginning of constr alloc in linear mem *)
+Definition result_var        : immediate := 2. (* final result *)
+Definition result_out_of_mem : immediate := 3.
 
 (* ***** MAPPINGS ****** *)
 Definition localvar_env := M.tree nat. (* maps variables to their id (id=index in list of local vars) *)
@@ -107,12 +110,6 @@ Definition fname_env    := M.tree nat. (* maps function variables to their id (i
 
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
-
-(* global vars *)
-Definition global_mem_ptr    : immediate := 0. (* ptr to free memory, increased when new 'objects' are allocated, there is no GC *)
-Definition constr_alloc_ptr  : immediate := 1. (* ptr to beginning of constr alloc in linear mem *)
-Definition result_var        : immediate := 2. (* final result *)
-Definition result_out_of_mem : immediate := 3.
 
 (* target type for generating functions, contains more info than the one from Wasm *)
 Record wasm_function :=
@@ -322,6 +319,23 @@ Definition prim_int63_div : (string * (nat -> nat -> nat -> (function_type * lis
 Definition prim_int63_map : list (string * (nat-> nat -> nat -> (function_type * list basic_instruction))) :=
   [ prim_int63_add ; prim_int63_sub ; prim_int63_mul ; prim_int63_mod ; prim_int63_div ].
 
+
+Definition is_function_var (fenv : fname_env) (v : cps.var) : bool :=
+  match M.get v fenv with
+  | Some _ => true
+  | None => false
+  end.
+
+Definition instr_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (v : cps.var) : error basic_instruction :=
+  if is_function_var fenv v
+    then fidx <- translate_var nenv fenv v "translate local var read: obtaining function id" ;;
+         Ret (BI_const (nat_to_value fidx)) (* passing id of function <var_name> *)
+
+    else var <- translate_var nenv lenv v "instr_local_var_read: normal var";;
+         Ret (BI_get_local var).
+
+
+
 (* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)
 
 Module S_pos := MSetAVL.Make Positive_as_OT.
@@ -407,19 +421,6 @@ Definition generate_constr_pp_single_constr (cenv : ctor_env) (nenv : name_env) 
                 []
           ]).
 
-Definition i64_pp_function : wasm_function :=
-  let body :=
-    [ BI_get_local 0
-      ; BI_load T_i64 None 2%N 4%N
-      ; BI_call write_int64_function_idx ]
-  in
-  {| fidx := i64_pp_function_idx
-  ; export_name := i64_pp_function_name
-  ; type := Tf [T_i32] []
-  ; locals := []
-  ; body := body
-  |}.
-
 Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (prim_tag : ctor_tag) (e : cps.exp) : error wasm_function :=
   let tags := collect_constr_tags e in
 
@@ -450,19 +451,40 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (prim
        |}.
 
 
-Definition is_function_var (fenv : fname_env) (v : cps.var) : bool :=
-  match M.get v fenv with
-  | Some _ => true
-  | None => false
-  end.
+(* ***** GENERATE FUNCTION TO GROW LINEAR MEMORY ****** *)
 
-Definition instr_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (v : cps.var) : error basic_instruction :=
-  if is_function_var fenv v
-    then fidx <- translate_var nenv fenv v "translate local var read: obtaining function id" ;;
-         Ret (BI_const (nat_to_value fidx)) (* passing id of function <var_name> *)
+(* a page is 2^16 bytes, expected num of required bytes in local 0 *)
+Definition grow_memory_if_necessary : list basic_instruction :=
+  (* required number of total pages *)
+  [ BI_get_global global_mem_ptr
+  ; BI_get_local 0
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_const (Z_to_value (Z.pow 2 16))
+  ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
 
-    else var <- translate_var nenv lenv v "instr_local_var_read: normal var";;
-         Ret (BI_get_local var).
+  (* current number of pages *)
+  ; BI_current_memory
+  ; BI_relop T_i32 (Relop_i (ROI_ge SX_S))
+  (* allocate one page if necessary *)
+  ; BI_if (Tf nil nil)
+      [ BI_const (nat_to_value 1)
+      ; BI_grow_memory (* returns -1 on alloc failure *)
+      ; BI_const (Z_to_value (-1))
+      ; BI_relop T_i32 (Relop_i ROI_eq)
+      ; BI_if (Tf nil nil)
+         [ BI_const (nat_to_value 1); BI_set_global result_out_of_mem ]
+         []
+      ]
+      []
+  ].
+
+Definition generate_grow_mem_function : wasm_function :=
+  {| fidx := grow_mem_function_idx
+   ; export_name := grow_mem_function_name
+   ; type := Tf [T_i32] []
+   ; locals := []
+   ; body := grow_memory_if_necessary
+   |}.
 
 
 (* ***** TRANSLATE FUNCTION CALLS ****** *)
@@ -517,29 +539,6 @@ Definition translate_primitive_value (p : AstCommon.primitive) :=
     T_l, T_n unique constructor tags
     L, V, R pointers to linear memory
 *)
-
-(* a page is 2^16 bytes *)
-Definition grow_memory_if_necessary (required_bytes : N) : list basic_instruction :=
-  (* required number of total pages *)
-  [ BI_get_global global_mem_ptr
-  ; BI_const (N_to_value required_bytes)
-  ; BI_binop T_i32 (Binop_i BOI_add)
-  ; BI_const (Z_to_value (Z.pow 2 16))
-  ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
-
-  (* current number of pages *)
-  ; BI_current_memory
-  ; BI_relop T_i32 (Relop_i (ROI_ge SX_S))
-  (* allocate one page if necessary *)
-  ; BI_if (Tf nil nil) [ BI_const (nat_to_value 1)
-                       ; BI_grow_memory (* returns -1 on alloc failure *)
-                       ; BI_const (Z_to_value (-1))
-                       ; BI_relop T_i32 (Relop_i ROI_eq)
-                       ; BI_if (Tf nil nil) [ BI_const (nat_to_value 1); BI_set_global result_out_of_mem ]
-                                            [ ]
-                       ]
-                       []
-  ].
 
 (* store argument pointers in memory *)
 Fixpoint set_constructor_args (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (args : list cps.var) (current : nat) : error (list basic_instruction) :=
@@ -633,18 +632,18 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       | _ => (* n > 0 ary constructor  *)
           (* Boxed representation *)
           store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
-          (* Ret (grow_memory_if_necessary ((length ys + 1) * 4) ++ *)
-          Ret (grow_memory_if_necessary page_size ++
-                 [ BI_get_global result_out_of_mem
-                 ; BI_const (nat_to_value 1)
-                 ; BI_relop T_i32 (Relop_i ROI_eq)
-                 ; BI_if (Tf [] [])
-                     [ BI_return ]
-                       (store_constr ++
-                          [ BI_get_global constr_alloc_ptr
-                          ; BI_set_local x_var
-                          ] ++ following_instr)
-            ])
+          Ret ([ BI_const (N_to_value page_size)
+               ; BI_call grow_mem_function_idx
+               ; BI_get_global result_out_of_mem
+               ; BI_const (nat_to_value 1)
+               ; BI_relop T_i32 (Relop_i ROI_eq)
+               ; BI_if (Tf [] [])
+                 [ BI_return ]
+                 []
+               ] ++ store_constr ++
+               [ BI_get_global constr_alloc_ptr
+               ; BI_set_local x_var
+               ] ++ following_instr)
       end
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
@@ -692,33 +691,38 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       Ret (instr_call ++ [ BI_get_global result_out_of_mem
                          ; BI_if (Tf nil nil)
                             [ BI_return ]
-                            ([BI_get_global result_var; BI_set_local x_var] ++ following_instr)
-                         ])
+                            []
+                         ; BI_get_global result_var
+                         ; BI_set_local x_var
+                         ] ++ following_instr)
 
    | Eapp f ft ys => translate_call nenv lenv fenv f ys true
 
    | Eprim_val x p e' =>
        following_instrs <- translate_exp nenv cenv lenv fenv penv prim_tag e' ;;
-       x_var <- translate_var nenv lenv x "translate_exp prim val x" ;;
+       x_var <- translate_var nenv lenv x "translate_exp prim val" ;;
        val <- translate_primitive_value p ;;
-           Ret (grow_memory_if_necessary page_size ++
-                 [ BI_get_global result_out_of_mem
-                 ; BI_if (Tf [] [])
-                     [ BI_return ]
-                     ([ BI_get_global global_mem_ptr
-                        ; BI_const (nat_to_value (Pos.to_nat prim_tag))
-                        ; BI_store T_i32 None 2%N 0%N
-                        ; BI_get_global global_mem_ptr
-                        ; BI_set_local x_var
-                        ; BI_get_global global_mem_ptr
-                        ; BI_const (VAL_int64 val)
-                        ; BI_store T_i64 None 2%N 4%N
-                        ; BI_get_global global_mem_ptr
-                        ; BI_const (nat_to_value 12)
-                        ; BI_binop T_i32 (Binop_i BOI_add)
-                        ; BI_set_global global_mem_ptr
-                      ] ++ following_instrs)
-                 ])
+       Ret ([ BI_const (N_to_value page_size)
+            ; BI_call grow_mem_function_idx
+            ; BI_get_global result_out_of_mem
+            ; BI_const (nat_to_value 1)
+            ; BI_relop T_i32 (Relop_i ROI_eq)
+            ; BI_if (Tf [] [])
+                [ BI_return ]
+                []
+              ; BI_get_global global_mem_ptr
+              ; BI_const (nat_to_value (Pos.to_nat prim_tag))
+              ; BI_store T_i32 None 2%N 0%N
+              ; BI_get_global global_mem_ptr                         
+              ; BI_set_local x_var
+              ; BI_get_global global_mem_ptr                              
+              ; BI_const (VAL_int64 val)
+              ; BI_store T_i64 None 2%N 4%N
+              ; BI_get_global global_mem_ptr
+              ; BI_const (nat_to_value 12)
+              ; BI_binop T_i32 (Binop_i BOI_add)
+              ; BI_set_global global_mem_ptr
+            ] ++ following_instrs)
 
    | Eprim x p ys e' =>
        match M.get p penv with
@@ -726,9 +730,10 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
        | Some _ =>
            following_instrs <- translate_exp nenv cenv lenv fenv penv prim_tag e';;
            prim_op_instrs <- translate_primitive_operation nenv lenv fenv x p ys ;;
-           Ret (grow_memory_if_necessary page_size ++
-                 [ BI_get_global result_out_of_mem
-                 ; BI_if (Tf [] [])
+           Ret ([ BI_const (N_to_value page_size)
+                    ; BI_call grow_mem_function_idx                             
+                    ; BI_get_global result_out_of_mem
+                    ; BI_if (Tf [] [])
                      [ BI_return ]
                      (prim_op_instrs ++ following_instrs) ])
        end
@@ -786,9 +791,9 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   let locals := collect_local_variables body in
   let lenv := create_local_variable_mapping (args ++ locals) in
 
-  fn_var <- translate_var nenv fenv name "translate function" ;;
-  body_res <- translate_exp nenv cenv lenv fenv penv prim_tag body  ;;
-  Ret {| fidx := fn_var
+  fn_idx <- translate_var nenv fenv name "translate function" ;;
+  body_res <- translate_exp nenv cenv lenv fenv penv prim_tag body ;;
+  Ret {| fidx := fn_idx
        ; export_name := show_tree (show_var nenv name)
        ; type := Tf (map (fun _ => T_i32) args) []
        ; locals := map (fun _ => T_i32) locals
@@ -832,7 +837,7 @@ Fixpoint collect_function_vars (e : cps.exp) : list cps.var :=
 (* maps function names to ids (id=index in function list of module) *)
 Definition create_fname_mapping (e : exp) : fname_env :=
   let fun_vars := collect_function_vars e in
-  create_var_mapping 6 fun_vars (M.empty _).
+  create_var_mapping num_custom_funs fun_vars (M.empty _).
 
 Fixpoint list_function_types (n : nat) : list function_type :=
   match n with
@@ -857,11 +862,8 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
   let fname_mapping := create_fname_mapping e in
 
-  (* let next_fn_id : nat := M.fold1 (fun n n' => max n n') fname_mapping 4 in *)
-
-  (* let '(fname_mapping', _) := M.fold (fun '(m, next_id) p _ => (M.set p next_id m, next_id + 1)) penv (fname_mapping, next_fn_id) in *)
-
   constr_pp_function <- generate_constr_pp_function cenv nenv prim_tag e;;
+  let grow_mem_function := generate_grow_mem_function in
 
   (* ensure toplevel exp is an Efun*)
   let top_exp := match e with
@@ -891,7 +893,8 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                         ; body := main_instr
                         |}
   in
-  let functions := [constr_pp_function; i64_pp_function; main_function] ++ fns ++ prim_fns in
+  let functions := [constr_pp_function; grow_mem_function; main_function] ++ fns ++ prim_fns in
+
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (Mk_funcidx f.(fidx))
                                 |}) functions (* function exports for debug names *)
@@ -905,7 +908,8 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                      ; modexp_desc := MED_global (Mk_globalidx result_var)
                     |} :: nil
   in
-  let elements := table_element_mapping (length (fns ++ prim_fns) + 6) 0 in
+
+  let elements := table_element_mapping (length (fns ++ prim_fns) + num_custom_funs) 0 in
 
   let functions_final := map (fun f => {| modfunc_type := Mk_typeidx (match f.(type) with Tf args _ => length args end)
                                         ; modfunc_locals := f.(locals)
@@ -915,7 +919,8 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
       {| mod_types := (list_function_types (Z.to_nat max_function_args)) ++ [Tf [T_i64] []] (* more than required, doesn't hurt*)
 
        ; mod_funcs := functions_final
-       ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length (fns ++ prim_fns) + 6)
+       ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length (fns ++ prim_fns) + num_custom_funs)
+                                                                                  
                                                             ; lim_max := None |}
                                             ; tt_elem_type := ELT_funcref
                                             |} |}]
