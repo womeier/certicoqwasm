@@ -9,3 +9,5 @@ sha256.v
 # SqlQueries.v
 coind.v
 BersteinYangTermination.v
+parse_demo2_opt_coalesce_locals_wasm_module.v
+stack_machine.v
