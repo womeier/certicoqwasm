@@ -162,5 +162,5 @@ CertiCoq Generate WASM -cps -time -debug sha_fast.
 
 (* Eval compute in "Compiling stack_machine" *)
 
-(* Eval compute in "Compiling type_check_wasm_module". *)
-(* CertiCoq Compile Wasm -time -debug type_check_test_module. *)
+Eval compute in "Compiling type_check_wasm_module".
+CertiCoq Compile Wasm -time -debug test_module.

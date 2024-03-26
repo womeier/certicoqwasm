@@ -18,10 +18,10 @@ Definition test_bytes : list Byte.byte := x00 :: x61 :: x73 :: x6d :: x01 :: x00
 
 Definition test_module : option module := run_parse_module test_bytes.
 
-Definition type_check_test_module :=
-  match test_module with
-  | Some m => module_type_checker m
-  | None => None
-  end.
+(* Definition type_check_test_module := *)
+(*   match test_module with *)
+(*   | Some m => module_type_checker m *)
+(*   | None => None *)
+(*   end. *)
 
 
