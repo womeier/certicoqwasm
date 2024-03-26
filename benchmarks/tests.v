@@ -82,6 +82,48 @@ Definition sha := sha256.SHA_256 (sha256.str_to_bytes test).
 
 Definition sha_fast := sha256.SHA_256' (sha256.str_to_bytes test).
 
+
+(*******************************************************************)
+(* from https://github.com/AU-COBRA/coq-rust-extraction/blob/master/tests/theories/InternalFix.v *)
+
+Fixpoint ack (n m : nat) : nat :=
+  match n with
+  | O => S m
+  | S p => let fix ackn (m : nat) :=
+            match m with
+            | O => ack p 1
+            | S q => ack p (ackn q)
+            end
+          in ackn m
+  end.
+Definition ack_3_9 := ack 3 9.
+
+Fixpoint even n :=
+  match n with
+  | O => true
+  | S m => odd m
+  end
+  with odd n :=
+    match n with
+    | O => false
+    | S k => even k
+    end.
+Definition even_10000 := even 10000.
+
+Definition bernstein_yang := W 1.
+
+Eval compute in "Compiling ack".
+CertiCoq Generate WASM -cps -debug ack_3_9.
+
+Eval compute in "Compiling even_10000".
+CertiCoq Generate WASM -cps -debug even_10000.
+
+Eval compute in "Bernstein yang termination".
+CertiCoq Generate WASM -cps -debug bernstein_yang.
+(* bernstein_yang: compilation fine, runs for quite long *)
+
+(*******************************************************************)
+
 Eval compute in "Compiling demo1".
 
 CertiCoq Generate WASM -cps -debug demo1.
@@ -111,20 +153,20 @@ CertiCoq Generate WASM -cps -debug list_sum.
 
 Eval compute in "Compiling vs_easy".
 
-CertiCoq Generate WASM -cps -time -debug vs_easy.
+(* CertiCoq Generate WASM -cps -time -debug vs_easy.*)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" -time_anf vs_easy. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" vs_easy. *)
 
 Eval compute in "Compiling vs_hard".
 
-CertiCoq Generate WASM -cps -time -debug vs_hard.
+(* CertiCoq Generate WASM -cps -time -debug vs_hard. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" vs_hard. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" vs_hard. *)
 
 
 Eval compute in "Compiling binom".
 
-CertiCoq Generate WASM -cps -time -debug binom.
+(* CertiCoq Generate WASM -cps -time -debug binom. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" binom. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" binom. *)
 
@@ -138,7 +180,7 @@ CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
 
 
 Eval compute in "Compiling color".
-CertiCoq Generate WASM -cps -time -debug color.
+(* CertiCoq Generate WASM -cps -time -debug color. *)
 
 (* CertiCoq Generate WASM -cps -time -debug color. *)
 (* CertiCoq Compile -O 0 -time -cps -ext "_cps" color. *)
@@ -162,7 +204,7 @@ CertiCoq Generate WASM -cps -time -debug sha_fast.
 
 Eval compute in "Compiling simple_stack_machine_example".
 Definition simple_stack_machine_example := exec1.
-CertiCoq Compile Wasm -time -debug simple_stack_machine_example.
+CertiCoq Generate WASM -cps -time -debug simple_stack_machine_example.
 
 (* Eval compute in "Compiling parse_wasm_module". *)
 (* CertiCoq Compile Wasm -time -debug test_module. *)
