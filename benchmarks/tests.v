@@ -160,7 +160,9 @@ CertiCoq Generate WASM -cps -time -debug sha_fast.
 (* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
 (* CertiCoq Generate Glue -file "glue_sha_fast" [ ]. *)
 
-(* Eval compute in "Compiling stack_machine" *)
+Eval compute in "Compiling simple_stack_machine_example".
+Definition simple_stack_machine_example := exec1.
+CertiCoq Compile Wasm -time -debug simple_stack_machine_example.
 
-Eval compute in "Compiling type_check_wasm_module".
-CertiCoq Compile Wasm -time -debug test_module.
+(* Eval compute in "Compiling parse_wasm_module". *)
+(* CertiCoq Compile Wasm -time -debug test_module. *)
