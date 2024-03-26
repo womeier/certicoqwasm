@@ -53,6 +53,19 @@ CertiCoq Compile Wasm list_sum.
 
 CertiCoq Compile Wasm list_sum_primitive.
 
+Fixpoint fac (n : nat) (nint : int) : int :=
+  match n with
+  | 0 => 1%uint63
+  | S n' =>
+      let r := fac n' (nint - 1)%uint63 in
+      (nint * r)%uint63
+  end.
 
+Definition fac_main := fac 3 3%uint63.
 
+Compute fac_main.
 
+CertiCoq Compile -debug fac_main.
+
+CertiCoq Show IR -debug fac_main.
+CertiCoq Compile Wasm -debug fac_main.
