@@ -60,6 +60,14 @@ Fixpoint s_compile (e : aexp) : list sinstr :=
   | AMult a1 a2 => (s_compile a1) ++ (s_compile a2) ++ [SMult]
   end.
 
+Definition aexp1 : aexp :=
+  AMult (ANum 100) (ANum 100).
+
+Definition aexp_list_sum : aexp :=
+  List.fold_left (fun a n => APlus a (ANum n)) (List.repeat 1 1000) (ANum 0).
+
+Definition prog1 :=
+  s_compile aexp_list_sum.
 
 Fixpoint s_execute (st : state) (stack : list nat)
                    (prog : list sinstr)
@@ -75,6 +83,9 @@ Fixpoint s_execute (st : state) (stack : list nat)
   | SMult :: prog' => s_execute st (((hd 0 (tl stack)) * (hd 0 stack)) :: (tl (tl stack)))
                                 prog'
   end.
+
+Definition exec1 :=
+  s_execute empty_state [] prog1.
 
 Lemma s_execute_app: forall st stack si1 si2,
   s_execute st stack (si1 ++ si2) =
