@@ -4,6 +4,9 @@ Require Import CertiCoq.Benchmarks.lib.Binom.
 Require Import CertiCoq.Benchmarks.lib.Color.
 Require Import CertiCoq.Benchmarks.lib.sha256.
 Require Import CertiCoq.Benchmarks.lib.coind.
+Require Import CertiCoq.Benchmarks.lib.BersteinYangTermination.
+Require Import CertiCoq.Benchmarks.lib.parse_demo2_opt_coalesce_locals_wasm_module.
+Require Import CertiCoq.Benchmarks.lib.stack_machine.
 From MetaCoq.Utils Require Import bytestring MCString.
 From CertiCoq.Plugin Require Import CertiCoq.
 
@@ -155,3 +158,9 @@ CertiCoq Generate WASM -cps -time -debug sha_fast.
 (* CertiCoq Generate WASM -cps -time -debug sha_fast. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" sha_fast. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
+(* CertiCoq Generate Glue -file "glue_sha_fast" [ ]. *)
+
+(* Eval compute in "Compiling stack_machine" *)
+
+(* Eval compute in "Compiling type_check_wasm_module". *)
+(* CertiCoq Compile Wasm -time -debug type_check_test_module. *)
