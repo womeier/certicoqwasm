@@ -1,10 +1,4 @@
-Require Import Coq.Bool.Bool.
-Require Import Coq.Arith.Arith.
-Require Import Coq.Arith.EqNat.
-Require Import Coq.Lists.List.
-Require Import Coq.Arith.Arith.
-Require Import Coq.Bool.Bool.
-Require Import Coq.Strings.String.
+Require Import Nat Arith String List Uint63 BinNat ZArith.
 Import ListNotations.
 
 Inductive id : Type :=
@@ -23,35 +17,68 @@ Definition t_empty {A: Type} (v: A) : total_map A :=
 Definition t_update {A: Type} (m: total_map A) (k: id) (v: A) : total_map A :=
   fun (x : id) => if beq_id k x then v else m x.
 
-Definition state := total_map nat.
+Class Numeric A : Type :=
+  {
+    plus : A -> A -> A ;
+    minus : A -> A -> A ;
+    mult : A -> A -> A ;
+    zero : A ;
+  }.
 
-Definition empty_state : state :=
-  t_empty 0.
+#[export] Instance NumericNat : Numeric nat :=
+  {
+    plus := Nat.add ;
+    minus := Nat.sub ;
+    mult := Nat.mul ;
+    zero := 0
+  }.
 
-Inductive aexp : Type :=
-  | ANum : nat -> aexp
+#[export] Instance NumericBinNat : Numeric N :=
+  {
+    plus := fun x y => (x + y)%N ;
+    minus := fun x y => (x - y)%N ;
+    mult := fun x y => (x * y)%N ;
+    zero := 0%N
+  }.
+
+#[export] Instance NumericPrimInt : Numeric int :=
+  {
+    plus := fun x y => (x + y)%uint63 ;
+    minus := fun x y => (x - y)%uint63 ;
+    mult := fun x y => (x * y)%uint63 ;
+    zero := 0%uint63
+  }.
+
+Definition state {A} `{Numeric A} := total_map A.
+
+Inductive aexp {A} `{Numeric A} : Type :=
+  | ANum : A -> aexp
   | AId : id -> aexp
   | APlus : aexp -> aexp -> aexp
   | AMinus : aexp -> aexp -> aexp
 | AMult : aexp -> aexp -> aexp.
 
-Fixpoint aeval (st : state) (a : aexp) : nat :=
+Fixpoint aeval {A} `{Numeric A} (st : state) (a : aexp) : A :=
   match a with
   | ANum n => n
   | AId x => st x
-  | APlus a1 a2 => (aeval st a1) + (aeval st a2)
-  | AMinus a1 a2  => (aeval st a1) - (aeval st a2)
-  | AMult a1 a2 => (aeval st a1) * (aeval st a2)
+  | APlus a1 a2 => plus (aeval st a1) (aeval st a2)
+  | AMinus a1 a2  => minus (aeval st a1) (aeval st a2)
+  | AMult a1 a2 => mult (aeval st a1) (aeval st a2)
   end.
 
-Inductive sinstr : Type :=
-| SPush : nat -> sinstr
+Definition aeval' {A} `{Numeric A} :=
+  aeval (t_empty zero).
+
+
+Inductive sinstr {A} `{Numeric A} : Type :=
+| SPush : A -> sinstr
 | SLoad : id -> sinstr
 | SPlus : sinstr
 | SMinus : sinstr
 | SMult : sinstr.
 
-Fixpoint s_compile (e : aexp) : list sinstr :=
+Fixpoint s_compile {A} `{Numeric A} (e : aexp) : list sinstr :=
   match e with
   | ANum x => [SPush x]
   | AId k => [SLoad k]
@@ -60,34 +87,25 @@ Fixpoint s_compile (e : aexp) : list sinstr :=
   | AMult a1 a2 => (s_compile a1) ++ (s_compile a2) ++ [SMult]
   end.
 
-Definition aexp1 : aexp :=
-  AMult (ANum 100) (ANum 100).
-
-Definition aexp_list_sum : aexp :=
-  List.fold_left (fun a n => APlus a (ANum n)) (List.repeat 1 1000) (ANum 0).
-
-Definition prog1 :=
-  s_compile aexp_list_sum.
-
-Fixpoint s_execute (st : state) (stack : list nat)
+Fixpoint s_execute {A} `{Numeric A} (st : state) (stack : list A)
                    (prog : list sinstr)
-                 : list nat :=
+                 : list A :=
   match prog with
   | [] => stack
   | (SPush n) :: prog' => s_execute st (n :: stack) prog'
   | (SLoad k) :: prog' => s_execute st ((st k) :: stack) prog'
-  | SPlus :: prog' => s_execute st (((hd 0 (tl stack)) + (hd 0 stack)) :: (tl (tl stack)))
+  | SPlus :: prog' => s_execute st ((plus (hd zero (tl stack)) (hd zero stack)) :: (tl (tl stack)))
                                 prog'
-  | SMinus :: prog' => s_execute st (((hd 0 (tl stack)) - (hd 0 stack)) :: (tl (tl stack)))
+  | SMinus :: prog' => s_execute st ((minus (hd zero (tl stack)) (hd zero stack)) :: (tl (tl stack)))
                                 prog'
-  | SMult :: prog' => s_execute st (((hd 0 (tl stack)) * (hd 0 stack)) :: (tl (tl stack)))
+  | SMult :: prog' => s_execute st ((mult (hd zero (tl stack)) (hd zero stack)) :: (tl (tl stack)))
                                 prog'
   end.
 
-Definition exec1 :=
-  s_execute empty_state [] prog1.
-
-Lemma s_execute_app: forall st stack si1 si2,
+Definition s_execute' {A} `{Numeric A} :=
+  s_execute (t_empty zero) [].
+  
+Lemma s_execute_app {A} `{Numeric A}: forall st stack si1 si2,
   s_execute st stack (si1 ++ si2) =
   s_execute st (s_execute st stack si1) si2.
 Proof.
@@ -100,7 +118,7 @@ Proof.
   - destruct a; simpl; apply IHsi1.
 Qed.
 
-Lemma s_compile_append: forall st stack e,
+Lemma s_compile_append {A} `{Numeric A}: forall st stack e,
   s_execute st stack (s_compile e) =
   (aeval st e) :: stack.
 Proof.
@@ -114,9 +132,42 @@ Proof.
     reflexivity.
 Qed.
 
-Theorem s_compile_correct : forall (st : state) (e : aexp),
+Theorem s_compile_correct {A} `{Numeric A} : forall (st : state) (e : aexp),
   s_execute st [] (s_compile e) = [ aeval st e ].
 Proof.
   intros.
   apply s_compile_append.
 Qed.
+
+Fixpoint gauss_sum_aexp_nat n :=
+  match n with
+  | 0 => ANum 0
+  | S n' => APlus (ANum n) (gauss_sum_aexp_nat n')
+  end.
+
+Fixpoint gauss_sum_aexp_N_aux (guard : nat) (n : N) :=
+  match guard with
+  | O => ANum 0%N
+  | S g' => APlus (ANum n) (gauss_sum_aexp_N_aux g' (n - 1)%N)
+  end.
+
+Definition gauss_sum_aexp_N (n : N) :=
+  gauss_sum_aexp_N_aux (N.to_nat n) n.
+
+Fixpoint gauss_sum_aexp_PrimInt_aux (guard : nat) (n : int) :=
+  match guard with
+  | O => ANum 0%uint63
+  | S g' => APlus (ANum n) (gauss_sum_aexp_PrimInt_aux g' (n - 1)%uint63)
+  end.
+
+Definition gauss_sum_aexp_PrimInt (n : int) :=
+  gauss_sum_aexp_PrimInt_aux (Z.to_nat (Uint63.to_Z n)) n.
+
+Definition gauss_sum_sintrs_nat (n : nat) :=
+  s_compile (gauss_sum_aexp_nat n).
+
+Definition gauss_sum_sintrs_N (n : N) :=
+  s_compile (gauss_sum_aexp_N n).
+
+Definition gauss_sum_sintrs_PrimInt (n : int) :=
+  s_compile (gauss_sum_aexp_PrimInt n).

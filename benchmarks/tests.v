@@ -1,4 +1,4 @@
-Require Import Arith List String (* Uint63 *).
+Require Import Arith List String Uint63 BinNat.
 Require Import CertiCoq.Benchmarks.lib.vs.
 Require Import CertiCoq.Benchmarks.lib.Binom.
 Require Import CertiCoq.Benchmarks.lib.Color.
@@ -212,9 +212,33 @@ CertiCoq Compile Wasm -time -debug sha_fast.
 (* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
 (* CertiCoq Generate Glue -file "glue_sha_fast" [ ]. *)
 
-Eval compute in "Compiling simple_stack_machine_example".
-Definition simple_stack_machine_example := exec1.
-CertiCoq Compile Wasm -time -debug simple_stack_machine_example.
-
 (* Eval compute in "Compiling parse_wasm_module". *)
 (* CertiCoq Compile Wasm -time -debug test_module. *)
+
+Definition stack_machine_gauss_nat :=
+  let n := 1000 in
+  match (s_execute' (gauss_sum_sintrs_nat n)) with
+  | [ n' ] => Some (n' - (n * (n + 1))/2)
+  | _ => None
+  end.
+
+Definition stack_machine_gauss_N :=
+  let n := 1000%N in
+  match (s_execute' (gauss_sum_sintrs_N n)) with
+  | [ n' ] => Some (n' - (n * (n + 1))/2)%N
+  | _ => None
+  end.
+
+Definition stack_machine_gauss_PrimInt :=
+  let n := 1000%uint63 in
+  match (s_execute' (gauss_sum_sintrs_PrimInt n)) with
+  | [ n' ] => Some (n' - (n * (n + 1))/2)%uint63
+  | _ => None
+  end.
+
+CertiCoq Compile Wasm -debug stack_machine_gauss_nat.
+
+CertiCoq Compile Wasm -debug stack_machine_gauss_N.
+
+(* Not supported yet *)
+(* CertiCoq Compile Wasm -debug stack_machine_gauss_PrimInt. *)
