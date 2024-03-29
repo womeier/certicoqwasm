@@ -5,7 +5,6 @@ Require Import CertiCoq.Benchmarks.lib.Color.
 Require Import CertiCoq.Benchmarks.lib.sha256.
 Require Import CertiCoq.Benchmarks.lib.coind.
 Require Import CertiCoq.Benchmarks.lib.BersteinYangTermination.
-Require Import CertiCoq.Benchmarks.lib.parse_demo2_opt_coalesce_locals_wasm_module.
 Require Import CertiCoq.Benchmarks.lib.stack_machine.
 From MetaCoq.Utils Require Import bytestring MCString.
 From CertiCoq.Plugin Require Import CertiCoq.
@@ -215,21 +214,21 @@ CertiCoq Compile Wasm -time -debug sha_fast.
 (* Eval compute in "Compiling parse_wasm_module". *)
 (* CertiCoq Compile Wasm -time -debug test_module. *)
 
-Definition stack_machine_gauss_nat :=
+Definition sm_gauss_nat :=
   let n := 1000 in
   match (s_execute' (gauss_sum_sintrs_nat n)) with
   | [ n' ] => Some (n' - (n * (n + 1))/2)
   | _ => None
   end.
 
-Definition stack_machine_gauss_N :=
+Definition sm_gauss_N :=
   let n := 1000%N in
   match (s_execute' (gauss_sum_sintrs_N n)) with
   | [ n' ] => Some (n' - (n * (n + 1))/2)%N
   | _ => None
   end.
 
-Definition stack_machine_gauss_PrimInt :=
+Definition sm_gauss_PrimInt :=
   let n := 1000%uint63 in
   match (s_execute' (gauss_sum_sintrs_PrimInt n)) with
   | [ n' ] => Some (n' - (n * (n + 1))/2)%uint63
