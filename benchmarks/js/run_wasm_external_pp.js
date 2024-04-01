@@ -1,10 +1,13 @@
-const fs = require('fs');
+import { print_i63, print_compare, print_bool, print_nat_sexp, print_nat_notation, print_list_sexp, print_list_notation } from './modules/pp.js';
+
+import { readFileSync } from 'fs';
+// const fs = import('fs');
 
 var args = process.argv.slice(2);
 
 if (args.length == 0) { process.exit(1); }
 
-binary_path = args[0];
+const binary_path = args[0];
 
 var pp_function;
 
@@ -22,50 +25,28 @@ function write_char (value) {
     process.stdout.write(chr);
 }
 
-const print_list = (val, dataView, print_elem) => {
-
-    if (val & 1) { process.stdout.write("nil"); }
-    else {
-	process.stdout.write("(cons ");
-
-	const head = dataView.getInt32(val+4, true);
-
-	print_elem(head, dataView);
-
-	process.stdout.write(" ");
-
-	const tail = dataView.getInt32(val+8, true);
-
-	print_list(tail, dataView, print_elem);
-
-	process.stdout.write(")");
-    }
-}
-
-const print_i63 = (ptr, dataView) => {
-
-    const val = dataView.getBigUint64(ptr, true);
-
-    process.stdout.write(val.toString());
-}
-
 let importObject = {
     env: {
         $write_char: write_char,
-        $write_int: write_int,
+        $write_int32: write_int,
+	$write_int64: write_int,
     }
 };
 
 (async () => {
     try {
-	const bytes = fs.readFileSync(binary_path);
+	const bytes = readFileSync(binary_path);
 
 	const obj = await WebAssembly.instantiate(
 	    new Uint8Array (bytes), importObject
 	);
 
+	const start_time = performance.now();
 	obj.instance.exports.$main_function();
+	const stop_time = performance.now();
 
+	const run_time = performance.now();
+	
 	if (obj.instance.exports.result_out_of_mem.value == 1) {
             console.log("Ran out of memory.");
             process.exit(1);
@@ -74,10 +55,20 @@ let importObject = {
 	    const memory = obj.instance.exports.memory;
 	    const dataView = new DataView(memory.buffer);
 
-	    // print_list(res_value, dataView, print_i63);
-	    print_i63(res_value, dataView);
+	    // print_nat_sexp(res_value, dataView);
+	    // print_nat_notation(res_value, dataView);
+	    
+	    // print_i63(res_value, dataView);
+	    
+	    // print_list_sexp(res_value, dataView, print_nat_sexp);
+	    // print_list_notation(res_value, dataView, print_nat_notation);
+	    
+	    // print_bool(res_value, dataView);
+	    // print_compare(res_value, dataView);
 
 	    process.stdout.write("\n");
+	    
+	    console.log(`run time: ${run_time} ms`);
 	}
     } catch (error) {
 	console.log(error);

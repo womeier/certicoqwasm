@@ -29,20 +29,23 @@ Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes, don't
 Definition assert (b : bool) (err : string) : error Datatypes.unit :=
   if b then Ret tt else Err err.
 
+Definition get_ctor_ord (cenv : ctor_env) (t : ctor_tag) : error nat :=
+  match M.get t cenv with
+  | Some c => Ret (N.to_nat (ctor_ordinal c))
+  | None => Err ("Constructor with tag " ++ (string_of_positive t) ++ " in constructor expression not found in constructor environment")%bs
+  end.
+
 (* enforces predicate expression_restricted in the proof file *)
 Fixpoint check_restrictions (e : exp) : error Datatypes.unit :=
   match e with
   | Econstr _ t ys e' =>
-       _ <- assert (Z.of_nat (Pos.to_nat t) <? Wasm_int.Int32.half_modulus)%Z
-                       "constructor tag too large" ;;
-       _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_constr_args)%Z
-                 "found constructor with too many args, check max_constr_args";;
-       check_restrictions e'
+      _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_constr_args)%Z
+             "found constructor with too many args, check max_constr_args";;
+      check_restrictions e'
   | Ecase x ms =>
-      _ <- sequence (map (fun p =>
-                           _ <- assert (Z.of_nat (Pos.to_nat (fst p)) <? Wasm_int.Int32.half_modulus)%Z
-                                 "constructor tag too large" ;;
-                           check_restrictions (snd p)) ms);; Ret tt
+      (* _ <- check_constructors_in_case cenv ms ;; *)
+      _ <- sequence (map (fun p => check_restrictions (snd p)) ms) ;;
+      Ret tt          
   | Eproj _ _ _ _ e' => check_restrictions e'
   | Eletapp _ _ _ ys e' =>
       _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
@@ -358,6 +361,17 @@ Definition translate_primitive_value (p : AstCommon.primitive) :=
   end (projT2 p).
 
 
+Definition get_ctor_rep (cenv : ctor_env) (tag : ctor_tag) : error nat :=
+  match M.get tag cenv with
+  | Some {| ctor_arity := arity ; ctor_ordinal := ord |} =>
+      if (arity =? 0)%N then
+        Ret (N.to_nat (2 * ord + 1)%N)
+      else
+        Ret (N.to_nat ord)
+  | None => Err ("Constructor with tag " ++ (string_of_positive tag) ++ " not found in constructor environment")%bs
+  end.
+
+
 (* ***** TRANSLATE CONSTRUCTOR ALLOCATION ****** *)
 
 (* Example placement of constructors in the linear memory:
@@ -398,16 +412,15 @@ Fixpoint set_constructor_args (nenv : name_env) (lenv : localvar_env) (fenv : fn
 
 
 Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localvar_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
-  let ctor_id := Pos.to_nat c in
+  ord <- get_ctor_ord cenv c ;;
   set_constr_args <- set_constructor_args nenv lenv fenv ys 0;;
   Ret ([ BI_get_global global_mem_ptr
        ; BI_set_global constr_alloc_ptr
 
        (* set tag *)
        ; BI_get_global constr_alloc_ptr
-       ; BI_const (nat_to_value ctor_id)
+       ; BI_const (nat_to_value ord)
        ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-
        (* increase gmp by 4 *)
        ; BI_get_global global_mem_ptr
        ; BI_const (nat_to_value 4)
@@ -418,356 +431,495 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 
 (* **** TRANSLATE PRIMITIVE OPERATIONS **** *)
 
-Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (x : var) (p : (kername * string * bool * nat)) (ys : list var) : error (list basic_instruction) :=
+(* TODO:
+   Simple ops can be inlined
+   More complex functions require temporary variables to avoid complex stack juggling,
+   probably best to define auxiliary functions for them?
+
+   Aux. functions for
+   - head0: i64 -> i64
+   - tail0: i64 -> i64
+   - addc: i32 -> i64 -> i64 -> i32 (does allocation)
+   - addcarryc: i32 -> i64 -> i64 -> i32 (does allocation)
+   - subc: i32 -> i64 -> i64 -> i32 (does allocation)
+   - subcarryc: i32 -> i64 -> i64 -> i32 (does allocation)
+   - mulc: i32 -> i64 -> i64 -> i32 (does allocation)
+   - diveucl_21: i32 -> i64 -> i64 -> i64 -> i32 (does allocation)
+   - diveucl: i32 -> i64 -> i64 -> i32 (does allocation)
+   - addmuldiv: i64 -> i64 -> i64 -> i64
+ *)
+
+(* Definition head0_primitive : wasm_function :=
+  let body :=
+    [ BI_get_local 0
+      ; BI_const (nat_to_value64 9223372032559808512)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 1
+            ; BI_const (nat_to_value64 31)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          [ BI_get_local 0
+            ; BI_const (nat_to_value64 31)
+            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+            ; BI_set_local 0
+          ]
+      ; BI_get_local 0
+      ; BI_const (nat_to_value64 4294901760)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 0
+            ; BI_const (nat_to_value64 16)
+            ; BI_binop T_i64 (Binop_i BOI_shl)
+            ; BI_const (nat_to_value64 9223372036854775807)
+            ; BI_binop T_i64 (Binop_i BOI_and)
+            ; BI_set_local 0
+            ; BI_get_local 1
+            ; BI_const (nat_to_value64 16)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 0
+      ; BI_const (nat_to_value64 4026531840)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 0
+            ; BI_const (nat_to_value64 8)
+            ; BI_binop T_i64 (Binop_i BOI_shl)
+            ; BI_set_local 0
+            ; BI_get_local 1
+            ; BI_const (nat_to_value64 8)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 0
+      ; BI_const (nat_to_value64 3221225472)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 0
+            ; BI_const (nat_to_value64 4)
+            ; BI_binop T_i64 (Binop_i BOI_shl)
+            ; BI_set_local 0
+            ; BI_get_local 1
+            ; BI_const (nat_to_value64 4)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 0
+      ; BI_const (nat_to_value64 2147483648)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 0
+            ; BI_const (nat_to_value64 2)
+            ; BI_binop T_i64 (Binop_i BOI_shl)
+            ; BI_set_local 0
+            ; BI_get_local 1
+            ; BI_const (nat_to_value64 2)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 0
+      ; BI_const (nat_to_value64 2147483648)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 1
+            ; BI_const (nat_to_value64 2)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 1
+    ]
+  in
+  {| fidx := 42 (* TODO *)
+  ; export_name := "head0"
+  ; type := Tf [ T_i64 ] [ T_i64 ]
+  ; locals := [ T_i64 ]
+  ; body := body
+  |}. *)
+
+
+(* Definition tail0 : wasm_function :=
+  let body :=
+    [ BI_get_local 0
+      ; BI_const (nat_to_value64 4294967295)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 0
+            ; BI_const (nat_to_value64 32)
+            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+            ; BI_set_local 0
+            ; BI_get_local 1
+            ; BI_const (nat_to_value64 32)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 0
+      ; BI_const (nat_to_value64 65535)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 0
+            ; BI_const (nat_to_value64 16)
+            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+            ; BI_set_local 0
+            ; BI_get_local 1
+            ; BI_const (nat_to_value64 16)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 0
+      ; BI_const (nat_to_value64 255)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 0
+            ; BI_const (nat_to_value64 8)
+            ; BI_binop T_i64 (Binop_i BOI_shl)
+            ; BI_set_local 0
+            ; BI_get_local 1
+            ; BI_const (nat_to_value64 8)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 0
+      ; BI_const (nat_to_value64 15)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 0
+            ; BI_const (nat_to_value64 4)
+            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+            ; BI_set_local 0
+            ; BI_get_local 1
+            ; BI_const (nat_to_value64 4)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 0
+      ; BI_const (nat_to_value64 3)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 0
+            ; BI_const (nat_to_value64 2)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 0
+            ; BI_get_local 1
+            ; BI_const (nat_to_value64 2)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 0
+      ; BI_const (nat_to_value 1)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (Tf [] [])
+          [ BI_get_local 1
+            ; BI_const (nat_to_value64 1)
+            ; BI_binop T_i64 (Binop_i BOI_add)
+            ; BI_set_local 1
+          ]
+          []
+      ; BI_get_local 1
+    ]
+  in
+  {| fidx := 42 (* TODO *)
+  ; export_name := "tail0"
+  ; type := Tf [ T_i64 ] [ T_i64 ]
+  ; locals := [ T_i64 ]
+  ; body := body
+  |}. *)
+
+(* Definition diveucl : wasm_function :=
+  let body := [ BI_get_local 1
+                ; BI_testop T_i64 TO_eqz
+                ; BI_if (Tf [] [ ])
+                    [ BI_const (nat_to_value64 0)
+                      ; BI_get_local 0
+                      ; BI_store T_i64 None 2%N 0%N (* address... *)
+                      ; BI_const (nat_to_value64 0)
+                      ; BI_get_local 0
+                      ; BI_store T_i64 None 2%N 8%N (* address... + 8 *)
+                    ]
+                    [ BI_get_local 1
+                      ; BI_get_local 2
+                      ; BI_binop T_i64 (Binop_i (BOI_div SX_U))
+                      ; BI_get_local 0
+                      ; BI_store T_i64 None 2%N 0%N (* address... *)
+                      ; BI_get_local 0
+                      ; BI_get_local 1
+                      ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
+                      ; BI_store T_i64 None 2%N 0%N (* address... + 8*)
+                    ]
+                ; BI_const (nat_to_value 0) (* Pair ordinal *)
+                ; BI_get_local 0
+                ; BI_store T_i32 None 2%N 16%N
+                ; BI_get_local 0
+                ; BI_store T_i32 None 2%N 20%N
+                ; BI_get_local 0
+                ; BI_const (nat_to_value 8)
+                ; BI_binop T_i32 (Binop_i BOI_add)
+                ; BI_get_local 0
+                ; BI_store T_i32 None 2%N 24%N
+                ; BI_get_local 0
+                ; BI_const (nat_to_value 16)
+                ; BI_binop T_i32 (Binop_i BOI_add) ]
+  in
+  {| fidx := 42 (* TODO *)
+  ; export_name := "diveucl"
+  ; type := Tf [ T_i32 ; T_i64 ; T_i64 ] [ T_i32 ]
+  ; locals := [ ]
+  ; body := body
+  |}. *)
+
+(* Definition addmuldiv : wasm_function :=
+  let body :=
+    [ BI_get_local 1
+      ; BI_get_local 0
+      ; BI_binop T_i64 (Binop_i BOI_shl)
+      ; BI_const (nat_to_value64 9223372036854775807)
+      ; BI_binop T_i64 (Binop_i BOI_and)
+      ; BI_get_local 2
+      ; BI_const (nat_to_value64 63)
+      ; BI_get_local 0
+      ; BI_binop T_i64 (Binop_i BOI_sub)
+      ; BI_binop T_i64 (Binop_i BOI_or) ]
+  in
+  {| fidx := 42 (* TODO *)
+  ; export_name := "addmuldiv"
+  ; type := Tf [ T_i64 ; T_i64 ; T_i64 ] [ T_i64 ]
+  ; locals := [ ]
+  ; body := body
+  |}. *)
+
+
+Definition apply_op_and_store_i64 (op : basic_instruction) (arg_instrs : list basic_instruction) :=
+  BI_get_global global_mem_ptr ::
+    arg_instrs ++
+    [ op ] ++
+    [ BI_store T_i64 None 2%N 0%N ; BI_get_global global_mem_ptr ; BI_get_global global_mem_ptr; BI_const (nat_to_value 8) ; BI_binop T_i32 (Binop_i BOI_add) ; BI_set_global global_mem_ptr ].
+
+Definition translate_primitive_arith_op op_name arg_instrs : error (list basic_instruction) :=
+  match op_name with
+  | "prim_int63_add" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_add)) arg_instrs)
+
+  | "prim_int63_sub" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_sub)) arg_instrs)
+
+  | "prim_int63_mul" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_mul)) arg_instrs)
+
+  | "prim_int63_div" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_div SX_U))) arg_instrs)
+
+  | "prim_int63_mod" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_rem SX_U))) arg_instrs)
+
+  | "prim_int63_land" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_and)) arg_instrs)
+
+  | "prim_int63_lor" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_or)) arg_instrs)
+
+  | "prim_int63_xor" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_xor)) arg_instrs)
+
+  | "prim_int63_lsl" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_shl)) arg_instrs)
+
+  | "prim_int63_lsr" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_shr SX_U))) arg_instrs)
+
+  | "prim_int63_asr" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_shr SX_S))) arg_instrs)
+
+  | _ =>
+      Err ("Unknown primitive arithmetic operator: " ++ op_name)%bs
+  end.
+
+Definition translate_primitive_compare_op op_name arg_instrs : error (list basic_instruction) :=
+  match op_name with
+
+  | "prim_int63_eqb" =>
+      Ret (arg_instrs ++ [ BI_relop T_i64 (Relop_i ROI_eq)
+                           ; BI_if (Tf [] [ T_i32 ])
+                               [ BI_const (nat_to_value 1) ] (* True *)
+                               [ BI_const (nat_to_value 3) ] (* False *)
+        ])
+
+  | "prim_int63_leb" =>
+      Ret (arg_instrs ++ [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
+                           ; BI_if (Tf [] [ T_i32 ])
+                               [ BI_const (nat_to_value 1) ] (* True *)
+                               [ BI_const (nat_to_value 3) ] (* False *)
+        ])
+
+  | "prim_int63_ltb" =>
+      Ret (arg_instrs ++ [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
+                           ; BI_if (Tf [] [ T_i32 ])
+                               [ BI_const (nat_to_value 1) ] (* True *)
+                               [ BI_const (nat_to_value 3) ] (* False *)
+        ])
+
+  | "prim_int63_compare" =>
+      Ret (arg_instrs ++
+             [ BI_relop T_i64 (Relop_i ROI_eq)
+               ; BI_if (Tf [] [ T_i32 ])
+                   [ BI_const (nat_to_value 1) ] (* Eq *)
+                   (arg_instrs ++
+                      [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
+                        ; BI_if (Tf [] [ T_i32 ])
+                            [ BI_const (nat_to_value 3) ] (* Lt *)
+                            [ BI_const (nat_to_value 5) ] (* Gt *)
+        ]) ])
+  | _ => Err ("Unknown primitive comparison operation: " ++ op_name)%bs
+  end.
+
+
+
+Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (x : var) (p : (kername * string * bool * nat)) (ys : list var) : error (list basic_instruction) :=
   let '(kname, name, _, _) := p in
-  i <- match name with
-       | "prim_int63_add" => Ret [ BI_binop T_i64 (Binop_i BOI_add) ]
-                                 
-       | "prim_int63_sub" => Ret [ BI_binop T_i64 (Binop_i BOI_sub) ]
-                                 
-       | "prim_int63_mul" => Ret [ BI_binop T_i64 (Binop_i BOI_mul) ]
-                                 
-       | "prim_int63_div" => Ret [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ]
-                                 
-       | "prim_int63_mod" => Ret [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ]
-                                 
-       | "prim_int63_land" => Ret [ BI_binop T_i64 (Binop_i BOI_and) ]
-                                  
-       | "prim_int63_lor" => Ret [ BI_binop T_i64 (Binop_i BOI_or) ]
-                                 
-       | "prim_int63_xor" => Ret [ BI_binop T_i64 (Binop_i BOI_xor) ]
-                                 
-       | "prim_int63_lsl" => Ret [ BI_binop T_i64 (Binop_i BOI_shl) ]
-                                 
-       | "prim_int63_lsr" => Ret [ BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ]
-                                 
-       | "prim_int63_head0" => (* x = local 0, r = local 1 *)
-           Ret [ BI_get_local 0
-               ; BI_const (nat_to_value64 9223372032559808512)
-               ; BI_binop T_i64 (Binop_i BOI_and)
-               ; BI_testop T_i64 TO_eqz
-               ; BI_if (Tf [] [])
-                   [ BI_get_local 1
-                     ; BI_const (nat_to_value64 31)
-                     ; BI_binop T_i64 (Binop_i BOI_add)
-                     ; BI_set_local 1
-                   ]
-                   [ BI_get_local 0
-                     ; BI_const (nat_to_value64 31)
-                     ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-                     ; BI_set_local 0
-                   ]
-               ; BI_get_local 0
-               ; BI_const (nat_to_value64 4294901760)
-               ; BI_binop T_i64 (Binop_i BOI_and)
-               ; BI_testop T_i64 TO_eqz
-               ; BI_if (Tf [] [])
-                   [ BI_get_local 0
-                     ; BI_const (nat_to_value64 16)
-                     ; BI_binop T_i64 (Binop_i BOI_shl)
-                     ; BI_const (nat_to_value64 9223372036854775807)
-                     ; BI_binop T_i64 (Binop_i BOI_and)
-                     ; BI_set_local 0
-                     ; BI_get_local 1
-                     ; BI_const (nat_to_value64 16)
-                     ; BI_binop T_i64 (Binop_i BOI_add)
-                     ; BI_set_local 1
-                   ]
-                   []
-               ; BI_get_local 0
-               ; BI_const (nat_to_value64 4026531840)
-               ; BI_binop T_i64 (Binop_i BOI_and)
-               ; BI_testop T_i64 TO_eqz
-               ; BI_if (Tf [] [])
-                   [ BI_get_local 0
-                     ; BI_const (nat_to_value64 8)
-                     ; BI_binop T_i64 (Binop_i BOI_shl)
-                     ; BI_set_local 0
-                     ; BI_get_local 1
-                     ; BI_const (nat_to_value64 8)
-                     ; BI_binop T_i64 (Binop_i BOI_add)
-                     ; BI_set_local 1
-                   ]
-                   []
-               ; BI_get_local 0
-               ; BI_const (nat_to_value64 3221225472)
-               ; BI_binop T_i64 (Binop_i BOI_and)
-               ; BI_testop T_i64 TO_eqz
-               ; BI_if (Tf [] [])
-                   [ BI_get_local 0
-                     ; BI_const (nat_to_value64 4)
-                     ; BI_binop T_i64 (Binop_i BOI_shl)
-                     ; BI_set_local 0
-                     ; BI_get_local 1
-                     ; BI_const (nat_to_value64 4)
-                     ; BI_binop T_i64 (Binop_i BOI_add)
-                     ; BI_set_local 1
-                   ]
-                   []
-               ; BI_get_local 0
-               ; BI_const (nat_to_value64 2147483648)
-               ; BI_binop T_i64 (Binop_i BOI_and)
-               ; BI_testop T_i64 TO_eqz
-               ; BI_if (Tf [] [])
-                   [ BI_get_local 0
-                     ; BI_const (nat_to_value64 2)
-                     ; BI_binop T_i64 (Binop_i BOI_shl)
-                     ; BI_set_local 0
-                     ; BI_get_local 1
-                     ; BI_const (nat_to_value64 2)
-                     ; BI_binop T_i64 (Binop_i BOI_add)
-                     ; BI_set_local 1
-                   ]
-                   []
-                   ; BI_get_local 0
-               ; BI_const (nat_to_value64 2147483648)
-               ; BI_binop T_i64 (Binop_i BOI_and)
-               ; BI_testop T_i64 TO_eqz
-               ; BI_if (Tf [] [])
-                   [ BI_get_local 1
-                     ; BI_const (nat_to_value64 2)
-                     ; BI_binop T_i64 (Binop_i BOI_add)
-                     ; BI_set_local 1
-                   ]
-                   []
-               ; BI_get_local 1
-             ]
-       | "prim_int63_tail0" =>
-           (* x = local 0, r = local 1 *)
-           Ret [ BI_get_local 0
-                 ; BI_const (nat_to_value64 4294967295)
-                 ; BI_binop T_i64 (Binop_i BOI_and)
-                 ; BI_testop T_i64 TO_eqz
-                 ; BI_if (Tf [] [])
-                     [ BI_get_local 0
-                       ; BI_const (nat_to_value64 32)
-                       ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-                       ; BI_set_local 0
-                       ; BI_get_local 1
-                       ; BI_const (nat_to_value64 32)
-                       ; BI_binop T_i64 (Binop_i BOI_add)
-                       ; BI_set_local 1
-                     ]
-                     []
-                 ; BI_get_local 0
-                 ; BI_const (nat_to_value64 65535)
-                 ; BI_binop T_i64 (Binop_i BOI_and)
-                 ; BI_testop T_i64 TO_eqz
-                 ; BI_if (Tf [] [])
-                     [ BI_get_local 0
-                       ; BI_const (nat_to_value64 16)
-                       ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-                       ; BI_set_local 0
-                       ; BI_get_local 1
-                       ; BI_const (nat_to_value64 16)
-                       ; BI_binop T_i64 (Binop_i BOI_add)
-                       ; BI_set_local 1
-                     ]
-                     []
-                 ; BI_get_local 0
-                 ; BI_const (nat_to_value64 255)
-                 ; BI_binop T_i64 (Binop_i BOI_and)
-                 ; BI_testop T_i64 TO_eqz
-                 ; BI_if (Tf [] [])
-                     [ BI_get_local 0
-                       ; BI_const (nat_to_value64 8)
-                       ; BI_binop T_i64 (Binop_i BOI_shl)
-                       ; BI_set_local 0
-                       ; BI_get_local 1
-                       ; BI_const (nat_to_value64 8)
-                       ; BI_binop T_i64 (Binop_i BOI_add)
-                       ; BI_set_local 1
-                     ]
-                     []
-                 ; BI_get_local 0
-                 ; BI_const (nat_to_value64 15)
-                 ; BI_binop T_i64 (Binop_i BOI_and)
-                 ; BI_testop T_i64 TO_eqz
-                 ; BI_if (Tf [] [])
-                     [ BI_get_local 0
-                       ; BI_const (nat_to_value64 4)
-                       ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-                       ; BI_set_local 0
-                       ; BI_get_local 1
-                       ; BI_const (nat_to_value64 4)
-                       ; BI_binop T_i64 (Binop_i BOI_add)
-                       ; BI_set_local 1
-                     ]
-                     []
-                 ; BI_get_local 0
-                 ; BI_const (nat_to_value64 3)
-                 ; BI_binop T_i64 (Binop_i BOI_and)
-                 ; BI_testop T_i64 TO_eqz
-                 ; BI_if (Tf [] [])
-                     [ BI_get_local 0
-                       ; BI_const (nat_to_value64 2)
-                       ; BI_binop T_i64 (Binop_i BOI_add)
-                       ; BI_set_local 0
-                       ; BI_get_local 1
-                       ; BI_const (nat_to_value64 2)
-                       ; BI_binop T_i64 (Binop_i BOI_add)
-                       ; BI_set_local 1
-                     ]
-                     []
-                 ; BI_get_local 0
-                 ; BI_const (nat_to_value 1)
-                 ; BI_binop T_i64 (Binop_i BOI_and)
-                 ; BI_testop T_i64 TO_eqz
-                 ; BI_if (Tf [] [])
-                     [ BI_get_local 1
-                       ; BI_const (nat_to_value64 1)
-                       ; BI_binop T_i64 (Binop_i BOI_add)
-                       ; BI_set_local 1
-                     ]
-                     []
-                 ; BI_get_local 1
-             ]
+  arg_vars <- sequence (List.map (fun y => translate_var nenv lenv y "TODO") ys) ;;
+  arg_instrs <- Ret (List.flat_map (fun l => [BI_get_local l ; BI_load T_i64 None 2%N 0%N]) arg_vars) ;;
+  op_instrs <- match name with
+               | "prim_int63_add"
+               | "prim_int63_sub"
+               | "prim_int63_mul"
+               | "prim_int63_div"
+               | "prim_int63_mod"
+               | "prim_int63_land"
+               | "prim_int63_lor"
+               | "prim_int63_xor"
+               | "prim_int63_lsl"
+               | "prim_int63_lsr" => translate_primitive_arith_op name arg_instrs
 
-       | "prim_int63_eqb" =>
-           Ret [ BI_relop T_i64 (Relop_i ROI_eq)
-                 ; BI_if (Tf [] [ T_i32 ])
-                     [ BI_const (nat_to_value 1) ] (* True *)
-                     [ BI_const (nat_to_value 3) ] (* False *)
-             ]
+               | "prim_int63_eqb"
+               | "prim_int63_leb"
+               | "prim_int63_ltb"
+               | "prim_int63_compare" => translate_primitive_compare_op name arg_instrs
 
-       | "prim_int63_leb" =>
-           Ret [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
-                 ; BI_if (Tf [] [ T_i32 ])
-                     [ BI_const (nat_to_value 1) ] (* True *)
-                     [ BI_const (nat_to_value 3) ] (* False *)
-             ]
-               
-       | "prim_int63_ltb" => 
-           Ret [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-                 ; BI_if (Tf [] [ T_i32 ])
-                     [ BI_const (nat_to_value 1) ] (* True *)
-                     [ BI_const (nat_to_value 3) ] (* False *)
-             ]
-               
-       | "prim_int63_compare" => (* result = local 0 *)
-           Ret [ BI_binop T_i64 (Binop_i BOI_sub)
-                 ; BI_tee_local 0
-                 ; BI_testop T_i64 TO_eqz
-                 ; BI_if (Tf [] [ T_i32 ])
-                     [ BI_const (nat_to_value 1) ] (* Eq *)
-                     [ BI_get_local 0
-                       ; BI_const (nat_to_value64 0)
-                       ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-                       ; BI_if (Tf [] [ T_i32 ])
-                           [ BI_const (nat_to_value 3) ] (* Lt *) 
-                           [ BI_const (nat_to_value 5) ] (* Gt *)
-                     ]
-             ]
+               | "prim_int63_diveucl" =>
+                   match arg_vars with
+                   | [ x ; y ] =>
+                       Ret [ BI_get_local y
+                         ; BI_load T_i64 None 2%N 0%N
+                         ; BI_testop T_i64 TO_eqz
+                         ; BI_if (Tf [] [])
+                             [ BI_get_global global_mem_ptr
+                               ; BI_const (nat_to_value64 0)
+                               ; BI_store T_i64 None 2%N 0%N
+                               ; BI_get_global global_mem_ptr
+                               ; BI_const (nat_to_value64 0)
+                               ; BI_store T_i64 None 2%N 8%N ]
+                             [ BI_get_global global_mem_ptr
+                               ; BI_get_local x
+                               ; BI_load T_i64 None 2%N 0%N
+                               ; BI_get_local y
+                               ; BI_load T_i64 None 2%N 0%N
+                               ; BI_binop T_i64 (Binop_i (BOI_div SX_U))
+                               ; BI_store T_i64 None 2%N 0%N
+                               ; BI_get_global global_mem_ptr
+                               ; BI_get_local x
+                               ; BI_load T_i64 None 2%N 0%N
+                               ; BI_get_local y
+                               ; BI_load T_i64 None 2%N 0%N
+                               ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
+                               ; BI_store T_i64 None 2%N 0%N ]
 
-       | "prim_int63_addc" =>
-           Err "i63 addc not yet implemented"
-                                  
-       | "prim_int63_addcarryc" =>
-           Err "i63 addcarryc not yet implemented"
-                                       
-       | "prim_int63_subc" =>
-           Err "i63 subc not yet implemented"
-                                  
-       | "prim_int63_subcarryc" =>
-           Err "i63 subcarryc not yet implemented"
-                                       
-       | "prim_int63_mulc" =>
-           Err "i63 mulc not yet implemented"
-                                  
-       | "prim_int63_diveucl_21" =>
-       (* mem ptr = local 0, xh = local 1, xl = local 2, y = local 3, nh = local 4, nl = local 5 *)
-           (* Loops? Eww *)
-           Err "i63 diveucl_21 not yet implemented"
-               
-       | "prim_int63_diveucl" => (* mem ptr = local 0,  x = local 1, y = local 2 *)
-           Ret [ BI_get_local 1
-                 ; BI_testop T_i64 TO_eqz
-                 ; BI_if (Tf [] [ ])
-                     [ BI_const (nat_to_value64 0)
-                       ; BI_get_local 0
-                       ; BI_store T_i64 None 2%N 0%N (* address... *)
-                       ; BI_const (nat_to_value64 0)
-                       ; BI_get_local 0
-                       ; BI_store T_i64 None 2%N 8%N (* address... + 8 *)
-                     ]
-                     [ BI_get_local 1
-                       ; BI_get_local 2
-                       ; BI_binop T_i64 (Binop_i (BOI_div SX_U))
-                       ; BI_get_local 0
-                       ; BI_store T_i64 None 2%N 0%N (* address... *)
-                       ; BI_get_local 0
-                       ; BI_get_local 1
-                       ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-                       ; BI_store T_i64 None 2%N 0%N (* address... + 8*)
-                     ]
-                 ; BI_const (nat_to_value 0) (* Pair ordinal *)
-                 ; BI_get_local 0
-                 ; BI_store T_i32 None 2%N 16%N
-                 ; BI_get_local 0
-                 ; BI_store T_i32 None 2%N 20%N
-                 ; BI_get_local 0
-                 ; BI_const (nat_to_value 8) 
-                 ; BI_binop T_i32 (Binop_i BOI_add)                                
-                 ; BI_get_local 0
-                 ; BI_store T_i32 None 2%N 24%N
-                 ; BI_get_local 0
-                 ; BI_const (nat_to_value 16)
-                 ; BI_binop T_i32 (Binop_i BOI_add) ]
-               
-       | "prim_int63_addmuldiv" => (* p = local 0, x = local 1, y = local 2 *)
-           Ret [ BI_get_local 1
-                 ; BI_get_local 0
-                 ; BI_binop T_i64 (Binop_i BOI_shl)
-                 ; BI_const (nat_to_value64 9223372036854775807)
-                 ; BI_binop T_i64 (Binop_i BOI_and)
-                 ; BI_get_local 2
-                 ; BI_const (nat_to_value64 63)
-                 ; BI_get_local 0
-                 ; BI_binop T_i64 (Binop_i BOI_sub)
-                 ; BI_binop T_i64 (Binop_i BOI_or) ]
+                         (* Store pair ord *)
+                         ; BI_get_global global_mem_ptr
+                         ; BI_const (nat_to_value 0) (* pair *)
+                         ; BI_store T_i32 None 2%N 16%N
 
-       | _ => Err ("Prim op not supported: " ++ name)%bs
+                         (* Store first arg. of pair *)
+                         ; BI_get_global global_mem_ptr
+                         ; BI_get_global global_mem_ptr
+                         ; BI_store T_i32 None 2%N 20%N
+
+                         (* Store second arg. of pair *)
+                         ; BI_get_global global_mem_ptr
+                         ; BI_get_global global_mem_ptr
+                         ; BI_const (nat_to_value 8)
+                         ; BI_binop T_i32 (Binop_i BOI_add)
+                         ; BI_store T_i32 None 2%N 24%N
+
+                         (* Return value *)
+                         ; BI_get_global global_mem_ptr
+                         ; BI_get_global global_mem_ptr
+                         ; BI_const (nat_to_value 16)
+                         ; BI_binop T_i32 (Binop_i BOI_add)
+
+                         (* Bump gmp *)
+                         ; BI_get_global global_mem_ptr
+                         ; BI_const (nat_to_value 28)
+                         ; BI_binop T_i32 (Binop_i BOI_add)
+                         ; BI_set_global global_mem_ptr ]
+
+                   | _ =>
+                       Err "i63 diveucl takes 2 arguments"
+                   end
+
+               | "prim_int63_head0" =>
+                   Err "i63 head0 not yet implemented"
+
+               | "prim_int63_tail0" =>
+                   Err "i63 tail0 not yet implemented"
+
+               | "prim_int63_addc" =>
+                   Err "i63 addc not yet implemented"
+
+               | "prim_int63_addcarryc" =>
+                   Err "i63 addcarryc not yet implemented"
+
+               | "prim_int63_subc" =>
+                   Err "i63 subc not yet implemented"
+
+               | "prim_int63_subcarryc" =>
+                   Err "i63 subcarryc not yet implemented"
+
+               | "prim_int63_mulc" =>
+                   Err "i63 mulc not yet implemented"
+
+               | "prim_int63_diveucl_21" =>
+                   Err "i63 diveucl_21 not yet implemented"
+
+               | "prim_int63_addmuldiv" =>
+                   Err "i63 addmuldiv not yet implemented"
+
+               | _ => Err ("Prim op not supported: " ++ name)%bs
        end ;;
   x_var <- translate_var nenv lenv x "TODO" ;;
-  arg_vars <- sequence (List.map (fun y => translate_var nenv lenv y "TODO") ys) ;;
-  arg_instrs <- Ret (List.flat_map (fun l => [BI_get_local l ; BI_load T_i64 None 2%N 4%N]) arg_vars) ;;
   Ret ( [ BI_const (N_to_value page_size)
           ; BI_call grow_mem_function_idx
           ; BI_get_global result_out_of_mem
           ; BI_if (Tf [] [])
               [ BI_return ]
-              ([ BI_get_global global_mem_ptr
-                 ; BI_const (nat_to_value 42)
-                 ; BI_store T_i32 None 2%N 0%N
-                 ; BI_get_global global_mem_ptr ] ++
-                 arg_instrs ++
-                 i ++
-                 [ BI_store T_i64 None 2%N 4%N
-                   ; BI_get_global global_mem_ptr
-                   ; BI_set_local x_var
-                   ; BI_get_global global_mem_ptr
-                   ; BI_const (nat_to_value 12)
-                   ; BI_binop T_i32 (Binop_i BOI_add)
-                   ; BI_set_global global_mem_ptr
-              ])
+              (op_instrs ++ [ BI_set_local x_var ])
       ]).
 
-Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (ctor_tag * list basic_instruction)) : list basic_instruction :=
+Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (nat * list basic_instruction)) : list basic_instruction :=
   match es with
   | [] => [ BI_unreachable ]
-  | (t, instrs) :: tl =>
+  | (ord, instrs) :: tl =>
       (* if boxed (pointer), then load tag from memory;
-         otherwise, obtain tag from unboxed representation ( tag = (repr >> 1) )
+         otherwise, obtain tag from unboxed representation ( ord = (repr >> 1) )
        *)
       BI_get_local v ::
         (if boxed then
-           [ BI_load T_i32 None 2%N 0%N ; BI_const (nat_to_value (Pos.to_nat t)) ]
+           [ BI_load T_i32 None 2%N 0%N ; BI_const (nat_to_value ord) ]
          else
-           [ BI_const (nat_to_value (Pos.to_nat (2 * t + 1))) ]) ++
+           [ BI_const (nat_to_value (2 * ord + 1)) ]) ++
         [ BI_relop T_i32 (Relop_i ROI_eq)
         ; BI_if (Tf nil nil) instrs (create_case_nested_if_chain boxed v tl) ]
   end.
-
 
 (* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
 
@@ -778,13 +930,9 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       following_instr <- translate_exp nenv cenv lenv fenv penv e' ;;
       x_var <- translate_var nenv lenv x "translate_exp constr";;
       match ys with
-      | [] => Ret ([ BI_const (nat_to_value (Pos.to_nat tg)) (* Nullary constructor *)
-                  (* Unboxed representation ( (tag << 1) + 1 ) *)
-                  ; BI_const (nat_to_value 1)
-                  ; BI_binop T_i32 (Binop_i BOI_shl)
-                  ; BI_const (nat_to_value 1)
-                  ; BI_binop T_i32 (Binop_i BOI_add)
-                  ; BI_set_local x_var ] ++ following_instr)
+      | [] =>
+          ord <- get_ctor_ord cenv tg ;;
+          Ret ([ BI_const (nat_to_value (2 * ord + 1)) ; BI_set_local x_var ] ++ following_instr)
       | _ => (* n > 0 ary constructor  *)
           (* Boxed representation *)
           store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
@@ -803,17 +951,18 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       end
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
-        : error (list (ctor_tag * list basic_instruction) * list (ctor_tag  * list basic_instruction)) :=
+        : error (list (nat * list basic_instruction) * list (nat  * list basic_instruction)) :=
         match arms with
         | [] => Ret ([], [])
         | (t, e)::tl =>
             instrs <- translate_exp nenv cenv lenv fenv penv e ;;
             '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions tl ;;
+            ord <- get_ctor_ord cenv t ;;
             arity <- get_ctor_arity cenv t ;;
             if arity =? 0 then
-              Ret (arms_boxed, (t, instrs) :: arms_unboxed)
+              Ret (arms_boxed, (ord, instrs) :: arms_unboxed)
             else
-              Ret ((t, instrs) :: arms_boxed, arms_unboxed)
+              Ret ((ord, instrs) :: arms_boxed, arms_unboxed)
         end
       in
       x_var <- translate_var nenv lenv x "translate_exp case" ;;
@@ -867,15 +1016,12 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
                 [ BI_return ]
                 []
               ; BI_get_global global_mem_ptr
-              ; BI_const (nat_to_value 42)
-              ; BI_store T_i32 None 2%N 0%N
+              ; BI_const (VAL_int64 val)
+              ; BI_store T_i64 None 2%N 0%N
               ; BI_get_global global_mem_ptr
               ; BI_set_local x_var
               ; BI_get_global global_mem_ptr
-              ; BI_const (VAL_int64 val)
-              ; BI_store T_i64 None 2%N 4%N
-              ; BI_get_global global_mem_ptr
-              ; BI_const (nat_to_value 12)
+              ; BI_const (nat_to_value 8)
               ; BI_binop T_i32 (Binop_i BOI_add)
               ; BI_set_global global_mem_ptr
             ] ++ following_instrs)
@@ -885,7 +1031,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
        | None => Err "TODO"
        | Some pdef =>
            following_instrs <- translate_exp nenv cenv lenv fenv penv e';;
-           instrs <- translate_primitive_operation nenv lenv fenv x pdef ys ;;
+           instrs <- translate_primitive_operation nenv lenv x pdef ys ;;
            Ret (instrs ++ following_instrs)
        end
    | Ehalt x =>
@@ -921,21 +1067,6 @@ Fixpoint create_var_mapping (start_id : nat) (vars : list cps.var) (env : M.tree
 Definition create_local_variable_mapping (vars : list cps.var) : localvar_env :=
   create_var_mapping 0 vars (M.empty _).
 
-(* Definition translate_primitive_function (nenv : name_env) (fenv : fname_env) (prim_tag : ctor_tag) (prim : var * (kername * string * bool * nat)) : error wasm_function := *)
-(*   let '(p, (_, name, _, _)) := prim in *)
-(*   fn_var <- translate_var nenv fenv p "translate function" ;; *)
-(*   '(fn_type, body) <- match find (fun '(pname, _) => String.eqb name pname) prim_int63_map with *)
-(*                       | Some (_, gen_def) => Ret (gen_def global_mem_ptr result_var (Pos.to_nat prim_tag)) *)
-(*                       | _ => Err "TODO" *)
-(*                       end ;; *)
-
-(*   Ret ({| fidx := fn_var *)
-(*        ; export_name := name *)
-(*        ; type := fn_type *)
-(*        ; locals := [] *)
-(*        ; body := body *)
-(*        |}). *)
-
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env) (penv : prim_env)
                               (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
   let locals := collect_local_variables body in
@@ -965,22 +1096,14 @@ Fixpoint translate_functions (nenv : name_env) (cenv : ctor_env) (fenv : fname_e
 
 (* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
 
-Fixpoint collect_function_vars (e : cps.exp) : list cps.var :=
+Definition collect_function_vars (e : cps.exp) : list cps.var :=
     match e with
     | Efun fds exp => (* fundefs only allowed here (uppermost level) *)
       (fix iter (fds : fundefs) : list cps.var :=
           match fds with
           | Fnil => []
-          | Fcons x _ _ e' fds' =>
-              x :: (iter fds') ++ collect_function_vars e'
+          | Fcons x _ _ e' fds' => x :: (iter fds')
           end) fds
-    (* | Eprim _ p _ e' => p :: collect_function_vars e' *)
-    (* | Ecase _ arms => *)
-    (*     flat_map (fun a => collect_function_vars (snd a)) arms *)
-    (* | Econstr _ _ _ e' *)
-    (* | Eproj _ _ _ _ e' *)
-    (* | Eletapp _ _ _ _ e' *)
-    (* | Eprim_val _ _ e' => collect_function_vars e' *)
     | _ => []
     end.
 
@@ -1007,8 +1130,6 @@ Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_elemen
 
 Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_env) (e : exp) : error (module * fname_env * localvar_env) :=
   _ <- check_restrictions e;;
-
-  let prim_tag := Pos.add 1%positive (M.fold (fun n t _ => Pos.max n t) cenv 1%positive) in
 
   let fname_mapping := create_fname_mapping e in
 
@@ -1056,6 +1177,9 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                      |} ::
                     {| modexp_name := String.print "result"
                      ; modexp_desc := MED_global (Mk_globalidx result_var)
+                    |} ::
+                    {| modexp_name := String.print "memory"
+                     ; modexp_desc := MED_mem (Mk_memidx 0)
                     |} :: nil
   in
 
