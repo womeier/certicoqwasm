@@ -343,4 +343,8 @@ Let P2 :=
 Eval vm_compute in show_exp P2.
  *)
 
+Definition show_cenv (_ : unit) : string :=
+  String.String chr_newline
+         (show_tree (snd (runState (emit_cenv 0 cenv) Emp))).
+
 End PP.
