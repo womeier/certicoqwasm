@@ -207,7 +207,8 @@ Section IDENT.
         (Err ("Failed compiling LambdaANF program: " ++ s)%bs, "")
       | compM.Ret e =>
         let (_, ctag, itag, ftag, cenv, fenv, nenv, _, log) := c_data' in
-        (Ret (prims, cenv, ctag, itag, nenv, fenv, M.empty _, e), log_to_string log)
+        let cenv_string := cps_show.show_cenv cenv tt in
+        (Ret (prims, cenv, ctag, itag, nenv, fenv, M.empty _, e), (log_to_string log) ++ newline ++ cenv_string)
       end%positive.
     
   End Pipeline.
