@@ -4,7 +4,7 @@ RUST_PATH=./rust/
 RUST_SUFFIX_PATH=extracted/src/
 RUST_SUFFIX=extracted/src/main.rs
 
-rust_examples="demo1 demo2 list_sum vs_easy vs_hard binom sha_fast color"
+rust_examples="demo1 demo2 list_sum vs_easy vs_hard binom sha_fast color even_10000 ack_3_9 sm_gauss_N sm_gauss_nat bernstein_yang"
 echo "Processing Rust extraction"
 for f in ${rust_examples}
 do

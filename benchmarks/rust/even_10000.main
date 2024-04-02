@@ -7,5 +7,5 @@ extern "C" {
 
 #[wasm_bindgen]
 pub fn main() {
-  write_string(&format!("{:?}", Program::new().CertiCoq_Benchmarks_tests_list_sum()))
+  write_string(&format!("{:?}", Program::new().CertiCoq_Benchmarks_tests_even_10000()))
 }

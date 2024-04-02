@@ -25,7 +25,7 @@ $(WASMFILES): tests
 runrust: tests
 	bash ./process-rust-extraction.sh
 	echo "running list_sum"
-	cd rust/list_sum-extracted && cargo run
+	cd rust/list_sum-extracted && cargo build
 
 runwasm: $(WASMFILES)
 	ulimit -s $(STACKSIZE) && ./run_wasm_benchmarks.py
