@@ -111,7 +111,7 @@ Fixpoint even n :=
     end.
 Definition even_10000 := even 10000.
 
-Definition bernstein_yang := W 1.
+Definition bernstein_yang := W 10.
 
 Eval compute in "Compiling ack".
 CertiCoq Compile Wasm -debug ack_3_9.
