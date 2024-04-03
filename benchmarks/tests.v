@@ -112,7 +112,7 @@ Fixpoint even n :=
     end.
 Definition even_10000 := even (100 * 100).
 
-Definition bernstein_yang := W 1.
+Definition bernstein_yang := W 10.
 
 Definition stack_machine_gauss_nat :=
   let n := 1000 in
@@ -136,8 +136,8 @@ Definition stack_machine_gauss_PrimInt :=
   end.
 
 From RustExtraction Require Import Loader ExtrRustBasic.
-(* comment in for naive *)
-(* From RustExtraction Require Import ExtrRustUncheckedArith.*)
+(* comment out for naive *)
+From RustExtraction Require Import ExtrRustUncheckedArith.
 
 Eval compute in "Compiling demo1".
 Redirect "rust/demo1.rs" Rust Extract demo1.
