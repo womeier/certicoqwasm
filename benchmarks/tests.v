@@ -235,9 +235,9 @@ Definition sm_gauss_PrimInt :=
   | _ => None
   end.
 
-CertiCoq Compile Wasm -debug stack_machine_gauss_nat.
+CertiCoq Compile Wasm -debug sm_gauss_nat.
 
-CertiCoq Compile Wasm -debug stack_machine_gauss_N.
+CertiCoq Compile Wasm -debug sm_gauss_N.
 
 (* Not supported yet *)
-(* CertiCoq Compile Wasm -debug stack_machine_gauss_PrimInt. *)
+(* CertiCoq Compile Wasm -debug sm_gauss_PrimInt. *)
