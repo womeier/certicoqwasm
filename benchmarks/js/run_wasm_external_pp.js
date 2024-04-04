@@ -5,15 +5,18 @@ import { readFileSync } from 'fs';
 
 var args = process.argv.slice(2);
 
-if (args.length == 0) { process.exit(1); }
+if (args.length == 0) {
+    console.log("Expected binary path as arg.");
+    process.exit(1);
+}
 
 const binary_path = args[0];
 
 var pp_function;
 
 if (args.length > 1) {
-    if (args[1] == "constructor") { pp_function = '$pretty_print_constructor' }
-    else if (args[1] == "i63") { pp_function = '$pretty_print_i63' }
+    if (args[1] == "constructor") { pp_function = 'pretty_print_constructor' }
+    else if (args[1] == "i63") { pp_function = 'pretty_print_i63' }
 }
 
 function write_int (value) {
@@ -27,9 +30,9 @@ function write_char (value) {
 
 let importObject = {
     env: {
-        $write_char: write_char,
-        $write_int32: write_int,
-	$write_int64: write_int,
+	write_char: write_char,
+	write_int32: write_int,
+	write_int64: write_int,
     }
 };
 
@@ -42,7 +45,7 @@ let importObject = {
 	);
 
 	const start_time = performance.now();
-	obj.instance.exports.$main_function();
+	obj.instance.exports.main_function();
 	const stop_time = performance.now();
 
 	const run_time = performance.now();
