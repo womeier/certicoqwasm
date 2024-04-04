@@ -1,4 +1,4 @@
-Require Import Arith List String.
+Require Import Arith List String BinNat.
 Require Import CertiCoq.Benchmarks.lib.vs.
 Require Import CertiCoq.Benchmarks.lib.Binom.
 Require Import CertiCoq.Benchmarks.lib.Color.
@@ -180,7 +180,7 @@ CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
 
 
 Eval compute in "Compiling color".
-(* CertiCoq Generate WASM -cps -time -debug color. *)
+CertiCoq Generate WASM -cps -time -debug color.
 
 (* CertiCoq Generate WASM -cps -time -debug color. *)
 (* CertiCoq Compile -O 0 -time -cps -ext "_cps" color. *)
@@ -202,9 +202,35 @@ CertiCoq Generate WASM -cps -time -debug sha_fast.
 (* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
 (* CertiCoq Generate Glue -file "glue_sha_fast" [ ]. *)
 
-Eval compute in "Compiling simple_stack_machine_example".
-Definition simple_stack_machine_example := exec1.
-CertiCoq Generate WASM -cps -time -debug simple_stack_machine_example.
+Eval compute in "Compiling sm_gauss_nat".
+
+Definition sm_gauss_nat :=
+  let n := 1000 in
+  match (s_execute' (gauss_sum_sintrs_nat n)) with
+  | [ n' ] => Some (n' - (n * (n + 1))/2)
+  | _ => None
+  end.
+
+CertiCoq Generate WASM -cps -debug sm_gauss_nat.
+
+Eval compute in "Compiling sm_gauss_N".
+
+Definition sm_gauss_N :=
+  let n := 1000%N in
+  match (s_execute' (gauss_sum_sintrs_N n)) with
+  | [ n' ] => Some (n' - (n * (n + 1))/2)%N
+  | _ => None
+  end.
+
+CertiCoq Generate WASM -cps -debug sm_gauss_N.
+
+(* not supported yet *)
+(* Definition sm_gauss_PrimInt := *)
+(*   let n := 1000%uint63 in *)
+(*   match (s_execute' (gauss_sum_sintrs_PrimInt n)) with *)
+(*   | [ n' ] => Some (n' - (n * (n + 1))/2)%uint63 *)
+(*   | _ => None *)
+(*   end. *)
 
 (* Eval compute in "Compiling parse_wasm_module". *)
-(* CertiCoq Compile Wasm -time -debug test_module. *)
+(* CertiCoq Generate WASM -time -debug test_module. *)
