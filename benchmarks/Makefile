@@ -6,7 +6,6 @@ TESTS=$(shell cat TESTS)
 # Name of generated webassembly files
 WATFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wat, $(TESTS))
 WASMFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wasm, $(TESTS))
-JSFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.js, $(TESTS))
 WASM2WAT=wasm2wat --enable-tail-call
 
 all: lib tests convert2wat runwasm
