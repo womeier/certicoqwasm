@@ -8,4 +8,5 @@ sha_fast
 binom
 even_10000
 ack_3_9
-simple_stack_machine_example
+sm_gauss_nat
+sm_gauss_N

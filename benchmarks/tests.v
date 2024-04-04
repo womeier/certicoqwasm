@@ -153,20 +153,20 @@ CertiCoq Generate WASM -cps -debug list_sum.
 
 Eval compute in "Compiling vs_easy".
 
-(* CertiCoq Generate WASM -cps -time -debug vs_easy.*)
+CertiCoq Generate WASM -cps -time -debug vs_easy.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" -time_anf vs_easy. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" vs_easy. *)
 
 Eval compute in "Compiling vs_hard".
 
-(* CertiCoq Generate WASM -cps -time -debug vs_hard. *)
+CertiCoq Generate WASM -cps -time -debug vs_hard.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" vs_hard. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" vs_hard. *)
 
 
 Eval compute in "Compiling binom".
 
-(* CertiCoq Generate WASM -cps -time -debug binom. *)
+CertiCoq Generate WASM -cps -time -debug binom.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" binom. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" binom. *)
 

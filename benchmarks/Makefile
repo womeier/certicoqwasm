@@ -13,10 +13,6 @@ all: lib tests convert2wat runwasm
 
 .PHONY: all default clean lib cleanlib tests $(TESTS)
 
-%.js: %.wasm
-	cp ./run-wasm-template.js $@
-	sed -i 's/{{file}}/$</g' $@
-
 %.wat: %.wasm
 	$(WASM2WAT) $< > tmp.wat
 	cat tmp.wat | tqdm --bytes | ./insert_tailcalls.py > $@
@@ -25,7 +21,7 @@ all: lib tests convert2wat runwasm
 
 convert2wat: $(WATFILES)
 
-runwasm: $(JSFILES)
+runwasm:
 	ulimit -s unlimited && ./run_wasm_benchmarks.py
 
 clean:
