@@ -6,7 +6,6 @@ TESTS=$(shell cat TESTS)
 # Name of generated webassembly files
 WATFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wat, $(TESTS))
 WASMFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wasm, $(TESTS))
-JSFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.js, $(TESTS))
 WASM2WAT=wasm2wat --enable-tail-call
 
 OS=$(shell uname)
@@ -15,21 +14,23 @@ STACKSIZE=$(if $(filter Linux,$(OS)),unlimited,65532)
 
 SED=$(if $(filter Linux,$(OS)),sed,gsed)
 
-all: lib tests runwasm
+all: lib tests convert2wat runwasm
 
 .PHONY: all default clean lib cleanlib tests $(TESTS)
-
-$(WASMFILES): tests
-
-%.js: %.wasm
-	cp ./run-wasm-template.js $@
-	$(SED) -i 's/{{file}}/$</g' $@
 
 #optimize: $(WASMFILES)
 #	wasm-opt -O2 --enable-tail-call --enable-mutable-globals $< --output tmp
 #	mv tmp $<
 
-runwasm: $(JSFILES)
+%.wat: %.wasm
+	$(WASM2WAT) $< > tmp.wat
+	cat tmp.wat | tqdm --bytes | ./insert_tailcalls.py > $@
+	rm tmp.wat
+	wasm-tools parse $@ -o $<
+
+convert2wat: $(WATFILES)
+
+runwasm: convert2wat
 	ulimit -s $(STACKSIZE) && ./run_wasm_benchmarks.py
 
 clean:

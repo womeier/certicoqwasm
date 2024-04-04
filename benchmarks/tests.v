@@ -1,9 +1,12 @@
-Require Import Arith List String.
+Require Import Arith List String BinNat.
 Require Import CertiCoq.Benchmarks.lib.vs.
 Require Import CertiCoq.Benchmarks.lib.Binom.
 Require Import CertiCoq.Benchmarks.lib.Color.
 Require Import CertiCoq.Benchmarks.lib.sha256.
 Require Import CertiCoq.Benchmarks.lib.coind.
+Require Import CertiCoq.Benchmarks.lib.BersteinYangTermination.
+Require Import CertiCoq.Benchmarks.lib.stack_machine.
+
 From MetaCoq.Utils Require Import bytestring MCString.
 From CertiCoq.Plugin Require Import CertiCoq.
 
@@ -78,6 +81,47 @@ Definition test := "Coq is a formal proof management system. It provides a forma
 Definition sha := sha256.SHA_256 (sha256.str_to_bytes test).
 
 Definition sha_fast := sha256.SHA_256' (sha256.str_to_bytes test).
+
+(*******************************************************************)
+(* from https://github.com/AU-COBRA/coq-rust-extraction/blob/master/tests/theories/InternalFix.v *)
+
+Fixpoint ack (n m : nat) : nat :=
+  match n with
+  | O => S m
+  | S p => let fix ackn (m : nat) :=
+            match m with
+            | O => ack p 1
+            | S q => ack p (ackn q)
+            end
+          in ackn m
+  end.
+Definition ack_3_9 := ack 3 9.
+
+Fixpoint even n :=
+  match n with
+  | O => true
+  | S m => odd m
+  end
+  with odd n :=
+    match n with
+    | O => false
+    | S k => even k
+    end.
+Definition even_10000 := even 10000.
+
+Definition bernstein_yang := W 10.
+
+Eval compute in "Compiling ack".
+CertiCoq Generate WASM -cps -debug ack_3_9.
+
+Eval compute in "Compiling even_10000".
+CertiCoq Generate WASM -cps -debug even_10000.
+
+Eval compute in "Bernstein yang termination".
+CertiCoq Generate WASM -cps -debug bernstein_yang.
+(* bernstein_yang: compilation fine, runs for quite long *)
+
+(*******************************************************************)
 
 Eval compute in "Compiling demo1".
 CertiCoq Generate WASM -cps -time -debug demo1.
@@ -161,3 +205,35 @@ CertiCoq Generate WASM -cps -time -debug sha_fast.
 (* CertiCoq Generate WASM -time -debug sha_fast. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" sha_fast. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
+
+
+(* Eval compute in "Compiling parse_wasm_module". *)
+(* CertiCoq Compile Wasm -time -debug test_module. *)
+
+Definition sm_gauss_nat :=
+  let n := 1000 in
+  match (s_execute' (gauss_sum_sintrs_nat n)) with
+  | [ n' ] => Some (n' - (n * (n + 1))/2)
+  | _ => None
+  end.
+
+Definition sm_gauss_N :=
+  let n := 1000%N in
+  match (s_execute' (gauss_sum_sintrs_N n)) with
+  | [ n' ] => Some (n' - (n * (n + 1))/2)%N
+  | _ => None
+  end.
+
+(* Definition sm_gauss_PrimInt := *)
+(*   let n := 1000%uint63 in *)
+(*   match (s_execute' (gauss_sum_sintrs_PrimInt n)) with *)
+(*   | [ n' ] => Some (n' - (n * (n + 1))/2)%uint63 *)
+(*   | _ => None *)
+(*   end. *)
+
+CertiCoq Generate WASM -cps -debug sm_gauss_nat.
+
+CertiCoq Generate WASM -cps -debug sm_gauss_N.
+
+(* Not supported yet *)
+(* CertiCoq Compile Wasm -debug sm_gauss_PrimInt. *)
