@@ -6,7 +6,6 @@ TESTS=$(shell cat TESTS)
 # Name of generated webassembly files
 WATFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wat, $(TESTS))
 WASMFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.wasm, $(TESTS))
-JSFILES=$(patsubst %, CertiCoq.Benchmarks.tests.%.js, $(TESTS))
 WASM2WAT=wasm2wat --enable-tail-call
 
 #all: lib tests optimize runwasm
@@ -16,15 +15,11 @@ all: lib tests runwasm
 
 $(WASMFILES): tests
 
-%.js: %.wasm
-	cp ./run-wasm-template.js $@
-	sed -i 's/{{file}}/$</g' $@
-
 #optimize: $(WASMFILES)
 #	wasm-opt -O2 --enable-tail-call --enable-mutable-globals $< --output tmp
 #	mv tmp $<
 
-runwasm: $(JSFILES)
+runwasm:
 	ulimit -s unlimited && ./run_wasm_benchmarks.py
 
 clean:

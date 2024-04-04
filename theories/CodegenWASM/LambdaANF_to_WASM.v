@@ -81,13 +81,13 @@ Fixpoint check_restrictions (e : exp) : error Datatypes.unit:=
 
 (* imported, for printing result *)
 Definition write_char_function_idx : immediate := 0.
-Definition write_char_function_name := "$write_char".
+Definition write_char_function_name := "write_char".
 Definition write_int_function_idx : immediate := 1.
-Definition write_int_function_name := "$write_int".
+Definition write_int_function_name := "write_int".
 
-Definition constr_pp_function_name : string := "$pretty_print_constructor".
+Definition constr_pp_function_name : string := "pretty_print_constructor".
 Definition constr_pp_function_idx : immediate := 2.
-Definition main_function_name := "$main_function".
+Definition main_function_name := "main_function".
 Definition main_function_idx : immediate := 3.
 
 (* ***** MAPPINGS ****** *)
@@ -456,6 +456,13 @@ Fixpoint create_var_mapping (start_id : nat) (vars : list cps.var) (env : M.tree
 Definition create_local_variable_mapping (vars : list cps.var) : localvar_env :=
   create_var_mapping 0 vars (M.empty _).
 
+Definition function_export_name (nenv : name_env) (v : cps.var) : string :=
+  let bytes := String.print ("_" ++ show_tree (show_var nenv v)) in
+  String.parse (map (fun b => match b with
+                              | "."%byte => "_"%byte
+                              |_ => b
+                              end)
+                    bytes).
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
                               (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
@@ -470,7 +477,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
 
   Ret
   {| fidx := fn_var
-   ; export_name := show_tree (show_var nenv name)
+   ; export_name := function_export_name nenv name
    ; type := Tf arg_types []
    ; locals := map (fun _ => T_i32) locals
    ; body := body_res
