@@ -48,6 +48,7 @@ let importObject = {
 
         if (obj.instance.exports.result_out_of_mem.value == 1) {
             console.log("Ran out of memory.");
+            console.log(`Benchmark ${path}: {{"time_startup": "${time_startup}", "time_main": "${time_main}", "program": "${program}"}} (in ms)`);
             process.exit(1);
         } else {
             const res_value = obj.instance.exports.result.value;
