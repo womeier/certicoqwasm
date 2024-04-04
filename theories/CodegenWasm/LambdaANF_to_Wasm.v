@@ -69,24 +69,28 @@ Fixpoint check_restrictions (e : exp) : error Datatypes.unit :=
    end.
 
 (* ***** FUNCTIONS and GLOBALS ****** *)
-(*  In Wasm, functions and globals are referred to by their index in the order they are listed *)
+
+(*  In Wasm, functions and globals are referred to by their index in the order they are listed.
+ *  For FFI/debugging, the module exports all functions.
+ *  The names of translated lANF functions are prefixed with an underscore, others should not to avoid name clashes.
+ *)
 
 (* imported, print char/int to stdout *)
 Definition write_char_function_idx : immediate := 0.
-Definition write_char_function_name := "$write_char".
+Definition write_char_function_name := "write_char".
 Definition write_int_function_idx : immediate := 1.
-Definition write_int_function_name := "$write_int".
+Definition write_int_function_name := "write_int".
 
 (* write S-expr of constr to stdout *)
-Definition constr_pp_function_name : string := "$pretty_print_constructor".
+Definition constr_pp_function_name : string := "pretty_print_constructor".
 Definition constr_pp_function_idx : immediate := 2.
 
 (* grow_mem: grow linear mem by number of bytes if necessary *)
-Definition grow_mem_function_name := "$grow_mem_if_necessary".
+Definition grow_mem_function_name := "grow_mem_if_necessary".
 Definition grow_mem_function_idx := 3.
 
 (* main function: contains the translated main expression *)
-Definition main_function_name := "$main_function".
+Definition main_function_name := "main_function".
 Definition main_function_idx : immediate := 4.
 
 (* then follow the translated functions,
@@ -552,16 +556,23 @@ Fixpoint create_var_mapping (start_id : nat) (vars : list cps.var) (env : M.tree
 Definition create_local_variable_mapping (vars : list cps.var) : localvar_env :=
   create_var_mapping 0 vars (M.empty _).
 
+Definition function_export_name (nenv : name_env) (v : cps.var) : string :=
+  let bytes := String.print ("_" ++ show_tree (show_var nenv v)) in
+  String.parse (map (fun b => match b with
+                              | "."%byte => "_"%byte
+                              |_ => b
+                              end)
+                    bytes).
 
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env)
-                              (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
+                              (f : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
   let locals := collect_local_variables body in
   let lenv := create_local_variable_mapping (args ++ locals) in
 
-  fn_idx <- translate_var nenv fenv name "translate function" ;;
-  body_res <- translate_exp nenv cenv lenv fenv body 0;;
+  fn_idx <- translate_var nenv fenv f "translate function" ;;
+  body_res <- translate_exp nenv cenv lenv fenv body ;;
   Ret {| fidx := fn_idx
-       ; export_name := show_tree (show_var nenv name)
+       ; export_name := function_export_name nenv f
        ; type := Tf (map (fun _ => T_i32) args) []
        ; locals := map (fun _ => T_i32) locals
        ; body := body_res
