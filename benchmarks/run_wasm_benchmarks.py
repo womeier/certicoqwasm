@@ -12,11 +12,20 @@ files = open("TESTS").read().strip().split("\n")
 ret_code = 0
 
 for f in files:
-    name = f"./CertiCoq.Benchmarks.tests.{f}.js"
-    assert os.path.isfile(name), f"didn't find js file {name}, did you run <make compilewasm>?"
+    name = f"./CertiCoq.Benchmarks.tests.{f}.wasm"
+    assert os.path.isfile(name), f"didn't find wasm file {name}."
 
     print(f"\nrunning: {name}")
-    r = subprocess.run(["node", "--experimental-wasm-return_call", name])
+    r = subprocess.run(
+        [
+            "node",
+            "--experimental-wasm-return_call",
+#            "--stack-size=1000000",
+            "run_wasm.js",
+            "./",
+            f,
+        ]
+    )
 
     if r.returncode != 0:
         ret_code = r.returncode
