@@ -9,4 +9,4 @@ sha256.v
 # SqlQueries.v
 coind.v
 stack_machine.v
-BersteinYangTermination.v
+BernsteinYangTermination.v
