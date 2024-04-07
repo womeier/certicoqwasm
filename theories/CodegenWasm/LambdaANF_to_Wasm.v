@@ -29,28 +29,34 @@ Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes, don't
 Definition assert (b : bool) (err : string) : error Datatypes.unit :=
   if b then Ret tt else Err err.
 
-Definition get_ctor_ord (cenv : ctor_env) (t : ctor_tag) : error nat :=
+Definition get_ctor_ord (cenv : ctor_env) (t : ctor_tag) : error N:=
   match M.get t cenv with
-  | Some c => Ret (N.to_nat (ctor_ordinal c))
+  | Some c => Ret (ctor_ordinal c)
   | None => Err ("Constructor with tag " ++ (string_of_positive t) ++ " in constructor expression not found in constructor environment")%bs
   end.
 
+
 (* enforces predicate expression_restricted in the proof file *)
-Fixpoint check_restrictions (e : exp) : error Datatypes.unit :=
+Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :=
   match e with
   | Econstr _ t ys e' =>
+      ord <- get_ctor_ord cenv t ;;
+      _ <- assert (Z.of_N ord <? Wasm_int.Int32.half_modulus)%Z "Constructor ordinal too large" ;;
       _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_constr_args)%Z
              "found constructor with too many args, check max_constr_args";;
-      check_restrictions e'
+      check_restrictions cenv e'
   | Ecase x ms =>
-      (* _ <- check_constructors_in_case cenv ms ;; *)
-      _ <- sequence (map (fun p => check_restrictions (snd p)) ms) ;;
-      Ret tt          
-  | Eproj _ _ _ _ e' => check_restrictions e'
+      (* _ <- check_case_list_ordinals cenv ms;; *)
+      _ <- sequence (map (fun '(t, e') =>
+                            ord <- get_ctor_ord cenv t ;;
+                            _ <- assert (Z.of_N ord <? Wasm_int.Int32.half_modulus)%Z "Constructor ordinal too large" ;;
+                            check_restrictions cenv e') ms) ;;
+      Ret tt
+  | Eproj _ _ _ _ e' => check_restrictions cenv  e'
   | Eletapp _ _ _ ys e' =>
       _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
                 "found function application with too many function params, check max_function_args";;
-      check_restrictions e'
+      check_restrictions cenv e'
   | Efun fds e' =>
       _ <- assert (Z.of_nat (numOf_fundefs fds) <? max_num_functions)%Z
                 "too many functions, check max_num_functions";;
@@ -61,15 +67,15 @@ Fixpoint check_restrictions (e : exp) : error Datatypes.unit :=
                   _ <- assert (Z.of_nat (length ys) <=? max_function_args)%Z
                        "found fundef with too many function args, check max_function_args";;
                   _ <- (iter fds');;
-                  check_restrictions e'
+                  check_restrictions cenv e'
               end) fds);;
-      check_restrictions e'
+      check_restrictions cenv e'
   | Eapp _ _ ys => assert (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
                         "found function application with too many function params, check max_function_args"
-  | Eprim_val _ _ e' => check_restrictions e'
-  | Eprim _ _ _ e' => check_restrictions e'
+  | Eprim_val _ _ e' => check_restrictions cenv e'
+  | Eprim _ _ _ e' => check_restrictions cenv e'
   | Ehalt _ => Ret tt
-   end.
+  end.
 
 (* ***** FUNCTIONS and GLOBALS ****** *)
 (*  In Wasm, functions and globals are referred to by their index in the order they are listed *)
@@ -81,25 +87,25 @@ Definition write_char_function_name := "$write_char".
 Definition write_int32_function_idx : immediate := 1.
 Definition write_int32_function_name := "$write_int32".
 
-Definition write_int64_function_idx : immediate := 2.
-Definition write_int64_function_name := "$write_int64".
+(* Definition write_int64_function_idx : immediate := 2. *)
+(* Definition write_int64_function_name := "$write_int64". *)
 
 (* write S-expr of constr to stdout *)
 Definition constr_pp_function_name : string := "$pretty_print_constructor".
-Definition constr_pp_function_idx : immediate := 3.
+Definition constr_pp_function_idx : immediate := 2.
 
 (* grow_mem: grow linear mem by number of bytes if necessary *)
 Definition grow_mem_function_name := "$grow_mem_if_necessary".
-Definition grow_mem_function_idx := 4.
+Definition grow_mem_function_idx := 3.
 
 (* main function: contains the translated main expression *)
 Definition main_function_name := "$main_function".
-Definition main_function_idx : immediate := 5.
+Definition main_function_idx : immediate := 4.
 
 (* then follow the translated functions,
    index of first translated lANF fun, a custom fun should be added before, and this var increased by 1
    (the proof will still break at various places)  *)
-Definition num_custom_funs := 6.
+Definition num_custom_funs := 5.
 
 (* global vars *)
 Definition global_mem_ptr    : immediate := 0. (* ptr to free memory, increased when new 'objects' are allocated, there is no GC *)
@@ -264,18 +270,18 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : 
   blocks <- sequence (map (generate_constr_pp_single_constr cenv nenv) tags) ;;
 
   let body := (concat blocks) ++
-                [ BI_get_local 0
-                  ; BI_load T_i32 None 2%N 0%N
-                  ; BI_const (nat_to_value 42)
-                  ; BI_relop T_i32 (Relop_i ROI_eq)
-                  ; BI_if (Tf nil nil)
-                      ( (instr_write_string " ") ++ [ BI_get_local 0
-                        ; BI_load T_i64 None 2%N 4%N
-                        ; BI_call write_int64_function_idx ])
+                (* BI_get_local 0 *)
+                  (* ; BI_load T_i32 None 2%N 0%N *)
+                  (* ; BI_const (nat_to_value 42) *)
+                  (* ; BI_relop T_i32 (Relop_i ROI_eq) *)
+                  (* ; BI_if (Tf nil nil) *)
+                  (*     ( (instr_write_string " ") ++ [ BI_get_local 0 *)
+                  (*       ; BI_load T_i64 None 2%N 4%N *)
+                  (*       ; BI_call write_int64_function_idx ]) *)
                       ((instr_write_string " <can't print constr: ") ++ (* e.g. could be fn-pointer or env-pointer *)
                           [ BI_get_local 0 (* param: ptr to constructor *)
                             ; BI_call write_int32_function_idx
-                          ] ++ instr_write_string ">" ) ] in
+                          ] ++ instr_write_string ">" ) in
 
   let _ := ")"  (* hack to fix syntax highlighting bug *)
 
@@ -361,15 +367,15 @@ Definition translate_primitive_value (p : AstCommon.primitive) :=
   end (projT2 p).
 
 
-Definition get_ctor_rep (cenv : ctor_env) (tag : ctor_tag) : error nat :=
-  match M.get tag cenv with
-  | Some {| ctor_arity := arity ; ctor_ordinal := ord |} =>
-      if (arity =? 0)%N then
-        Ret (N.to_nat (2 * ord + 1)%N)
-      else
-        Ret (N.to_nat ord)
-  | None => Err ("Constructor with tag " ++ (string_of_positive tag) ++ " not found in constructor environment")%bs
-  end.
+(* Definition get_ctor_rep (cenv : ctor_env) (tag : ctor_tag) : error N := *)
+(*   match M.get tag cenv with *)
+(*   | Some {| ctor_arity := arity ; ctor_ordinal := ord |} => *)
+(*       if (arity =? 0)%N then *)
+(*         Ret (2 * ord + 1)%N *)
+(*       else *)
+(*         Ret (N.to_nat ord) *)
+(*   | None => Err ("Constructor with tag " ++ (string_of_positive tag) ++ " not found in constructor environment")%bs *)
+(*   end. *)
 
 
 (* ***** TRANSLATE CONSTRUCTOR ALLOCATION ****** *)
@@ -419,7 +425,7 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 
        (* set tag *)
        ; BI_get_global constr_alloc_ptr
-       ; BI_const (nat_to_value ord)
+       ; BI_const (nat_to_value (N.to_nat ord))
        ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
        (* increase gmp by 4 *)
        ; BI_get_global global_mem_ptr
@@ -430,286 +436,6 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
        ] ++ set_constr_args).
 
 (* **** TRANSLATE PRIMITIVE OPERATIONS **** *)
-
-(* TODO:
-   Simple ops can be inlined
-   More complex functions require temporary variables to avoid complex stack juggling,
-   probably best to define auxiliary functions for them?
-
-   Aux. functions for
-   - head0: i64 -> i64
-   - tail0: i64 -> i64
-   - addc: i32 -> i64 -> i64 -> i32 (does allocation)
-   - addcarryc: i32 -> i64 -> i64 -> i32 (does allocation)
-   - subc: i32 -> i64 -> i64 -> i32 (does allocation)
-   - subcarryc: i32 -> i64 -> i64 -> i32 (does allocation)
-   - mulc: i32 -> i64 -> i64 -> i32 (does allocation)
-   - diveucl_21: i32 -> i64 -> i64 -> i64 -> i32 (does allocation)
-   - diveucl: i32 -> i64 -> i64 -> i32 (does allocation)
-   - addmuldiv: i64 -> i64 -> i64 -> i64
- *)
-
-(* Definition head0_primitive : wasm_function :=
-  let body :=
-    [ BI_get_local 0
-      ; BI_const (nat_to_value64 9223372032559808512)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 1
-            ; BI_const (nat_to_value64 31)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          [ BI_get_local 0
-            ; BI_const (nat_to_value64 31)
-            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-            ; BI_set_local 0
-          ]
-      ; BI_get_local 0
-      ; BI_const (nat_to_value64 4294901760)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 0
-            ; BI_const (nat_to_value64 16)
-            ; BI_binop T_i64 (Binop_i BOI_shl)
-            ; BI_const (nat_to_value64 9223372036854775807)
-            ; BI_binop T_i64 (Binop_i BOI_and)
-            ; BI_set_local 0
-            ; BI_get_local 1
-            ; BI_const (nat_to_value64 16)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 0
-      ; BI_const (nat_to_value64 4026531840)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 0
-            ; BI_const (nat_to_value64 8)
-            ; BI_binop T_i64 (Binop_i BOI_shl)
-            ; BI_set_local 0
-            ; BI_get_local 1
-            ; BI_const (nat_to_value64 8)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 0
-      ; BI_const (nat_to_value64 3221225472)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 0
-            ; BI_const (nat_to_value64 4)
-            ; BI_binop T_i64 (Binop_i BOI_shl)
-            ; BI_set_local 0
-            ; BI_get_local 1
-            ; BI_const (nat_to_value64 4)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 0
-      ; BI_const (nat_to_value64 2147483648)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 0
-            ; BI_const (nat_to_value64 2)
-            ; BI_binop T_i64 (Binop_i BOI_shl)
-            ; BI_set_local 0
-            ; BI_get_local 1
-            ; BI_const (nat_to_value64 2)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 0
-      ; BI_const (nat_to_value64 2147483648)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 1
-            ; BI_const (nat_to_value64 2)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 1
-    ]
-  in
-  {| fidx := 42 (* TODO *)
-  ; export_name := "head0"
-  ; type := Tf [ T_i64 ] [ T_i64 ]
-  ; locals := [ T_i64 ]
-  ; body := body
-  |}. *)
-
-
-(* Definition tail0 : wasm_function :=
-  let body :=
-    [ BI_get_local 0
-      ; BI_const (nat_to_value64 4294967295)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 0
-            ; BI_const (nat_to_value64 32)
-            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-            ; BI_set_local 0
-            ; BI_get_local 1
-            ; BI_const (nat_to_value64 32)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 0
-      ; BI_const (nat_to_value64 65535)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 0
-            ; BI_const (nat_to_value64 16)
-            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-            ; BI_set_local 0
-            ; BI_get_local 1
-            ; BI_const (nat_to_value64 16)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 0
-      ; BI_const (nat_to_value64 255)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 0
-            ; BI_const (nat_to_value64 8)
-            ; BI_binop T_i64 (Binop_i BOI_shl)
-            ; BI_set_local 0
-            ; BI_get_local 1
-            ; BI_const (nat_to_value64 8)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 0
-      ; BI_const (nat_to_value64 15)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 0
-            ; BI_const (nat_to_value64 4)
-            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-            ; BI_set_local 0
-            ; BI_get_local 1
-            ; BI_const (nat_to_value64 4)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 0
-      ; BI_const (nat_to_value64 3)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 0
-            ; BI_const (nat_to_value64 2)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 0
-            ; BI_get_local 1
-            ; BI_const (nat_to_value64 2)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 0
-      ; BI_const (nat_to_value 1)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_testop T_i64 TO_eqz
-      ; BI_if (Tf [] [])
-          [ BI_get_local 1
-            ; BI_const (nat_to_value64 1)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_set_local 1
-          ]
-          []
-      ; BI_get_local 1
-    ]
-  in
-  {| fidx := 42 (* TODO *)
-  ; export_name := "tail0"
-  ; type := Tf [ T_i64 ] [ T_i64 ]
-  ; locals := [ T_i64 ]
-  ; body := body
-  |}. *)
-
-(* Definition diveucl : wasm_function :=
-  let body := [ BI_get_local 1
-                ; BI_testop T_i64 TO_eqz
-                ; BI_if (Tf [] [ ])
-                    [ BI_const (nat_to_value64 0)
-                      ; BI_get_local 0
-                      ; BI_store T_i64 None 2%N 0%N (* address... *)
-                      ; BI_const (nat_to_value64 0)
-                      ; BI_get_local 0
-                      ; BI_store T_i64 None 2%N 8%N (* address... + 8 *)
-                    ]
-                    [ BI_get_local 1
-                      ; BI_get_local 2
-                      ; BI_binop T_i64 (Binop_i (BOI_div SX_U))
-                      ; BI_get_local 0
-                      ; BI_store T_i64 None 2%N 0%N (* address... *)
-                      ; BI_get_local 0
-                      ; BI_get_local 1
-                      ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-                      ; BI_store T_i64 None 2%N 0%N (* address... + 8*)
-                    ]
-                ; BI_const (nat_to_value 0) (* Pair ordinal *)
-                ; BI_get_local 0
-                ; BI_store T_i32 None 2%N 16%N
-                ; BI_get_local 0
-                ; BI_store T_i32 None 2%N 20%N
-                ; BI_get_local 0
-                ; BI_const (nat_to_value 8)
-                ; BI_binop T_i32 (Binop_i BOI_add)
-                ; BI_get_local 0
-                ; BI_store T_i32 None 2%N 24%N
-                ; BI_get_local 0
-                ; BI_const (nat_to_value 16)
-                ; BI_binop T_i32 (Binop_i BOI_add) ]
-  in
-  {| fidx := 42 (* TODO *)
-  ; export_name := "diveucl"
-  ; type := Tf [ T_i32 ; T_i64 ; T_i64 ] [ T_i32 ]
-  ; locals := [ ]
-  ; body := body
-  |}. *)
-
-(* Definition addmuldiv : wasm_function :=
-  let body :=
-    [ BI_get_local 1
-      ; BI_get_local 0
-      ; BI_binop T_i64 (Binop_i BOI_shl)
-      ; BI_const (nat_to_value64 9223372036854775807)
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_get_local 2
-      ; BI_const (nat_to_value64 63)
-      ; BI_get_local 0
-      ; BI_binop T_i64 (Binop_i BOI_sub)
-      ; BI_binop T_i64 (Binop_i BOI_or) ]
-  in
-  {| fidx := 42 (* TODO *)
-  ; export_name := "addmuldiv"
-  ; type := Tf [ T_i64 ; T_i64 ; T_i64 ] [ T_i64 ]
-  ; locals := [ ]
-  ; body := body
-  |}. *)
-
 
 Definition apply_op_and_store_i64 (op : basic_instruction) (arg_instrs : list basic_instruction) :=
   BI_get_global global_mem_ptr ::
@@ -905,7 +631,7 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
               (op_instrs ++ [ BI_set_local x_var ])
       ]).
 
-Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (nat * list basic_instruction)) : list basic_instruction :=
+Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (N * list basic_instruction)) : list basic_instruction :=
   match es with
   | [] => [ BI_unreachable ]
   | (ord, instrs) :: tl =>
@@ -914,9 +640,9 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (
        *)
       BI_get_local v ::
         (if boxed then
-           [ BI_load T_i32 None 2%N 0%N ; BI_const (nat_to_value ord) ]
+           [ BI_load T_i32 None 2%N 0%N ; BI_const (nat_to_value (N.to_nat ord)) ]
          else
-           [ BI_const (nat_to_value (2 * ord + 1)) ]) ++
+           [ BI_const (nat_to_value (N.to_nat (2 * ord + 1)%N)) ]) ++
         [ BI_relop T_i32 (Relop_i ROI_eq)
         ; BI_if (Tf nil nil) instrs (create_case_nested_if_chain boxed v tl) ]
   end.
@@ -932,7 +658,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       match ys with
       | [] =>
           ord <- get_ctor_ord cenv tg ;;
-          Ret ([ BI_const (nat_to_value (2 * ord + 1)) ; BI_set_local x_var ] ++ following_instr)
+          Ret ([ BI_const (nat_to_value (N.to_nat (2 * ord + 1)%N)) ; BI_set_local x_var ] ++ following_instr)
       | _ => (* n > 0 ary constructor  *)
           (* Boxed representation *)
           store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
@@ -951,7 +677,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
       end
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
-        : error (list (nat * list basic_instruction) * list (nat  * list basic_instruction)) :=
+        : error (list (N * list basic_instruction) * list (N  * list basic_instruction)) :=
         match arms with
         | [] => Ret ([], [])
         | (t, e)::tl =>
@@ -1026,14 +752,14 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
               ; BI_set_global global_mem_ptr
             ] ++ following_instrs)
 
-   | Eprim x p ys e' =>
-       match M.get p penv with
-       | None => Err "TODO"
-       | Some pdef =>
-           following_instrs <- translate_exp nenv cenv lenv fenv penv e';;
-           instrs <- translate_primitive_operation nenv lenv x pdef ys ;;
-           Ret (instrs ++ following_instrs)
-       end
+   | Eprim x p ys e' => Err "temp"
+       (* match M.get p penv with *)
+       (* | None => Err "TODO" *)
+       (* | Some pdef => *)
+       (*     following_instrs <- translate_exp nenv cenv lenv fenv penv e';; *)
+       (*     instrs <- translate_primitive_operation nenv lenv x pdef ys ;; *)
+       (*     Ret (instrs ++ following_instrs) *)
+       (* end *)
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_exp halt";;
      Ret [ BI_get_local x_var; BI_set_global result_var; BI_return ]
@@ -1129,7 +855,7 @@ Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_elemen
   end.
 
 Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_env) (e : exp) : error (module * fname_env * localvar_env) :=
-  _ <- check_restrictions e;;
+  _ <- check_restrictions cenv e;;
 
   let fname_mapping := create_fname_mapping e in
 
@@ -1190,7 +916,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                                         ; modfunc_body := f.(body)
                                        |}) functions in
   let module :=
-      {| mod_types := (list_function_types (Z.to_nat max_function_args)) ++ [Tf [T_i64] []] (* more than required, doesn't hurt*)
+      {| mod_types := (list_function_types (Z.to_nat max_function_args)) (* ++ [Tf [T_i64] [] ] *) (* more than required, doesn't hurt*)
 
        ; mod_funcs := functions_final
        ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length fns + num_custom_funs)
@@ -1227,11 +953,11 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                         {| imp_module := String.print "env"
                          ; imp_name := String.print write_int32_function_name
                          ; imp_desc := ID_func 1
-                         |} ::
-                        {| imp_module := String.print "env"
-                         ; imp_name := String.print write_int64_function_name
-                         ; imp_desc := ID_func (Z.to_nat max_function_args + 1)
                          |} :: nil
+                        (* {| imp_module := String.print "env" *)
+                        (*  ; imp_name := String.print write_int64_function_name *)
+                        (*  ; imp_desc := ID_func (Z.to_nat max_function_args + 1) *)
+                        (*  |} :: nil *)
 
        ; mod_exports := exports
        |}
