@@ -85,31 +85,19 @@ Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :
  *)
 
 (* imported, print char/int to stdout *)
-Definition write_char_function_idx : immediate := 0.
-Definition write_char_function_name := "write_char".
-
-Definition write_int32_function_idx : immediate := 1.
-Definition write_int32_function_name := "write_int32".
-
-(* Definition write_int64_function_idx : immediate := 2. *)
-(* Definition write_int64_function_name := "write_int64". *)
-
-(* write S-expr of constr to stdout *)
-Definition constr_pp_function_name : string := "pretty_print_constructor".
-Definition constr_pp_function_idx : immediate := 2.
 
 (* grow_mem: grow linear mem by number of bytes if necessary *)
 Definition grow_mem_function_name := "grow_mem_if_necessary".
-Definition grow_mem_function_idx := 3.
+Definition grow_mem_function_idx := 0.
 
 (* main function: contains the translated main expression *)
 Definition main_function_name := "main_function".
-Definition main_function_idx : immediate := 4.
+Definition main_function_idx : immediate := 1.
 
 (* then follow the translated functions,
    index of first translated lANF fun, a custom fun should be added before, and this var increased by 1
    (the proof will still break at various places)  *)
-Definition num_custom_funs := 5.
+Definition num_custom_funs := 2.
 
 (* global vars *)
 Definition global_mem_ptr    : immediate := 0. (* ptr to free memory, increased when new 'objects' are allocated, there is no GC *)
@@ -180,122 +168,6 @@ Definition instr_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : 
 
     else var <- translate_var nenv lenv v "instr_local_var_read: normal var";;
          Ret (BI_get_local var).
-
-
-
-(* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)
-
-Module S_pos := MSetAVL.Make Positive_as_OT.
-
-Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
-  match e with
-  | Efun fds e' => S_pos.union (collect_constr_tags' e')
-          ((fix iter (fds : fundefs) : S_pos.t :=
-            match fds with
-            | Fnil => S_pos.empty
-            | Fcons _ _ _ e'' fds' =>
-                S_pos.union (collect_constr_tags' e'') (iter fds')
-            end) fds)
-  | Econstr _ tg _ e' => S_pos.add tg (collect_constr_tags' e')
-  | Ecase _ arms => fold_left (fun _s a => S_pos.union _s (S_pos.add (fst a) (collect_constr_tags' (snd a)))) arms S_pos.empty
-  | Eproj _ _ _ _ e' => collect_constr_tags' e'
-  | Eletapp _ _ _ _ e' => collect_constr_tags' e'
-  | Eprim _ _ _ e' => collect_constr_tags' e'
-  | Eprim_val _ _ e' => collect_constr_tags' e'
-  | Eapp _ _ _ => S_pos.empty
-  | Ehalt _ => S_pos.empty
-  end.
-
-Definition collect_constr_tags (e : exp) : list ctor_tag :=
-  S_pos.elements (collect_constr_tags' e).
-
-Definition instr_write_string (s : string) : list basic_instruction :=
-  let fix to_ascii_list s' :=
-    match s' with
-    | String.EmptyString => []
-    | String.String b s'' => Byte.to_nat b :: to_ascii_list s''
-    end in
-  flat_map (fun c => [BI_const (nat_to_value c); BI_call write_char_function_idx]) (to_ascii_list s).
-
-Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
-  match M.get t cenv with
-  | Some {| ctor_arity := n |} => Ret (N.to_nat n)
-  | _ => Err "found constructor without ctor_arity set"
-  end.
-
-(* Generation of PP function for constructors
-
-  Function takes as an argument (local 0) the pointer to a constructor, its name is printed.
-  To print the args, for each argument:
-  - local 0 += 4
-  - call constr_pp_function recursively
-*)
-Fixpoint generate_constr_pp_constr_args (calls : nat) (arity : nat) : list basic_instruction :=
-    match calls with
-    | 0        => []
-    | S calls' => [ BI_get_local 0
-                  ; BI_const (nat_to_value 4)
-                  ; BI_binop T_i32 (Binop_i BOI_add)
-                  ; BI_set_local 0
-                  ; BI_get_local 0
-                  ; BI_load T_i32 None 2%N 0%N     (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-                  ; BI_call constr_pp_function_idx (* call self *)
-                  ] ++ (generate_constr_pp_constr_args calls' arity)
-    end.
-
-Definition generate_constr_pp_single_constr (cenv : ctor_env) (nenv : name_env) (c : ctor_tag) : error (list basic_instruction) :=
-    let ctor_id := Pos.to_nat c in
-    let ctor_name := show_tree (show_con cenv c) in
-    ctor_arity <- get_ctor_arity cenv c ;;
-    if ctor_arity =? 0 then
-      Ret([ BI_const (nat_to_value ctor_id)
-          ; BI_get_local 0
-          ; BI_const (nat_to_value 1)
-          ; BI_binop T_i32 (Binop_i (BOI_shr SX_S))
-          ; BI_relop T_i32 (Relop_i ROI_eq)
-          ; BI_if (Tf nil nil)
-              (instr_write_string (" " ++ ctor_name) ++ [ BI_return ])
-              []
-          ])
-    else
-      Ret([ BI_const (nat_to_value ctor_id)
-          ; BI_get_local 0
-          ; BI_load T_i32 None 2%N 0%N
-          ; BI_relop T_i32 (Relop_i ROI_eq)
-          ; BI_if (Tf nil nil)
-                (instr_write_string (" (" ++ ctor_name) ++
-                (generate_constr_pp_constr_args ctor_arity ctor_arity) ++ (instr_write_string ")") ++ [ BI_return ])
-                []
-          ]).
-
-Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : cps.exp) : error wasm_function :=
-  let tags := collect_constr_tags e in
-
-  blocks <- sequence (map (generate_constr_pp_single_constr cenv nenv) tags) ;;
-
-  let body := (concat blocks) ++
-                (* BI_get_local 0 *)
-                  (* ; BI_load T_i32 None 2%N 0%N *)
-                  (* ; BI_const (nat_to_value 42) *)
-                  (* ; BI_relop T_i32 (Relop_i ROI_eq) *)
-                  (* ; BI_if (Tf nil nil) *)
-                  (*     ( (instr_write_string " ") ++ [ BI_get_local 0 *)
-                  (*       ; BI_load T_i64 None 2%N 4%N *)
-                  (*       ; BI_call write_int64_function_idx ]) *)
-                      ((instr_write_string " <can't print constr: ") ++ (* e.g. could be fn-pointer or env-pointer *)
-                          [ BI_get_local 0 (* param: ptr to constructor *)
-                            ; BI_call write_int32_function_idx
-                          ] ++ instr_write_string ">" ) in
-
-  let _ := ")"  (* hack to fix syntax highlighting bug *)
-
-  in
-  Ret {| fidx := constr_pp_function_idx
-       ; export_name := constr_pp_function_name
-       ; type := Tf [T_i32] []
-       ; locals := []
-       ; body := body
-       |}.
 
 
 (* ***** GENERATE FUNCTION TO GROW LINEAR MEMORY ****** *)
@@ -653,6 +525,13 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (
 
 (* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
 
+Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
+  match M.get t cenv with
+  | Some {| ctor_arity := n |} => Ret (N.to_nat n)
+  | _ => Err "found constructor without ctor_arity set"
+  end.
+
+
 Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (penv : prim_env) (e : exp) : error (list basic_instruction) :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
@@ -870,8 +749,6 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
   _ <- check_restrictions cenv e;;
 
   let fname_mapping := create_fname_mapping e in
-
-  constr_pp_function <- generate_constr_pp_function cenv nenv e;;
   let grow_mem_function := generate_grow_mem_function in
 
   (* ensure toplevel exp is an Efun*)
@@ -902,7 +779,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                         ; body := main_instr
                         |}
   in
-  let functions := [constr_pp_function; grow_mem_function; main_function] ++ fns in
+  let functions := [grow_mem_function; main_function] ++ fns in
 
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (Mk_funcidx f.(fidx))
@@ -958,19 +835,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
        ; mod_data := []
        ; mod_start := None
 
-       ; mod_imports := {| imp_module := String.print "env"
-                         ; imp_name := String.print write_char_function_name
-                         ; imp_desc := ID_func 1
-                         |} ::
-                        {| imp_module := String.print "env"
-                         ; imp_name := String.print write_int32_function_name
-                         ; imp_desc := ID_func 1
-                         |} :: nil
-                        (* {| imp_module := String.print "env" *)
-                        (*  ; imp_name := String.print write_int64_function_name *)
-                        (*  ; imp_desc := ID_func (Z.to_nat max_function_args + 1) *)
-                        (*  |} :: nil *)
-
+       ; mod_imports := []
        ; mod_exports := exports
        |}
        in
