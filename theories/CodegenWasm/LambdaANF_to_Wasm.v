@@ -414,7 +414,8 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (
          else
            [ BI_const (nat_to_value (Pos.to_nat (2 * t + 1))) ]) ++
         [ BI_relop T_i32 (Relop_i ROI_eq)
-        ; BI_if (Tf nil nil) instrs (create_case_nested_if_chain boxed v tl) ]
+        ; BI_if (Tf nil nil) instrs []
+        ] ++ (create_case_nested_if_chain boxed v tl)
   end.
 
 (* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
@@ -454,7 +455,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
         match arms with
         | [] => Ret ([], [])
         | (t, e)::tl =>
-            instrs <- translate_body nenv cenv lenv fenv e (1 + depth);;
+            instrs <- translate_body nenv cenv lenv fenv e (2 + depth);;
             '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions tl ;;
             arity <- get_ctor_arity cenv t ;;
             if arity =? 0 then
