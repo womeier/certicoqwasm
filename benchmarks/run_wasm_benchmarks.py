@@ -16,7 +16,16 @@ for f in files:
     assert os.path.isfile(name), f"didn't find wasm file {name}."
 
     print(f"\nrunning: {name}")
-    r = subprocess.run(["node", "--experimental-wasm-return_call", "run_wasm.js", "./", f])
+    r = subprocess.run(
+        [
+            "node",
+            "--experimental-wasm-return_call",
+#            "--stack-size=1000000",
+            "run_wasm.js",
+            "./",
+            f,
+        ]
+    )
 
     if r.returncode != 0:
         ret_code = r.returncode
