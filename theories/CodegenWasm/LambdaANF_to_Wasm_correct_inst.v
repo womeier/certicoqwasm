@@ -1,4 +1,3 @@
-(* experiments with instantiation *)
 Set Printing Compact Contexts.
 
 From compcert Require Import Coqlib.
@@ -57,7 +56,10 @@ Definition context_restr (lenv: localvar_env) (c: t_context) :=
   (tc_memory c <> []) /\
   (* table *)
   (tc_table c <> [::]) /\
-  (* imported funcs *)
+  (* grow mem func *)
+  (grow_mem_function_idx < length (tc_func_t c)) /\
+  (nth_error (tc_func_t c) grow_mem_function_idx = Some (Tf [:: T_i32] [::])) /\
+  (* function types *)
   (Z.of_nat (length (tc_types_t c)) > max_function_args)%Z /\
   (forall i, (Z.of_nat i <= max_function_args)%Z -> nth_error (tc_types_t c) i = Some (Tf (repeat T_i32 i) [::])).
 
@@ -91,6 +93,8 @@ Ltac solve_bet Hcontext :=
   | |- be_typing _ [:: BI_call write_int_function_idx] (Tf [:: T_i32] _) =>
          apply bet_call; try apply Hcontext; apply /ssrnat.leP; apply Hcontext
   | |- be_typing _ [:: BI_call constr_pp_function_idx] (Tf [:: T_i32] _) =>
+         apply bet_call; try apply Hcontext; apply /ssrnat.leP; apply Hcontext
+  | |- be_typing _ [:: BI_call grow_mem_function_idx] (Tf [:: T_i32] _) =>
          apply bet_call; try apply Hcontext; apply /ssrnat.leP; apply Hcontext
   | |- be_typing _ [:: BI_testop T_i32 _] (Tf [:: _] _) => apply bet_testop; by simpl
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_i32; T_i32] _) => apply bet_binop; apply Binop_i32_agree
@@ -227,21 +231,37 @@ Proof.
 Qed.
 
 
+Definition context_restr_grow_mem (c: t_context) :=
+  (* globals i32, mut *)
+  (forall var, In var [global_mem_ptr; constr_alloc_ptr; result_var; result_out_of_mem] ->
+    nth_error (tc_global c) var = Some {| tg_mut:= MUT_mut; tg_t:= T_i32|}) /\
+  (* memory *)
+  (tc_memory c <> [::]) /\
+  (* param *)
+  (nth_error (tc_local c) 0 = Some T_i32).
+
+Lemma update_label_preserves_context_restr_grow_mem c :
+  context_restr_grow_mem c ->
+  context_restr_grow_mem (upd_label c ([:: [::]] ++ tc_label c)%list).
+Proof. auto. Qed.
+
 (* Translated expression (= all other functions bodies) has type (Tf [::] [::]) *)
 
-Lemma grow_memory_if_necessary_typing {lenv} : forall n instr c,
-  context_restr lenv c ->
-  grow_memory_if_necessary n = instr ->
-  be_typing c instr (Tf [::] [::]).
+Lemma grow_memory_if_necessary_typing : forall c,
+  context_restr_grow_mem c ->
+  be_typing c grow_memory_if_necessary (Tf [::] [::]).
 Proof.
-  intros n instr c Hcontext <-. unfold grow_memory_if_necessary.
-  prepare_solve_bet. all: solve_bet Hcontext.
+  intros c Hcontext. unfold grow_memory_if_necessary.
+  assert (nth_error (tc_local c) 0 = Some T_i32) as Hloc0 by apply Hcontext.
+  prepare_solve_bet. all: try solve_bet Hcontext.
+  apply bet_if_wasm. prepare_solve_bet. all: try solve_bet Hcontext.
+  apply bet_if_wasm; prepare_solve_bet; solve_bet Hcontext.
 Qed.
 
 Lemma constr_args_store_typing {lenv} : forall args n instr c,
   @context_restr lenv c ->
   Forall_statements_in_seq' (@set_nth_constr_arg fenv nenv lenv) args instr n ->
-  be_typing (upd_label c ([:: [::]] ++ tc_label c)) instr (Tf [::] [::]).
+  be_typing c instr (Tf [::] [::]).
 Proof.
   induction args; intros ??? Hcontext Hargs.
   - inv Hargs. apply bet_empty.
@@ -327,16 +347,15 @@ Proof.
   - (* Eletapp *)
     intros ?????????? Hexpr' IH Hargs Hv ? Hcontext' Hrestr'.
     assert (be_typing c0 [::instr] (Tf [::] [::T_i32])) as Ht. { inv Hv; solve_bet Hcontext'. }
-    prepare_solve_bet. now eapply fun_args_typing.
+    prepare_solve_bet; try solve_bet Hcontext'. now eapply fun_args_typing.
     apply bet_weakening with (ts:=(repeat T_i32 (Datatypes.length args))) in Ht.
     now rewrite List.app_nil_r in Ht. inv Hrestr'.
     eapply bet_call_indirect; try by apply Hcontext'. apply /ssrnat.leP.
     assert (Z.of_nat (length (tc_types_t c0)) > max_function_args)%Z by apply Hcontext'. lia.
-    solve_bet Hcontext'. solve_bet Hcontext'. inv Hrestr'. now eapply IH.
+    inv Hrestr'. now eapply IH.
   - (* Eprim_val *)
-    intros ???????? Hexpr' IH ? Hprim ? Hcontext' Hrestr'.
-    eapply bet_composition'. now eapply grow_memory_if_necessary_typing.
-    prepare_solve_bet; try solve_bet Hcontext'.
+    intros ?????? Hvar Hexpr' IH Hprim ? Hcontext' Hrestr'.
+    eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
   - (* repr_branches nil *)
     intros ????? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
@@ -399,13 +418,14 @@ Proof.
 Qed.
 
 Lemma module_typing_module_elem_typing : forall fns c,
-  (* types of print_char, print_int, pp, main, fns *)
-  tc_func_t c = [:: Tf [:: T_i32] [::], Tf [:: T_i32] [::], Tf [:: T_i32] [::],Tf [::] [::] &
+  (* types of print_char, print_int, pp, grow_mem, main, fns *)
+  tc_func_t c = [:: Tf [:: T_i32] [::], Tf [:: T_i32] [::], Tf [:: T_i32] [::], Tf [:: T_i32] [::], Tf [::] [::] &
                 [seq type f | f <- fns]] ->
   length (tc_table c) > 0 ->
-  Forall (module_elem_typing c) (table_element_mapping (Datatypes.length fns + 4) 0).
+  Forall (module_elem_typing c) (table_element_mapping (Datatypes.length fns + num_custom_funs) 0).
 Proof.
-  intros ?? Hft Htab. apply Forall_forall. intros ? Hnth.
+  intros ?? Hft Htab. unfold num_custom_funs.
+  apply Forall_forall. intros ? Hnth.
   apply In_nth_error in Hnth. destruct Hnth as [n Hnth].
   have Hlen := Hnth. apply Some_notNone in Hlen. apply nth_error_Some in Hlen. rewrite table_element_mapping_length in Hlen.
   erewrite table_element_mapping_nth in Hnth=>//.
@@ -415,7 +435,7 @@ Proof.
   - rewrite Hft. cbn. rewrite length_is_size. rewrite size_map.
     rewrite length_is_size in Hlen.
     rewrite -ssrnat.subnE -ssrnat.minusE. rewrite Nat.add_0_r.
-    now replace (n - S (S (S (size fns)))) with 0 by lia.
+    now replace (n - S (S (S (S (size fns))))) with 0 by lia.
 Qed.
 
 Theorem module_instantiate : forall e module fenv venv,
@@ -435,7 +455,7 @@ Proof.
             end) eqn:He; try (by inv H).
   destruct (translate_functions _ _ _ f) eqn:Hfuns. inv H. rename l into fns, f into fds.
   cbn in H.
-  destruct (translate_exp nenv cenv _ _) eqn:Hexpr. inv H.
+  destruct (translate_body nenv cenv _ _) eqn:Hexpr. inv H.
   rename l into wasm_main_instr.
 
   remember (list_function_types (Z.to_nat max_function_args)) as ts. rewrite -Heqts in H.
@@ -466,25 +486,27 @@ Proof.
   (* import types *)
   exists [:: ET_func (Tf [::T_i32] [::]); ET_func (Tf [::T_i32] [::])].
   (* export types *)
-  exists ([:: ET_func (Tf [::T_i32] [::]); ET_func (Tf [::] [::])] ++ (* pp, main, *)
-         (map (fun f => ET_func f.(type)) fns) ++                     (* all fns exported *)
+  exists ([:: ET_func (Tf [::T_i32] [::]); ET_func (Tf [::T_i32] [::]);   (* pp, grow_mem *)
+              ET_func (Tf [::] [::])] ++                                  (* main *)
+         (map (fun f => ET_func f.(type)) fns) ++                         (* all fns exported *)
          [:: ET_glob {| tg_mut := MUT_mut; tg_t := T_i32 |}
            ; ET_glob {| tg_mut := MUT_mut; tg_t := T_i32 |}
-           ; ET_glob {| tg_mut := MUT_mut; tg_t := T_i32 |}           (* global vars *)
-           ; ET_mem {| lim_min := 1%N; lim_max := Some max_mem_pages|}]). (* global mem TODO consider not exporting *)
+           ; ET_glob {| tg_mut := MUT_mut; tg_t := T_i32 |}               (* global vars *)
+           ; ET_mem {| lim_min := 1%N; lim_max := Some max_mem_pages|}]). (* global mem *)
   exists hs.
   exists s'. (* store after init_mems TODO update to new WasmCert *)
   (* initial values of globals: 0 *)
   exists ([:: nat_to_value 0; nat_to_value 0; nat_to_value 0; nat_to_value 0]).
   (* element values (table entries) *)
-  exists (elem_vals (length fns + 4) 0).
+  exists (elem_vals (length fns + num_custom_funs) 0).
   (* data values *)
   exists [::].
 
   repeat split.
   (* module typing *) {
   - unfold module_typing. simpl.
-    exists ([:: (Tf [::T_i32] [::]); (Tf [::] [::])] ++ map (fun f => type f) fns). (* pp, main, fns *)
+    exists ([:: (Tf [::T_i32] [::]); (Tf [::T_i32] [::]); (Tf [::] [::])] ++
+             map (fun f => type f) fns). (* pp, grow_mem, main, fns *)
     exists (repeat ({| tg_mut := MUT_mut; tg_t := T_i32 |}) 4).
     repeat split=>//.
     + (* module_func_typing *)
@@ -499,12 +521,20 @@ Proof.
         unfold write_int_function_idx. lia.
         unfold constr_pp_function_idx. lia. }
       apply Forall2_cons.
+      { (* grow mem func *)
+        subst ts. cbn. rewrite length_list_function_types.
+        split. cbn. rewrite -ssrnat.subnE -ssrnat.minusE. apply /ssrnat.eqnP. lia.
+        split=>//. apply grow_memory_if_necessary_typing.
+        repeat split =>//.
+        intros ? Hin'. cbn. by repeat destruct Hin' as [|Hin']; subst =>//. }
+      apply Forall2_cons.
       { (* main func *)
         subst ts. cbn. rewrite length_list_function_types. repeat split =>//.
-        apply translate_exp_correct in Hexpr.
+        apply translate_body_correct in Hexpr.
         2:{ destruct e; inv He =>//. eapply Forall_constructors_subterm. eassumption.
             apply t_step. by apply dsubterm_fds2. }
         eapply repr_expr_LambdaANF_Wasm_typing =>//; last by eassumption.
+        2: { (* expr restr *) destruct e; inv He =>//. by inv Hrestr. }
         repeat split =>//.
         * (* locals in bound *)
           intros ?? Hvar. cbn.
@@ -513,12 +543,13 @@ Proof.
         * (* globals *)
           intros var Hin. cbn.
           by repeat destruct Hin as [|Hin]; subst =>//.
+        * (* grow_mem func id *)
+          cbn. unfold grow_mem_function_idx; lia.
         * (* types *)
           intros ? Hmax. cbn. unfold max_function_args in Hmax.
           erewrite nth_error_nth'; first rewrite nth_list_function_types =>//. lia.
           rewrite length_list_function_types. lia.
-        * (* expr restr *)
-          destruct e; inv He =>//. by inv Hrestr. }
+      }
       { (* funcs *)
         apply Forall2_spec; first by rewrite map_length length_is_size length_is_size size_map.
         intros ?? [t1s t2s] Hnth1 Hnth2. cbn. unfold module_func_typing. repeat split =>//.
@@ -526,7 +557,8 @@ Proof.
         destruct (nth_error fns n) eqn:Hin =>//. cbn. inv Hnth1.
         rewrite nth_error_map in Hnth2. rewrite Hin in Hnth2. injection Hnth2 as Hnth2.
         rewrite Hnth2.
-        assert (n = fidx w0 - 4). { eapply translate_functions_nth_error_idx; eauto. } subst n.
+        assert (n = fidx w0 - num_custom_funs).
+        { eapply translate_functions_nth_error_idx; eauto. } subst n.
 
         replace (create_fname_mapping e) with (create_fname_mapping (Efun fds e)) in Hfuns by
           (destruct e; inv He =>//).
@@ -549,7 +581,7 @@ Proof.
             now destruct ((create_fname_mapping (Efun fds e)) ! f).
           }
           apply In_nth_error in Hin'. destruct Hin' as [j Hj].
-          assert (j = fidx func - 4). eapply translate_functions_nth_error_idx; try apply Hfuns; eauto.
+          assert (j = fidx func - num_custom_funs). eapply translate_functions_nth_error_idx; try apply Hfuns; eauto.
           congruence.
         } subst w0. clear Hvarr Hin'.
         rewrite Hty' in Hnth2. inv Hnth2.
@@ -574,6 +606,8 @@ Proof.
             apply nth_error_repeat. inv Hvar'. now eapply var_mapping_list_lt_length.
           * (* globals *)
             intros ? Hin'. cbn. by repeat destruct Hin' as [|Hin']; subst =>//.
+          * (* grow_mem func id *)
+            cbn. unfold grow_mem_function_idx; lia.
           * (* types *)
             intros ? Hmax.
             erewrite nth_error_nth'. rewrite nth_list_function_types. reflexivity. lia.
@@ -595,6 +629,9 @@ Proof.
       { (* pp func *)
         cbn. by rewrite HwId. }
       apply Forall2_cons.
+      { (* grow_mem func *)
+        now cbn. }
+      apply Forall2_cons.
       { (* main func *)
         now cbn. }
       apply Forall2_app.
@@ -606,8 +643,8 @@ Proof.
         rewrite -ssrnat.subnE -ssrnat.minusE. simpl.
         rewrite map_length.
         destruct e; try by inv He; inv Hfuns; destruct n=>//. inv He.
-        assert (n = fidx w0 - 4). { now eapply translate_functions_nth_error_idx; eauto. } subst n.
-        assert (Hbounds: 4 <= fidx w0 < length fns + 4). {
+        assert (n = fidx w0 - num_custom_funs). { now eapply translate_functions_nth_error_idx; eauto. } subst n.
+        assert (Hbounds: num_custom_funs <= fidx w0 < length fns + num_custom_funs). {
           eapply translate_functions_idx_bounds; eauto.
           * intros. split; first by apply local_variable_mapping_gt_idx in H.
             assert (Hvar: translate_var nenv (create_fname_mapping (Efun fds e0)) f ""%bs = Ret f')
@@ -617,9 +654,10 @@ Proof.
             rewrite collect_function_vars_length in Hvar.
             now erewrite translate_functions_length in Hvar.
           * apply In_map. now eapply nth_error_In. }
-        replace (fidx w0 - S (S (S (Datatypes.length fns)))) with 0 by lia.
-        destruct (fidx w0); first by lia. destruct i; first by lia.
-        destruct i; first by lia. destruct i; first by lia. cbn in Hnth.
+        unfold num_custom_funs in *.
+        replace (fidx w0 - S (S (S (S (Datatypes.length fns))))) with 0 by lia.
+        destruct (fidx w0); first by lia.
+        do 4! (destruct i; first by lia). cbn in Hnth.
         rewrite Nat.sub_0_r in Hnth. cbn.
         rewrite nth_error_map. rewrite Hnth. by apply /eqfunction_typeP.
       }
