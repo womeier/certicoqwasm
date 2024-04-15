@@ -413,7 +413,7 @@ Inductive repr_primitive_operation {lenv} : immediate -> (Kernames.kername * str
           ; BI_set_local x
         ].
 
-(* CODEGEN RELATION: relatates LambdaANF expression and result of translate_exp *)
+(* CODEGEN RELATION: relatates LambdaANF expression and result of translate_body *)
 Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_instruction -> Prop :=
 | R_halt_e: forall x x',
     repr_var (lenv:=lenv) x x' ->
@@ -732,7 +732,7 @@ Proof.
   - (* Eprim *)
       inv H.
       destruct (M.get p penv) eqn:Hp. 2: inv H1.
-      destruct (translate_exp nenv cenv lenv fenv penv e) eqn:H_eqTranslate. inv H1.
+      destruct (translate_body nenv cenv lenv fenv penv e) eqn:H_eqTranslate. inv H1.
       destruct (translate_var nenv lenv v _) eqn:Hvar. inv H1.
       destruct (translate_primitive_operation _) eqn:Hprimop. inv H1.
       unfold translate_primitive_operation in Hprimop.

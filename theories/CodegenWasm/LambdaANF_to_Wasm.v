@@ -270,17 +270,9 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : 
   blocks <- sequence (map (generate_constr_pp_single_constr cenv nenv) tags) ;;
 
   let body := (concat blocks) ++
-                (* BI_get_local 0 *)
-                  (* ; BI_load T_i32 None 2%N 0%N *)
-                  (* ; BI_const (nat_to_value 42) *)
-                  (* ; BI_relop T_i32 (Relop_i ROI_eq) *)
-                  (* ; BI_if (Tf nil nil) *)
-                  (*     ( (instr_write_string " ") ++ [ BI_get_local 0 *)
-                  (*       ; BI_load T_i64 None 2%N 4%N *)
-                  (*       ; BI_call write_int64_function_idx ]) *)
                       ((instr_write_string " <can't print constr: ") ++ (* e.g. could be fn-pointer or env-pointer *)
                           [ BI_get_local 0 (* param: ptr to constructor *)
-                            ; BI_call write_int32_function_idx
+                            ; BI_call write_int_function_idx
                           ] ++ instr_write_string ">" ) in
 
   let _ := ")"  (* hack to fix syntax highlighting bug *)
@@ -664,7 +656,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' =>
-      following_instr <- translate_body nenv cenv lenv fenv e' ;;
+      following_instr <- translate_body nenv cenv lenv fenv penv e' ;;
       x_var <- translate_var nenv lenv x "translate_body constr";;
       match ys with
       | [] =>
@@ -767,7 +759,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
        match M.get p penv with
        | None => Err "TODO"
        | Some pdef =>
-           following_instrs <- translate_exp nenv cenv lenv fenv penv e';;
+           following_instrs <- translate_body nenv cenv lenv fenv penv e';;
            x_var <- translate_var nenv lenv x "translate_exp prim op" ;;           
            instrs <- translate_primitive_operation nenv lenv x_var pdef ys ;;
            Ret ( [ BI_const (N_to_value page_size)
@@ -979,14 +971,9 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                          ; imp_desc := ID_func 1
                          |} ::
                         {| imp_module := String.print "env"
-                         ; imp_name := String.print write_int32_function_name
+                         ; imp_name := String.print write_int_function_name
                          ; imp_desc := ID_func 1
                          |} :: nil
-                        (* {| imp_module := String.print "env" *)
-                        (*  ; imp_name := String.print write_int64_function_name *)
-                        (*  ; imp_desc := ID_func (Z.to_nat max_function_args + 1) *)
-                        (*  |} :: nil *)
-
        ; mod_exports := exports
        |}
        in
