@@ -27,9 +27,8 @@ function write_char (value) {
 
 let importObject = {
     env: {
-        $write_char: write_char,
-        $write_int32: write_int,
-	$write_int64: write_int,
+        write_char: write_char,
+        write_int32: write_int,
     }
 };
 
@@ -42,7 +41,7 @@ let importObject = {
 	);
 
 	const start_time = performance.now();
-	obj.instance.exports.$main_function();
+	obj.instance.exports.main_function();
 	const stop_time = performance.now();
 
 	const run_time = performance.now();
@@ -58,7 +57,7 @@ let importObject = {
 	    // print_nat_sexp(res_value, dataView);
 	    // print_nat_notation(res_value, dataView);
 	    
-	    // print_i63(res_value, dataView);
+	    print_i63(res_value, dataView);
 	    
 	    // print_list_sexp(res_value, dataView, print_nat_sexp);
 	    // print_list_notation(res_value, dataView, print_nat_notation);

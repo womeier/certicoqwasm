@@ -22,9 +22,8 @@ function write_char (value) {
 
 let importObject = {
     env: {
-        $write_char: write_char,
-        $write_int32: write_int,
-	$write_int64: write_int,
+        write_char: write_char,
+        write_int32: write_int,
     }
 };
 
@@ -40,7 +39,7 @@ let importObject = {
 
     try {
         const start_main = Date.now();
-        obj.instance.exports.$main_function();
+        obj.instance.exports.main_function();
         const stop_main = Date.now();
         const time_main = stop_main - start_main;
 
@@ -56,7 +55,7 @@ let importObject = {
 
             const start_pp = Date.now();
 	    
-            obj.instance.exports.$pretty_print_constructor(res_value); console.log(""); // newline
+            // obj.instance.exports.pretty_print_constructor(res_value); console.log(""); // newline
             const stop_pp = Date.now();
             time_pp = stop_pp - start_pp;
         }
