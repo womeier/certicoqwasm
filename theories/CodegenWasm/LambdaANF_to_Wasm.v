@@ -362,7 +362,7 @@ Defined.
 
 Definition translate_primitive_value (p : AstCommon.primitive) : error Wasm_int.Int64.int :=
   match projT1 p as tag return prim_value tag -> error Wasm_int.Int64.T with
-  | AstCommon.primInt => fun i => Ret (to_int64 i)
+  | AstCommon.primInt => fun i => Ret (Wasm_int.Int64.repr (Uint63.to_Z i))
   | AstCommon.primFloat => fun f => Err "TODO"
   end (projT2 p).
 
