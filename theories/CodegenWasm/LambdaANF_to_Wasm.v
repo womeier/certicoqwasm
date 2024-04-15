@@ -78,17 +78,17 @@ Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :
   end.
 
 (* ***** FUNCTIONS and GLOBALS ****** *)
-(*  In Wasm, functions and globals are referred to by their index in the order they are listed *)
+
+(*  In Wasm, functions and globals are referred to by their index in the order they are listed.
+ *  For FFI/debugging, the module exports all functions.
+ *  The names of translated lANF functions are prefixed with an underscore, others should not to avoid name clashes.
+ *)
 
 (* imported, print char/int to stdout *)
 Definition write_char_function_idx : immediate := 0.
 Definition write_char_function_name := "write_char".
-
-Definition write_int32_function_idx : immediate := 1.
-Definition write_int32_function_name := "write_int32".
-
-(* Definition write_int64_function_idx : immediate := 2. *)
-(* Definition write_int64_function_name := "$write_int64". *)
+Definition write_int_function_idx : immediate := 1.
+Definition write_int_function_name := "write_int".
 
 (* write S-expr of constr to stdout *)
 Definition constr_pp_function_name : string := "pretty_print_constructor".
@@ -660,12 +660,12 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (
 
 (* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
 
-Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (penv : prim_env) (e : exp) : error (list basic_instruction) :=
+Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (penv : prim_env) (e : exp) : error (list basic_instruction) :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' =>
-      following_instr <- translate_exp nenv cenv lenv fenv penv e' ;;
-      x_var <- translate_var nenv lenv x "translate_exp constr";;
+      following_instr <- translate_body nenv cenv lenv fenv e' ;;
+      x_var <- translate_var nenv lenv x "translate_body constr";;
       match ys with
       | [] =>
           ord <- get_ctor_ord cenv tg ;;
@@ -692,7 +692,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
         match arms with
         | [] => Ret ([], [])
         | (t, e)::tl =>
-            instrs <- translate_exp nenv cenv lenv fenv penv e ;;
+            instrs <- translate_body nenv cenv lenv fenv penv e ;;
             '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions tl ;;
             ord <- get_ctor_ord cenv t ;;
             arity <- get_ctor_arity cenv t ;;
@@ -702,7 +702,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
               Ret ((ord, instrs) :: arms_boxed, arms_unboxed)
         end
       in
-      x_var <- translate_var nenv lenv x "translate_exp case" ;;
+      x_var <- translate_var nenv lenv x "translate_body case" ;;
       '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions arms ;;
       Ret ([ BI_get_local x_var
            ; BI_const (nat_to_value 1)
@@ -714,9 +714,9 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
            ])
 
    | Eproj x tg n y e' =>
-      following_instr <- translate_exp nenv cenv lenv fenv penv e' ;;
-      y_var <- translate_var nenv lenv y "translate_exp proj y";;
-      x_var <- translate_var nenv lenv x "translate_exp proj x";;
+      following_instr <- translate_body nenv cenv lenv fenv penv e' ;;
+      y_var <- translate_var nenv lenv y "translate_body proj y";;
+      x_var <- translate_var nenv lenv x "translate_body proj x";;
 
       Ret ([ BI_get_local y_var
            ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4)) (* skip ctor_id and previous constr arguments *)
@@ -726,8 +726,8 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
            ] ++ following_instr)
 
    | Eletapp x f ft ys e' =>
-      x_var <- translate_var nenv lenv x "translate_exp proj x";;
-      following_instr <- translate_exp nenv cenv lenv fenv penv e' ;;
+      x_var <- translate_var nenv lenv x "translate_body proj x";;
+      following_instr <- translate_body nenv cenv lenv fenv penv e' ;;
       instr_call <- translate_call nenv lenv fenv f ys false;;
 
       Ret (instr_call ++ [ BI_get_global result_out_of_mem
@@ -741,8 +741,8 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
    | Eapp f ft ys => translate_call nenv lenv fenv f ys true
 
    | Eprim_val x p e' =>
-       following_instrs <- translate_exp nenv cenv lenv fenv penv e' ;;
-       x_var <- translate_var nenv lenv x "translate_exp prim val" ;;
+       following_instrs <- translate_body nenv cenv lenv fenv penv e' ;;
+       x_var <- translate_var nenv lenv x "translate_body prim val" ;;
        val <- translate_primitive_value p ;;
        Ret ([ BI_const (N_to_value page_size)
             ; BI_call grow_mem_function_idx
@@ -781,7 +781,7 @@ Fixpoint translate_exp (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) 
                    instrs ++ following_instrs)
        end
    | Ehalt x =>
-     x_var <- translate_var nenv lenv x "translate_exp halt";;
+     x_var <- translate_var nenv lenv x "translate_body halt";;
      Ret [ BI_get_local x_var; BI_set_global result_var; BI_return ]
    end.
 
@@ -813,15 +813,23 @@ Fixpoint create_var_mapping (start_id : nat) (vars : list cps.var) (env : M.tree
 Definition create_local_variable_mapping (vars : list cps.var) : localvar_env :=
   create_var_mapping 0 vars (M.empty _).
 
+Definition function_export_name (nenv : name_env) (v : cps.var) : string :=
+  let bytes := String.print ("_" ++ show_tree (show_var nenv v)) in
+  String.parse (map (fun b => match b with
+                              | "."%byte => "_"%byte
+                              |_ => b
+                              end)
+                    bytes).
+
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env) (penv : prim_env)
-                              (name : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
+                              (f : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
   let locals := collect_local_variables body in
   let lenv := create_local_variable_mapping (args ++ locals) in
 
-  fn_idx <- translate_var nenv fenv name "translate function" ;;
-  body_res <- translate_exp nenv cenv lenv fenv penv body ;;
+  fn_idx <- translate_var nenv fenv f "translate function" ;;
+  body_res <- translate_body nenv cenv lenv fenv penv body ;;
   Ret {| fidx := fn_idx
-       ; export_name := show_tree (show_var nenv name)
+       ; export_name := function_export_name nenv f
        ; type := Tf (map (fun _ => T_i32) args) []
        ; locals := map (fun _ => T_i32) locals
        ; body := body_res
@@ -901,7 +909,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                end;;
   let main_vars := collect_local_variables main_expr in
   let main_lenv := create_local_variable_mapping main_vars in
-  main_instr <- translate_exp nenv cenv main_lenv fname_mapping penv main_expr ;;
+  main_instr <- translate_body nenv cenv main_lenv fname_mapping penv main_expr ;;
 
   let main_function := {| fidx := main_function_idx
                         ; export_name := main_function_name

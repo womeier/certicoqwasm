@@ -4,7 +4,7 @@ Require Import CertiCoq.Benchmarks.lib.Binom.
 Require Import CertiCoq.Benchmarks.lib.Color.
 Require Import CertiCoq.Benchmarks.lib.sha256.
 Require Import CertiCoq.Benchmarks.lib.coind.
-Require Import CertiCoq.Benchmarks.lib.BersteinYangTermination.
+Require Import CertiCoq.Benchmarks.lib.BernsteinYangTermination.
 Require Import CertiCoq.Benchmarks.lib.stack_machine.
 From MetaCoq.Utils Require Import bytestring MCString.
 From CertiCoq.Plugin Require Import CertiCoq.
@@ -111,7 +111,7 @@ Fixpoint even n :=
     end.
 Definition even_10000 := even 10000.
 
-Definition bernstein_yang := W 1.
+Definition bernstein_yang := W 10.
 
 Eval compute in "Compiling ack".
 CertiCoq Compile Wasm -debug ack_3_9.
@@ -235,9 +235,9 @@ Definition sm_gauss_PrimInt :=
   | _ => None
   end.
 
-CertiCoq Compile Wasm -debug stack_machine_gauss_nat.
+CertiCoq Compile Wasm -debug sm_gauss_nat.
 
-CertiCoq Compile Wasm -debug stack_machine_gauss_N.
+CertiCoq Compile Wasm -debug sm_gauss_N.
 
 (* Not supported yet *)
-(* CertiCoq Compile Wasm -debug stack_machine_gauss_PrimInt. *)
+(* CertiCoq Compile Wasm -debug sm_gauss_PrimInt. *)

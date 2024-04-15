@@ -390,15 +390,6 @@ Inductive repr_case_unboxed: immediate -> list (N * list basic_instruction) -> l
           instrs_more
       ].
 
-(* Inductive repr_prim_args {lenv} : list var -> list basic_instruction -> Prop := *)
-(* | PA_nil : *)
-(*   repr_prim_args [] [] *)
-(* | PA_cons : forall y y' args args_instrs, *)
-(*     repr_var (lenv:=lenv) y y' -> *)
-(*     repr_prim_args args args_instrs -> *)
-(*     repr_ *)
-
-
 Inductive repr_primitive_operation {lenv} : immediate -> (Kernames.kername * string * bool * nat) -> list positive  -> list basic_instruction -> Prop :=
 | Rprim_add :
   forall x kname y1 y1' y2 y2' b,
@@ -604,16 +595,16 @@ Proof.
     constructor. now econstructor.
 Qed.
 
-Theorem translate_exp_correct {lenv} :
+Theorem translate_body_correct {lenv} :
     forall e instructions,
       correct_cenv_of_exp cenv e ->
-    translate_exp nenv cenv lenv fenv penv e = Ret instructions ->
+    translate_body nenv cenv lenv fenv penv e = Ret instructions ->
     @repr_expr_LambdaANF_Wasm lenv e instructions.
 Proof.
   induction e using exp_ind'; intros instr Hcenv; intros.
   - (* Econstr *)
     simpl in H.
-    destruct (translate_exp nenv cenv lenv fenv penv e) eqn:H_eqTranslate; inv H.
+    destruct (translate_body nenv cenv lenv fenv penv e) eqn:H_eqTranslate; inv H.
     destruct (translate_var nenv lenv v _) eqn:H_translate_var. inv H1.
     destruct l as [|v0 l'].
 
@@ -657,8 +648,8 @@ Proof.
   - (* Ecase const *)
     simpl in H.
     destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
-    destruct (translate_exp nenv cenv lenv fenv penv e) eqn:He. inv H.
-    destruct (translate_exp nenv cenv lenv fenv penv (Ecase v l)) eqn:Hl.
+    destruct (translate_body nenv cenv lenv fenv penv e) eqn:He. inv H.
+    destruct (translate_body nenv cenv lenv fenv penv (Ecase v l)) eqn:Hl.
     simpl in Hl. destruct (_ l) eqn:Hm. inv H. rewrite Hvar in Hl. destruct p. inv Hl.
     assert (correct_cenv_of_exp cenv (Ecase v l)). {
       intros ?????. eapply Hcenv. apply rt_then_t_or_eq in H0. inv H0. inv H1.
@@ -686,7 +677,7 @@ Proof.
         inv H. by destruct l2; econstructor; eauto; econstructor; eauto; try lia.
   - (* Eproj *)
     simpl in H.
-    destruct (translate_exp nenv cenv lenv fenv penv e) eqn:He. inv H.
+    destruct (translate_body nenv cenv lenv fenv penv e) eqn:He. inv H.
     destruct (translate_var nenv lenv v0 _) eqn:Hy. inv H.
     destruct (translate_var nenv lenv v _) eqn:Hx. inv H.
     injection H => instr'. subst. clear H. constructor. apply IHe; auto.
@@ -697,7 +688,7 @@ Proof.
   - (* Eletapp *)
     simpl in H.
     destruct (translate_var nenv lenv x _) eqn:Hvar. inv H.
-    destruct (translate_exp nenv cenv lenv fenv penv e) eqn:H_eqTranslate. inv H.
+    destruct (translate_body nenv cenv lenv fenv penv e) eqn:H_eqTranslate. inv H.
     unfold translate_call in H.
     destruct (pass_function_args nenv lenv fenv ys) eqn:Hargs. inv H.
     destruct (instr_local_var_read nenv lenv fenv f) eqn:Hloc. inv H. inv H.
@@ -725,7 +716,7 @@ Proof.
       constructor. now econstructor.
   - (* Eprim_val *)
     inv H.
-    destruct (translate_exp nenv cenv lenv fenv penv e) eqn:H_eqTranslate. inv H1.
+    destruct (translate_body nenv cenv lenv fenv penv e) eqn:H_eqTranslate. inv H1.
     destruct (translate_var nenv lenv v _) eqn:Hvar. inv H1.
     destruct (translate_primitive_value p) eqn:Hprim. inv H1.
     inversion H1.
@@ -4779,7 +4770,7 @@ Theorem repr_bs_LambdaANF_Wasm_related :
       (* invariants *)
       INV sr f ->
 
-      (* translate_exp e returns instructions *)
+      (* translate_body e returns instructions *)
       @repr_expr_LambdaANF_Wasm penv lenv e e' ->
 
       (* relates a LambdaANF evaluation environment [rho] to a Wasm environment [store/frame] (free variables in e) *)
@@ -7801,7 +7792,7 @@ Proof.
     split; auto.
     unfold translate_function in transF.
     destruct (translate_var _ _ _ _) eqn:HtransFvar. inv transF.
-    destruct (translate_exp _ _ _ _) eqn:HtransE. inv transF.
+    destruct (translate_body _ _ _ _) eqn:HtransE. inv transF.
     inv transF. cbn. split; first by rewrite map_length. now econstructor.
   - (* wasmFun is not first fn *)
     eapply IHfds in H; eauto. 2: { now inv Hnodup. }
@@ -7839,7 +7830,7 @@ Proof.
     cbn. inv Hnth.
     unfold translate_function in HtransF.
     destruct (translate_var _ _ _ _) eqn:HtransV. inv HtransF.
-    destruct (translate_exp _ _ _ _ _). inv HtransF. inv HtransF.
+    destruct (translate_body _ _ _ _ _). inv HtransF. inv HtransF.
     unfold translate_var in HtransV.
     by destruct (fenv ! x) eqn:HtransV'; inv HtransV.
   - (* i=Si' *)
@@ -7861,7 +7852,7 @@ Proof.
   - (* i=0 *)
     subst. unfold translate_function in HtransF.
     destruct (translate_var _ _ _ _) eqn:HtransV. inv HtransF.
-    destruct (translate_exp _ _ _ _ _). inv HtransF. inv HtransF.
+    destruct (translate_body _ _ _ _ _). inv HtransF. inv HtransF.
     unfold translate_var in HtransV. cbn.
     destruct (fenv ! v) eqn:HtransV'; inv HtransV. now apply Hbounds in HtransV'.
   - (* i=Si' *)
@@ -8069,14 +8060,14 @@ Proof.
     inv HfDef.
     unfold translate_function in Hf.
     destruct (translate_var _ _ _ _) eqn:Hvar. inv Hf.
-    destruct (translate_exp _ _ _ _ _) eqn:Hexp; inv Hf.
+    destruct (translate_body _ _ _ _ _) eqn:Hexp; inv Hf.
     exists i, l. eexists. eexists. eexists.
     split. { now econstructor. }
     do 2! (split; try reflexivity).
     split. now left.
     cbn. rewrite map_repeat_eq.
     repeat (split; first reflexivity).
-    eapply translate_exp_correct in Hexp; eauto. eapply HcorrCenv with (f:=v). cbn.
+    eapply translate_body_correct in Hexp; eauto. eapply HcorrCenv with (f:=v). cbn.
     by destruct (M.elt_eq v v).
   - (* f0<>v *)
     assert (Hnodup': NoDup (collect_function_vars (Efun fds e0))) by inv Hnodup=>//.
@@ -8140,7 +8131,7 @@ forall e eAny topExp fds num_funs module fenv main_lenv sr f exports,
             fns
      ] /\
   (* translation of e *)
-  translate_exp nenv cenv
+  translate_body nenv cenv
           (create_local_variable_mapping
              (collect_local_variables
                 match e with
@@ -8169,7 +8160,7 @@ Proof.
             | Efun _ _ => e
             | _ => Efun Fnil e
             end) eqn:HtopExp'; try (by inv Hcompile).
-  destruct (translate_exp nenv cenv _ _ _) eqn:Hexpr. inv Hcompile. rename l0 into e'.
+  destruct (translate_body nenv cenv _ _ _) eqn:Hexpr. inv Hcompile. rename l0 into e'.
   inv Hcompile.
   unfold INV. unfold is_true in *.
   destruct Hinst as [t_imps [t_exps [state [s' [ g_inits [e_offs [d_offs
@@ -8534,7 +8525,7 @@ Proof.
                     | Efun _ _ => e
                     | _ => Efun Fnil e
                     end) eqn:HtopExp; try (by inv LANF2Wasm).
-  destruct (translate_exp nenv cenv _ _ _) eqn:Hexpr. inv LANF2Wasm. rename l into wasm_main_instr.
+  destruct (translate_body nenv cenv _ _ _) eqn:Hexpr. inv LANF2Wasm. rename l into wasm_main_instr.
   inv LANF2Wasm.
 
   (* from lemma module_instantiate_INV_and_more_hold *)
@@ -8565,7 +8556,7 @@ Proof.
     inversion HtopExp. subst e0 f0. rename fds' into fds.
     inversion Hstep. subst fl e0 v0 c rho. clear Hstep. rename H4 into Hstep.
 
-    eapply translate_exp_correct in Hexpr; try eassumption.
+    eapply translate_body_correct in Hexpr; try eassumption.
     2:{ eapply Forall_constructors_subterm. eassumption. constructor.
         apply dsubterm_fds2. }
 
@@ -8714,7 +8705,7 @@ Proof.
     assert (e0 = e). { destruct e; inv HtopExp; auto. exfalso. eauto. }
     subst e0. clear HtopExp.
 
-    eapply translate_exp_correct in Hexpr; eauto.
+    eapply translate_body_correct in Hexpr; eauto.
 
     assert (HrelE : @rel_env_LambdaANF_Wasm cenv fenv nenv penv host_function
                     (create_local_variable_mapping (collect_local_variables e)) e (M.empty _) sr f_before_IH Fnil). {

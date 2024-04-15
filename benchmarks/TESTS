@@ -6,5 +6,5 @@ vs_hard
 binom
 even_10000
 ack_3_9
-stack_machine_gauss_nat
-stack_machine_gauss_N
+sm_gauss_nat
+sm_gauss_N
