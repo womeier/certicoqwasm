@@ -44,7 +44,6 @@ tests: tests.v
 	ulimit -s $(STACKSIZE) && coqc $(COQOPTS) tests.v
 
 PRIMITIVE_TESTS=$(shell cat PRIMITIVE_TESTS)
-# PRIMITIVE_FILES=$(patsubst %, CertiCoq.Benchmarks.test_primitive_i63.%.wasm, $(PRIMITIVE_TESTS))
 
 primitives: test_primitive_i63 $(PRIMITIVE_TESTS)
 
@@ -52,5 +51,5 @@ test_primitive_i63:
 	coqc -R ./ CertiCoq.Benchmarks test_primitive_i63.v
 
 $(PRIMITIVE_TESTS):
-	ulimit -s unlimited
-	node --stack-size=8192 wasm.js CertiCoq.Benchmarks.test_primitive_i63.$@.wasm
+	@ulimit -s unlimited
+	@node --experimental-wasm-return_call --stack-size=8192 js/run_wasm_external_pp.js CertiCoq.Benchmarks.test_primitive_i63.$@.wasm $@

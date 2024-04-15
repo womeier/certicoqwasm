@@ -439,7 +439,7 @@ Definition apply_binop_and_store_i64 (op : basic_instruction) y1 y2 :=
     ; BI_const (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
     ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
     ; BI_store T_i64 None 2%N 0%N
-    ; BI_get_global global_mem_ptr (* value to be stored in the let binding ('return value') *) 
+    ; BI_get_global global_mem_ptr (* value to be stored in the let binding ('return value') *)
     ; BI_get_global global_mem_ptr
     ; BI_const (nat_to_value 8)
     ; BI_binop T_i32 (Binop_i BOI_add)
@@ -522,10 +522,10 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
   (* let arg_instrs := List.flat_map (fun l => [BI_get_local l ; BI_load T_i64 None 2%N 0%N]) arg_vars in *)
   op_instrs <- match (p, args)  with
                | ((_, pname, _, 2), [ y1 ; y2 ]) =>
-                   if (String.eqb pname "prim_int63_add") then 
+                   if (String.eqb pname "prim_int63_add") then
                      translate_primitive_arith_op nenv lenv "prim_int63_add" y1 y2
                    else
-                     Err ("Prim op not supported")%bs                   
+                     Err ("Prim op not supported")%bs
                (* | (_, "prim_int63_sub", _, 2) *)
                (* | "prim_int63_mul" *)
                (* | "prim_int63_div" *)
@@ -541,7 +541,7 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
                (* | "prim_int63_ltb" *)
                (* | "prim_int63_compare" (* => translate_primitive_compare_op name arg_instrs *) *)
                (* | "prim_int63_diveucl" => Err ("TODO: Prim op not supported: " ++ name)%bs                    *)
-               | _ => Err ("Prim op not supported")%bs                   
+               | _ => Err ("Prim op not supported")%bs
 
                (* | "prim_int63_diveucl" =>
                    match arg_vars with
@@ -760,7 +760,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
        | None => Err "TODO"
        | Some pdef =>
            following_instrs <- translate_body nenv cenv lenv fenv penv e';;
-           x_var <- translate_var nenv lenv x "translate_exp prim op" ;;           
+           x_var <- translate_var nenv lenv x "translate_exp prim op" ;;
            instrs <- translate_primitive_operation nenv lenv x_var pdef ys ;;
            Ret ( [ BI_const (N_to_value page_size)
                    ; BI_call grow_mem_function_idx
@@ -769,7 +769,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
                    ; BI_relop T_i32 (Relop_i ROI_eq)
                    ; BI_if (Tf [] [])
                        [ BI_return ]
-                       [] ] ++ 
+                       [] ] ++
                    instrs ++ following_instrs)
        end
    | Ehalt x =>
