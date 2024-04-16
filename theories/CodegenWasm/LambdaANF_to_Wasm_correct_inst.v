@@ -34,7 +34,8 @@ Variable cenv   : ctor_env.
 Variable funenv : fun_env.
 Variable fenv   : fname_env.
 Variable nenv   : name_env.
-Let repr_expr_LambdaANF_Wasm := @repr_expr_LambdaANF_Wasm cenv fenv nenv.
+Variable penv   : prim_env.
+Let repr_expr_LambdaANF_Wasm := @repr_expr_LambdaANF_Wasm cenv fenv nenv penv.
 
 Ltac separate_instr :=
   cbn;
@@ -295,21 +296,21 @@ Qed.
 
 Theorem repr_expr_LambdaANF_Wasm_typing {lenv} : forall e e' c,
   @context_restr lenv c ->
-  expression_restricted e ->
+  expression_restricted cenv e ->
   @repr_expr_LambdaANF_Wasm lenv e e' ->
   be_typing c e' (Tf [::] [::]).
 Proof.
   intros ??? Hcontext Hrestr Hexpr.
-  have IH := repr_expr_LambdaANF_Wasm_mut cenv fenv nenv lenv
+  have IH := repr_expr_LambdaANF_Wasm_mut cenv fenv nenv penv lenv
   (fun (e: exp) (e': list basic_instruction) (H: repr_expr_LambdaANF_Wasm lenv e e') =>
     forall c,
       @context_restr lenv c ->
-      expression_restricted e ->
+      expression_restricted cenv e ->
       be_typing c e' (Tf [::] [::]))
-  (fun y' cl brs1 brs2 (H: repr_branches cenv fenv nenv y' cl brs1 brs2) =>
+  (fun y' cl brs1 brs2 (H: repr_branches cenv fenv nenv penv y' cl brs1 brs2) =>
     forall y c brs1' brs2',
       @context_restr lenv c ->
-      expression_restricted (Ecase y cl) ->
+      expression_restricted cenv (Ecase y cl) ->
       @repr_var nenv lenv y y' ->
       repr_case_boxed y' brs1 brs1' ->
       repr_case_unboxed y' brs2 brs2' ->
@@ -357,29 +358,31 @@ Proof.
     intros ?????? Hvar Hexpr' IH Hprim ? Hcontext' Hrestr'.
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
+  - (* Eprim *) (* TODO: Martin *) admit.
   - (* repr_branches nil *)
     intros ????? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
     inv Hboxed. inv Hunboxed. by split; solve_bet Hcontext'.
   - (* repr_branches cons_boxed *)
-    intros ???????? Hbranch IH1 ?? Hexpr' IH2 ???? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
-    inv Hboxed. split. 2:{ inv Hrestr'. inv H0. eapply IH1; eauto. by constructor. }
+    intros ????????? Hbranch IH1 ??? Hexpr' IH2 ???? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
+    inv Hboxed. split. 2:{ inv Hrestr'. inv H1. eapply IH1; eauto. by constructor. }
     prepare_solve_bet; try solve_bet Hcontext'.
-    + apply IH2=>//. inv Hrestr'. now inv H0.
-    + eapply IH1 in H4; try apply Hunboxed; eauto. now destruct H4. inv Hrestr'. inv H0. by constructor.
+    + apply IH2=>//. inv Hrestr'. now inv H1.
+    + eapply IH1 in H4; try apply Hunboxed; eauto. now destruct H4. inv Hrestr'. inv H1. by constructor.
   - (* repr_branches cons_unboxed *)
-    intros ???????? Hbranch IH1 ?? Hexpr' IH2 ???? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
-    inv Hunboxed. split. { eapply IH1 in Hboxed; eauto. now destruct Hboxed. inv Hrestr'. inv H0. by constructor. }
+    intros ????????? Hbranch IH1 ??? Hexpr' IH2 ???? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
+    inv Hunboxed. split. { eapply IH1 in Hboxed; eauto. now destruct Hboxed. inv Hrestr'. inv H1. by constructor. }
     prepare_solve_bet; try solve_bet Hcontext'.
-    + apply IH2=>//. inv Hrestr'. now inv H0.
-    + eapply IH1 in H4; try apply Hunboxed; eauto. now destruct H4. inv Hrestr'. inv H0. by constructor.
-Qed.
+    + apply IH2=>//. inv Hrestr'. now inv H1.
+    + eapply IH1 in H4; try apply Hunboxed; eauto. now destruct H4. inv Hrestr'. inv H1. by constructor.
+Admitted.
 
 End INSTRUCTION_TYPING.
 
 Section INSTANTIATION.
-Variable cenv : ctor_env.
+Variable cenv   : ctor_env.
 Variable funenv : fun_env.
-Variable nenv : name_env.
+Variable nenv   : name_env.
+Variable penv   : prim_env.
 
 Variable host_function : eqType.
 Variable hfn : host_function.
@@ -441,19 +444,19 @@ Qed.
 Theorem module_instantiate : forall e module fenv venv,
   correct_cenv_of_exp cenv e ->
   NoDup (collect_function_vars e) ->
-  LambdaANF_to_Wasm nenv cenv e = Ret (module, fenv, venv) ->
+  LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, venv) ->
   exists sr inst exports, instantiate host_function host_instance initial_store module
     [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] (sr, inst, exports, None).
 Proof.
   intros ???? Hcenv Hnodup' H. unfold LambdaANF_to_Wasm in H.
-  destruct (check_restrictions e) eqn:Hrestr. inv H. destruct u.
+  destruct (check_restrictions cenv e) eqn:Hrestr. inv H. destruct u.
   eapply check_restrictions_expression_restricted in Hrestr; last by apply rt_refl.
   destruct (generate_constr_pp_function cenv nenv e) eqn:Hpp. inv H.
   destruct (match e with
             | Efun _ _ => e
             | _ => Efun Fnil e
             end) eqn:He; try (by inv H).
-  destruct (translate_functions _ _ _ f) eqn:Hfuns. inv H. rename l into fns, f into fds.
+  destruct (translate_functions _ _ _ _ f) eqn:Hfuns. inv H. rename l into fns, f into fds.
   cbn in H.
   destruct (translate_body nenv cenv _ _) eqn:Hexpr. inv H.
   rename l into wasm_main_instr.
@@ -562,7 +565,7 @@ Proof.
 
         replace (create_fname_mapping e) with (create_fname_mapping (Efun fds e)) in Hfuns by
           (destruct e; inv He =>//).
-        have H' := translate_functions_exists_original_fun cenv nenv _ host_instance fds fds fns _ _ _ _ Hnodup Hfuns Logic.eq_refl (nth_error_In _ _ Hin).
+        have H' := translate_functions_exists_original_fun cenv nenv _ _ host_instance fds fds fns _ _ _ _ Hnodup Hfuns Logic.eq_refl (nth_error_In _ _ Hin).
         destruct H' as [f [t [ys [e1 [Hfd [Htype Hvarr]]]]]].
         rewrite Hnth2 in Htype.
 
@@ -572,7 +575,7 @@ Proof.
           destruct e; inv He =>//. eapply Forall_constructors_subterm. eassumption.
           apply t_step. apply dsubterm_fds. now eapply find_def_dsubterm_fds_e.
         }
-        have H' := translate_functions_find_def cenv nenv _ host_instance fds _ _ _ _ e1 _ Hnodup Hfuns Hfd HcenvFds.
+        have H' := translate_functions_find_def cenv nenv _ _ host_instance fds _ _ _ _ e1 _ Hnodup Hfuns Hfd HcenvFds.
 
         destruct H' as [f' [e' [locs [ty [func [Hvar [-> [Hty' [Hin' [<- [<- [Hlocs [<- Hexpr']]]]]]]]]]]]].
         assert (func = w0). {
@@ -587,7 +590,7 @@ Proof.
         rewrite Hty' in Hnth2. inv Hnth2.
 
         split. { destruct e; inv He; try by inv Hfd. inv Hrestr.
-          apply H2 in Hfd. destruct Hfd as [Hfd _]. rewrite -ssrnat.subnE -ssrnat.minusE.
+          apply H3 in Hfd. destruct Hfd as [Hfd _]. rewrite -ssrnat.subnE -ssrnat.minusE.
           rewrite length_list_function_types map_length. cbn.
           assert (Heq: Datatypes.length ys - Z.to_nat max_function_args = 0) by lia.
           now rewrite Heq. }
@@ -595,7 +598,7 @@ Proof.
                  erewrite <-map_repeat_eq. by apply /eqfunction_typeP.
                  rewrite map_length.
                  destruct e; inv He; try by inv Hfd.
-                  inv Hrestr. apply H2 in Hfd. destruct Hfd as [Hfd _]. lia. }
+                  inv Hrestr. apply H3 in Hfd. destruct Hfd as [Hfd _]. lia. }
         eapply repr_expr_LambdaANF_Wasm_typing =>//; last by apply Hexpr'.
         { (* context restrictions *)
           repeat split =>//.
@@ -613,7 +616,7 @@ Proof.
             erewrite nth_error_nth'. rewrite nth_list_function_types. reflexivity. lia.
             rewrite length_list_function_types. lia.
         }
-        { destruct e; inv He; try by inv Hfd. inv Hrestr. now eapply H2. }
+        { destruct e; inv He; try by inv Hfd. inv Hrestr. now eapply H3. }
       }
     + (* module_glob_typing *)
       repeat (apply Forall2_cons; repeat split; try by apply bet_const =>//).
