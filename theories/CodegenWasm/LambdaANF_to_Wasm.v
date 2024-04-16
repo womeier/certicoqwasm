@@ -872,7 +872,7 @@ Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_elemen
   match len with
   | 0 => []
   | S len' => {| modelem_mode := ME_active 0%N [BI_const_num (nat_to_value startidx)]
-               ; modelem_init := [[ BI_const_num (nat_to_value startidx) ]]
+               ; modelem_init := [[ BI_ref_func (N.of_nat startidx) ]]
                ; modelem_type := T_funcref
                |} :: (table_element_mapping len' (S startidx))
   end.
@@ -955,16 +955,16 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                           |}
                       |} :: nil
 
-       ; mod_globals := {| modglob_type := {| tg_mut := MUT_const; tg_t := T_num T_i32 |}  (* global_mem_ptr *)
+       ; mod_globals := {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* global_mem_ptr *)
                          ; modglob_init := [BI_const_num (nat_to_value 0)]
                          |} ::
-                        {| modglob_type := {| tg_mut := MUT_const; tg_t := T_num T_i32 |}  (* constr_alloc_ptr *)
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* constr_alloc_ptr *)
                          ; modglob_init := [BI_const_num (nat_to_value 0)]
                          |} ::
-                        {| modglob_type := {| tg_mut := MUT_const; tg_t := T_num T_i32 |}  (* result_var *)
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* result_var *)
                          ; modglob_init := [BI_const_num (nat_to_value 0)]
                          |} ::
-                        {| modglob_type := {| tg_mut := MUT_const; tg_t := T_num T_i32 |}  (* out of memory indicator *)
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* out of memory indicator *)
                          ; modglob_init := [BI_const_num (nat_to_value 0)]
                          |} :: nil
 
