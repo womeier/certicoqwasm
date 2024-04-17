@@ -21,12 +21,9 @@ Require Import LambdaANF.cps LambdaANF.eval LambdaANF.cps_util LambdaANF.List_ut
                LambdaANF.Ensembles_util LambdaANF.identifiers
                LambdaANF.shrink_cps_corresp.
 
-
 Require Import Coq.Program.Program Coq.Sets.Ensembles
                Coq.Logic.Decidable Coq.Lists.ListDec
                Coq.Relations.Relations Relations.Relation_Operators Lia.
-
-
 
 Require Import compcert.lib.Integers compcert.common.Memory.
 
@@ -46,7 +43,6 @@ Import ExtLib.Structures.Monad MonadNotation.
 Import bytestring.
 Import ListNotations.
 Import seq.
-
 
 (* Restrictions on LambdaANF expressions, s.t. everything fits in Wasm i32s *)
 Section SIZE_RESTRICTED.
@@ -274,22 +270,21 @@ Definition Forall_statements_in_seq_from_1 {A} :
                                    list basic_instruction -> Prop :=
   fun P vs s =>  Forall_statements_in_seq' P vs s 1.
 
-Inductive repr_var {lenv} : positive -> immediate -> Prop :=
+Inductive repr_var {lenv} : positive -> localidx -> Prop :=
 | repr_var_V : forall s err_str i,
     translate_var nenv lenv s err_str = Ret i ->
     repr_var s i.
 
-Inductive repr_funvar : positive -> immediate -> Prop :=
+Inductive repr_funvar : positive -> funcidx -> Prop :=
 | repr_funvar_FV : forall s i errMsg,
     translate_var nenv fenv s errMsg = Ret i ->
     repr_funvar s i.
 
 Inductive repr_read_var_or_funvar {lenv} : positive -> basic_instruction -> Prop :=
 | repr_var_or_funvar_V : forall p i,
-    repr_var (lenv:=lenv) p i -> repr_read_var_or_funvar p (BI_get_local i)
+    repr_var (lenv:=lenv) p i -> repr_read_var_or_funvar p (BI_local_get i)
 | repr_var_or_funvar_FV : forall p i,
-    repr_funvar p i -> repr_read_var_or_funvar p (BI_const (nat_to_value i)).
-
+    repr_funvar p i -> repr_read_var_or_funvar p (BI_const_num (N_to_value i)).
 
 
 (* constr_alloc_ptr: pointer to linear_memory[p + 4 + 4*n] = value v *)
@@ -297,15 +292,15 @@ Inductive set_nth_constr_arg {lenv} : nat -> var -> list basic_instruction -> Pr
   Make_nth_proj: forall (v : var) n instr,
     repr_read_var_or_funvar (lenv:=lenv) v instr ->
     set_nth_constr_arg n v
-      [ BI_get_global constr_alloc_ptr
-      ; BI_const (nat_to_value ((1 + n) * 4))
+      [ BI_global_get constr_alloc_ptr
+      ; BI_const_num (nat_to_value ((1 + n) * 4))
       ; BI_binop T_i32 (Binop_i BOI_add)
       ; instr
       ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
-      ; BI_get_global global_mem_ptr
-      ; BI_const (nat_to_value 4)
+      ; BI_global_get global_mem_ptr
+      ; BI_const_num (nat_to_value 4)
       ; BI_binop T_i32 (Binop_i BOI_add)
-      ; BI_set_global global_mem_ptr
+      ; BI_global_set global_mem_ptr
       ].
 
 (* args are pushed on the stack before calling a function *)
@@ -318,14 +313,14 @@ Inductive repr_fun_args_Wasm {lenv} : list LambdaANF.cps.var ->
 | FA_cons_var : forall a a' args instr,
     repr_var (lenv:=lenv) a a' ->
     repr_fun_args_Wasm args instr ->
-    repr_fun_args_Wasm (a :: args) ([BI_get_local a'] ++ instr)
+    repr_fun_args_Wasm (a :: args) ([BI_local_get a'] ++ instr)
 (* arg is function -> lookup id for handling indirect calls later *)
 | FA_cons_fun : forall a a' args instr,
     repr_funvar a a' ->
     repr_fun_args_Wasm args instr ->
-    repr_fun_args_Wasm (a :: args) ([BI_const (nat_to_value a')] ++ instr).
+    repr_fun_args_Wasm (a :: args) ([BI_const_num (N_to_value a')] ++ instr).
 
-Inductive repr_asgn_constr_Wasm {lenv} : immediate -> ctor_tag -> list var -> list basic_instruction -> list basic_instruction ->  Prop :=
+Inductive repr_asgn_constr_Wasm {lenv} : localidx -> ctor_tag -> list var -> list basic_instruction -> list basic_instruction ->  Prop :=
 | Rconstr_asgn_boxed :
   forall x' t vs sargs scont arity ord,
     get_ctor_ord cenv t = Ret ord ->
@@ -335,82 +330,82 @@ Inductive repr_asgn_constr_Wasm {lenv} : immediate -> ctor_tag -> list var -> li
     Forall_statements_in_seq (set_nth_constr_arg (lenv:=lenv)) vs sargs ->
 
     repr_asgn_constr_Wasm x' t vs scont
-      ([ BI_const (N_to_value page_size)
+      ([ BI_const_num (N_to_value page_size)
        ; BI_call grow_mem_function_idx
-       ; BI_get_global result_out_of_mem
-       ; BI_const (nat_to_value 1)
+       ; BI_global_get result_out_of_mem
+       ; BI_const_num (nat_to_value 1)
        ; BI_relop T_i32 (Relop_i ROI_eq)
-       ; BI_if (Tf nil nil)
+       ; BI_if (BT_valtype None)
            (* grow mem failed *)
            [ BI_return ]
            []
-       ; BI_get_global global_mem_ptr
-       ; BI_set_global constr_alloc_ptr
-       ; BI_get_global constr_alloc_ptr
-       ; BI_const (nat_to_value (N.to_nat ord))
+       ; BI_global_get global_mem_ptr
+       ; BI_global_set constr_alloc_ptr
+       ; BI_global_get constr_alloc_ptr
+       ; BI_const_num (nat_to_value (N.to_nat ord))
        ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
-       ; BI_get_global global_mem_ptr
-       ; BI_const (nat_to_value 4)
+       ; BI_global_get global_mem_ptr
+       ; BI_const_num (nat_to_value 4)
        ; BI_binop T_i32 (Binop_i BOI_add)
-       ; BI_set_global global_mem_ptr
-       ] ++ sargs ++ [BI_get_global constr_alloc_ptr; BI_set_local x'] ++ scont)
+       ; BI_global_set global_mem_ptr
+       ] ++ sargs ++ [BI_global_get constr_alloc_ptr; BI_local_set x'] ++ scont)
 
 | Rconstr_asgn_unboxed :
   forall x' t scont ord,
     get_ctor_ord cenv t = Ret ord ->
     get_ctor_arity cenv t = Ret 0 ->
     repr_asgn_constr_Wasm x' t [] scont
-      ([ BI_const (nat_to_value (N.to_nat (2 * ord + 1)%N))
-       ; BI_set_local x' ] ++ scont ).
+      ([ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N))
+       ; BI_local_set x' ] ++ scont ).
 
 
-Inductive repr_case_boxed: immediate -> list (N * list basic_instruction) -> list basic_instruction -> Prop :=
+Inductive repr_case_boxed: localidx -> list (N * list basic_instruction) -> list basic_instruction -> Prop :=
 | Rcase_boxed_nil: forall v, repr_case_boxed v [] [ BI_unreachable ]
 | Rcase_boxed_cons: forall v ord instrs brs instrs_more,
     repr_case_boxed v brs instrs_more ->
     repr_case_boxed v ((ord, instrs) :: brs)
-      [ BI_get_local v
+      [ BI_local_get v
       ; BI_load T_i32 None 2%N 0%N
-      ; BI_const (nat_to_value (N.to_nat ord))
+      ; BI_const_num (nat_to_value (N.to_nat ord))
       ; BI_relop T_i32 (Relop_i ROI_eq)
-      ; BI_if (Tf nil nil)
+      ; BI_if (BT_valtype None)
           instrs
           instrs_more ].
 
-Inductive repr_case_unboxed: immediate -> list (N * list basic_instruction) -> list basic_instruction -> Prop :=
+Inductive repr_case_unboxed: localidx -> list (N * list basic_instruction) -> list basic_instruction -> Prop :=
 | Rcase_unboxed_nil: forall v, repr_case_unboxed v [] [ BI_unreachable ]
 | Rcase_unboxed_cons: forall v ord instrs brs instrs_more,
     repr_case_unboxed v brs instrs_more ->
     repr_case_unboxed v ((ord, instrs) :: brs)
-      [ BI_get_local v
-      ; BI_const (nat_to_value (N.to_nat (2 * ord + 1)%N))
+      [ BI_local_get v
+      ; BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N))
       ; BI_relop T_i32 (Relop_i ROI_eq)
-      ; BI_if (Tf nil nil)
+      ; BI_if (BT_valtype None)
           instrs
           instrs_more
       ].
 
-Inductive repr_primitive_operation {lenv} : immediate -> (Kernames.kername * string * bool * nat) -> list positive  -> list basic_instruction -> Prop :=
+Inductive repr_primitive_operation {lenv} : localidx -> (Kernames.kername * string * bool * nat) -> list positive  -> list basic_instruction -> Prop :=
 | Rprim_add :
   forall x kname y1 y1' y2 y2' b,
     repr_var (lenv:=lenv) y1 y1' ->
     repr_var (lenv:=lenv) y2 y2' ->
       repr_primitive_operation x (kname, "prim_int63_add"%bs, b, 2) [y1 ; y2]
-        [ BI_get_global global_mem_ptr
-          ; BI_get_local y1'
+        [ BI_global_get global_mem_ptr
+          ; BI_local_get y1'
           ; BI_load T_i64 None 2%N 0%N
-          ; BI_get_local y2'
+          ; BI_local_get y2'
           ; BI_load T_i64 None 2%N 0%N
           ; BI_binop T_i64 (Binop_i BOI_add)
-          ; BI_const (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
+          ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
           ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
            ; BI_store T_i64 None 2%N 0%N
-           ; BI_get_global global_mem_ptr (* value to be stored in the let binding ('return value') *)
-           ; BI_get_global global_mem_ptr
-           ; BI_const (nat_to_value 8)
+           ; BI_global_get global_mem_ptr (* value to be stored in the let binding ('return value') *)
+           ; BI_global_get global_mem_ptr
+           ; BI_const_num (nat_to_value 8)
            ; BI_binop T_i32 (Binop_i BOI_add)
-          ; BI_set_global global_mem_ptr
-          ; BI_set_local x
+          ; BI_global_set global_mem_ptr
+          ; BI_local_set x
         ].
 
 (* CODEGEN RELATION: relatates LambdaANF expression and result of translate_body *)
@@ -418,8 +413,8 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
 | R_halt_e: forall x x',
     repr_var (lenv:=lenv) x x' ->
     repr_expr_LambdaANF_Wasm (Ehalt x)
-      [ BI_get_local x'
-      ; BI_set_global result_var
+      [ BI_local_get x'
+      ; BI_global_set result_var
       ; BI_return
       ]
 | Rproj_e: forall x x' t n y y' e e',
@@ -427,11 +422,11 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
     repr_var (lenv:=lenv) x x' ->
     repr_var (lenv:=lenv) y y' ->
     repr_expr_LambdaANF_Wasm (Eproj x t n y e)
-      ([ BI_get_local y'
-       ; BI_const (nat_to_value (((N.to_nat n) + 1) * 4))
+      ([ BI_local_get y'
+       ; BI_const_num (nat_to_value (((N.to_nat n) + 1) * 4))
        ; BI_binop T_i32 (Binop_i BOI_add)
        ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0)
-       ; BI_set_local x'
+       ; BI_local_set x'
        ] ++ e')
 
 | Rconstr_e: forall x x' t vs e instrs e',
@@ -446,11 +441,11 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
     repr_case_boxed y' brs1 e1' ->
     repr_case_unboxed y' brs2 e2' ->
     repr_expr_LambdaANF_Wasm (Ecase y cl)
-      [ BI_get_local y'
-      ; BI_const (nat_to_value 1)
+      [ BI_local_get y'
+      ; BI_const_num (nat_to_value 1)
       ; BI_binop T_i32 (Binop_i BOI_and)
       ; BI_testop T_i32 TO_eqz
-      ; BI_if (Tf [] [])
+      ; BI_if (BT_valtype None)
           e1'
           e2'
       ]
@@ -462,7 +457,7 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
     repr_read_var_or_funvar (lenv:=lenv) v instr ->
     repr_expr_LambdaANF_Wasm (Eapp v t args) (args' ++
                                                 [instr] ++
-                                                [BI_return_call_indirect (length args)])
+                                                [BI_return_call_indirect 0%N (N.of_nat (length args))])
 
 | R_letapp_e : forall x x' v instr t args args' e e',
     (* translated assigned var *)
@@ -476,14 +471,14 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
     repr_expr_LambdaANF_Wasm (Eletapp x v t args e)
       (args' ++
        [ instr
-       ; BI_call_indirect (length args)
-       ; BI_get_global result_out_of_mem
-       ; BI_if (Tf nil nil)
+       ; BI_call_indirect 0%N (N.of_nat (length args))
+       ; BI_global_get result_out_of_mem
+       ; BI_if (BT_valtype None)
            (* grow mem failed *)
            [ BI_return ]
            []
-       ; BI_get_global result_var
-       ; BI_set_local x'
+       ; BI_global_get result_var
+       ; BI_local_set x'
        ] ++ e')
 
 | R_prim_val : forall x x' p v e e',
@@ -491,24 +486,24 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
     repr_expr_LambdaANF_Wasm e e' ->
     translate_primitive_value p = Ret v ->
     repr_expr_LambdaANF_Wasm (Eprim_val x p e)
-      ([ BI_const (N_to_value page_size)
+      ([ BI_const_num (N_to_value page_size)
        ; BI_call grow_mem_function_idx
-       ; BI_get_global result_out_of_mem
-       ; BI_const (nat_to_value 1)
+       ; BI_global_get result_out_of_mem
+       ; BI_const_num (nat_to_value 1)
        ; BI_relop T_i32 (Relop_i ROI_eq)
-       ; BI_if (Tf [] [])
+       ; BI_if (BT_valtype None)
            (* grow mem failed *)
            [ BI_return ]
            []
-       ; BI_get_global global_mem_ptr
-       ; BI_const (VAL_int64 v)
+       ; BI_global_get global_mem_ptr
+       ; BI_const_num (VAL_int64 v)
        ; BI_store T_i64 None 2%N 0%N
-       ; BI_get_global global_mem_ptr
-       ; BI_set_local x'
-       ; BI_get_global global_mem_ptr
-       ; BI_const (nat_to_value 8)
+       ; BI_global_get global_mem_ptr
+       ; BI_local_set x'
+       ; BI_global_get global_mem_ptr
+       ; BI_const_num (nat_to_value 8)
        ; BI_binop T_i32 (Binop_i BOI_add)
-       ; BI_set_global global_mem_ptr
+       ; BI_global_set global_mem_ptr
         ] ++ e')
 
 | R_prim : forall x x' p p' ys e e' prim_instrs,
@@ -517,18 +512,18 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
     M.get p penv = Some p' ->
     repr_primitive_operation (lenv:=lenv) x' p' ys prim_instrs ->
     repr_expr_LambdaANF_Wasm (Eprim x p ys e)
-      ([ BI_const (N_to_value page_size)
+      ([ BI_const_num (N_to_value page_size)
          ; BI_call grow_mem_function_idx
-         ; BI_get_global result_out_of_mem
-         ; BI_const (nat_to_value 1)
+         ; BI_global_get result_out_of_mem
+         ; BI_const_num (nat_to_value 1)
          ; BI_relop T_i32 (Relop_i ROI_eq)
-         ; BI_if (Tf nil nil)
+         ; BI_if (BT_valtype None)
              (* grow mem failed *)
              [ BI_return ]
              [] ] ++
          prim_instrs ++ e')
 
-with repr_branches {lenv}: immediate -> list (ctor_tag * exp) -> list (N * list basic_instruction) -> list (N * list basic_instruction) -> Prop :=
+with repr_branches {lenv}: localidx -> list (ctor_tag * exp) -> list (N * list basic_instruction) -> list (N * list basic_instruction) -> Prop :=
 | Rbranch_nil : forall x, repr_branches x [] [ ] [ ]
 
 | Rbranch_cons_boxed : forall x cl t e ord n e' brs1 brs2,
@@ -609,9 +604,8 @@ Proof.
     destruct l as [|v0 l'].
 
     + (* Nullary constructor *)
-      destruct (get_ctor_ord cenv t) eqn:Hord. inv H1.
-      inv H1.
-      eapply Rconstr_e with (e':=l0) (x':=i); eauto.
+      destruct (get_ctor_ord cenv t) eqn:Hord; inv H1.
+      eapply Rconstr_e with (e':=l0); eauto.
       apply IHe; auto.
       assert (subterm_e e (Econstr v t [] e) ). { constructor; constructor. }
       eapply Forall_constructors_subterm. eassumption. assumption.
@@ -622,13 +616,11 @@ Proof.
       unfold get_ctor_arity. now rewrite Hc.
     + (* Non-nullary constructor *)
       remember (v0 :: l') as l.
-      destruct (store_constructor nenv cenv lenv fenv t l) eqn:store_constr.
-      inv H1. inv H1. cbn.
-      rename i into v'.
-      unfold store_constructor in store_constr.
-      destruct (get_ctor_ord cenv t) eqn:Hord. cbn in store_constr. inv store_constr.
-      destruct (set_constructor_args nenv lenv fenv (v0 :: l') 0) eqn:Hconstrargs. inv store_constr.
-      inversion store_constr.
+      destruct (store_constructor nenv cenv lenv fenv t l) eqn:Hstore_constr; inv H1.
+      unfold store_constructor in Hstore_constr.
+      destruct (get_ctor_ord cenv t) eqn:Hord; first by inv Hstore_constr.
+      destruct (set_constructor_args nenv lenv fenv (v0 :: l') 0) eqn:Hconstrargs; first by inv Hstore_constr.
+      inversion Hstore_constr.
       repeat rewrite <- app_assoc.
       eapply Rconstr_e with (e' := l0); eauto.
       apply IHe.
@@ -745,7 +737,7 @@ Proof.
       inv H0.
       inv H0.
       inv H1.
-      apply R_prim with (x':=i) (p':=(k, t, b, 2)) (e':=l0).
+      eapply R_prim with (p':=(k, t, b, 2)) (e':=l0).
       econstructor; eauto.
       assert (Hcenv': correct_cenv_of_exp cenv e). {
         intro; intros. eapply Hcenv. eapply rt_trans. eauto. constructor.
@@ -787,12 +779,8 @@ Variable penv : LambdaANF.toplevel.prim_env.
 Let repr_expr_LambdaANF_Wasm := @repr_expr_LambdaANF_Wasm cenv fenv nenv.
 Let repr_funvar := @repr_funvar fenv nenv.
 
-Variable host_function : eqType.
-Let host := host host_function.
-Let store_record := store_record host_function.
-Variable host_instance : host.
-Let host_state := host_state host_instance.
-Let reduce_trans := @reduce_trans host_function host_instance.
+Context `{ho : host}.
+(* Let reduce_trans := @reduce_trans host_function host_moduleinst. *)
 
 Inductive wasm_i64_prim_related :  Wasm_int.Int64.int -> AstCommon.primitive -> Prop :=
   WP_related : forall w n p i,
@@ -804,64 +792,58 @@ Inductive wasm_i64_prim_related :  Wasm_int.Int64.int -> AstCommon.primitive -> 
 
 (* VALUE RELATION *)
 (* immediate is pointer to linear memory or function id *)
-Inductive repr_val_LambdaANF_Wasm:
-  LambdaANF.cps.val -> store_record -> instance -> wasm_value -> Prop :=
+Inductive repr_val_LambdaANF_Wasm : LambdaANF.cps.val -> store_record -> moduleinst -> wasm_value -> Prop :=
 | Rconstr_unboxed_v : forall v (t : ctor_tag) (sr : store_record) fi ord,
     get_ctor_ord cenv t = Ret ord ->
-    N.to_nat (ord * 2 + 1) = v ->
-    (-1 < Z.of_nat v < Wasm_int.Int32.modulus)%Z ->
+    (ord * 2 + 1 = v)%N ->
+    (-1 < Z.of_N v < Wasm_int.Int32.modulus)%Z ->
     get_ctor_arity cenv t = Ret 0 ->
     repr_val_LambdaANF_Wasm (Vconstr t []) sr fi (Val_unboxed v)
 
-| Rconstr_boxed_v : forall v t vs (sr : store_record) fi gmp m (addr : nat) arity ord,
+| Rconstr_boxed_v : forall v t vs (sr : store_record) fi gmp m (addr : u32) arity ord,
     (* simple memory model: gmp is increased whenever new mem is needed,
        gmp only increases *)
-    sglob_val sr fi global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
-    (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
+    sglob_val sr fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+    (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
     (* constr arity > 0 *)
     get_ctor_ord cenv t = Ret ord ->
     get_ctor_arity cenv t = Ret arity ->
     arity > 0 ->
     (* addr in bounds of linear memory (later INV: gmp + 4 < length of memory) *)
-    (addr + 4 <= gmp) ->
-    (exists n, addr = 2 * n) ->
+    (addr + 4 <= gmp)%N ->
+    (exists n, addr = 2 * n)%N ->
     (* store_record contains memory *)
     List.nth_error sr.(s_mems) 0 = Some m ->
     (* constructor tag is set, see LambdaANF_to_W, constr alloc structure*)
     v = (nat_to_i32 (N.to_nat ord)) ->
-    load_i32 m (N.of_nat addr) = Some (VAL_int32 v) ->
+    load_i32 m addr = Some (VAL_int32 v) ->
     (* arguments are set properly *)
-    repr_val_constr_args_LambdaANF_Wasm vs sr fi (4 + addr) ->
+    repr_val_constr_args_LambdaANF_Wasm vs sr fi (4 + addr)%N ->
     repr_val_LambdaANF_Wasm (Vconstr t vs) sr fi (Val_ptr addr)
 
-| Rfunction_v : forall fds f sr fi tag xs e e' idx ftype ts body,
+| Rfunction_v : forall fds f func sr fi tag xs e e' idx,
       repr_funvar f idx ->
       find_def f fds = Some (tag, xs, e) ->
-      (* types of local vars: all i32 *)
-      ts = repeat T_i32 (length (collect_local_variables e)) ->
+      func = {| modfunc_type := N.of_nat (length xs)
+              ; modfunc_locals := repeat (T_num T_i32) (length (collect_local_variables e))
+              ; modfunc_body := e'
+              |} ->
       (* find runtime representation of function *)
-      nth_error sr.(s_funcs) idx = Some (FC_func_native fi ftype ts body) ->
-      ftype = Tf (List.map (fun _ => T_i32) xs) [] ->
-      body = e' ->
-      repr_expr_LambdaANF_Wasm penv (create_local_variable_mapping (xs ++ collect_local_variables e)) e e'
-         ->
-           repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f) sr fi (Val_funidx idx)
+      lookup_N sr.(s_funcs) idx = Some (FC_func_native (Tf (repeat (T_num T_i32) (length xs)) []) fi func) ->
+      repr_expr_LambdaANF_Wasm penv (create_local_variable_mapping (xs ++ collect_local_variables e)) e e' ->
+      repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f) sr fi (Val_funidx idx)
 
 |  Rprim_v : forall w p sr fi gmp m addr,
-    sglob_val sr fi global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
-    (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
-    (addr+8 <= gmp) ->
-    (exists n, addr = 2 * n) ->
+    sglob_val sr fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+    (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
+    (addr+8 <= gmp)%N ->
+    (exists n, addr = 2 * n)%N ->
     List.nth_error sr.(s_mems) 0 = Some m ->
     wasm_i64_prim_related w p ->
-    load_i64 m (N.of_nat addr) = Some (VAL_int64 w) ->
+    load_i64 m addr = Some (VAL_int64 w) ->
     repr_val_LambdaANF_Wasm (Vprim p) sr fi (Val_ptr addr)
 
-with repr_val_constr_args_LambdaANF_Wasm : list LambdaANF.cps.val ->
-                                              store_record ->
-                                              instance ->
-                                              immediate ->
-                                              Prop :=
+with repr_val_constr_args_LambdaANF_Wasm : list LambdaANF.cps.val -> store_record -> moduleinst -> u32 -> Prop :=
      | Rnil_l: forall sr fr addr,
         repr_val_constr_args_LambdaANF_Wasm nil sr fr addr
 
@@ -869,17 +851,16 @@ with repr_val_constr_args_LambdaANF_Wasm : list LambdaANF.cps.val ->
         (* store_record contains memory *)
         List.nth_error sr.(s_mems) 0 = Some m ->
 
-        sglob_val (host_function:=host_function) sr fi global_mem_ptr =
-          Some (VAL_int32 (nat_to_i32 gmp)) ->
-        (-1 < Z.of_nat gmp < Wasm_int.Int32.modulus)%Z ->
-        (addr + 4 <= gmp) ->
+        sglob_val sr fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+        (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
+        (addr + 4 <= gmp)%N ->
 
         (* constr arg is ptr related to value v *)
-        load_i32 m (N.of_nat addr) = Some (VAL_int32 (wasm_value_to_i32 wal)) ->
+        load_i32 m addr = Some (VAL_int32 (wasm_value_to_i32 wal)) ->
         repr_val_LambdaANF_Wasm v sr fi wal ->
 
         (* following constr args are also related *)
-        repr_val_constr_args_LambdaANF_Wasm vs sr fi (4 + addr) ->
+        repr_val_constr_args_LambdaANF_Wasm vs sr fi (4 + addr)%N ->
         repr_val_constr_args_LambdaANF_Wasm (v::vs) sr fi addr.
 
 Scheme repr_val_LambdaANF_Wasm_mut := Induction for repr_val_LambdaANF_Wasm Sort Prop
@@ -901,17 +882,21 @@ Ltac simpl_eq :=
   repeat lazymatch goal with
   | H: nat_to_i32 _ = nat_to_i32 _ |- _ =>
         injection H as H
+  | H: N_to_i32 _ = N_to_i32 _ |- _ =>
+        injection H as H
   | H: _ = Wasm_int.Int32.Z_mod_modulus _ |- _ =>
          rewrite Wasm_int.Int32.Z_mod_modulus_id in H; last lia
   | H: Wasm_int.Int32.Z_mod_modulus _ = _ |- _ =>
           rewrite Wasm_int.Int32.Z_mod_modulus_id in H; last lia
   | H: Z.of_nat _ = Z.of_nat _ |- _ =>
          apply Nat2Z.inj in H
+  | H: Z.of_N _ = Z.of_N _ |- _ =>
+         apply N2Z.inj in H
   end.
 
 Ltac solve_eq_global x y :=
   assert (x = y); first
-    (try assert (nat_to_i32 x = nat_to_i32 y) by congruence; simpl_eq; done); subst y.
+    (try assert (N_to_i32 x = N_to_i32 y) by congruence; simpl_eq; done); subst y.
 
 (* TODO add case when global was updated etc. *)
 Ltac solve_eq_mem m1 m2 :=
@@ -932,13 +917,13 @@ Lemma val_relation_depends_on_mem_smaller_than_gmp_and_funcs :
     nth_error sr.(s_mems)  0 = Some m ->
     nth_error sr'.(s_mems) 0 = Some m' ->
     (* memories agree on values < gmp *)
-    sglob_val sr fi global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
-    (Z.of_nat gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
-    sglob_val sr' fi global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp')) ->
-    (Z.of_nat gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
-    gmp' >= gmp ->
-    (forall a, (a + 4 <= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
-    (forall a, (a + 8 <= N.of_nat gmp)%N -> load_i64 m a = load_i64 m' a) ->
+    sglob_val sr fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+    (Z.of_N gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
+    sglob_val sr' fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp'))) ->
+    (Z.of_N gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
+    (gmp' >= gmp)%N ->
+    (forall a, (a + 4 <= gmp)%N -> load_i32 m a = load_i32 m' a) ->
+    (forall a, (a + 8 <= gmp)%N -> load_i64 m a = load_i64 m' a) ->
 
     repr_val_LambdaANF_Wasm v sr fi value ->
     repr_val_LambdaANF_Wasm v sr' fi value.
@@ -949,39 +934,39 @@ Proof.
   (* Non-nullary constructor value *)
   {
   have indPrinciple := repr_val_constr_args_LambdaANF_Wasm_mut
-  (fun (v : cps.val) (s : datatypes.store_record host_function) (fi : instance) (w : wasm_value)
+  (fun (v : cps.val) (s : store_record) (fi : moduleinst) (w : wasm_value)
        (H: repr_val_LambdaANF_Wasm v s fi w) =>
        (forall a s' m m',
           s_funcs s = s_funcs s' ->
           nth_error s.(s_mems) 0 = Some m ->
           nth_error s'.(s_mems) 0 = Some m' ->
           (* memories agree on values < gmp *)
-          sglob_val s fi global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
-          (Z.of_nat gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
-          sglob_val s' fi global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp')) ->
-          (Z.of_nat gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
-          gmp' >= gmp ->
-          (forall a, (a + 4<= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
-          (forall a, (a + 8<= N.of_nat gmp)%N -> load_i64 m a = load_i64 m' a) ->
+          sglob_val s fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+          (Z.of_N gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
+          sglob_val s' fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp'))) ->
+          (Z.of_N gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
+          (gmp' >= gmp)%N ->
+          (forall a, (a + 4<= gmp)%N -> load_i32 m a = load_i32 m' a) ->
+          (forall a, (a + 8<= gmp)%N -> load_i64 m a = load_i64 m' a) ->
               repr_val_LambdaANF_Wasm v s' fi w)
     )
-  (fun (l : seq cps.val) (s : datatypes.store_record host_function) (fi : instance) (i : immediate)
-       (H: repr_val_constr_args_LambdaANF_Wasm l s fi i) =>
+  (fun (l : seq cps.val) (s : store_record) (fi : moduleinst) (addr : u32)
+       (H: repr_val_constr_args_LambdaANF_Wasm l s fi addr) =>
        (forall a s' m m',
           s_funcs s = s_funcs s' ->
           nth_error s.(s_mems) 0 = Some m ->
           nth_error s'.(s_mems) 0 = Some m' ->
           (* memories agree on values < gmp *)
-          sglob_val s fi global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp)) ->
-          (Z.of_nat gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
-          sglob_val s' fi global_mem_ptr = Some (VAL_int32 (nat_to_i32 gmp')) ->
-          (Z.of_nat gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
-          gmp' >= gmp ->
-          (forall a, (a + 4 <= N.of_nat gmp)%N -> load_i32 m a = load_i32 m' a) ->
-          (forall a, (a + 8 <= N.of_nat gmp)%N -> load_i64 m a = load_i64 m' a) ->
-             repr_val_constr_args_LambdaANF_Wasm l s' fi i)
-  ). have H19' := H19.
-    eapply indPrinciple in H19; intros; clear indPrinciple; try eassumption; try lia.
+          sglob_val s fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+          (Z.of_N gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
+          sglob_val s' fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp'))) ->
+          (Z.of_N gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
+          (gmp' >= gmp)%N ->
+          (forall a, (a + 4 <= gmp)%N -> load_i32 m a = load_i32 m' a) ->
+          (forall a, (a + 8 <= gmp)%N -> load_i64 m a = load_i64 m' a) ->
+             repr_val_constr_args_LambdaANF_Wasm l s' fi addr)
+  ). have H20' := H20.
+    eapply indPrinciple in H20; intros; clear indPrinciple; try eassumption; try lia.
     { solve_eq gmp0 gmp.
       solve_eq m m0.
       econstructor; try eassumption. lia. lia. reflexivity.
@@ -1013,7 +998,7 @@ Qed.
 
 (* RESULT RELATION *)
 Definition result_val_LambdaANF_Wasm (val : LambdaANF.cps.val)
-                                        (sr : store_record) (fi : instance) : Prop :=
+                                        (sr : store_record) (fi : moduleinst) : Prop :=
 
      (exists res_i32 wasmval,
        (* global var *result_var* contains correct return value *)
@@ -1658,7 +1643,7 @@ Qed.
     kept for compatability for now, TODO rework (use new context representation) **)
 Lemma r_eliml : forall hs s f es hs' s' f' es' lconst,
   const_list lconst ->
-  reduce (host_instance := host_instance) hs s f es hs' s' f' es' ->
+  reduce (host_moduleinst := host_moduleinst) hs s f es hs' s' f' es' ->
   reduce hs s f (lconst ++ es) hs' s' f' (lconst ++ es').
 Proof.
   move => hs s f es hs' s' f' es' lconst HConst H.
@@ -1669,7 +1654,7 @@ Proof.
 Qed.
 
 Lemma r_elimr: forall hs s f es hs' s' f' es' les,
-    reduce (host_instance := host_instance) hs s f es hs' s' f' es' ->
+    reduce (host_moduleinst := host_moduleinst) hs s f es hs' s' f' es' ->
     reduce hs s f (es ++ les) hs' s' f' (es' ++ les).
 Proof.
   move => hs s f es hs' s' f' es' les H.
@@ -1678,15 +1663,15 @@ Qed.
 
 Lemma reduce_trans_label' : forall instr instr' hs hs' sr sr' fr fr' i (lh : lholed i),
  clos_refl_trans
-  (host.host_state host_instance * datatypes.store_record host_function * frame *
+  (host.host_state host_moduleinst * datatypes.store_record host_function * frame *
    seq administrative_instruction)
- (reduce_tuple (host_instance:=host_instance))
+ (reduce_tuple (host_moduleinst:=host_moduleinst))
  (hs,  sr, fr, instr)
  (hs', sr', fr', instr') ->
 
   clos_refl_trans
-  (host.host_state host_instance * datatypes.store_record host_function * frame *
-   seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
+  (host.host_state host_moduleinst * datatypes.store_record host_function * frame *
+   seq administrative_instruction) (reduce_tuple (host_moduleinst:=host_moduleinst))
   (hs,  sr,  fr,  lfill lh instr)
   (hs', sr', fr', lfill lh instr').
 Proof.
@@ -1705,15 +1690,15 @@ Qed.
 
 Lemma reduce_trans_label : forall instr hs hs' sr sr' fr fr',
  clos_refl_trans
-  (host.host_state host_instance * datatypes.store_record host_function * frame *
+  (host.host_state host_moduleinst * datatypes.store_record host_function * frame *
    seq administrative_instruction)
- (reduce_tuple (host_instance:=host_instance))
+ (reduce_tuple (host_moduleinst:=host_moduleinst))
  (hs,  sr, fr, instr)
  (hs', sr', fr', []) ->
 
   clos_refl_trans
-  (host.host_state host_instance * datatypes.store_record host_function * frame *
-   seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
+  (host.host_state host_moduleinst * datatypes.store_record host_function * frame *
+   seq administrative_instruction) (reduce_tuple (host_moduleinst:=host_moduleinst))
   (hs,  sr, fr, [:: AI_label 0 [::] instr])
   (hs', sr', fr', [::]).
 Proof.
@@ -1726,15 +1711,15 @@ Qed.
 
 Lemma reduce_trans_label0 : forall instr instr' hs hs' sr sr' fr fr',
  clos_refl_trans
-  (host.host_state host_instance * datatypes.store_record host_function * frame *
+  (host.host_state host_moduleinst * datatypes.store_record host_function * frame *
    seq administrative_instruction)
- (reduce_tuple (host_instance:=host_instance))
+ (reduce_tuple (host_moduleinst:=host_moduleinst))
  (hs,  sr, fr, instr)
  (hs', sr', fr', instr') ->
 
   clos_refl_trans
-  (host.host_state host_instance * datatypes.store_record host_function * frame *
-   seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
+  (host.host_state host_moduleinst * datatypes.store_record host_function * frame *
+   seq administrative_instruction) (reduce_tuple (host_moduleinst:=host_moduleinst))
   (hs,  sr, fr, [:: AI_label 0 [::] instr])
   (hs', sr', fr', [:: AI_label 0 [::] instr']).
 Proof.
@@ -1747,15 +1732,15 @@ Qed.
 
 Lemma reduce_trans_local : forall instructions hs hs' sr sr' fr fr' f0,
  clos_refl_trans
-  (host.host_state host_instance * datatypes.store_record host_function * frame *
+  (host.host_state host_moduleinst * datatypes.store_record host_function * frame *
    seq administrative_instruction)
- (reduce_tuple (host_instance:=host_instance))
+ (reduce_tuple (host_moduleinst:=host_moduleinst))
  (hs,  sr, fr, instructions)
  (hs', sr', fr', []) ->
 
   clos_refl_trans
-  (host.host_state host_instance * datatypes.store_record host_function * frame *
-   seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
+  (host.host_state host_moduleinst * datatypes.store_record host_function * frame *
+   seq administrative_instruction) (reduce_tuple (host_moduleinst:=host_moduleinst))
   (hs,  sr, f0, [:: AI_local 0 fr instructions])
   (hs', sr', f0, [::]).
 Proof.
@@ -1775,15 +1760,15 @@ Qed.
 (* TODO rename and consolidate lemmas above *)
 Lemma reduce_trans_local' : forall instr instr' hs hs' sr sr' fr fr' f0,
  clos_refl_trans
-  (host.host_state host_instance * datatypes.store_record host_function * frame *
+  (host.host_state host_moduleinst * datatypes.store_record host_function * frame *
    seq administrative_instruction)
- (reduce_tuple (host_instance:=host_instance))
+ (reduce_tuple (host_moduleinst:=host_moduleinst))
  (hs,  sr, fr, instr)
  (hs', sr', fr', instr') ->
 
   clos_refl_trans
-  (host.host_state host_instance * datatypes.store_record host_function * frame *
-   seq administrative_instruction) (reduce_tuple (host_instance:=host_instance))
+  (host.host_state host_moduleinst * datatypes.store_record host_function * frame *
+   seq administrative_instruction) (reduce_tuple (host_moduleinst:=host_moduleinst))
   (hs,  sr, f0, [:: AI_local 0 fr instr])
   (hs', sr', f0, [:: AI_local 0 fr' instr']).
 Proof.
@@ -1817,17 +1802,17 @@ Ltac elimr_nary_instr n :=
          | |- reduce _ _ _ ([:: ?instr] ++ ?l3) _ _ _ _ => apply r_elimr
          end
   | 1 => lazymatch goal with
-         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++ [:: ?instr])        _ _ _ _ => idtac
-         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
-            assert ([:: AI_basic (BI_const c1)] ++ [:: instr] ++ l3 =
-                    [:: AI_basic (BI_const c1); instr] ++ l3) as H by reflexivity; rewrite H;
+         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([:: AI_basic (BI_const_num c1)] ++ [:: instr] ++ l3 =
+                    [:: AI_basic (BI_const_num c1); instr] ++ l3) as H by reflexivity; rewrite H;
                                                        apply r_elimr; clear H
          end
   | 2 => lazymatch goal with
-         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++ [::AI_basic (BI_const ?c2)] ++ [:: ?instr])        _ _ _ _ => idtac
-         | |- reduce _ _ _ ([::AI_basic (BI_const ?c1)] ++ [::AI_basic (BI_const ?c2)] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
-            assert ([:: AI_basic (BI_const c1)] ++ [:: AI_basic (BI_const c2)] ++ [:: instr] ++ l3 =
-                    [:: AI_basic (BI_const c1); AI_basic (BI_const c2); instr] ++ l3) as H by reflexivity; rewrite H;
+         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [::AI_basic (BI_const_num ?c2)] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [::AI_basic (BI_const_num ?c2)] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([:: AI_basic (BI_const_num c1)] ++ [:: AI_basic (BI_const_num c2)] ++ [:: instr] ++ l3 =
+                    [:: AI_basic (BI_const_num c1); AI_basic (BI_const_num c2); instr] ++ l3) as H by reflexivity; rewrite H;
                                                        apply r_elimr; clear H
          end
   end.
@@ -2468,7 +2453,7 @@ Proof.
     (* instr reduces to const related to value *)
     assert (Hinstr: exists wal,
       reduce_trans (state, s, f, [AI_basic instr])
-                   (state, s, f, [AI_basic (BI_const (VAL_int32 (wasm_value_to_i32 wal)))]) /\
+                   (state, s, f, [AI_basic (BI_const_num (VAL_int32 (wasm_value_to_i32 wal)))]) /\
       repr_val_LambdaANF_Wasm v s (f_inst f) wal). {
         inv H. rename i into y'.
       { (* var *)
@@ -2860,15 +2845,15 @@ Lemma store_constr_reduce {lenv} : forall state s f rho fds ys (vs : list cps.va
 
   exists s', reduce_trans
     (state, s, f,
-      [:: AI_basic (BI_get_global global_mem_ptr)] ++
-      [:: AI_basic (BI_set_global constr_alloc_ptr)] ++
-      [:: AI_basic (BI_get_global constr_alloc_ptr)] ++
-      [:: AI_basic (BI_const (nat_to_value (N.to_nat ord)))] ++
+      [:: AI_basic (BI_global_get global_mem_ptr)] ++
+      [:: AI_basic (BI_global_set constr_alloc_ptr)] ++
+      [:: AI_basic (BI_global_get constr_alloc_ptr)] ++
+      [:: AI_basic (BI_const_num (nat_to_value (N.to_nat ord)))] ++
       [:: AI_basic (BI_store T_i32 None 2%N 0%N)] ++
-      [:: AI_basic (BI_get_global global_mem_ptr)] ++
-      [:: AI_basic (BI_const (nat_to_value 4))] ++
+      [:: AI_basic (BI_global_get global_mem_ptr)] ++
+      [:: AI_basic (BI_const_num (nat_to_value 4))] ++
       [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
-      [:: AI_basic (BI_set_global global_mem_ptr)] ++
+      [:: AI_basic (BI_global_set global_mem_ptr)] ++
       [seq AI_basic i | i <- sargs]) (state, s', f, []) /\
     INV s' f /\
     s_funcs s = s_funcs s' /\
@@ -3125,7 +3110,7 @@ Inductive const_val_list : list cps.val -> store_record -> frame -> list nat -> 
        const_val_list (v::vs) s f (n::ns).
 
 Lemma map_const_const_list : forall args,
-  const_list [seq AI_basic (BI_const (nat_to_value a)) | a <- args].
+  const_list [seq AI_basic (BI_const_num (nat_to_value a)) | a <- args].
 Proof.
   induction args; auto.
 Qed.
@@ -3175,7 +3160,7 @@ Lemma fun_args_reduce {lenv} : forall state fr sr fds (ys : seq cps.var) rho vs 
   @repr_fun_args_Wasm fenv nenv lenv ys args_instr ->
   exists args,
     reduce_trans (state, sr, fr, map AI_basic args_instr)
-                 (state, sr, fr, (map (fun a => AI_basic (BI_const (nat_to_value a))) args))
+                 (state, sr, fr, (map (fun a => AI_basic (BI_const_num (nat_to_value a))) args))
     /\ const_val_list vs sr fr args.
 Proof.
   intros ? ? ? ? ? ? ? ? ? ? Hinv Hgetlist HenvsDisjoint HfenvWf HfenvRho HrelE Hargs.
@@ -3227,7 +3212,7 @@ Proof.
       destruct IH as [args' [Hred HconstL]].
 
       exists (a' :: args'). split. cbn.
-      apply app_trans_const with (lconst := [AI_basic (BI_const (nat_to_value a'))]); auto.
+      apply app_trans_const with (lconst := [AI_basic (BI_const_num (nat_to_value a'))]); auto.
       assert (v = Vfun (M.empty _) fds a). {
         specialize HfenvWf with a. inv H. unfold translate_var in H0.
         destruct (fenv ! a); inv H0.
@@ -3835,10 +3820,10 @@ Lemma unboxed_nested_if_chain_reduces:
     repr_case_unboxed v brs2 e2' ->
     exists e' e'',
       select_nested_if false v ord brs2 =
-        [ BI_get_local v
-          ; BI_const (nat_to_value (N.to_nat (2 * ord + 1)))
+        [ BI_local_get v
+          ; BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)))
           ; BI_relop T_i32 (Relop_i ROI_eq)
-          ; BI_if (Tf nil nil)
+          ; BI_if (BT_valtype None)
               e'
               e'' ]
       /\ (forall k (lh : lholed k),
@@ -4004,11 +3989,11 @@ Lemma boxed_nested_if_chain_reduces:
     repr_case_boxed v brs1 e1' ->
     exists e' e'',
       select_nested_if true v ord brs1 =
-        [ BI_get_local v
+        [ BI_local_get v
         ; BI_load T_i32 None 2%N 0%N
-        ; BI_const (nat_to_value (N.to_nat ord))
+        ; BI_const_num (nat_to_value (N.to_nat ord))
         ; BI_relop T_i32 (Relop_i ROI_eq)
-        ; BI_if (Tf nil nil)
+        ; BI_if (BT_valtype None)
             e'
             e'' ]
       /\ (forall k (lh : lholed k),
@@ -4999,7 +4984,7 @@ Proof with eauto.
       apply HfuncsId. unfold grow_mem_function_idx.
       unfold INV_num_functions_bounds, num_custom_funs in HfnsBound. lia.
       dostep_nary 1.
-      eapply r_invoke_native with (ves:= [AI_basic (BI_const (N_to_value page_size))])
+      eapply r_invoke_native with (ves:= [AI_basic (BI_const_num (N_to_value page_size))])
         (vcs:= [N_to_value page_size]) (f':=fM); try eassumption; eauto; try by (rewrite HeqfM; auto).
 
       eapply rt_trans. apply app_trans.
@@ -5056,7 +5041,7 @@ Proof with eauto.
     apply HfuncsId. unfold grow_mem_function_idx.
     unfold INV_num_functions_bounds, num_custom_funs in HfnsBound. lia.
     dostep_nary 1.
-    eapply r_invoke_native with (ves:= [AI_basic (BI_const (N_to_value page_size))])
+    eapply r_invoke_native with (ves:= [AI_basic (BI_const_num (N_to_value page_size))])
       (vcs:= [N_to_value page_size]) (f':=fM); try eassumption; eauto; try by (rewrite HeqfM; auto).
     eapply rt_trans. apply app_trans. eapply rt_trans.
     eapply reduce_trans_local'.
@@ -5453,8 +5438,8 @@ Proof with eauto.
                  @reduce_trans
                      (state, sr, fAny,
                        [AI_local 0 fr (lfill lh ([seq AI_basic i | i <-
-                                           [:: BI_get_local y'
-                                            ; BI_const (nat_to_value 1)
+                                           [:: BI_local_get y'
+                                            ; BI_const_num (nat_to_value 1)
                                             ; BI_binop T_i32 (Binop_i BOI_and)
                                             ; BI_testop T_i32 TO_eqz
                                             ; BI_if (Tf [::] [::])
@@ -5467,10 +5452,10 @@ Proof with eauto.
         { (* Unboxed cases (nullary) *)
           assert (exists e' e'',
                      select_nested_if false y' ord brs2 =
-                       [ BI_get_local y'
-                         ; BI_const (nat_to_value (N.to_nat (2 * ord + 1)))
+                       [ BI_local_get y'
+                         ; BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)))
                          ; BI_relop T_i32 (Relop_i ROI_eq)
-                         ; BI_if (Tf nil nil)
+                         ; BI_if (BT_valtype None)
                              e'
                              e'' ]
                      /\ (forall k0 (lh0 : lholed k0),
@@ -5516,11 +5501,11 @@ Proof with eauto.
         { (* Boxed cases (non-nullary) *)
           assert (exists e' e'',
                      select_nested_if true y' ord brs1 =
-                       [ BI_get_local y'
+                       [ BI_local_get y'
                          ; BI_load T_i32 None 2%N 0%N
-                         ; BI_const (nat_to_value (N.to_nat ord))
+                         ; BI_const_num (nat_to_value (N.to_nat ord))
                          ; BI_relop T_i32 (Relop_i ROI_eq)
-                         ; BI_if (Tf nil nil)
+                         ; BI_if (BT_valtype None)
                              e'
                              e'' ]
                      /\ (forall k0 (lh0 : lholed k0),
@@ -5620,7 +5605,7 @@ Proof with eauto.
       (* treat direct + indirect calls in one *)
       assert (Hval: exists fidx,
         reduce_trans (state, sr, fr, [AI_basic instr])
-                     (state, sr, fr, [AI_basic (BI_const (nat_to_value fidx))]) /\
+                     (state, sr, fr, [AI_basic (BI_const_num (nat_to_value fidx))]) /\
         repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f') sr (f_inst fr) (Val_funidx fidx)). {
 
       inv H8.
@@ -5899,7 +5884,7 @@ Proof with eauto.
       (* treat direct + indirect calls in one *)
       assert (Hval: exists fidx,
         reduce_trans (state, sr, fr, [AI_basic instr])
-                     (state, sr, fr, [AI_basic (BI_const (nat_to_value fidx))])
+                     (state, sr, fr, [AI_basic (BI_const_num (nat_to_value fidx))])
      /\ @repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f') sr (f_inst fr) (Val_funidx fidx)
      /\ exists e_body', @repr_expr_LambdaANF_Wasm penv (create_local_variable_mapping (xs ++ collect_local_variables e_body)%list) e_body e_body'). {
       inv H12.
@@ -6122,10 +6107,10 @@ Proof with eauto.
     subst lh_before_IH. cbn in Hred. rewrite cats0 in Hred.
 
     assert (Hcont: exists (sr_final : store_record) (fr_final : frame) k' (lh' : lholed k'),
-      reduce_trans (state, sr_after_call, fAny, [AI_local 0 fr (lfill lh ([ AI_basic (BI_get_global result_out_of_mem)
+      reduce_trans (state, sr_after_call, fAny, [AI_local 0 fr (lfill lh ([ AI_basic (BI_global_get result_out_of_mem)
                                                                          ; AI_basic (BI_if (Tf [::] [::]) [:: BI_return ] [::])
-                                                                         ; AI_basic (BI_get_global result_var)
-                                                                         ; AI_basic (BI_set_local x') ] ++ (map AI_basic e')))])
+                                                                         ; AI_basic (BI_global_get result_var)
+                                                                         ; AI_basic (BI_local_set x') ] ++ (map AI_basic e')))])
                    (state, sr_final, fAny, [AI_local 0 fr_final (lfill lh' [:: AI_basic BI_return])])
          /\ result_val_LambdaANF_Wasm v' sr_final (f_inst fr_final)
          /\ f_inst fr_final = f_inst fr
@@ -6380,7 +6365,7 @@ Proof with eauto.
     separate_instr. apply app_trans. apply HredF.
     eapply rt_trans. apply app_trans_const. apply map_const_const_list.
     apply app_trans with (es :=
-             [:: AI_basic (BI_const (nat_to_value fidx));
+             [:: AI_basic (BI_const_num (nat_to_value fidx));
                  AI_basic (BI_call_indirect (Datatypes.length ys))]).
     dostep'. eapply r_call_indirect_success; eauto.
     { (* table identity map *)
@@ -6394,7 +6379,7 @@ Proof with eauto.
       rewrite Htype. 2: { inv HeRestr. congruence. } rewrite -Hlen. cbn. inv H9.
       now rewrite map_repeat_eq. } apply rt_refl.
     rewrite catA. cbn. eapply rt_trans.
-    eapply app_trans with (es := ([seq AI_basic (BI_const (nat_to_value a)) | a <- args] ++ [:: AI_invoke fidx])).
+    eapply app_trans with (es := ([seq AI_basic (BI_const_num (nat_to_value a)) | a <- args] ++ [:: AI_invoke fidx])).
     (* enter function *)
     dostep'. eapply r_invoke_native with (vcs:= map (fun a => (nat_to_value a)) args)
                                         (f':=f_before_IH); try eassumption.
@@ -6717,7 +6702,7 @@ Proof with eauto.
         apply HfuncsId. unfold grow_mem_function_idx.
         unfold INV_num_functions_bounds, num_custom_funs in HfnsBound. lia.
         dostep_nary 1.
-        eapply r_invoke_native with (ves:= [AI_basic (BI_const (N_to_value page_size))])
+        eapply r_invoke_native with (ves:= [AI_basic (BI_const_num (N_to_value page_size))])
           (vcs:= [N_to_value page_size]) (f':=fM); try eassumption; eauto; try by (rewrite HeqfM; auto).
 
         eapply rt_trans. apply app_trans.
@@ -6772,7 +6757,7 @@ Proof with eauto.
         apply HfuncsId. unfold grow_mem_function_idx.
         unfold INV_num_functions_bounds, num_custom_funs in HfnsBound. lia.
         dostep_nary 1.
-        eapply r_invoke_native with (ves:= [AI_basic (BI_const (N_to_value page_size))])
+        eapply r_invoke_native with (ves:= [AI_basic (BI_const_num (N_to_value page_size))])
           (vcs:= [N_to_value page_size]) (f':=fM); try eassumption; eauto; try by (rewrite HeqfM; auto).
 
         eapply rt_trans. apply app_trans.
@@ -7019,7 +7004,7 @@ Proof with eauto.
         apply HfuncsId. unfold grow_mem_function_idx.
         unfold INV_num_functions_bounds, num_custom_funs in HfnsBound. lia.
         dostep_nary 1.
-        eapply r_invoke_native with (ves:= [AI_basic (BI_const (N_to_value page_size))])
+        eapply r_invoke_native with (ves:= [AI_basic (BI_const_num (N_to_value page_size))])
                                     (vcs:= [N_to_value page_size]) (f':=fM); try eassumption; eauto; try by (rewrite HeqfM; auto).
         (* subst. reflexivity. subst. reflexivity. *)
 
@@ -7073,7 +7058,7 @@ Proof with eauto.
         apply HfuncsId. unfold grow_mem_function_idx.
         unfold INV_num_functions_bounds, num_custom_funs in HfnsBound. lia.
         dostep_nary 1.
-        eapply r_invoke_native with (ves:= [AI_basic (BI_const (N_to_value page_size))])
+        eapply r_invoke_native with (ves:= [AI_basic (BI_const_num (N_to_value page_size))])
                                     (vcs:= [N_to_value page_size]) (f':=fM); try eassumption; eauto; try by (rewrite HeqfM; auto).
 
         eapply rt_trans. apply app_trans.
@@ -7169,12 +7154,12 @@ Variable host_function : eqType.
 Variable hfn : host_function.
 Let host := host host_function.
 
-Variable host_instance : host.
+Variable host_moduleinst : host.
 
 Let store_record := store_record host_function.
 (*Let administrative_instruction := administrative_instruction host_function.*)
-Let host_state := host_state host_instance.
-Let reduce_trans := @reduce_trans host_function host_instance.
+Let host_state := host_state host_moduleinst.
+Let reduce_trans := @reduce_trans host_function host_moduleinst.
 
 
 Ltac simpl_modulus := unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat.
@@ -7262,13 +7247,13 @@ Lemma reduce_forall_elem_effect : forall fns l f s state,
                   reduce_trans (state, s, {| f_locs := []; f_inst := f_inst f |},
                     to_e_list (modelem_offset e))
                     (state, s, {| f_locs := []; f_inst := f_inst f |},
-                    [AI_basic (BI_const (VAL_int32 c))]))
+                    [AI_basic (BI_const_num (VAL_int32 c))]))
                  (map
                     (fun f : wasm_function =>
                      {|
                        modelem_table := Mk_tableidx 0;
                        modelem_offset :=
-                         [BI_const (nat_to_value (LambdaANF_to_Wasm.fidx f))];
+                         [BI_const_num (nat_to_value (LambdaANF_to_Wasm.fidx f))];
                        modelem_init := [Mk_funcidx (LambdaANF_to_Wasm.fidx f)]
                      |}) fns) l -> l = map (fun f => nat_to_i32 (LambdaANF_to_Wasm.fidx f)) fns.
 Proof.
@@ -7364,7 +7349,7 @@ Lemma e_offs_increasing' : forall len n i l  s fr state,
            (state, s, {| f_locs := []; f_inst := f_inst fr |},
            to_e_list (modelem_offset e))
            (state, s, {| f_locs := []; f_inst := f_inst fr |},
-           [AI_basic (BI_const (VAL_int32 c))]))
+           [AI_basic (BI_const_num (VAL_int32 c))]))
         (table_element_mapping len n) l ->
  i < len ->
 nth_error l i = Some (nat_to_i32 (n + i)).
@@ -7389,25 +7374,25 @@ Lemma e_offs_increasing : forall e_offs len state s fr,
                reduce_trans
                  (state, s, {| f_locs := []; f_inst := f_inst fr |}, to_e_list (modelem_offset e))
                  (state, s, {| f_locs := []; f_inst := f_inst fr |},
-                 [AI_basic (BI_const (VAL_int32 c))]))
+                 [AI_basic (BI_const_num (VAL_int32 c))]))
    ([{| modelem_table := Mk_tableidx 0;
-       modelem_offset := [BI_const (nat_to_value 0)];
+       modelem_offset := [BI_const_num (nat_to_value 0)];
        modelem_init := [Mk_funcidx 0]
      |};
     {| modelem_table := Mk_tableidx 0;
-       modelem_offset := [BI_const (nat_to_value 1)];
+       modelem_offset := [BI_const_num (nat_to_value 1)];
        modelem_init := [Mk_funcidx 1]
      |};
      {| modelem_table := Mk_tableidx 0;
-        modelem_offset := [BI_const (nat_to_value 2)];
+        modelem_offset := [BI_const_num (nat_to_value 2)];
         modelem_init := [Mk_funcidx 2]
      |};
      {| modelem_table := Mk_tableidx 0;
-        modelem_offset := [BI_const (nat_to_value 3)];
+        modelem_offset := [BI_const_num (nat_to_value 3)];
         modelem_init := [Mk_funcidx 3]
       |};
      {| modelem_table := Mk_tableidx 0;
-        modelem_offset := [BI_const (nat_to_value 4)];
+        modelem_offset := [BI_const_num (nat_to_value 4)];
         modelem_init := [Mk_funcidx 4]
       |}] ++ (table_element_mapping len num_custom_funs))%list e_offs ->
  (forall i, i < len + num_custom_funs -> nth_error e_offs i = Some (nat_to_i32 i)) /\
@@ -7503,7 +7488,7 @@ Lemma init_tab_nth_error_other : forall s s' f t n n' val,
   s_tables s = [t] ->
   nth_error (table_data t) n = val ->
   init_tab host_function s (f_inst f) n' {| modelem_table := (Mk_tableidx 0)
-                                          ; modelem_offset := [BI_const (nat_to_value n')]
+                                          ; modelem_offset := [BI_const_num (nat_to_value n')]
                                           ; modelem_init := [Mk_funcidx n']
                                           |} = s' ->
   exists t', s_tables s' = [t'] /\
@@ -7540,7 +7525,7 @@ Lemma init_tab_preserves_length : forall s s' f t t' n n',
   inst_tab (f_inst f) = [0] ->
   s_tables s = [t] ->
   init_tab host_function s (f_inst f) n' {| modelem_table := (Mk_tableidx 0)
-                                          ; modelem_offset :=  [BI_const (nat_to_value n)]
+                                          ; modelem_offset :=  [BI_const_num (nat_to_value n)]
                                           ; modelem_init := [Mk_funcidx n]
                                           |} = s' ->
   s_tables s' = [t'] -> length (table_data t') = length (table_data t).
@@ -7558,7 +7543,7 @@ Lemma init_tabs_effect_general : forall iis vvs t s s' f,
                           (funcidcs (Datatypes.length (table_data t) - num_custom_funs) num_custom_funs)] ->
   s_tables s = [t] ->
   vvs = map (fun i => {| modelem_table := Mk_tableidx 0;
-                         modelem_offset := [ BI_const (nat_to_value i) ]
+                         modelem_offset := [ BI_const_num (nat_to_value i) ]
 ;
                          modelem_init := [Mk_funcidx i] |}) iis ->
   NoDup iis ->
@@ -7577,7 +7562,7 @@ Proof.
     remember (map
                 (fun i : nat =>
                  {| modelem_table := Mk_tableidx 0;
-                    modelem_offset := [BI_const (nat_to_value i)];
+                    modelem_offset := [BI_const_num (nat_to_value i)];
                     modelem_init := [Mk_funcidx i] |}) iis) as vvs.
     assert (Hnodup': NoDup iis). { now inv Hnodup. }
     cbn in Hs'.
@@ -7585,7 +7570,7 @@ Proof.
        (init_tab host_function s (f_inst f) a
           {|
             modelem_table := Mk_tableidx 0;
-            modelem_offset := [ BI_const (nat_to_value a) ];
+            modelem_offset := [ BI_const_num (nat_to_value a) ];
             modelem_init := [Mk_funcidx a]
           |}) = [t] /\ table_max_opt t = None). {
       unfold init_tab. cbn. rewrite HinstT.
@@ -7608,7 +7593,7 @@ Proof.
         remember (init_tab host_function s (f_inst f) i
              {|
                modelem_table := Mk_tableidx 0;
-               modelem_offset := [BI_const (nat_to_value i)];
+               modelem_offset := [BI_const_num (nat_to_value i)];
                modelem_init := [Mk_funcidx i]
              |}) as sIH. symmetry in HeqsIH.
              rewrite HlenEq in HinstF.
@@ -7626,7 +7611,7 @@ Proof.
       remember (init_tab host_function s (f_inst f) a
            {|
              modelem_table := Mk_tableidx 0;
-             modelem_offset :=  [ BI_const (nat_to_value a) ];
+             modelem_offset :=  [ BI_const_num (nat_to_value a) ];
              modelem_init := [Mk_funcidx a]
            |}) as sEnd. symmetry in HeqsEnd. assert (Hia: i<>a) by auto. clear Hai.
       assert (Halen: a < Datatypes.length (table_data t)). { apply Hilen. now cbn. }
@@ -7680,7 +7665,7 @@ Lemma table_element_mapping_nth: forall len n startIdx,
   n < len ->
   nth_error (table_element_mapping len startIdx) n =
   Some {| modelem_table := Mk_tableidx 0;
-          modelem_offset := [BI_const (nat_to_value (n + startIdx))];
+          modelem_offset := [BI_const_num (nat_to_value (n + startIdx))];
           modelem_init := [Mk_funcidx (n + startIdx)] |}.
 Proof.
   induction len; intros; first lia.
@@ -7699,7 +7684,7 @@ Lemma table_element_mapping_alternative : forall e_offs,
   (fun i : nat =>
    {|
      modelem_table := Mk_tableidx 0;
-     modelem_offset := [BI_const (nat_to_value i)];
+     modelem_offset := [BI_const_num (nat_to_value i)];
      modelem_init := [Mk_funcidx i]
    |}) [seq Z.to_nat (Wasm_int.Int32.intval o) | o <- e_offs].
 Proof.
@@ -8102,7 +8087,7 @@ forall e eAny topExp fds num_funs module fenv main_lenv sr f exports,
   (* for INV_locals_all_i32, the initial context has no local vars for simplicity *)
   (f_locs f) = [] ->
   (* instantiate with the two imported functions *)
-  instantiate host_function host_instance initial_store module
+  instantiate host_function host_moduleinst initial_store module
     [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)] (sr, (f_inst f), exports, None) ->
 
   (* invariants hold initially *)
@@ -8445,7 +8430,7 @@ Theorem LambdaANF_Wasm_related :
   (* expression must be closed *)
   (~ exists x, occurs_free e x ) ->
   (* instantiation with the two imported functions *)
-  instantiate _ host_instance initial_store module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)]
+  instantiate _ host_moduleinst initial_store module [MED_func (Mk_funcidx 0); MED_func (Mk_funcidx 1)]
     ((sr, (f_inst fr), exports), None) ->
   (* reduces to some sr' that has the result variable set to the corresponding value *)
   exists (sr' : store_record),
@@ -8677,7 +8662,7 @@ Proof.
     remember ({| f_locs := [::]; f_inst := f_inst fr |}) as frameInit.
 
     subst lenv.
-    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _ host_instance
+    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _ host_moduleinst
                     _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HlenvInjective
                       HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
                       HeRestr' Hunbound Hstep hs _ _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
@@ -8777,7 +8762,7 @@ Proof.
 
     subst lenv.
 
-    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _ host_instance _ (M.empty _)
+    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _ host_moduleinst _ (M.empty _)
                     _ _ _ _ _ frameInit _ lh HcenvRestr HlenvInjective HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf
                       HfenvRho HeRestr Hunbound Hstep hs _ _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
 
