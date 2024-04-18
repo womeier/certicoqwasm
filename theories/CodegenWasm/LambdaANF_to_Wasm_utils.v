@@ -1281,16 +1281,32 @@ Proof.
   rewrite repeat_length. lia.
 Qed.
 
-Lemma mem_grow_preserves_max_pages : forall n m m',
-  mem_grow m 1 = Some m' ->
+Lemma mem_grow_preserves_max_pages : forall n m m' bytes,
+  mem_grow m bytes = Some m' ->
   mem_max_opt m = Some n ->
   mem_max_opt m' = Some n.
 Proof.
   intros. unfold mem_grow in H.
-  destruct ((mem_size m + 1 <=? mem_limit_bound)%N). 2: inv H. cbn in H.
+  destruct ((mem_size m + bytes <=? mem_limit_bound)%N). 2: inv H. cbn in H.
   unfold mem_max_opt in H0. rewrite H0 in H.
-  destruct ((mem_size m + 1 <=? n)%N). 2: inv H. inv H. reflexivity.
+  destruct ((mem_size m + bytes <=? n)%N). 2: inv H. inv H. reflexivity.
 Qed.
+
+Lemma smem_grow_preserves_funcs : forall sr fr bytes sr' size,
+  smem_grow sr (f_inst fr) bytes = Some (sr', size) ->
+  s_funcs sr = s_funcs sr'.
+Proof.
+  intros. unfold smem_grow in H.
+  destruct (lookup_N (inst_mems (f_inst fr)) 0)=>//.
+  destruct (lookup_N (s_mems sr) m)=>//.
+  destruct (mem_grow m0 bytes)=>//. inv H. reflexivity.
+Qed.
+
+Lemma smem_grow_peserves_globals : forall sr fr bytes sr' size var,
+  smem_grow sr (f_inst fr) bytes = Some (sr', size) ->
+  sglob_val sr (f_inst fr) var = sglob_val sr' (f_inst fr) var.
+Proof.
+Admitted.
 
 Lemma mem_grow_preserves_original_values : forall a m m' maxlim,
   (mem_max_opt m = Some maxlim)%N ->
@@ -1705,9 +1721,20 @@ Proof.
     lia.
 Qed.
 
+(* TODO get rid of, shouldn't be needed *)
+Lemma update_global_preserves_memory' : forall sr sr' fr v j,
+  supdate_glob sr (f_inst fr) j v = Some sr' ->
+  sr.(s_mems) = sr'.(s_mems).
+Proof.
+  intros.
+  unfold supdate_glob, supdate_glob_s, sglob_ind in H. cbn in H.
+  destruct (lookup_N (inst_globals (f_inst fr)) j). 2: inv H. cbn in H.
+  destruct (lookup_N (s_globals sr) g). inv H. reflexivity. inv H.
+Qed.
+
 Lemma update_global_preserves_memory : forall sr sr' fr v j,
   supdate_glob sr (f_inst fr) j v = Some sr' ->
-    sr.(s_mems) = sr'.(s_mems).
+  smem sr (f_inst fr) = smem sr' (f_inst fr).
 Proof.
   intros.
   unfold supdate_glob, supdate_glob_s, sglob_ind in H. cbn in H.
@@ -1717,7 +1744,7 @@ Qed.
 
 Lemma update_global_preserves_funcs : forall sr sr' fr v j,
   supdate_glob sr (f_inst fr) j v = Some sr' ->
-    sr.(s_funcs) = sr'.(s_funcs).
+  sr.(s_funcs) = sr'.(s_funcs).
 Proof.
   intros.
   unfold supdate_glob, supdate_glob_s, sglob_ind in H. cbn in H.
