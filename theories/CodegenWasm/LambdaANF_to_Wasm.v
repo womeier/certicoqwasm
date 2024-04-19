@@ -344,31 +344,11 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
 
 (* **** TRANSLATE PRIMITIVE VALUES **** *)
 
-Definition to_int64 (i : PrimInt63.int) : Wasm_int.Int64.T.
-  exists (Uint63.to_Z i)%Z.
-  pose proof (Uint63.to_Z_bounded i).
-  unfold Uint63.wB in H. unfold Wasm_int.Int64.modulus, Wasm_int.Int64.wordsize, Integers.Wordsize_64.wordsize.
-  unfold Uint63.size in H. rewrite two_power_nat_correct. unfold Zpower_nat. simpl.
-  destruct H. split; lia.
-Defined.
-
 Definition translate_primitive_value (p : AstCommon.primitive) : error Wasm_int.Int64.int :=
   match projT1 p as tag return prim_value tag -> error Wasm_int.Int64.T with
   | AstCommon.primInt => fun i => Ret (Wasm_int.Int64.repr (Uint63.to_Z i))
   | AstCommon.primFloat => fun f => Err "TODO"
   end (projT2 p).
-
-
-(* Definition get_ctor_rep (cenv : ctor_env) (tag : ctor_tag) : error N := *)
-(*   match M.get tag cenv with *)
-(*   | Some {| ctor_arity := arity ; ctor_ordinal := ord |} => *)
-(*       if (arity =? 0)%N then *)
-(*         Ret (2 * ord + 1)%N *)
-(*       else *)
-(*         Ret (N.to_nat ord) *)
-(*   | None => Err ("Constructor with tag " ++ (string_of_positive tag) ++ " not found in constructor environment")%bs *)
-(*   end. *)
-
 
 (* ***** TRANSLATE CONSTRUCTOR ALLOCATION ****** *)
 
@@ -429,217 +409,89 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 
 (* **** TRANSLATE PRIMITIVE OPERATIONS **** *)
 
+Definition primInt63ModPath : Kernames.modpath :=
+  Kernames.MPfile ["Coq"%bs ; "Numbers"%bs ; "Cyclic"%bs ; "Int63"%bs ; "PrimInt63"%bs ].
+
+Definition primInt63Add : Kernames.kername := (primInt63ModPath, "add"%bs).
+
+Definition primInt63Sub : Kernames.kername := (primInt63ModPath, "sub"%bs).
+
+Definition primInt63Mul : Kernames.kername := (primInt63ModPath, "mul"%bs).
+
+Definition primInt63Div : Kernames.kername := (primInt63ModPath, "div"%bs).
+
+Definition primInt63Mod : Kernames.kername := (primInt63ModPath, "mod"%bs).
+
+Definition primInt63Land : Kernames.kername := (primInt63ModPath, "land"%bs).
+
+Definition primInt63Lor : Kernames.kername := (primInt63ModPath, "lor"%bs).
+
+Definition primInt63Lxor : Kernames.kername := (primInt63ModPath, "lxor"%bs).
+
+Definition primInt63Lsl : Kernames.kername := (primInt63ModPath, "lsl"%bs).
+
+Definition primInt63Lsr : Kernames.kername := (primInt63ModPath, "lsr"%bs).
+
 Definition apply_binop_and_store_i64 (op : basic_instruction) y1 y2 :=
-  [ BI_get_global global_mem_ptr (* to box result of operation *)
-    ; BI_get_local y1
-    ; BI_load T_i64 None 2%N 0%N
-    ; BI_get_local y2
-    ; BI_load T_i64 None 2%N 0%N
-    ; op
-    ; BI_const (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
-    ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-    ; BI_store T_i64 None 2%N 0%N
-    ; BI_get_global global_mem_ptr (* value to be stored in the let binding ('return value') *)
-    ; BI_get_global global_mem_ptr
-    ; BI_const (nat_to_value 8)
-    ; BI_binop T_i32 (Binop_i BOI_add)
-    ; BI_set_global global_mem_ptr ].
+  [ BI_get_global global_mem_ptr (* Address to store the result of the operation *)
+  ; BI_get_local y1
+  ; BI_load T_i64 None 2%N 0%N
+  ; BI_get_local y2
+  ; BI_load T_i64 None 2%N 0%N
+  ; op
+  (* Ensure that value fits in 63 bits *)
+  ; BI_const (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
+  ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
+  ; BI_store T_i64 None 2%N 0%N
+  ; BI_get_global global_mem_ptr (* value to be stored in the let binding ('return value') *)
+  (* Increment global memory pointer to next free memory segment  *)
+  ; BI_get_global global_mem_ptr
+  ; BI_const (nat_to_value 8)
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_set_global global_mem_ptr ].
 
-Definition translate_primitive_arith_op nenv lenv op_name y1 y2 : error (list basic_instruction) :=
-  (* match op_name with *)
-  (* | ("prim_int63_add") => *)
-  if (String.eqb op_name "prim_int63_add") then
-    y1_var <- translate_var nenv lenv y1 "TODO" ;;
-    y2_var <- translate_var nenv lenv y2 "TODO" ;;
-    Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_add)) y1_var y2_var)
-  else
-    Err ("Unknown primitive arithmetic operator: " ++ op_name)%bs.
-
-  (* | "prim_int63_sub" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_sub)) arg_instrs) *)
-
-  (* | "prim_int63_mul" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_mul)) arg_instrs) *)
-
-  (* | "prim_int63_div" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_div SX_U))) arg_instrs) *)
-
-  (* | "prim_int63_mod" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_rem SX_U))) arg_instrs) *)
-
-  (* | "prim_int63_land" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_and)) arg_instrs) *)
-
-  (* | "prim_int63_lor" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_or)) arg_instrs) *)
-
-  (* | "prim_int63_xor" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_xor)) arg_instrs) *)
-
-  (* | "prim_int63_lsl" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i BOI_shl)) arg_instrs) *)
-
-  (* | "prim_int63_lsr" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_shr SX_U))) arg_instrs) *)
-
-  (* | "prim_int63_asr" => Ret (apply_op_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_shr SX_S))) arg_instrs) *)
-
-  (* | _ => *)
-  (*     Err ("Unknown primitive arithmetic operator: " ++ op_name)%bs *)
-  (* end. *)
-
-Definition translate_primitive_compare_op op_name arg_instrs : error (list basic_instruction) :=
-  match op_name with
-
-  | "prim_int63_eqb" =>
-      Ret (arg_instrs ++ [ BI_relop T_i64 (Relop_i ROI_eq)
-                           ; BI_if (Tf [] [ T_i32 ])
-                               [ BI_const (nat_to_value 1) ] (* True *)
-                               [ BI_const (nat_to_value 3) ] (* False *)
-        ])
-
-  | "prim_int63_leb" =>
-      Ret (arg_instrs ++ [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
-                           ; BI_if (Tf [] [ T_i32 ])
-                               [ BI_const (nat_to_value 1) ] (* True *)
-                               [ BI_const (nat_to_value 3) ] (* False *)
-        ])
-
-  | "prim_int63_ltb" =>
-      Ret (arg_instrs ++ [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-                           ; BI_if (Tf [] [ T_i32 ])
-                               [ BI_const (nat_to_value 1) ] (* True *)
-                               [ BI_const (nat_to_value 3) ] (* False *)
-        ])
-
-  | "prim_int63_compare" =>
-      Ret (arg_instrs ++
-             [ BI_relop T_i64 (Relop_i ROI_eq)
-               ; BI_if (Tf [] [ T_i32 ])
-                   [ BI_const (nat_to_value 1) ] (* Eq *)
-                   (arg_instrs ++
-                      [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-                        ; BI_if (Tf [] [ T_i32 ])
-                            [ BI_const (nat_to_value 3) ] (* Lt *)
-                            [ BI_const (nat_to_value 5) ] (* Gt *)
-        ]) ])
-  | _ => Err ("Unknown primitive comparison operation: " ++ op_name)%bs
-  end.
+Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basic_instruction) :=
+    y1_var <- translate_var nenv lenv y1 "translate primitive integer arithmetic operation 1st argument" ;;
+    y2_var <- translate_var nenv lenv y2 "translate primitive integer arithmetic operation 2nd argument" ;;
+    if Kername.eqb kname primInt63Add then
+      Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_add)) y1_var y2_var)
+          (* else if Kername.eqb kname primInt63Sub then *)
+          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_sub)) y1_var y2_var) *)
+          (* else if Kername.eqb kname primInt63Mul then *)
+          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_mul)) y1_var y2_var) *)
+          (* else if Kername.eqb kname primInt63Div then *)
+          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_div SX_U))) y1_var y2_var) *)
+          (* else if Kername.eqb kname primInt63Mod then *)
+          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_rem SX_U))) y1_var y2_var) *)
+          (* else if Kername.eqb kname primInt63Land then *)
+          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_and)) y1_var y2_var) *)
+          (* else if Kername.eqb kname primInt63Lor then *)
+          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_or)) y1_var y2_var) *)
+          (* else if Kername.eqb kname primInt63Lxor then *)
+          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_xor)) y1_var y2_var) *)
+          (* else if Kername.eqb kname primInt63Lsl then *)
+          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_shl)) y1_var y2_var) *)
+          (* else if Kername.eqb kname primInt63Lsr then *)
+          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_shr SX_U))) y1_var y2_var) *)
+    else
+      Err ("Unknown primitive arithmetic operator: " ++ (Kernames.string_of_kername kname))%bs.
 
 Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (x_var : immediate) (p : (kername * string * bool * nat)) (args : list var) : error (list basic_instruction) :=
-  (* let '(kname, name, _, arity) := p in *)
-  (* let arg_instrs := List.flat_map (fun l => [BI_get_local l ; BI_load T_i64 None 2%N 0%N]) arg_vars in *)
-  op_instrs <- match (p, args)  with
-               | ((_, pname, _, 2), [ y1 ; y2 ]) =>
-                   if (String.eqb pname "prim_int63_add") then
-                     translate_primitive_arith_op nenv lenv "prim_int63_add" y1 y2
-                   else
-                     Err ("Prim op not supported")%bs
-               (* | (_, "prim_int63_sub", _, 2) *)
-               (* | "prim_int63_mul" *)
-               (* | "prim_int63_div" *)
-               (* | "prim_int63_mod" *)
-               (* | "prim_int63_land" *)
-               (* | "prim_int63_lor" *)
-               (* | "prim_int63_xor" *)
-               (* | "prim_int63_lsl" *)
-               (* | "prim_int63_lsr" (* => translate_primitive_arith_op name arg_instrs *) *)
-
-               (* | "prim_int63_eqb" *)
-               (* | "prim_int63_leb" *)
-               (* | "prim_int63_ltb" *)
-               (* | "prim_int63_compare" (* => translate_primitive_compare_op name arg_instrs *) *)
-               (* | "prim_int63_diveucl" => Err ("TODO: Prim op not supported: " ++ name)%bs                    *)
-               | _ => Err ("Prim op not supported")%bs
-
-               (* | "prim_int63_diveucl" =>
-                   match arg_vars with
-                   | [ x ; y ] =>
-                       Ret [ BI_get_local y
-                         ; BI_load T_i64 None 2%N 0%N
-                         ; BI_testop T_i64 TO_eqz
-                         ; BI_if (Tf [] [])
-                             [ BI_get_global global_mem_ptr
-                               ; BI_const (nat_to_value64 0)
-                               ; BI_store T_i64 None 2%N 0%N
-                               ; BI_get_global global_mem_ptr
-                               ; BI_const (nat_to_value64 0)
-                               ; BI_store T_i64 None 2%N 8%N ]
-                             [ BI_get_global global_mem_ptr
-                               ; BI_get_local x
-                               ; BI_load T_i64 None 2%N 0%N
-                               ; BI_get_local y
-                               ; BI_load T_i64 None 2%N 0%N
-                               ; BI_binop T_i64 (Binop_i (BOI_div SX_U))
-                               ; BI_store T_i64 None 2%N 0%N
-                               ; BI_get_global global_mem_ptr
-                               ; BI_get_local x
-                               ; BI_load T_i64 None 2%N 0%N
-                               ; BI_get_local y
-                               ; BI_load T_i64 None 2%N 0%N
-                               ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-                               ; BI_store T_i64 None 2%N 0%N ]
-
-                         (* Store pair ord *)
-                         ; BI_get_global global_mem_ptr
-                         ; BI_const (nat_to_value 0) (* pair *)
-                         ; BI_store T_i32 None 2%N 16%N
-
-                         (* Store first arg. of pair *)
-                         ; BI_get_global global_mem_ptr
-                         ; BI_get_global global_mem_ptr
-                         ; BI_store T_i32 None 2%N 20%N
-
-                         (* Store second arg. of pair *)
-                         ; BI_get_global global_mem_ptr
-                         ; BI_get_global global_mem_ptr
-                         ; BI_const (nat_to_value 8)
-                         ; BI_binop T_i32 (Binop_i BOI_add)
-                         ; BI_store T_i32 None 2%N 24%N
-
-                         (* Return value *)
-                         ; BI_get_global global_mem_ptr
-                         ; BI_get_global global_mem_ptr
-                         ; BI_const (nat_to_value 16)
-                         ; BI_binop T_i32 (Binop_i BOI_add)
-
-                         (* Bump gmp *)
-                         ; BI_get_global global_mem_ptr
-                         ; BI_const (nat_to_value 28)
-                         ; BI_binop T_i32 (Binop_i BOI_add)
-                         ; BI_set_global global_mem_ptr ]
-
-                   | _ =>
-                       Err "i63 diveucl takes 2 arguments"
-                   end *)
-
-               (* | "prim_int63_head0" => *)
-               (*     Err "i63 head0 not yet implemented" *)
-
-               (* | "prim_int63_tail0" => *)
-               (*     Err "i63 tail0 not yet implemented" *)
-
-               (* | "prim_int63_addc" => *)
-               (*     Err "i63 addc not yet implemented" *)
-
-               (* | "prim_int63_addcarryc" => *)
-               (*     Err "i63 addcarryc not yet implemented" *)
-
-               (* | "prim_int63_subc" => *)
-               (*     Err "i63 subc not yet implemented" *)
-
-               (* | "prim_int63_subcarryc" => *)
-               (*     Err "i63 subcarryc not yet implemented" *)
-
-               (* | "prim_int63_mulc" => *)
-               (*     Err "i63 mulc not yet implemented" *)
-
-               (* | "prim_int63_diveucl_21" => *)
-               (*     Err "i63 diveucl_21 not yet implemented" *)
-
-               (* | "prim_int63_addmuldiv" => *)
-               (*     Err "i63 addmuldiv not yet implemented" *)
-
-       end ;;
-  Ret (op_instrs ++ [ BI_set_local x_var ]).
+  let '(kname, _, _, _) := p in
+  match args with
+  | [ y1 ; y2 ] =>
+      op_instrs <- translate_primitive_arith_op nenv lenv kname y1 y2 ;;
+      Ret (op_instrs ++ [ BI_set_local x_var ])
+  | _ =>
+      Err "Only primitive operations with two arguments are supported"
+  end.
 
 Fixpoint create_case_nested_if_chain (boxed : bool) (v : immediate) (es : list (N * list basic_instruction)) : list basic_instruction :=
   match es with
   | [] => [ BI_unreachable ]
   | (ord, instrs) :: tl =>
       (* if boxed (pointer), then load tag from memory;
-         otherwise, obtain tag from unboxed representation ( ord = (repr >> 1) )
+         otherwise, the unboxed representation is (ord << 1) + 1 = 2 * ord + 1.
        *)
       BI_get_local v ::
         (if boxed then
@@ -757,20 +609,20 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
 
    | Eprim x p ys e' => (* Err "temp" *)
        match M.get p penv with
-       | None => Err "TODO"
-       | Some pdef =>
+       | None => Err "Primitive operation not found in prim_env"
+       | Some p' =>
            following_instrs <- translate_body nenv cenv lenv fenv penv e';;
            x_var <- translate_var nenv lenv x "translate_exp prim op" ;;
-           instrs <- translate_primitive_operation nenv lenv x_var pdef ys ;;
+           instrs <- translate_primitive_operation nenv lenv x_var p' ys ;;
            Ret ( [ BI_const (N_to_value page_size)
-                   ; BI_call grow_mem_function_idx
-                   ; BI_get_global result_out_of_mem
-                   ; BI_const (nat_to_value 1)
-                   ; BI_relop T_i32 (Relop_i ROI_eq)
-                   ; BI_if (Tf [] [])
-                       [ BI_return ]
-                       [] ] ++
-                   instrs ++ following_instrs)
+                 ; BI_call grow_mem_function_idx
+                 ; BI_get_global result_out_of_mem
+                 ; BI_const (nat_to_value 1)
+                 ; BI_relop T_i32 (Relop_i ROI_eq)
+                 ; BI_if (Tf [] [])
+                     [ BI_return ]
+                     []
+                 ] ++ instrs ++ following_instrs)
        end
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_body halt";;
@@ -893,8 +745,6 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
          | _ => Err "unreachable"
          end ;;
 
-  (* prim_fns <- sequence (List.map (translate_primitive_function nenv fname_mapping prim_tag) (List.filter (fun '(p, _) => match fname_mapping ! p with Some _ => true | _ => false end) (M.elements penv))) ;; *)
-
   main_expr <- match top_exp with
                | Efun _ exp => Ret exp
                | _ => Err "unreachable"
@@ -936,7 +786,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                                         ; modfunc_body := f.(body)
                                        |}) functions in
   let module :=
-      {| mod_types := (list_function_types (Z.to_nat max_function_args)) (* ++ [Tf [T_i64] [] ] *) (* more than required, doesn't hurt*)
+      {| mod_types := (list_function_types (Z.to_nat max_function_args)) (* more than required, doesn't hurt*)
 
        ; mod_funcs := functions_final
        ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length fns + num_custom_funs)
