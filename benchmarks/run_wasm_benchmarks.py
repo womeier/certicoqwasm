@@ -21,7 +21,7 @@ for f in files:
             "node",
             "--experimental-wasm-return_call",
 #            "--stack-size=1000000",
-            "run_wasm.js",
+            "js/run_wasm_external_pp.js",
             "./",
             f,
         ]

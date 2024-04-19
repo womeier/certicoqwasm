@@ -4670,8 +4670,6 @@ Proof.
   discriminate.
 Qed.
 
-Locate vars.
-
 Close Scope bs_scope.
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
@@ -6880,68 +6878,6 @@ Proof with eauto.
           apply HlocInBound in Hvar, H7. lia.
         }
 
-        (* assert (Hinv_before_IH : INV sr_before_IH fr_before_IH). { admit. } *)
-
-        (* assert (HrelE' : rel_env_LambdaANF_Wasm (lenv:=lenv) e (map_util.M.set x v rho) sr_before_IH fr_before_IH fds). { *)
-        (*   have Hl := HlocInBound _ _ H7. *)
-        (*   apply nth_error_Some in Hl. *)
-        (*   apply notNone_Some in Hl. destruct Hl as [? Hlx]. *)
-        (*   unfold rel_env_LambdaANF_Wasm. *)
-        (*   destruct HrelE as [Hfun1 [Hfun2 Hvar]]. *)
-        (*   split. *)
-        (*   { (* funs1 *) *)
-        (*     intros ????? Hrho Hv. *)
-        (*     destruct (var_dec x x1). *)
-        (*     { (* x = x1 *) *)
-        (*       subst x1. rewrite M.gss in Hrho. inv Hrho. *)
-        (*       destruct v0. *)
-        (*       { admit.} *)
-        (*       { admit. } *)
-        (*       { admit. } *)
-        (*       { Locate Vint. admit. } *)
-        (*     } *)
-        (*     { (* x <> x1 *) rewrite M.gso in Hrho; eauto. } *)
-        (*   } split. *)
-        (*   { intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd. *)
-        (*     destruct Hnfd as [i [Htrans Hval]]. *)
-        (*     exists i. split. assumption. *)
-        (*     apply val_relation_func_depends_on_funcs with (s:=sr).  *)
-        (*     now rewrite Hsfuncs. *)
-        (*     rewrite -Hfinst. assumption. *)
-        (*   } *)
-        (*   { *)
-        (*     intros. destruct (var_dec x x1). *)
-        (*     { (* x = x1 *) *)
-        (*       subst x1. *)
-        (*       destruct v. *)
-        (*       { admit. } *)
-        (*       { admit. } *)
-        (*       { admit. } *)
-        (*       { admit. } *)
-        (*     } *)
-        (*     { (* x <> x1 *) *)
-        (*       assert (Hocc : occurs_free (Eprim x f ys e) x1) by now apply Free_Eprim2. *)
-        (*       have H' := Hvar _ Hocc H5. *)
-        (*       destruct H' as [val' [wal' [Hrho [Hloc Hval]]]]. *)
-        (*       exists val', wal'. split. *)
-        (*       rewrite M.gso; auto. split. *)
-        (*       destruct Hloc as [i [Hl1 Hl2]]. *)
-        (*       unfold stored_in_locals. exists i. split; auto. *)
-        (*       rewrite Hfr_eq. *)
-        (*       rewrite set_nth_nth_error_other; auto. *)
-        (*       inv H7. *)
-        (*       specialize Hl1 with err_str. *)
-        (*       intro. subst x'. (* inv H3. *) *)
-        (*       unfold translate_var in Hl1, H6. *)
-        (*       destruct (lenv ! x1) eqn:Hlx1; inv Hl1. *)
-        (*       destruct (lenv ! x) eqn:Hlx2; inv H6. *)
-        (*       have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. contradiction. *)
-        (*       apply nth_error_Some. congruence. *)
-        (*       subst sr_after_grow. subst fr_after_grow. rewrite H3 in HvalPreserved. *)
-        (*       apply HvalPreserved in Hval. apply HvalsPreserved in Hval. apply Hval.  *)
-        (*     } *)
-        (*   } *)
-        (* } *)
 
         have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny lh lenv HlenvInjective HenvsDisjoint state _ _ _ Hfds' HlocInBound' Hinv_before_IH Hrepr_e' HrelE'.
 
@@ -6961,8 +6897,6 @@ Proof with eauto.
         dostep_nary 1.
         eapply r_invoke_native with (ves:= [AI_basic (BI_const (N_to_value page_size))])
                                     (vcs:= [N_to_value page_size]) (f':=fM); try eassumption; eauto; try by (rewrite HeqfM; auto).
-        (* subst. reflexivity. subst. reflexivity. *)
-
 
         eapply rt_trans. apply app_trans.
         eapply reduce_trans_local. dostep_nary' 0. constructor. eapply rs_block with (vs:=[])=>//.
