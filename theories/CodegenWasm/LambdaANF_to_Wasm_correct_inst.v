@@ -358,7 +358,38 @@ Proof.
     intros ?????? Hvar Hexpr' IH Hprim ? Hcontext' Hrestr'.
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
-  - (* Eprim *) (* TODO: Martin *) admit.
+  - (* Eprim *) (* TODO: Martin *)
+    intros ???????? Hvar Hexpr' IH Hp' HprimOp ? Hcontext' Hrestr'.
+    eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
+    inv HprimOp.
+    unfold apply_binop_and_store_i64.
+    eapply bet_composition'.
+    prepare_solve_bet. all: try solve_bet Hcontext'.
+    solve_bet Hcontext'.
+    apply bet_weakening with (ts:=[::T_i32]).
+    solve_bet Hcontext'.
+    apply bet_weakening with (ts:=[::T_i32]).
+    apply bet_load; simpl; auto; by apply Hcontext'.
+    apply bet_weakening with (ts:=[::T_i32] ++ [::T_i64]).
+    solve_bet Hcontext'.
+    apply bet_weakening with (ts:=[::T_i32] ++ [::T_i64]).
+    apply bet_load; simpl; auto; by apply Hcontext'.
+    apply bet_weakening with (ts:=[::T_i32]).
+    apply bet_binop; simpl; by constructor.
+    apply bet_weakening with (ts:=[::T_i32] ++ [::T_i64]).
+    constructor.
+    apply bet_weakening with (ts:=[::T_i32]).
+    apply bet_binop; simpl; by constructor.
+    apply bet_store; simpl; auto; by apply Hcontext'.
+    solve_bet Hcontext'.
+    solve_bet Hcontext'.
+    solve_bet Hcontext'.
+    apply bet_weakening with (ts:=[::T_i32]).
+    apply bet_binop; simpl; by constructor.
+    apply bet_weakening with (ts:=[::T_i32]).
+    solve_bet Hcontext'.
+    solve_bet Hcontext'.
+    inv Hrestr'. by apply IH.
   - (* repr_branches nil *)
     intros ????? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
     inv Hboxed. inv Hunboxed. by split; solve_bet Hcontext'.
@@ -374,7 +405,7 @@ Proof.
     prepare_solve_bet; try solve_bet Hcontext'.
     + apply IH2=>//. inv Hrestr'. now inv H1.
     + eapply IH1 in H4; try apply Hunboxed; eauto. now destruct H4. inv Hrestr'. inv H1. by constructor.
-Admitted.
+Qed.
 
 End INSTRUCTION_TYPING.
 
