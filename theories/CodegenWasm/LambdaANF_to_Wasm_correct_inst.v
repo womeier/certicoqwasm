@@ -358,13 +358,13 @@ Proof.
     intros ?????? Hvar Hexpr' IH Hprim ? Hcontext' Hrestr'.
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
-  - (* Eprim *) (* TODO: Martin *)
+  - (* Eprim *)
     intros ???????? Hvar Hexpr' IH Hp' HprimOp ? Hcontext' Hrestr'.
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv HprimOp.
     unfold apply_binop_and_store_i64.
     eapply bet_composition'.
-    prepare_solve_bet. all: try solve_bet Hcontext'.
+    prepare_solve_bet.
     solve_bet Hcontext'.
     apply bet_weakening with (ts:=[::T_i32]).
     solve_bet Hcontext'.
