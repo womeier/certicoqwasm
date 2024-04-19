@@ -325,7 +325,7 @@ Lemma HfenvWf_None {fenv} : forall fds,
    (forall f : var,
           (exists res : fun_tag * seq var * exp,
              find_def f fds = Some res) <->
-          (exists i : nat, fenv ! f = Some i)) ->
+          (exists i : N, fenv ! f = Some i)) ->
 
   (forall f, find_def f fds = None <-> fenv ! f = None).
 Proof.
@@ -1818,13 +1818,13 @@ Proof.
   exists (nat_to_i32 1). constructor.
 Qed.
 
-Lemma i32_exists_nat : forall (x : i32),
-  exists n, x = nat_to_i32 n /\ (-1 < Z.of_nat n <  Wasm_int.Int32.modulus)%Z.
+Lemma i32_exists_N : forall (x : i32),
+  exists n, x = N_to_i32 n /\ (-1 < Z.of_N n < Wasm_int.Int32.modulus)%Z.
 Proof.
-  intros [val H]. exists (Z.to_nat val). split; try lia.
-  destruct (nat_to_i32 (Z.to_nat val)) eqn:He. inv He. revert intrange.
+  intros [val H]. exists (Z.to_N val). split; try lia.
+  destruct (N_to_i32 (Z.to_N val)) eqn:He. inv He. revert intrange.
   rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
-  rewrite Z2Nat.id; try lia. intros.
+  rewrite Z2N.id; try lia. intros.
   destruct H as [low high].
   destruct intrange as [low' high'].
   rewrite (Wasm_int.Int32.Z_lt_irrelevant low low').
