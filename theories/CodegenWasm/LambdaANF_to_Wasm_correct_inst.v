@@ -99,9 +99,12 @@ Ltac solve_bet Hcontext :=
          apply bet_call; try apply Hcontext; apply /ssrnat.leP; apply Hcontext
   | |- be_typing _ [:: BI_testop T_i32 _] (Tf [:: _] _) => apply bet_testop; by simpl
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_i32; T_i32] _) => apply bet_binop; apply Binop_i32_agree
+  | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_i32; T_i32; T_i32] _) => apply bet_weakening with (ts:=[::T_i32]); apply bet_binop; apply Binop_i32_agree
+  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_i64; T_i64] _) => apply bet_binop; apply Binop_i64_agree
   | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_i32; T_i32] _) => apply bet_relop; apply Relop_i32_agree
   | |- be_typing _ [:: BI_store _ None _ _] (Tf [:: T_i32; _] _) => apply bet_store; simpl; auto; by apply Hcontext
   | |- be_typing _ [:: BI_load T_i32 None _ _] (Tf [:: T_i32] _) => apply bet_load; simpl; auto; by apply Hcontext
+  | |- be_typing _ [:: BI_load T_i64 None _ _] (Tf [:: T_i32] _) => apply bet_load; simpl; auto; by apply Hcontext
   | |- be_typing _ [:: BI_unreachable] _ => apply bet_unreachable
   | |- be_typing _ [:: BI_return] _ => apply bet_return with (t1s:=[::]); by apply Hcontext
   | |- be_typing ?context [:: BI_set_global ?var] (Tf [:: T_i32] _) =>
@@ -117,6 +120,9 @@ Ltac solve_bet Hcontext :=
   | |- be_typing _ _ (Tf [:: T_i32] _) => apply bet_weakening with (ts:=[::T_i32]); solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_i32; T_i32] _) => apply bet_weakening with (ts:=[::T_i32]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_i32; T_i32; T_i32] _) => apply bet_weakening with (ts:=[::T_i32; T_i32]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_i32; T_i64] _) => apply bet_weakening with (ts:=[::T_i32; T_i64]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_i32; T_i64; T_i64] _) => apply bet_weakening with (ts:=[::T_i32]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_i32; T_i64; T_i32] _) => apply bet_weakening with (ts:=[::T_i32; T_i64]); by solve_bet Hcontext
   end.
 
 Ltac prepare_solve_bet :=
@@ -181,13 +187,11 @@ Proof.
   assert (nth_error (tc_local c) 0 = Some T_i32) as Hloc0 by apply Hcontext.
   destruct (n =? 0) eqn:?; inversion Hconstr; subst instr; clear Hconstr.
   - prepare_solve_bet. all: try solve_bet Hcontext.
-    + apply bet_weakening with(ts:=[::T_i32]). solve_bet Hcontext.
-    + solve_bet Hcontext.
-    + apply bet_if_wasm; try by solve_bet Hcontext.
-      eapply bet_composition'. subst s.
-      apply instr_write_string_typing =>//.
-      solve_bet Hcontext.
-  - prepare_solve_bet. all: try solve_bet Hcontext.
+    apply bet_if_wasm; try by solve_bet Hcontext.
+    eapply bet_composition'. subst s.
+    apply instr_write_string_typing =>//.
+    solve_bet Hcontext.
+    prepare_solve_bet. all: try solve_bet Hcontext.
     apply bet_if_wasm; try by solve_bet Hcontext.
     eapply bet_composition'. subst s1.
     apply instr_write_string_typing =>//.
@@ -363,32 +367,7 @@ Proof.
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv HprimOp.
     unfold apply_binop_and_store_i64.
-    eapply bet_composition'.
-    prepare_solve_bet.
-    solve_bet Hcontext'.
-    apply bet_weakening with (ts:=[::T_i32]).
-    solve_bet Hcontext'.
-    apply bet_weakening with (ts:=[::T_i32]).
-    apply bet_load; simpl; auto; by apply Hcontext'.
-    apply bet_weakening with (ts:=[::T_i32] ++ [::T_i64]).
-    solve_bet Hcontext'.
-    apply bet_weakening with (ts:=[::T_i32] ++ [::T_i64]).
-    apply bet_load; simpl; auto; by apply Hcontext'.
-    apply bet_weakening with (ts:=[::T_i32]).
-    apply bet_binop; simpl; by constructor.
-    apply bet_weakening with (ts:=[::T_i32] ++ [::T_i64]).
-    constructor.
-    apply bet_weakening with (ts:=[::T_i32]).
-    apply bet_binop; simpl; by constructor.
-    apply bet_store; simpl; auto; by apply Hcontext'.
-    solve_bet Hcontext'.
-    solve_bet Hcontext'.
-    solve_bet Hcontext'.
-    apply bet_weakening with (ts:=[::T_i32]).
-    apply bet_binop; simpl; by constructor.
-    apply bet_weakening with (ts:=[::T_i32]).
-    solve_bet Hcontext'.
-    solve_bet Hcontext'.
+    prepare_solve_bet. all: try solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
   - (* repr_branches nil *)
     intros ????? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
