@@ -5220,7 +5220,7 @@ Proof with eauto.
       assert (HfdNone: find_def y fds = None). {
         apply HfenvWf_None with (f:=y) in HfenvWf. rewrite HfenvWf.
         inv Hy'. unfold translate_var in H1.
-        destruct (lenv ! y) eqn:Hy'; inv H1. now apply HenvsDisjoint in Hy'. }
+        destruct (lenv ! y) eqn:Hy'; rewrite Hy' in H1=>//. injection H1 as ->. now apply HenvsDisjoint in Hy'. }
       apply Hvar in Hy; auto. destruct Hy as [v6 [wal [Hrho [Hlocal Hrepr]]]].
       rewrite Hrho in H. inv H.
       have Hrepr' := Hrepr. inv Hrepr'.
@@ -5232,7 +5232,7 @@ Proof with eauto.
       have Hextr := extract_constr_arg n vs v _ _ _ _ HfnsUpperBound H0 H10 H16.
       destruct Hextr as [bs [wal [Hload [Heq Hbsval]]]].
 
-      remember {| f_locs := set_nth (wasm_deserialise bs T_i32) (f_locs fr) x' (wasm_deserialise bs T_i32)
+      remember {| f_locs := set_nth (VAL_num (wasm_deserialise bs T_i32)) (f_locs fr) (N.to_nat x') (VAL_num (wasm_deserialise bs T_i32))
                 ; f_inst := f_inst fr
                 |} as f_before_IH.
 
@@ -5274,7 +5274,8 @@ Proof with eauto.
             apply peq_true.
             split. exists x'. split. inv Hx'. intro.
             unfold translate_var in H14. unfold translate_var.
-            destruct (lenv ! x); auto. inv H14. cbn.
+            destruct (lenv ! x) eqn:Hx; rewrite Hx in H14=>//.
+            injection H14 as ->.  by rewrite Hx.
             unfold wasm_deserialise in Heq. rewrite Heq.
             have Hl := HlocInBound _ _ Hx'. apply nth_error_Some in Hl.
             apply notNone_Some in Hl. destruct Hl.
@@ -5293,14 +5294,18 @@ Proof with eauto.
 
             assert (x1' <> x'). { intro. subst x1'.
               inv Hx'. unfold translate_var in H17.
-              destruct (lenv ! x) eqn:Heqn; inv H17.
+              destruct (lenv ! x) eqn:Heqn; rewrite Heqn in H17=>//.
+              injection H17 as ->.
               specialize H14 with err_str. unfold translate_var in H14.
-              destruct (lenv ! x1) eqn:Heqn'; inv H14.
+              destruct (lenv ! x1) eqn:Heqn'; rewrite Heqn' in H14=>//.
+              injection H14 as ->.
               have Hcontra := HlenvInjective _ _ _ _ n0 Heqn Heqn'.
               now apply Hcontra. }
           exists x1'.
           split; auto.
-          rewrite set_nth_nth_error_other; auto. eapply HlocInBound. eassumption.
+          unfold lookup_N.
+          rewrite set_nth_nth_error_other; auto; try lia.
+          eapply HlocInBound. eassumption.
         }
      }}
 
