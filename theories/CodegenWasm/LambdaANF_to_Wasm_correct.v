@@ -2380,7 +2380,7 @@ Proof with eauto.
 Qed.
 
 (* TODO use automation instead *)
-Lemma nat_to_i32_eq_modulus: forall n m,
+Lemma N_to_i32_eq_modulus: forall n m,
   (-1 < Z.of_N n < Wasm_int.Int32.modulus)%Z ->
   (-1 < Z.of_N m < Wasm_int.Int32.modulus)%Z ->
   Some (VAL_num (VAL_int32 (N_to_i32 n))) = Some (VAL_num (VAL_int32 (N_to_i32 m))) ->
@@ -2497,7 +2497,7 @@ Proof.
       eapply global_var_w_implies_global_var_r in Hinv_cap; auto. destruct Hinv_cap as [cap ?].
       eapply global_var_w_implies_global_var_r in Hinv_gmp; auto. destruct Hinv_gmp as [gmp ?].
 
-      destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. subst size. cbn.
+      destruct Hinv_linmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. subst size.
 
       assert (m = m') by congruence. subst m'. clear Hmem2.
 
@@ -2537,6 +2537,16 @@ Proof.
 
       destruct Hm0 as [m0 Hm0].
       remember (upd_s_mem s (set_nth m0 (s_mems s) 0 m0)) as s'.
+      (* TODO cleanup *)
+      assert (Hm0': smem_store s (f_inst f)
+                      (Wasm_int.N_of_uint i32m
+                         (Wasm_int.Int32.iadd (N_to_i32 v_cap)
+                            (nat_to_i32 (S (S (S (S (offset * 4)))))))) 0%N
+                      (VAL_int32 (wasm_value_to_i32 wal)) T_i32 = Some s'). {
+       unfold smem_store. remember (nat_to_i32 _) as xdf. rewrite Hmem1.
+       unfold smem in Hm. rewrite Hmem1 in Hm. destruct (s_mems s)=>//.
+       injection Hm as ->. cbn. cbn in Hm0. rewrite Hm0. subst. reflexivity. }
+
       assert (Hinv' : INV s' f). {
         eapply update_mem_preserves_INV. 6: subst; reflexivity. assumption. eassumption.
         apply mem_store_preserves_length in Hm0. lia.
@@ -2574,7 +2584,7 @@ Proof.
          simpl_modulus. apply mem_length_upper_bound in Hmem5; cbn in Hmem5.
          cbn. lia. }
 
-      assert (gmp = N.of_nat (4 + 4 * offset + N.to_nat v_cap))%N. { apply nat_to_i32_eq_modulus; auto. rewrite Hgmp. do 4! f_equal. lia. }
+      assert (gmp = N.of_nat (4 + 4 * offset + N.to_nat v_cap))%N. { apply N_to_i32_eq_modulus; auto. rewrite Hgmp. do 4! f_equal. lia. }
       clear Hgmp.
 
       cbn. unfold page_size in Hlen. cbn in Hoffset. lia.
@@ -2613,7 +2623,7 @@ Proof.
          cbn. lia. }
 
          assert (gmp = N.of_nat (4 + 4 * offset + N.to_nat v_cap))%N. {
-           apply nat_to_i32_eq_modulus; auto. rewrite Hgmp. do 4! f_equal. lia. }
+           apply N_to_i32_eq_modulus; auto. rewrite Hgmp. do 4! f_equal. lia. }
          clear Hgmp.
 
          assert ((4 + 4 * N.of_nat offset + v_cap) + 4 = x)%N. {
@@ -2663,7 +2673,7 @@ Proof.
           apply mem_store_preserves_length in Hm0.
           apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
           split; try lia. simpl_modulus. cbn. lia. }
-        rewrite Hgmp in H1. apply nat_to_i32_eq_modulus in H1; try lia.
+        rewrite Hgmp in H1. apply N_to_i32_eq_modulus in H1; try lia.
       }
 
      assert (HfVal_before_IH: (forall (y : positive) (y' : funcidx) (v : cps.val),
@@ -2682,54 +2692,56 @@ Proof.
       as Hglob_cap by reflexivity.
       have HlenBound := mem_length_upper_bound _ Hmem5. cbn in HlenBound.
 
-      rewrite H0 in Hcap. apply nat_to_i32_eq_modulus in Hcap; try lia. subst v_cap.
-
+      rewrite H0 in Hcap. apply N_to_i32_eq_modulus in Hcap; try lia. subst v_cap.
       eexists. split.
       (* reduce *)
       dostep_nary 0. apply r_global_get. rewrite Hglob_cap. eassumption.
       dostep_nary 2. constructor. constructor. reflexivity.
       eapply rt_trans. apply app_trans_const; auto. apply app_trans. eassumption.
 
-      dostep_nary 2. eapply r_store_success; try eassumption; auto.
-      dostep_nary 0. apply r_global_get. eassumption.
+      dostep_nary 2. eapply r_store_success; eassumption.
+      dostep_nary 0. apply r_global_get. subst s'. eassumption.
       dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
-      dostep_nary 1. apply r_global_set. subst. eassumption.
+      dostep_nary 1. apply r_global_set with (v:=VAL_num (VAL_int32 (Wasm_int.Int32.iadd (N_to_i32 gmp) (nat_to_i32 4)))). subst. eassumption.
       apply Hred.
       split. assumption. split. assumption. split. simpl_modulus. cbn. lia. split.
       econstructor. apply Hm1. eassumption. { simpl_modulus.
-        apply mem_length_upper_bound in Hmem5. cbn in Hmem5, Hoffset. cbn. lia. } cbn. lia.
+        apply mem_length_upper_bound in Hmem5. cbn in Hmem5, Hoffset.
+        remember (Z.of_N (4 + 4 * N.of_nat (S offset) + cap + 4 * N.of_nat (Datatypes.length ys))) as ndfs'. cbn. subst. lia. } lia.
 
       { (* load val *)
         rewrite -H12; try lia.
-        apply store_load_i32 in Hm0.
-        assert ((N.of_nat (S (S (S (S (offset + (offset + (offset + (offset + 0))) + cap)))))) =
-                (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 cap)
+        apply store_load_i32 in Hm0=>//.
+        assert ((4 + 4 * N.of_nat offset + cap)%N =
+                (Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (N_to_i32 cap)
                             (nat_to_i32 (S (S (S (S (offset * 4))))))))) as Har. {
-          remember (S (S (S (S (offset * 4))))) as o. cbn.
+          remember (S (S (S (S (offset * 4))))) as o.
+          remember ((4 + 4 * N.of_nat offset + cap)%N) as o'. cbn.
           assert (Z.of_nat offset < 2 * max_constr_args)%Z as HarOffset by lia. cbn in HarOffset.
           repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.
-        }
-        rewrite deserialise_bits in Hm0. rewrite Har. eassumption.
-        auto. reflexivity. }
+      }
+        rewrite deserialise_bits in Hm0=>//. rewrite Har. eassumption. }
 
       { rewrite H1 in Hgmp.
-        assert ((-1 < Z.of_nat (4 + 4 * offset + cap) < Wasm_int.Int32.modulus)%Z). {
+        assert ((-1 < Z.of_nat (4 + 4 * offset + N.to_nat cap) < Wasm_int.Int32.modulus)%Z). {
           unfold page_size in Hlen_m0; cbn in Hlen_m0.
           cbn in Hoffset. simpl_modulus. cbn. lia. }
-        apply nat_to_i32_eq_modulus in Hgmp; auto. subst gmp.
+        apply N_to_i32_eq_modulus in Hgmp; auto. subst gmp.
 
         apply H10.
         eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=s);
           try apply Hy_val; try eassumption.
         - subst. apply update_global_preserves_funcs in H6. cbn in H6. congruence.
         - apply update_global_preserves_memory in H6. rewrite <- H6.
-          cbn. destruct (s_mems s). inv Hm. subst s'. reflexivity.
+          cbn. unfold smem. rewrite Hmem1. cbn. subst s'.
+          unfold smem in Hm. by destruct (s_mems s).
         - have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [Hgmp_M _]]]]]]]].
           have H' := Hgmp_M _ _ Hm H1 H4. apply mem_length_upper_bound in Hmem5.
-          cbn in Hmem5. simpl_modulus. cbn. lia.
+          cbn in Hmem5. simpl_modulus. cbn. cbn in H'. lia.
         - simpl_modulus. cbn in Hoffset. unfold max_constr_args in Hmaxargs.
           unfold page_size in Hlen_m0; cbn in Hlen_m0.
-          apply mem_store_preserves_length in Hm0. cbn. lia.
+          apply mem_store_preserves_length in Hm0.
+          remember (4 + 4 * N.of_nat (S offset) + cap)%N as nfd. cbn. lia.
         - lia.
         - intros.
           assert (Hex: exists v, load_i32 m a = Some v). {
@@ -2746,49 +2758,55 @@ Proof.
           } destruct Hex.
           symmetry. erewrite load_store_load_i64; try apply Hm0 ; eauto.
           remember (S (S (S (S (offset * 4))))) as n. cbn in Hoffset. cbn.
-          repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
+          repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. lia.
       }
 
       (* TODO: contains duplication: cleanup *)
-      replace ((4 + S (S (S (S (offset + (offset + (offset + (offset + 0))) + cap)))))) with
-      (4 + 4 * S offset + cap) by lia. apply Hv2.
-      split. subst. auto. rewrite H8. f_equal. f_equal. f_equal. cbn. lia.
+      replace (4 + (4 + 4 * N.of_nat offset + cap))%N with (4 + 4 * N.of_nat (S offset) + cap)%N by lia.
+      apply Hv2.
+      split. subst. auto. rewrite H8. do 4! f_equal.
+      replace (4 + 4 * N.of_nat (S offset) + cap)%N with (4 + (4 + 4 * N.of_nat offset + cap))%N by lia.
+       remember (4 + 4 * N.of_nat offset + cap)%N as m'.
+       replace (Datatypes.length (y :: ys)) with (1 + (Datatypes.length ys)) by now cbn. lia.
       split. apply update_global_preserves_funcs in H6. subst s'. cbn in H6. congruence.
       split. {
         intros. apply H10.
-        assert (Heq: (nat_to_i32 gmp) = (nat_to_i32 (4 + 4 * offset + cap))) by congruence.
-        assert ((-1 < Z.of_nat (4 + 4 * offset + cap) < Wasm_int.Int32.modulus)%Z).
-        { cbn in Hoffset. unfold max_constr_args in Hmaxargs. simpl_modulus; cbn; lia. }
-        assert (Htmp: (Some (VAL_int32 (nat_to_i32 gmp)) =
-                       Some (VAL_int32 (nat_to_i32 (4 + 4 * offset + cap))))) by congruence.
+        assert (Heq: N_to_i32 gmp = (N_to_i32 (4 + 4 * N.of_nat offset + cap))%N) by congruence.
+        assert ((-1 < Z.of_N (4 + 4 * N.of_nat offset + cap) < Wasm_int.Int32.modulus)%Z).
+        { cbn in Hoffset. unfold max_constr_args in Hmaxargs.
+          remember (4 + 4 * N.of_nat offset + cap)%N as ndf. simpl_modulus. cbn. lia. }
+        assert (Htmp: (Some (VAL_num (VAL_int32 (N_to_i32 gmp))) =
+                       Some (VAL_num (VAL_int32 (N_to_i32 (4 + 4 * N.of_nat offset + cap)))))%N) by congruence.
 
-        apply nat_to_i32_eq_modulus in Htmp; auto. subst gmp.
+        apply N_to_i32_eq_modulus in Htmp; auto. subst gmp.
 
         eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs; try apply H13;
           try eassumption.
         - apply update_global_preserves_funcs in H6. subst s'. cbn in H6.
           congruence.
         - apply update_global_preserves_memory in H6. rewrite <- H6.
-          cbn. destruct (s_mems s). inv Hm. subst s'. reflexivity.
+          unfold smem. rewrite Hmem1. unfold smem in Hm. rewrite Hmem1 in Hm.
+          destruct (s_mems s)=>//. subst s'. reflexivity.
         - have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [Hgmp_M _]]]]]]]].
           have H' := Hgmp_M _ _ Hm H1 H4. apply mem_length_upper_bound in Hmem5.
-          cbn in Hmem5. simpl_modulus. cbn. lia.
+          cbn in Hmem5. remember (4 + 4 * N.of_nat offset + cap)%N as df. simpl_modulus. cbn. lia.
         - simpl_modulus. cbn in Hoffset. unfold max_constr_args in Hmaxargs.
           unfold page_size in Hlen_m0; cbn in Hlen_m0.
-          apply mem_store_preserves_length in Hm0. cbn. lia.
+          apply mem_store_preserves_length in Hm0.
+          remember (Z.of_N (4 + 4 * N.of_nat (S offset) + cap)) as mdf. cbn. lia.
         - lia.
         { intros.
           assert (Hex: exists v, load_i32 m a = Some v). {
-          have Hm0' := Hm0.
-          apply enough_space_to_load. unfold store in Hm0'.
-          destruct ((Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 cap)
-            (nat_to_i32 (S (S (S (S (offset * 4))))))) + 0 + N.of_nat (t_length T_i32) <=?
-                                                             mem_length m)%N) eqn:Har. 2: inv Hm0'.
+          have Hm0'' := Hm0.
+          apply enough_space_to_load. unfold store in Hm0''.
+          destruct ((Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (N_to_i32 cap)
+                        (nat_to_i32 (S (S (S (S (offset * 4))))))) + 0 +
+                   N.of_nat 4 <=? mem_length m)%N) eqn:Har. 2: inv Hm0''.
              cbn in Hoffset. apply mem_store_preserves_length in Hm0.
              unfold page_size in Hlen_m0. lia. } destruct Hex.
           assert (Har: (a + 4 <=
               Wasm_int.N_of_uint i32m
-                (Wasm_int.Int32.iadd (nat_to_i32 cap)
+                (Wasm_int.Int32.iadd (N_to_i32 cap)
                    (nat_to_i32 (S (S (S (S (offset * 4))))))))%N). {
             unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
             remember ((S (S (S (S (offset * 4)))))) as o. cbn.
@@ -2799,16 +2817,17 @@ Proof.
           clear Har. rewrite Ht; auto. }
         { intros.
           assert (Hex: exists v, load_i64 m a = Some v). {
-            have Hm0' := Hm0.
-            apply enough_space_to_load_i64. unfold store in Hm0'.
-            destruct ((Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 cap)
-                                                  (nat_to_i32 (S (S (S (S (offset * 4))))))) + 0 + N.of_nat (t_length T_i32) <=?
-                         mem_length m)%N) eqn:Har. 2: inv Hm0'.
+            have Hm0'' := Hm0.
+            apply enough_space_to_load_i64. unfold store in Hm0''.
+            destruct ((Wasm_int.N_of_uint i32m
+             (Wasm_int.Int32.iadd (N_to_i32 cap)
+                (nat_to_i32 (S (S (S (S (offset * 4))))))) + 0 +
+           N.of_nat 4 <=? mem_length m)%N) eqn:Har. 2: inv Hm0''.
             cbn in Hoffset. apply mem_store_preserves_length in Hm0.
             unfold page_size in Hlen_m0. lia. } destruct Hex.
           assert (Har: (a + 8 <=
                           Wasm_int.N_of_uint i32m
-                            (Wasm_int.Int32.iadd (nat_to_i32 cap)
+                            (Wasm_int.Int32.iadd (N_to_i32 cap)
                                (nat_to_i32 (S (S (S (S (offset * 4))))))))%N). {
             unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add.
             remember ((S (S (S (S (offset * 4)))))) as o. cbn.
@@ -2823,11 +2842,12 @@ Proof.
       split. apply mem_store_preserves_length in Hm0. congruence.
       { intros.
         assert (exists v, load_i32 m a = Some v). {
-          have Hm0' := Hm0.
-          apply enough_space_to_load. unfold store in Hm0'.
-          destruct ((Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (nat_to_i32 cap)
-            (nat_to_i32 (S (S (S (S (offset * 4))))))) + 0 + N.of_nat (t_length T_i32) <=?
-                                                             mem_length m)%N) eqn:Har. 2: inv Hm0'.
+          have Hm0'' := Hm0.
+          apply enough_space_to_load. unfold store in Hm0''.
+          destruct ((Wasm_int.N_of_uint i32m
+             (Wasm_int.Int32.iadd (N_to_i32 cap)
+                (nat_to_i32 (S (S (S (S (offset * 4))))))) + 0 +
+           N.of_nat 4 <=? mem_length m)%N) eqn:Har. 2: inv Hm0''.
              cbn in Hoffset. apply mem_store_preserves_length in Hm0.
              unfold page_size in Hlen_m0. lia.
         } destruct H14. rewrite -H12; try lia.

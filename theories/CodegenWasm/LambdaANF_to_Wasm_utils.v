@@ -1656,9 +1656,9 @@ Proof.
 Qed.
 
 
-(* (* taken from iriswasm *)
+(* taken from iriswasm *)
 Lemma deserialise_bits v t :
-  types_agree t v -> wasm_deserialise (bits v) t = v.
+  typeof_num v == t -> wasm_deserialise (bits v) t = v.
 Proof.
   intros Htv.
   unfold wasm_deserialise.
@@ -1679,9 +1679,7 @@ Proof.
   by rewrite Wasm_float.FloatSize32.of_to_bits.
   rewrite Memdata.decode_encode_int_8.
   by rewrite Wasm_float.FloatSize64.of_to_bits.
-Qed. *)
-
-
+Qed.
 
 (* global vars *)
 
