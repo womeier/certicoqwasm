@@ -12,13 +12,13 @@ export const print_list_sexp = (val, dataView, print_elem) => {
     else {
 	const tag = dataView.getInt32(val, true);
 	switch (tag) {
-	case 0: 
+	case 0:
 	    process.stdout.write("(cons ");
-	    
+
 	    const head = dataView.getInt32(val+4, true);
-	    
+
 	    print_elem(head, dataView);
-	    
+
 	    process.stdout.write(" ");
 
 	    const tail = dataView.getInt32(val+8, true);
@@ -36,7 +36,7 @@ const print_list_notation_aux = (val, dataView, print_elem) => {
     if (val & 1) {
 	return;
     } else {
-	
+
 	const head = dataView.getInt32(val + 4, true);
 	print_elem(head, dataView);
 	const tail = dataView.getInt32(val + 8, true);
@@ -70,8 +70,8 @@ export const print_nat_sexp = (val, dataView) => {
     else {
 	const tag = dataView.getInt32(val, true);
 	switch (tag) {
-	case 0: 
-	    process.stdout.write("(S ");	    	
+	case 0:
+	    process.stdout.write("(S ");
 	    const arg = dataView.getInt32(val + 4, true);
 	    print_nat_sexp(arg, dataView);
 	    process.stdout.write(")");
@@ -133,4 +133,84 @@ export const print_compare = (val, dataView) => {
     else {}
 }
 
+export const print_option = (val, dataView, print_elem) => {
+    if (val & 1) {
+	process.stdout.write("None");
+    }
+    else {
+	process.stdout.write("Some (");
+	const arg = dataView.getInt32(val + 4, true);
+	print_elem(arg, dataView);
+	process.stdout.write(")");
+    }
+}
 
+export const print_prod = (val, dataView, print_elem1, print_elem2) => {
+    process.stdout.write("(");
+    const arg1 = dataView.getInt32(val + 4, true);
+    print_elem1(arg1, dataView);
+    process.stdout.write(", ");
+    const arg2 = dataView.getInt32(val + 8, true);
+    print_elem2(arg2, dataView);
+    process.stdout.write(")");
+}
+
+export const print_positive_sexp = (val, dataView) => {
+    if (val & 1) {
+	process.stdout.write("xH");
+    }
+    else {
+	const tag = dataView.getInt32(val, true);
+	switch (tag) {
+	case 0:
+	    process.stdout.write("(xI ");
+	    break;
+	case 1:
+	    process.stdout.write("(xO ");
+	    break;
+	}
+	let arg = dataView.getInt32(val + 4, true);
+	print_positive_sexp(arg, dataView);
+	process.stdout.write(")");
+
+    }
+}
+
+export const print_N_sexp = (val, dataView) => {
+    if (val & 1) {
+	process.stdout.write("N0");
+    }
+    else {
+	process.stdout.write("(Npos ");
+	const arg = dataView.getInt32(val + 4, true);
+	print_positive_sexp(arg, dataView);
+	process.stdout.write(")");
+    }
+}
+
+export const print_Z_sexp = (val, dataView) => {
+    if (val & 1) {
+	process.stdout.write("Z0");
+    }
+    else {
+	const tag = dataView.getInt32(val, true);
+	switch (tag) {
+	case 0:
+	    process.stdout.write("(Zpos ");
+	    break;
+	case 1:
+	    process.stdout.write("(Zneg ");
+	    break;
+	}
+	const arg = dataView.getInt32(val + 4, true);
+	print_positive_sexp(arg, dataView);
+	process.stdout.write(")");
+    }
+}
+
+export const print_compcert_byte_sexp = (val, dataView) => {
+    process.stdout.write("(mkint ");
+    const arg = dataView.getInt32(val + 4, true);
+    print_Z_sexp(arg, dataView);
+    process.stdout.write(")");
+}

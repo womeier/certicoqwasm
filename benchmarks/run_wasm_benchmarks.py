@@ -20,7 +20,7 @@ for f in files:
         [
             "node",
             "--experimental-wasm-return_call",
-#            "--stack-size=1000000",
+            "--stack-size=1000000",
             "js/run_wasm_external_pp.js",
             "./",
             f,

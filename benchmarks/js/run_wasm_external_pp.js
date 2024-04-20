@@ -1,4 +1,4 @@
-import { print_i63, print_compare, print_bool, print_nat_sexp, print_nat_notation, print_list_sexp, print_list_notation } from './modules/pp.js';
+import { print_i63, print_compare, print_bool, print_nat_sexp, print_nat_notation, print_list_sexp, print_list_notation, print_option, print_prod, print_positive_sexp, print_N_sexp, print_Z_sexp, print_compcert_byte_sexp } from './modules/pp.js';
 
 const pp_map = {
     "demo1": (val, dataView) => print_list_sexp(val, dataView, print_bool),
@@ -7,12 +7,13 @@ const pp_map = {
     "vs_easy": print_bool,
     "vs_hard": print_bool,
     "binom": print_nat_sexp,
-    "color": (_val, _dataView) => process.stdout.write("TODO: pp prod Z Z"),
-    "sha_fast": (_val, _dataView) => process.stdout.write("TODO: pp option nat"),
+    "color": (val, dataView) => print_prod(val, dataView, print_Z_sexp, print_Z_sexp),
+    "sha_fast": (val, dataView) => print_list_sexp(val, dataView, print_compcert_byte_sexp),
     "ack_3_9": print_nat_sexp,
     "even_10000": print_bool,
-    "sm_gauss_nat": (_val, _dataView) => process.stdout.write("TODO: pp option nat"),
-    "sm_gauss_N": (_val, _dataView) => process.stdout.write("TODO: pp option N"),
+    "bernstein_yang": print_Z_sexp,
+    "sm_gauss_nat": (val, dataView) => print_option(val, dataView, print_nat_sexp),
+    "sm_gauss_N": (val, dataView) => print_option(val, dataView, print_N_sexp),
     "addition": print_nat_notation,
     "addition_primitive": print_i63
 };
@@ -86,7 +87,7 @@ let importObject = {
 		process.stdout.write("\n");
 	    }
 	    else {
-		console.log(`No pretty function defined for program ${program}`); 
+		console.log(`No pretty function defined for program ${program}`);
 	    }
         }
 
