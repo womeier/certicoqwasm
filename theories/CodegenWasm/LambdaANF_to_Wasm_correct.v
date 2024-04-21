@@ -3593,45 +3593,23 @@ Qed.
 
 Lemma and_of_odd_and_1_1 : forall n,
     (-1 < Z.of_nat (N.to_nat (2 * n + 1)) < Wasm_int.Int32.modulus)%Z ->
-    Wasm_int.Int32.iand (Wasm_int.Int32.repr (Z.of_nat (N.to_nat (2 * n + 1)))) (Wasm_int.Int32.repr 1) = Wasm_int.Int32.one.
+    Wasm_int.Int32.iand (Wasm_int.Int32.repr (Z.of_N (2 * n + 1))) (Wasm_int.Int32.repr 1) = Wasm_int.Int32.one.
 Proof.
   intros.
   unfold Wasm_int.Int32.iand, Wasm_int.Int32.and. cbn.
-  destruct n. cbn. (* lia. *)
-  rewrite Wasm_int.Int32.Z_mod_modulus_id; last lia.
-  by rewrite positive_nat_Z.
-  rewrite N_nat_Z.
-  rewrite N_nat_Z in H.
-  rewrite Wasm_int.Int32.Z_mod_modulus_id.
-  cbn. reflexivity.
-  cbn.
-  simpl_modulus.
-  simpl_modulus_in H.
-  cbn.
-  lia.
-Qed.
-
-Lemma exists_positive : forall n,
-  exists p, Pos.to_nat (p~0) = 2 * (S n).
-Proof.
-  induction n.
-  - exists 1%positive. reflexivity.
-  - destruct IHn as [p Hp].
-    exists (p+1)%positive. cbn. lia.
+  destruct n. cbn. reflexivity.
+  rewrite Wasm_int.Int32.Z_mod_modulus_id; last lia. reflexivity.
 Qed.
 
 Lemma and_of_even_and_1_0 : forall n,
-    (-1 < Z.of_nat (2 * n) < Wasm_int.Int32.modulus)%Z ->
-    Wasm_int.Int32.iand (Wasm_int.Int32.repr (Z.of_nat (2 * n))) (Wasm_int.Int32.repr 1) = Wasm_int.Int32.zero.
+    (-1 < Z.of_N (2 * n) < Wasm_int.Int32.modulus)%Z ->
+    Wasm_int.Int32.iand (Wasm_int.Int32.repr (Z.of_N (2 * n))) (Wasm_int.Int32.repr 1) = Wasm_int.Int32.zero.
 Proof.
   intros ? H.
   unfold Wasm_int.Int32.iand, Wasm_int.Int32.and.
   - destruct n. now cbn.
-  - assert (exists p, Pos.to_nat (p~0) =  2 * (S n)) by apply exists_positive.
-    destruct H0 as [p Hp].
-    rewrite -Hp. rewrite -Hp in H. cbn.
-    rewrite Wasm_int.Int32.Z_mod_modulus_id=>//.
-    now rewrite positive_nat_Z.
+  - remember (Z.of_N _) as fd. cbn.
+    now rewrite Wasm_int.Int32.Z_mod_modulus_id; subst.
 Qed.
 
 Lemma ctor_ord_restricted : forall y cl t e ord,
@@ -5416,8 +5394,9 @@ Proof with eauto.
       destruct HrelE' as [Hfun1 [Hfun2 Hvar]].
       assert (HfdNone: find_def y fds = None). {
         apply HfenvWf_None with (f:=y) in HfenvWf. rewrite HfenvWf.
-        inv Hy'. unfold translate_var in H3. destruct (lenv ! y) eqn:Hy'; inv H1.
-        now apply HenvsDisjoint in Hy'. inv H3.
+        inv Hy'. unfold translate_var in H3. destruct (lenv ! y) eqn:Hy'; rewrite Hy' in H3=>//.
+        injection H3 as ->.
+        now apply HenvsDisjoint in Hy'.
       }
       have Hy0 := Hy.
       apply Hvar in Hy0; auto.
@@ -5428,14 +5407,14 @@ Proof with eauto.
          and from there into the correct branch *)
       assert (Hstep_case:
                exists e' k0 (lh0 : lholed k0),
-                 @reduce_trans
+                 reduce_trans
                      (state, sr, fAny,
                        [AI_frame 0 fr (lfill lh ([seq AI_basic i | i <-
                                            [:: BI_local_get y'
                                             ; BI_const_num (nat_to_value 1)
                                             ; BI_binop T_i32 (Binop_i BOI_and)
                                             ; BI_testop T_i32 TO_eqz
-                                            ; BI_if (Tf [::] [::])
+                                            ; BI_if (BT_valtype None)
                                                 e1'
                                                 e2']]))])
                      (state, sr, fAny, [AI_frame 0 fr (lfill lh0 (map AI_basic e'))])
@@ -5477,12 +5456,12 @@ Proof with eauto.
           dostep_nary 0. apply r_local_get. eauto.
           dostep_nary 2. constructor. apply rs_binop_success.
           cbn.
-          assert (Heq: Wasm_int.Int32.iand (wasm_value_to_i32 (Val_unboxed (N.to_nat (ord * 2 + 1)))) (nat_to_i32 1) = Wasm_int.Int32.one).
+          assert (Heq: Wasm_int.Int32.iand (wasm_value_to_i32 (Val_unboxed (ord * 2 + 1)%N)) (nat_to_i32 1) = Wasm_int.Int32.one).
           {
             rewrite N.mul_comm.
-            unfold wasm_value_to_i32; unfold wasm_value_to_immediate; unfold nat_to_i32.
+            unfold wasm_value_to_i32; unfold wasm_value_to_u32; unfold N_to_i32.
             cbn.
-            eapply and_of_odd_and_1_1. by rewrite N.mul_comm in H10.
+            eapply and_of_odd_and_1_1. rewrite N.mul_comm in H10. lia.
           }
           rewrite Heq. reflexivity.
           dostep_nary 1. constructor. eapply rs_testop_i32.
@@ -5528,7 +5507,8 @@ Proof with eauto.
           assert (Hand : Wasm_int.Int32.iand (wasm_value_to_i32 (Val_ptr addr)) (nat_to_i32 1) = Wasm_int.Int32.zero). {
             destruct H14 as [n0 Hn0].
             rewrite Hn0.
-            unfold wasm_value_to_i32; unfold wasm_value_to_i32; unfold nat_to_i32. unfold wasm_value_to_immediate.
+            unfold wasm_value_to_u32; unfold wasm_value_to_i32; unfold N_to_i32.
+            cbn.
             apply and_of_even_and_1_0.
             lia.
           }
@@ -5598,7 +5578,7 @@ Proof with eauto.
       (* treat direct + indirect calls in one *)
       assert (Hval: exists fidx,
         reduce_trans (state, sr, fr, [AI_basic instr])
-                     (state, sr, fr, [AI_basic (BI_const_num (nat_to_value fidx))]) /\
+                     (state, sr, fr, [AI_basic (BI_const_num (N_to_value fidx))]) /\
         repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f') sr (f_inst fr) (Val_funidx fidx)). {
 
       inv H8.
@@ -5607,8 +5587,8 @@ Proof with eauto.
         have Hrel := HrelE. destruct Hrel as [Hfun1 [_ Hvar]].
         assert (HfNone: find_def f fds = None). {
           apply HfenvWf_None with (f:=f) in HfenvWf. rewrite HfenvWf.
-          inv H3. unfold translate_var in H4. destruct (lenv ! f) eqn:Hf'; inv H4.
-          now apply HenvsDisjoint in Hf'. }
+          inv H3. unfold translate_var in H4. destruct (lenv ! f) eqn:Hf'; rewrite Hf' in H4=>//.
+          injection H4 as ->. now apply HenvsDisjoint in Hf'. }
         apply Hvar in Hocc; auto. destruct Hocc as [val [wal [Hrho [[j [Htrans Hwal]] Hval]]]].
         inv H3. rewrite Htrans in H4. inv H4.
         rewrite H in Hrho. inv Hrho. inv Hval.
@@ -5618,7 +5598,8 @@ Proof with eauto.
         dostep'. apply r_local_get. eassumption. apply rt_refl.
         econstructor; eauto. }
       { (* direct call *)
-        inv H3. unfold translate_var in H4. destruct (fenv ! f) eqn:Hf; inv H4.
+        inv H3. unfold translate_var in H4. destruct (fenv ! f) eqn:Hf; rewrite Hf in H4=>//.
+        injection H4 as ->.
         assert (Hf': exists i, fenv ! f = Some i) by eauto.
         apply HfenvWf in Hf'.
         assert (Htemp: f' = f). { apply HfenvRho in H. now inv H. now destruct Hf'. }
@@ -5636,13 +5617,13 @@ Proof with eauto.
     }
 
     destruct Hval as [fidx [HredF Hval]]. inv Hval.
-    rewrite H9 in H1. inv H1. rename H16 into Hexpr.
+    rewrite H9 in H1. inv H1. rename H14 into Hexpr.
 
     repeat rewrite map_cat. cbn.
     have Hfargs := fun_args_reduce state _ _ _ _ _ _ _ _ _ Hinv H0 HenvsDisjoint HfenvWf HfenvRho HrelE H7.
     destruct Hfargs as [args [HfargsRed HfargsRes]].
 
-    remember {| f_locs := [seq nat_to_value a | a <- args] ++
+    remember {| f_locs := [seq N_to_value a | a <- args] ++
                      n_zeros (repeat T_i32 (Datatypes.length (collect_local_variables e)));
                f_inst := f_inst fr |} as f_before_IH.
 
