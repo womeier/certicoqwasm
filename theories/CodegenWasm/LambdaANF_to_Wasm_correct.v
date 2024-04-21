@@ -5317,7 +5317,7 @@ Proof with eauto.
           (ys ++
            collect_local_variables e ++
            collect_function_vars (Efun fds e)) /\
-        (exists fidx : immediate,
+        (exists fidx : funcidx,
            translate_var nenv fenv a errMsg = Ret fidx /\
            repr_val_LambdaANF_Wasm (Vfun (M.empty cps.val) fds a) sr (f_inst f_before_IH) (Val_funidx fidx)))). {
          intros ? ? ? ? ? Hfd. apply Hfds with (errMsg:=errMsg) in Hfd.
@@ -5329,8 +5329,8 @@ Proof with eauto.
          congruence.
       }
 
-     assert (HlocInBound': (forall (var : positive) (varIdx : immediate),
-        @repr_var nenv lenv var varIdx -> varIdx < Datatypes.length (f_locs f_before_IH))). {
+     assert (HlocInBound': (forall (var : positive) (varIdx : localidx),
+        @repr_var nenv lenv var varIdx -> N.to_nat varIdx < Datatypes.length (f_locs f_before_IH))). {
       intros ?? Hvar'. cbn. subst f_before_IH.
       rewrite length_is_size size_set_nth maxn_nat_max -length_is_size.
       apply HlocInBound in Hvar'. lia. }
@@ -5386,23 +5386,21 @@ Proof with eauto.
        (* add offset n *)
        dostep_nary 2. constructor. apply rs_binop_success. cbn. reflexivity.
 
-       dostep_nary 1. eapply r_load_success.
-
-       destruct Hlinmem as [Hmem1 [m' Hmem2]]. subst f_before_IH. eassumption. apply H10.
-
        assert (Har: Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
-          (nat_to_i32 ((N.to_nat n + 1) * 4))) = (N.of_nat (4 + addr) + 4 * n)%N). {
-          replace (4 + addr) with (addr + 4) by lia. replace (4*n)%N with (n*4)%N by lia. cbn.
+            (nat_to_i32 ((N.to_nat n + 1) * 4))) = ((4 + addr) + 4 * n)%N). {
+          replace (4 + addr)%N with (addr + 4)%N by lia. replace (4*n)%N with (n*4)%N by lia. cbn.
        unfold load in Hload.
-       destruct ((N.of_nat (4 + addr) + 4 * n + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Heqn. 2: inv Hload.
+       destruct (((4 + addr) + 4 * n + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Heqn. 2: inv Hload.
        apply N.leb_le in Heqn.
-       destruct Hlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]]. solve_eq m m'. subst.
+       destruct Hlinmem as [Hmem1 [m' [Hmem2 [size [Hmem3 [Hmem4 Hmem5]]]]]].
+       assert (m' = m). { unfold smem in H10, Hmem2. subst f_before_IH. rewrite Hmem1 in H10, Hmem2.
+        congruence. } subst.
        apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
-       repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia). }
-       rewrite Har. apply Hload.
+       repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia).  }
 
+       dostep_nary 1. eapply r_load_success. eassumption. rewrite Har. apply Hload.
        (* save result in x' *)
-       dostep_nary 1. apply r_local_set with (vd := (wasm_deserialise bs T_i32)) (f':=f_before_IH); subst f_before_IH=>//.
+       dostep_nary 1. eapply r_local_set with (v := VAL_num (VAL_int32 (Wasm_int.Int32.repr (decode_int bs)))) (f':=f_before_IH); subst f_before_IH=>//.
        apply /ssrnat.leP. now apply HlocInBound in Hx'. apply rt_refl.
        apply Hred. }
      subst f_before_IH. by repeat (split; auto).
