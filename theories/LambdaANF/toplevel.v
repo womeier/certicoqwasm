@@ -9,9 +9,6 @@ From CertiCoq Require Import LambdaBoxLocal.toplevel.
 
 Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import ExtLib.Structures.Monad.
-Require Import MetaCoq.Utils.bytestring.
-Require Import MetaCoq.Template.All.
-(* From MetaCoq.Template Require Import Kernames.string_of_kername. *)
 
 Import Monads.
 
@@ -77,9 +74,7 @@ Section IDENT.
                                 let prim_env := make_prim_env prims in
                                 match convert_top_anf prim_env fun_fun_tag default_ctor_tag default_ind_tag next_var p with
                                 | (compM.Ret e, data) =>
-                                    let (_, ctag, itag, ftag, cenv, fenv, nenv, _, _) := data in
-
-
+                                  let (_, ctag, itag, ftag, cenv, fenv, nenv, _, _) := data in
                                   Ret (M.empty _, prim_env, cenv, ctag, itag, nenv, fenv, M.empty _, e)
                                 | (compM.Err s, _) => Err s
                                 end) src.
@@ -194,7 +189,7 @@ Section IDENT.
       e <- (if inl_known anf_opts then
               time_anf "Inline known functions inside wrappers" (inline_lifted next_var 10 1000) e
             else id_trans e) ;;
-      ret e.
+      ret e. 
 
 
     Definition run_anf_pipeline (t : LambdaANF_FullTerm) : error LambdaANF_FullTerm * string :=
@@ -211,11 +206,8 @@ Section IDENT.
       | compM.Err s =>
         (Err ("Failed compiling LambdaANF program: " ++ s)%bs, "")
       | compM.Ret e =>
-          let (_, ctag, itag, ftag, cenv, fenv, nenv, _, log) := c_data' in
-          let s := cps_show.show_cenv cenv tt in
-          let s_prims := M.fold1 (fun a '(k, _, _, _) => (a ++ ", " ++ (string_of_kername k))%bs) (snd prims) ""%bs in
-                                                                      
-        (Ret (prims, cenv, ctag, itag, nenv, fenv, M.empty _, e), (s ++ s_prims)%bs)
+        let (_, ctag, itag, ftag, cenv, fenv, nenv, _, log) := c_data' in
+        (Ret (prims, cenv, ctag, itag, nenv, fenv, M.empty _, e), log_to_string log)
       end%positive.
     
   End Pipeline.

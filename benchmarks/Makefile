@@ -52,4 +52,4 @@ test_primitive_i63:
 
 $(PRIMITIVE_TESTS):
 	@ulimit -s unlimited
-	@node --experimental-wasm-return_call --stack-size=8192 js/run_wasm_external_pp.js CertiCoq.Benchmarks.test_primitive_i63.$@.wasm $@
+	@node --experimental-wasm-return_call --stack-size=8192 js/run_wasm_external_pp.js

@@ -506,15 +506,15 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
     repr_primitive_operation (lenv:=lenv) x' p' ys prim_instrs ->
     repr_expr_LambdaANF_Wasm (Eprim x p ys e)
       ([ BI_const (N_to_value page_size)
-         ; BI_call grow_mem_function_idx
-         ; BI_get_global result_out_of_mem
-         ; BI_const (nat_to_value 1)
-         ; BI_relop T_i32 (Relop_i ROI_eq)
-         ; BI_if (Tf nil nil)
-             (* grow mem failed *)
-             [ BI_return ]
-             [] ] ++
-         prim_instrs ++ e')
+       ; BI_call grow_mem_function_idx
+       ; BI_get_global result_out_of_mem
+       ; BI_const (nat_to_value 1)
+       ; BI_relop T_i32 (Relop_i ROI_eq)
+       ; BI_if (Tf nil nil)
+           (* grow mem failed *)
+           [ BI_return ]
+           []
+       ] ++ prim_instrs ++ e')
 
 with repr_branches {lenv}: immediate -> list (ctor_tag * exp) -> list (N * list basic_instruction) -> list (N * list basic_instruction) -> Prop :=
 | Rbranch_nil : forall x, repr_branches x [] [ ] [ ]
