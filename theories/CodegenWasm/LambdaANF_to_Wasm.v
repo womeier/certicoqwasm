@@ -415,25 +415,16 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 Definition primInt63ModPath : Kernames.modpath :=
   Kernames.MPfile ["Coq"%bs ; "Numbers"%bs ; "Cyclic"%bs ; "Int63"%bs ; "PrimInt63"%bs ].
 
-Definition primInt63Add : Kernames.kername := (primInt63ModPath, "add"%bs).
-
-Definition primInt63Sub : Kernames.kername := (primInt63ModPath, "sub"%bs).
-
-Definition primInt63Mul : Kernames.kername := (primInt63ModPath, "mul"%bs).
-
-Definition primInt63Div : Kernames.kername := (primInt63ModPath, "div"%bs).
-
-Definition primInt63Mod : Kernames.kername := (primInt63ModPath, "mod"%bs).
-
+Definition primInt63Add  : Kernames.kername := (primInt63ModPath, "add"%bs).
+Definition primInt63Sub  : Kernames.kername := (primInt63ModPath, "sub"%bs).
+Definition primInt63Mul  : Kernames.kername := (primInt63ModPath, "mul"%bs).
+Definition primInt63Div  : Kernames.kername := (primInt63ModPath, "div"%bs).
+Definition primInt63Mod  : Kernames.kername := (primInt63ModPath, "mod"%bs).
 Definition primInt63Land : Kernames.kername := (primInt63ModPath, "land"%bs).
-
-Definition primInt63Lor : Kernames.kername := (primInt63ModPath, "lor"%bs).
-
+Definition primInt63Lor  : Kernames.kername := (primInt63ModPath, "lor"%bs).
 Definition primInt63Lxor : Kernames.kername := (primInt63ModPath, "lxor"%bs).
-
-Definition primInt63Lsl : Kernames.kername := (primInt63ModPath, "lsl"%bs).
-
-Definition primInt63Lsr : Kernames.kername := (primInt63ModPath, "lsr"%bs).
+Definition primInt63Lsl  : Kernames.kername := (primInt63ModPath, "lsl"%bs).
+Definition primInt63Lsr  : Kernames.kername := (primInt63ModPath, "lsr"%bs).
 
 Definition apply_binop_and_store_i64 (op : basic_instruction) y1 y2 :=
   [ BI_global_get global_mem_ptr (* Address to store the result of the operation *)
@@ -599,15 +590,15 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
             ; BI_if (BT_valtype None)
                 [ BI_return ]
                 []
-              ; BI_global_get global_mem_ptr
-              ; BI_const_num (VAL_int64 val)
-              ; BI_store T_i64 None 2%N 0%N
-              ; BI_global_get global_mem_ptr
-              ; BI_local_set x_var
-              ; BI_global_get global_mem_ptr
-              ; BI_const_num (nat_to_value 8)
-              ; BI_binop T_i32 (Binop_i BOI_add)
-              ; BI_global_set global_mem_ptr
+            ; BI_global_get global_mem_ptr
+            ; BI_const_num (VAL_int64 val)
+            ; BI_store T_i64 None 2%N 0%N
+            ; BI_global_get global_mem_ptr
+            ; BI_local_set x_var
+            ; BI_global_get global_mem_ptr
+            ; BI_const_num (nat_to_value 8)
+            ; BI_binop T_i32 (Binop_i BOI_add)
+            ; BI_global_set global_mem_ptr
             ] ++ following_instrs)
 
    | Eprim x p ys e' => (* Err "temp" *)

@@ -252,10 +252,6 @@ Definition show_exp (x:exp) : string :=
   String.String chr_newline
          (show_tree (snd (runState (emit_exp 0 x) Emp))).
 
-Definition show_cenv (_ : unit) : string :=
-  String.String chr_newline
-         (show_tree (snd (runState (emit_cenv 0 cenv) Emp))).
-
 (*  Some tests -- commented out for now. *)
 (*
 Require Import L5_to_LambdaANF.
