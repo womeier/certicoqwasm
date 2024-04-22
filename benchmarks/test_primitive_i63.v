@@ -10,7 +10,7 @@ Definition addition_primitive := (1000 + 1000)%uint63.
 
 CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.addition" addition.
 
-CertiCoq Compile Wasm file "CertiCoq.Benchmarks.tests.addition_primitive"  addition_primitive.
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.addition_primitive" addition_primitive.
 
 (* Definition subtraction := 1000 - 1000. *)
 
