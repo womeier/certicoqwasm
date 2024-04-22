@@ -1829,5 +1829,12 @@ Proof.
   rewrite (Wasm_int.Int32.Z_lt_irrelevant high high'). reflexivity.
 Qed.
 
+Lemma default_vals_i32_Some : forall n,
+  default_vals (repeat (T_num T_i32) n) = Some (repeat (VAL_num (nat_to_value 0)) n).
+Proof.
+  induction n=>//. unfold default_vals in *. cbn in *.
+  rewrite -cat1s. rewrite <- (cat1s (VAL_num (nat_to_value 0))).
+  apply those_cat=>//.
+Qed.
 
 End Arith.
