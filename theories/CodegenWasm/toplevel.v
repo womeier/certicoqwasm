@@ -7,9 +7,14 @@ Require Import LambdaANF.cps LambdaANF.cps_show CodegenWasm.LambdaANF_to_Wasm.
 Require Import ExtLib.Structures.Monad.
 Import MonadNotation.
 
+Definition add_prim_names (prims : list (kername * string * bool * nat * positive)) (nenv : name_env) : name_env :=
+  List.fold_left (fun m '(_, s, _, _, p) => M.set p (nNamed s) m) prims nenv.
+
+
 Definition LambdaANF_to_Wasm_Wrapper (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error module * string :=
   let '(_, pr_env, cenv, ctag, itag, nenv, fenv, _, prog) := t in
-  match LambdaANF_to_Wasm nenv cenv prog with
+  let nenv' := add_prim_names prims nenv in
+  match LambdaANF_to_Wasm nenv' cenv pr_env prog with
   | Ret res => let '(module, _, _) := res in (Ret module, "")
   | Err err => (Err err, "")
   end.
