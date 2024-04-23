@@ -118,14 +118,14 @@ Inductive expression_restricted : ctor_env -> cps.exp -> Prop :=
 
 Local Hint Constructors expression_restricted : core.
 
-Theorem check_restrictions_expression_restricted : forall e e' cenv,
+Theorem check_restrictions_expression_restricted {cenv} : forall e e',
   check_restrictions cenv e = Ret () ->
   subterm_or_eq e' e -> expression_restricted cenv e'.
 Proof.
   have IH := exp_mut
-    (fun e => forall cenv, check_restrictions cenv e = Ret () -> forall e',
+    (fun e => check_restrictions cenv e = Ret () -> forall e',
                 subterm_or_eq e' e -> expression_restricted cenv e')
-    (fun fds => forall cenv, ((fix iter (fds : fundefs) : error Datatypes.unit :=
+    (fun fds => ((fix iter (fds : fundefs) : error Datatypes.unit :=
                    match fds with
                    | Fnil => Ret ()
                    | Fcons _ _ ys e' fds' =>
@@ -138,7 +138,7 @@ Proof.
   intros. eapply IH; eauto; clear IH; try intros.
   { (* Econstr *)
     rename H3 into Hsub, H1 into IHe. inv H2.
-    destruct (get_ctor_ord cenv0 t) eqn:Hord. inv H3.
+    destruct (get_ctor_ord cenv t) eqn:Hord. inv H3.
     destruct (Z.of_N n <? Wasm_int.Int32.half_modulus)%Z eqn:Htupper. 2: inv H3.
     destruct (Z.of_nat (Datatypes.length l) <=? max_constr_args)%Z eqn:Hlen. 2: inv H3.
     cbn in H3. clear H.
@@ -153,13 +153,13 @@ Proof.
   { (* Ecase cons *)
     rename H4 into Hsub, H1 into IHe, H2 into IHe0. inv H3.
     clear H0 H e. rename e0 into e.
-    destruct (get_ctor_ord cenv0 c) eqn:Hord. inv H2.
+    destruct (get_ctor_ord cenv c) eqn:Hord. inv H2.
     destruct ((Z.of_N n <? Wasm_int.Int32.half_modulus)%Z) eqn:Hupper. 2: inv H2.
-    cbn in H2. destruct (check_restrictions cenv0 e) eqn:Hrestr. inv H2.
+    cbn in H2. destruct (check_restrictions cenv e) eqn:Hrestr. inv H2.
     destruct (sequence _ ) eqn:Hseq; inv H2. destruct u.
-    assert (check_restrictions cenv0 (Ecase v l) = Ret ()). {
+    assert (check_restrictions cenv (Ecase v l) = Ret ()). {
       unfold check_restrictions. simpl. now rewrite Hseq. }
-    assert (expression_restricted cenv0 (Ecase v l)). {
+    assert (expression_restricted cenv (Ecase v l)). {
        apply IHe0; auto. apply rt_refl. }
     apply clos_rt_rtn1 in Hsub. inv Hsub.
     { constructor. apply Forall_cons. simpl. split.
