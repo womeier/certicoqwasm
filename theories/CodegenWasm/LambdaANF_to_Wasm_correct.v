@@ -4680,11 +4680,13 @@ Theorem repr_bs_LambdaANF_Wasm_related :
     cenv_restricted cenv ->
     bstep_prim_funs_no_fun_return_values pfs ->
     bs_LambdaANF_prim_fun_env_extracted_prim_env_related penv pfs ->
+    (* restrictions on lenv, fenv *)
     map_injective lenv ->
     domains_disjoint lenv fenv ->
+    (* bound vars globally unique *)
     vars = (collect_local_variables e) ++ (collect_function_vars (Efun fds e))%list ->
     NoDup vars ->
-    (* fenv maps f vars to their indices in the wasm module *)
+    (* fenv maps f vars to the index of the corresponding wasm function *)
     (forall f, (exists res, find_def f fds = Some res) <-> (exists i, fenv ! f = Some i)) ->
     (* find_def a fds <> None, rho ! a imply fn value *)
     (forall (a : positive) (v : cps.val), rho ! a = Some v -> find_def a fds <> None ->
