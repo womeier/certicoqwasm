@@ -136,7 +136,7 @@ Proof.
   induction l; intros; cbn; auto. f_equal. now apply IHl.
 Qed.
 
-Lemma imap_aux_offset : forall l a a' b b',
+(* Lemma imap_aux_offset : forall l a a' b b',
   a + a' = b + b' ->
   imap_aux (fun i x : nat => i + a + x) l a' =
   imap_aux (fun i x : nat => i + b + x) l b'.
@@ -144,7 +144,7 @@ Proof.
   induction l; intros ???? Heq=>//.
   cbn. replace (a' + a0 + a) with (b' + b + a) by lia.
   f_equal. apply IHl. lia.
-Qed.
+Qed. *)
 
 Lemma drop_is_skipn {A} : forall l n, @drop A n l = List.skipn n l.
 Proof.
@@ -311,13 +311,13 @@ Qed.
 
 (* Var maps: var -> local idx / fn idx *)
 
-Definition map_injective (m : M.tree nat) := forall x y x' y',
+Definition map_injective (m : M.tree u32) := forall x y x' y',
   x <> y ->
   m ! x = Some x' ->
   m ! y = Some y' ->
   x' <> y'.
 
-Definition domains_disjoint (m1 m2: M.tree nat) :=
+Definition domains_disjoint (m1 m2: M.tree u32) :=
   (forall x v1, m1 ! x = Some v1 -> m2 ! x = None) /\
   (forall x v2, m2 ! x = Some v2 -> m1 ! x = None).
 
@@ -325,7 +325,7 @@ Lemma HfenvWf_None {fenv} : forall fds,
    (forall f : var,
           (exists res : fun_tag * seq var * exp,
              find_def f fds = Some res) <->
-          (exists i : nat, fenv ! f = Some i)) ->
+          (exists i : N, fenv ! f = Some i)) ->
 
   (forall f, find_def f fds = None <-> fenv ! f = None).
 Proof.
@@ -340,56 +340,62 @@ Qed.
 
 Lemma var_mapping_list_lt_length' {nenv} : forall l loc loc' err_str n,
   translate_var nenv (create_var_mapping n l (M.empty _)) loc err_str = Ret loc' ->
-  loc' < length l + n.
+  N.to_nat loc' < length l + N.to_nat n.
 Proof.
   intros ? ? ? ? ? H.
   unfold translate_var in H.
-  destruct (create_var_mapping n l (M.empty nat)) ! loc eqn:Heqn; inv H.
+  destruct (create_var_mapping n l (M.empty _)) ! loc eqn:Heqn; rewrite Heqn in H; inv H.
   generalize dependent loc. revert loc' err_str n.
   induction l; intros. inv Heqn.
   destruct (var_dec loc a).
   (* loc = a *) subst. cbn in Heqn. rewrite Maps.PTree.gss in Heqn. inv Heqn. cbn. lia.
   (* loc <> a *) cbn in Heqn. rewrite Maps.PTree.gso in Heqn; auto. cbn.
-  replace (S (Datatypes.length l + n)) with (Datatypes.length l + (S n)) by lia.
+  replace (S (Datatypes.length l + N.to_nat n)) with (Datatypes.length l + N.to_nat (1 + n)) by lia.
   eapply IHl; eauto.
 Qed.
 
 Lemma var_mapping_list_lt_length {nenv} : forall l loc loc' err_str,
   translate_var nenv (create_local_variable_mapping l) loc err_str = Ret loc' ->
-  loc' < length l.
+  N.to_nat loc' < length l.
 Proof.
   intros. apply var_mapping_list_lt_length' in H. lia.
 Qed.
 
 Lemma var_mapping_list_lt_length_nth_error_idx {nenv} : forall l i n x err,
   NoDup l ->
-  nth_error l i = Some x ->
-  translate_var nenv (create_var_mapping n l (M.empty _)) x err = Ret (n + i).
+  lookup_N l i = Some x ->
+  translate_var nenv (create_var_mapping n l (M.empty _)) x err = Ret (n + i)%N.
 Proof.
-  induction l; intros.
-  - destruct i; inv H0.
+  (* induction l; intros.
+  - unfold lookup_N in H0.
+    destruct (N.to_nat i)=>//.
   - destruct (var_dec a x).
     { (* x=a *)
-      subst. destruct i. 2: { cbn in H0. apply nth_error_In in H0.
-                              apply NoDup_cons_iff in H. now destruct H. }
-      clear H0. cbn. unfold translate_var. now rewrite M.gss. }
+      subst. unfold lookup_N in H0.
+      destruct (N.to_nat i) eqn:Hi.
+      + cbn. unfold translate_var. rewrite M.gss. f_equal. lia.
+      + cbn in H0. apply nth_error_In in H0.
+        apply NoDup_cons_iff in H. now destruct H. }
     { (* x<> a *)
       cbn. unfold translate_var. rewrite M.gso; auto.
-      destruct i. 1: now inv H0.
-      apply IHl with (n:=S n) (err:=err) in H0.
+      unfold lookup_N in H0. destruct (N.to_nat i) eqn:Hi; first by inv H0.
+      cbn in H0.
+      rewrite -Hi in H0.
+      eapply IHl with (err:=err) in H0.
       replace (n + S i) with (S n + i) by lia. assumption.
       now inv H. }
-Qed.
+Qed. *)
+Admitted.
 
 Lemma local_variable_mapping_gt_idx : forall l idx x x',
-  (create_var_mapping idx l (M.empty nat)) ! x = Some x' -> x' >= idx.
+  (create_var_mapping idx l (M.empty u32)) ! x = Some x' -> (x' >= idx)%N.
 Proof.
   induction l; intros. inv H.
   cbn in H.
   destruct (Pos.eq_dec a x).
   { (* a=x *) subst a. rewrite M.gss in H. inv H. lia. }
   { (* a<>x *) rewrite M.gso in H; auto.
-    apply IHl in H. lia. }
+    apply IHl in H. destruct idx; try lia. destruct p; try lia. }
 Qed.
 
 Lemma variable_mapping_Some_In : forall l x v idx lenv,
@@ -442,9 +448,9 @@ Proof.
 Qed.
 
 Lemma create_local_variable_mapping_injective : forall l idx,
-   NoDup l -> map_injective (create_var_mapping idx l (M.empty nat)).
+   NoDup l -> map_injective (create_var_mapping idx l (M.empty u32)).
 Proof.
-  induction l; intros. { cbn. intros ????? H1. inv H1. }
+  (* induction l; intros. { cbn. intros ????? H1. inv H1. }
   inv H. cbn. unfold map_injective in *. intros.
   destruct (Pos.eq_dec a x).
   { (* a=x *) subst a. intro. subst y'.
@@ -456,7 +462,8 @@ Proof.
     { (* a<>y *) rewrite M.gso in H0; auto.
                  rewrite M.gso in H1; auto.
                  have H' := IHl _ H3 _ _ _ _ H H0 H1. assumption. } }
-Qed.
+Qed. *)
+Admitted.
 
 End Vars.
 
@@ -715,11 +722,7 @@ End LambdaANF.
 Section Wasm.
 Import Nnat Znat.
 
-Variable host_function : eqType.
-Let host := host host_function.
-Let store_record := store_record host_function.
-Variable host_instance : host.
-Let host_state := host_state host_instance.
+Context `{ho : host}.
 
 (* taken from iriswasm *)
 Lemma mem_update_length dat dat' k b:
@@ -736,7 +739,7 @@ Proof.
 Qed.
 
 (* taken from iriswasm orig name: store_length *)
-Lemma mem_store_preserves_length (m m': memory) (n: N) (off: static_offset) (bs: bytes) :
+Lemma mem_store_preserves_length (m m': meminst) (n: N) (off: static_offset) (bs: bytes) :
   store m n off bs (length bs) = Some m' ->
   mem_length m = mem_length m'.
 Proof.
@@ -755,12 +758,12 @@ Proof.
                   | None => None
                   end)) (bytes_takefill #00%byte j (drop i bs))
               (i, Some dat) in acc_end) = Some dat' ->
-                               length (ml_data dat) = length (ml_data (mem_data m)) ->
-                               length (ml_data dat') = length (ml_data (mem_data m))).
+                               length (ml_data dat) = length (ml_data (meminst_data m)) ->
+                               length (ml_data dat') = length (ml_data (meminst_data m))).
   - intros Hi.
     assert (length bs <= length bs) ; first lia.
     destruct (let '(_, acc_end) := fold_left _ _ _ in acc_end) eqn:Hfl ; try by inversion H.
-    apply (Hi _ (mem_data m) m0) in H0 => //=.
+    apply (Hi _ (meminst_data m) m0) in H0 => //=.
     + destruct m' ; inversion H ; subst; cbn; congruence.
     + rewrite PeanoNat.Nat.sub_diag. rewrite drop0. exact Hfl.
   - induction j ; intros ; subst i.
@@ -823,7 +826,7 @@ Proof.
                         (j, Some dat) in acc_end) = Some datf).
   - intros H.
     assert (length bs <= length bs) ; first lia.
-    apply (H _ (mem_data m)) in H0 as [datf' Hdatf'].
+    apply (H _ (meminst_data m)) in H0 as [datf' Hdatf'].
     + rewrite PeanoNat.Nat.sub_diag in Hdatf'.
       rewrite drop0 in Hdatf'.
       rewrite Hdatf'.
@@ -873,47 +876,44 @@ Proof.
            now apply mem_update_length in Hdatupd.
 Qed.
 
-Definition load_i32 m addr : option value :=
+Definition load_i32 m addr : option value_num :=
   match load m addr 0%N 4 with (* offset: 0, 4 bytes *)
   | None => None
   | Some bs => Some (wasm_deserialise bs T_i32)
   end.
 
-Definition store_i32 mem addr (v : value) : option memory :=
+Definition store_i32 mem addr (v : value_num) : option meminst :=
   store mem addr 0%N (bits v) 4.
 
 
-Definition load_i64 m addr : option value :=
+Definition load_i64 m addr : option value_num :=
   match load m addr 0%N 8 with (* offset: 0, 4 bytes *)
   | None => None
   | Some bs => Some (wasm_deserialise bs T_i64)
   end.
 
-Definition store_i64 mem addr (v : value) : option memory :=
+Definition store_i64 mem addr (v : value_num) : option meminst :=
     store mem addr 0%N (bits v) 8.
 
 
 Definition tag_to_i32 (t : ctor_tag) :=
   Wasm_int.Int32.repr (BinInt.Z.of_nat (Pos.to_nat t)).
 
-Definition immediate_to_i32 (i : immediate) :=
-  Wasm_int.Int32.repr (BinInt.Z.of_nat i).
-
 (* TODO use ref types (WasmGC) instead *)
 Inductive wasm_value :=
-  | Val_unboxed : immediate -> wasm_value
-  | Val_ptr     : immediate -> wasm_value
-  | Val_funidx  : immediate -> wasm_value.
+  | Val_unboxed : u32 -> wasm_value
+  | Val_ptr     : u32 -> wasm_value
+  | Val_funidx  : u32 -> wasm_value.
 
-Definition wasm_value_to_immediate (v : wasm_value) :=
-    match v with
-    | Val_unboxed i => i
-    | Val_ptr i => i
-    | Val_funidx i => i
-    end.
+Definition wasm_value_to_u32 (v : wasm_value) :=
+  match v with
+  | Val_unboxed i => i
+  | Val_ptr i => i
+  | Val_funidx i => i
+  end.
 
 Definition wasm_value_to_i32 (v : wasm_value) :=
-  Wasm_int.Int32.repr (BinInt.Z.of_nat (wasm_value_to_immediate v)).
+  Wasm_int.Int32.repr (BinInt.Z.of_N (wasm_value_to_u32 v)).
 
 (* memory *)
 
@@ -946,7 +946,7 @@ Proof.
   destruct Hbytes as [b1 [b2 [b3 [b4 Hb]]]]. subst v. clear H.
   rewrite N.add_0_r. rewrite N.add_0_r in Heq, H0.
   unfold write_bytes in H0. cbn in H0. rewrite N.add_0_r in H0.
-  destruct (mem_update addr b1 (mem_data m)) eqn:Hupd1. 2: inv H0.
+  destruct (mem_update addr b1 (meminst_data m)) eqn:Hupd1. 2: inv H0.
   destruct (mem_update (addr + 1)%N b2 m0) eqn:Hupd2. 2: inv H0.
   destruct (mem_update (addr + 2)%N b3 m1) eqn:Hupd3. 2: inv H0.
   destruct (mem_update (addr + 3)%N b4 m2) eqn:Hupd4. 2: inv H0.
@@ -958,7 +958,7 @@ Proof.
   cbn. rewrite Heq.
   apply N.leb_le in Heq.
   unfold mem_update in Hupd1, Hupd2, Hupd3, Hupd4.
-  destruct (addr     <? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N eqn:Hl1. 2: inv Hupd1.
+  destruct (addr     <? N.of_nat (Datatypes.length (ml_data (meminst_data m))))%N eqn:Hl1. 2: inv Hupd1.
   destruct (addr + 1 <? N.of_nat (Datatypes.length (ml_data m0)))%N eqn:Hl2. 2: inv Hupd2.
   destruct (addr + 2 <? N.of_nat (Datatypes.length (ml_data m1)))%N eqn:Hl3. 2: inv Hupd3.
   destruct (addr + 3 <? N.of_nat (Datatypes.length (ml_data m2)))%N eqn:Hl4. 2: inv Hupd4.
@@ -972,21 +972,21 @@ Proof.
   cbn in *. repeat rewrite -> take_drop_is_set_nth; try lia.
   repeat (rewrite set_nth_nth_error_other; [ | lia | try lia]).
   rewrite N.add_0_r.
-  assert (He: exists e, nth_error (ml_data (mem_data m)) (N.to_nat addr) = Some e). {
+  assert (He: exists e, nth_error (ml_data (meminst_data m)) (N.to_nat addr) = Some e). {
     apply notNone_Some. intro Hcontra.
     apply nth_error_Some in Hcontra; lia.
   } destruct He.
   erewrite set_nth_nth_error_same. 2: eassumption. cbn.
   repeat (rewrite set_nth_nth_error_other; [ | lia | try lia]).
   assert (He: exists e, nth_error
-  (set_nth b1 (ml_data (mem_data m)) (N.to_nat addr) b1)
+  (set_nth b1 (ml_data (meminst_data m)) (N.to_nat addr) b1)
   (N.to_nat (addr + 1)) = Some e). { apply notNone_Some.
    intro Hcontra. apply nth_error_Some in Hcontra; lia. } destruct He.
   erewrite set_nth_nth_error_same. 2: eassumption. cbn.
   repeat (rewrite set_nth_nth_error_other; [ | lia | try lia]).
   assert (He: exists e, nth_error
   (set_nth b2
-     (set_nth b1 (ml_data (mem_data m)) (N.to_nat (addr)) b1)
+     (set_nth b1 (ml_data (meminst_data m)) (N.to_nat (addr)) b1)
      (N.to_nat (addr + 1)) b2)
   (N.to_nat (addr + 2)) = Some e). {
     apply notNone_Some. intro Hcontra. apply nth_error_Some in Hcontra; lia. } destruct He.
@@ -995,7 +995,7 @@ Proof.
   assert (He: exists e, nth_error
   (set_nth b3
      (set_nth b2
-        (set_nth b1 (ml_data (mem_data m)) (N.to_nat addr)
+        (set_nth b1 (ml_data (meminst_data m)) (N.to_nat addr)
            b1) (N.to_nat (addr + 1)) b2)
      (N.to_nat (addr + 2)) b3)
   (N.to_nat (addr + 3)) = Some e).
@@ -1022,7 +1022,7 @@ Proof.
   destruct Hbytes as [b1 [b2 [b3 [b4 [b5 [b6 [b7 [b8 Hb]]]]]]]]. subst v. clear H.
   rewrite N.add_0_r. rewrite N.add_0_r in Heq, H0.
   unfold write_bytes in H0. cbn in H0. rewrite N.add_0_r in H0.
-  destruct (mem_update addr b1 (mem_data m)) eqn:Hupd1. 2: inv H0.
+  destruct (mem_update addr b1 (meminst_data m)) eqn:Hupd1. 2: inv H0.
   destruct (mem_update (addr + 1)%N b2 m0) eqn:Hupd2. 2: inv H0.
   destruct (mem_update (addr + 2)%N b3 m1) eqn:Hupd3. 2: inv H0.
   destruct (mem_update (addr + 3)%N b4 m2) eqn:Hupd4. 2: inv H0.
@@ -1043,7 +1043,7 @@ Proof.
   cbn. rewrite Heq.
   apply N.leb_le in Heq.
   unfold mem_update in Hupd1, Hupd2, Hupd3, Hupd4, Hupd5, Hupd6, Hupd7, Hupd8.
-  destruct (addr     <? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N eqn:Hl1. 2: inv Hupd1.
+  destruct (addr     <? N.of_nat (Datatypes.length (ml_data (meminst_data m))))%N eqn:Hl1. 2: inv Hupd1.
   destruct (addr + 1 <? N.of_nat (Datatypes.length (ml_data m0)))%N eqn:Hl2. 2: inv Hupd2.
   destruct (addr + 2 <? N.of_nat (Datatypes.length (ml_data m1)))%N eqn:Hl3. 2: inv Hupd3.
   destruct (addr + 3 <? N.of_nat (Datatypes.length (ml_data m2)))%N eqn:Hl4. 2: inv Hupd4.
@@ -1066,21 +1066,21 @@ Proof.
   cbn in *. repeat rewrite -> take_drop_is_set_nth; try lia.
   repeat (rewrite set_nth_nth_error_other; [ | lia | try lia]).
   rewrite N.add_0_r.
-  assert (He: exists e, nth_error (ml_data (mem_data m)) (N.to_nat addr) = Some e). {
+  assert (He: exists e, nth_error (ml_data (meminst_data m)) (N.to_nat addr) = Some e). {
     apply notNone_Some. intro Hcontra.
     apply nth_error_Some in Hcontra; lia.
   } destruct He.
   erewrite set_nth_nth_error_same. 2: eassumption. cbn.
   repeat (rewrite set_nth_nth_error_other; [ | lia | try lia]).
   assert (He: exists e, nth_error
-  (set_nth b1 (ml_data (mem_data m)) (N.to_nat addr) b1)
+  (set_nth b1 (ml_data (meminst_data m)) (N.to_nat addr) b1)
   (N.to_nat (addr + 1)) = Some e). { apply notNone_Some.
    intro Hcontra. apply nth_error_Some in Hcontra; lia. } destruct He.
   erewrite set_nth_nth_error_same. 2: eassumption. cbn.
   repeat (rewrite set_nth_nth_error_other; [ | lia | try lia]).
   assert (He: exists e, nth_error
   (set_nth b2
-     (set_nth b1 (ml_data (mem_data m)) (N.to_nat (addr)) b1)
+     (set_nth b1 (ml_data (meminst_data m)) (N.to_nat (addr)) b1)
      (N.to_nat (addr + 1)) b2)
   (N.to_nat (addr + 2)) = Some e). {
     apply notNone_Some. intro Hcontra. apply nth_error_Some in Hcontra; lia. } destruct He.
@@ -1089,7 +1089,7 @@ Proof.
   assert (He: exists e, nth_error
   (set_nth b3
      (set_nth b2
-        (set_nth b1 (ml_data (mem_data m)) (N.to_nat addr)
+        (set_nth b1 (ml_data (meminst_data m)) (N.to_nat addr)
            b1) (N.to_nat (addr + 1)) b2)
      (N.to_nat (addr + 2)) b3)
   (N.to_nat (addr + 3)) = Some e).
@@ -1100,7 +1100,7 @@ Proof.
                      (set_nth b4
   (set_nth b3
      (set_nth b2
-        (set_nth b1 (ml_data (mem_data m))
+        (set_nth b1 (ml_data (meminst_data m))
            (N.to_nat addr) b1)
         (N.to_nat (addr + 1)) b2)
      (N.to_nat (addr + 2)) b3)
@@ -1116,7 +1116,7 @@ Proof.
                      (set_nth b4
   (set_nth b3
      (set_nth b2
-        (set_nth b1 (ml_data (mem_data m))
+        (set_nth b1 (ml_data (meminst_data m))
            (N.to_nat addr) b1)
         (N.to_nat (addr + 1)) b2)
      (N.to_nat (addr + 2)) b3)
@@ -1133,7 +1133,7 @@ Proof.
                      (set_nth b4
   (set_nth b3
      (set_nth b2
-        (set_nth b1 (ml_data (mem_data m))
+        (set_nth b1 (ml_data (meminst_data m))
            (N.to_nat addr) b1)
         (N.to_nat (addr + 1)) b2)
      (N.to_nat (addr + 2)) b3)
@@ -1153,7 +1153,7 @@ Proof.
                      (set_nth b4
   (set_nth b3
      (set_nth b2
-        (set_nth b1 (ml_data (mem_data m))
+        (set_nth b1 (ml_data (meminst_data m))
            (N.to_nat addr) b1)
         (N.to_nat (addr + 1)) b2)
      (N.to_nat (addr + 2)) b3)
@@ -1176,16 +1176,16 @@ Proof.
   assert ((k + (0 + N.of_nat 4) <=? mem_length m)%N). { apply N.leb_le. lia. } rewrite H0.
   unfold read_bytes, those, mem_lookup. cbn.
   apply N.leb_le in H0. unfold mem_length, memory_list.mem_length in H0.
-  assert (Hex1 : exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 0)) = Some v).
+  assert (Hex1 : exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 0)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex1 as [x1 Hex1]. rewrite Hex1.
-  assert (Hex2: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 1)) = Some v).
+  assert (Hex2: exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 1)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex2 as [x2 Hex2]. rewrite Hex2.
-  assert (Hex3: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 2)) = Some v).
+  assert (Hex3: exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 2)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex3 as [x3 Hex3]. rewrite Hex3.
-  assert (Hex4: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 3)) = Some v).
+  assert (Hex4: exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 3)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex4 as [x4 Hex4]. rewrite Hex4.
    eauto.
@@ -1198,35 +1198,37 @@ Proof.
   assert ((k + (0 + N.of_nat 8) <=? mem_length m)%N). { apply N.leb_le. lia. } rewrite H0.
   unfold read_bytes, those, mem_lookup. cbn.
   apply N.leb_le in H0. unfold mem_length, memory_list.mem_length in H0.
-  assert (Hex1 : exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 0)) = Some v).
+  assert (Hex1 : exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 0)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex1 as [x1 Hex1]. rewrite Hex1.
-  assert (Hex2: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 1)) = Some v).
+  assert (Hex2: exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 1)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex2 as [x2 Hex2]. rewrite Hex2.
-  assert (Hex3: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 2)) = Some v).
+  assert (Hex3: exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 2)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex3 as [x3 Hex3]. rewrite Hex3.
-  assert (Hex4: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 3)) = Some v).
+  assert (Hex4: exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 3)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex4 as [x4 Hex4]. rewrite Hex4.
-  assert (Hex5: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 4)) = Some v).
+  assert (Hex5: exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 4)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex5 as [x5 Hex5]. rewrite Hex5.
-  assert (Hex6: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 5)) = Some v).
+  assert (Hex6: exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 5)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex6 as [x6 Hex6]. rewrite Hex6.
-  assert (Hex7: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 6)) = Some v).
+  assert (Hex7: exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 6)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex7 as [x7 Hex7]. rewrite Hex7.
-  assert (Hex8: exists v, nth_error (ml_data (mem_data m)) (N.to_nat (k + 0 + 7)) = Some v).
+  assert (Hex8: exists v, nth_error (ml_data (meminst_data m)) (N.to_nat (k + 0 + 7)) = Some v).
   { apply notNone_Some. intro. apply nth_error_None in H1. lia. }
   destruct Hex8 as [x8 Hex8]. rewrite Hex8.
   eauto.
 Qed.
 
+(* kept for compatability, TODO remove *)
+Definition mem_max_opt := fun m => m.(meminst_type).(lim_max).
 
-Lemma mem_store_preserves_max_pages : forall m m' v x l,
+Lemma mem_store_preserves_max_pages : forall (m m' : meminst) v x l,
    store m x 0%N v l = Some m' ->
    mem_max_opt m = mem_max_opt m'.
 Proof.
@@ -1242,15 +1244,17 @@ Lemma mem_grow_increases_length : forall m m' sgrow,
   mem_length m' = ((sgrow * 65536) + mem_length m)%N.
 Proof.
   intros. unfold mem_grow in H.
-  destruct ((mem_size m + sgrow <=? page_limit)%N) eqn:Hari. 2: inv H.
-  destruct (mem_max_opt m) eqn:Hmaxpages; cbn in H.
+  destruct ((mem_size m + sgrow <=? page_limit)%N) eqn:Hari; rewrite Hari in H.
+  2: inv H.
+  destruct (lim_max (meminst_type m)) eqn:Hmaxpages.
   (* mem_max_opt = Some n0 *)
-  destruct (mem_size m + sgrow <=? n)%N. 2: inv H. inv H.
+  destruct (mem_size m + sgrow <=? u)%N; inv H.
   unfold mem_length. unfold memory_list.mem_length.
   rewrite app_length. rewrite Nat2N.inj_add.
-  rewrite N.add_comm. rewrite repeat_length. lia. inv H.
+  rewrite N.add_comm. rewrite repeat_length. unfold page_size. lia.
+  inv H.
   unfold mem_length, memory_list.mem_length. cbn. rewrite app_length.
-  rewrite repeat_length. lia.
+  rewrite repeat_length. unfold page_size. lia.
 Qed.
 
 Lemma mem_grow_increases_size : forall m m' sgrow,
@@ -1258,34 +1262,51 @@ Lemma mem_grow_increases_size : forall m m' sgrow,
   mem_size m' = (sgrow + mem_size m)%N.
 Proof.
   intros. unfold mem_grow in H.
-  destruct ((mem_size m + sgrow <=? page_limit)%N) eqn:Hari. 2: inv H.
-  destruct (mem_max_opt m) eqn:Hmaxpages; cbn in H.
+  destruct ((mem_size m + sgrow <=? page_limit)%N) eqn:Hari;
+    rewrite Hari in H. 2: inv H.
+  destruct (lim_max (meminst_type m)) eqn:Hmaxpages; cbn in H.
   (* mem_max_opt = Some n0 *)
-  destruct (mem_size m + sgrow <=? n)%N. 2: inv H. inv H.
+  destruct (mem_size m + sgrow <=? u)%N. 2: inv H. inv H.
   unfold mem_size. unfold mem_length. unfold memory_list.mem_length.
   rewrite app_length. rewrite Nat2N.inj_add.
   rewrite N.add_comm. unfold page_size. rewrite <- N.div_add_l. 2: intro; lia.
-  remember (N.of_nat (Datatypes.length (memory_list.ml_data (mem_data m)))) as len.
+  remember (N.of_nat (Datatypes.length (memory_list.ml_data (meminst_data m)))) as len.
   rewrite repeat_length. rewrite N2Nat.id.
   replace (sgrow * (64 * 1024))%N with (sgrow * 65536)%N; reflexivity.
   (* mem_max_opt = None *)
   inv H. unfold mem_size. unfold mem_length. unfold memory_list.mem_length.
   rewrite app_length. rewrite Nat2N.inj_add.
   rewrite N.add_comm. unfold page_size. rewrite <- N.div_add_l. 2: intro; lia.
-  remember (N.of_nat (Datatypes.length (memory_list.ml_data (mem_data m)))) as len.
-  rewrite repeat_length. cbn. lia.
+  remember (N.of_nat (Datatypes.length (memory_list.ml_data (meminst_data m)))) as len.
+  rewrite repeat_length. lia.
 Qed.
 
-Lemma mem_grow_preserves_max_pages : forall n m m',
-  mem_grow m 1 = Some m' ->
+Lemma mem_grow_preserves_max_pages : forall n m m' bytes,
+  mem_grow m bytes = Some m' ->
   mem_max_opt m = Some n ->
   mem_max_opt m' = Some n.
 Proof.
   intros. unfold mem_grow in H.
-  destruct ((mem_size m + 1 <=? page_limit)%N). 2: inv H. cbn in H.
-  rewrite H0 in H.
-  destruct ((mem_size m + 1 <=? n)%N). 2: inv H. inv H. reflexivity.
+  destruct ((mem_size m + bytes <=? mem_limit_bound)%N). 2: inv H. cbn in H.
+  unfold mem_max_opt in H0. rewrite H0 in H.
+  destruct ((mem_size m + bytes <=? n)%N). 2: inv H. inv H. reflexivity.
 Qed.
+
+Lemma smem_grow_preserves_funcs : forall sr fr bytes sr' size,
+  smem_grow sr (f_inst fr) bytes = Some (sr', size) ->
+  s_funcs sr = s_funcs sr'.
+Proof.
+  intros. unfold smem_grow in H.
+  destruct (lookup_N (inst_mems (f_inst fr)) 0)=>//.
+  destruct (lookup_N (s_mems sr) m)=>//.
+  destruct (mem_grow m0 bytes)=>//. inv H. reflexivity.
+Qed.
+
+Lemma smem_grow_peserves_globals : forall sr fr bytes sr' size var,
+  smem_grow sr (f_inst fr) bytes = Some (sr', size) ->
+  sglob_val sr (f_inst fr) var = sglob_val sr' (f_inst fr) var.
+Proof.
+Admitted.
 
 Lemma mem_grow_preserves_original_values : forall a m m' maxlim,
   (mem_max_opt m = Some maxlim)%N ->
@@ -1299,18 +1320,19 @@ Proof.
   have Hg := Hgrow. apply mem_grow_increases_length in Hg.
   unfold mem_grow in Hgrow.
   assert (Hlim4: (mem_size m + 1 <= page_limit)%N) by lia. apply N.leb_le in Hlim4, Hlim3.
-  rewrite Hlim4 in Hgrow. rewrite Hlim1 in Hgrow. rewrite Hlim3 in Hgrow. inv Hgrow.
+  rewrite Hlim4 in Hgrow. unfold mem_max_opt in Hlim1.
+  rewrite Hlim1 in Hgrow. rewrite Hlim3 in Hgrow. inv Hgrow.
   assert (Hlen: (a + 8 <=?
-     mem_length {| mem_data := {| ml_init := ml_init (mem_data m);
-                                  ml_data := ml_data (mem_data m) ++
-                                             repeat (ml_init (mem_data m)) (Pos.to_nat 65536) |};
-                  mem_max_opt := Some maxlim |})%N). {
+     mem_length {| meminst_data := {| ml_init := ml_init (meminst_data m);
+                                  ml_data := ml_data (meminst_data m) ++
+                                             repeat (ml_init (meminst_data m)) (Pos.to_nat 65536) |};
+                  meminst_type := {| lim_min := (mem_size m + 1)%N; lim_max := Some maxlim |} |})%N). {
     unfold mem_length, memory_list.mem_length. cbn. rewrite app_length. rewrite repeat_length.
     unfold mem_length, memory_list.mem_length in Ha. apply N.leb_le. lia. }
-  remember ((mem_length {| mem_data := {| ml_init := ml_init (mem_data m);
-                                  ml_data := ml_data (mem_data m) ++
-                                             repeat (ml_init (mem_data m)) (Pos.to_nat 65536) |};
-                  mem_max_opt := Some maxlim |})%N) as mem_len.
+  remember ((mem_length {| meminst_data := {| ml_init := ml_init (meminst_data m);
+                                  ml_data := ml_data (meminst_data m) ++
+                                             repeat (ml_init (meminst_data m)) (Pos.to_nat 65536) |};
+                  meminst_type := {| lim_min := (mem_size m + 1)%N; lim_max := Some maxlim |} |})%N) as mem_len.
   split.
   - assert (Ha': (a+4 <= mem_length m)%N) by lia.
     unfold load_i32, load, memory_list.mem_grow, read_bytes, those. cbn.
@@ -1379,7 +1401,7 @@ Proof.
   destruct w. inv Hlw. destruct w. inv Hlw. destruct w. inv Hlw. destruct w.
   inv Hlw. destruct w. 2: inv Hlw. clear Hlw. unfold write_bytes in Hstore. cbn in Hstore.
   unfold mem_update in Hstore. cbn in Hstore.
-  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N eqn:Ha1.
+  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (meminst_data m))))%N eqn:Ha1.
   2: discriminate. cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
   rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
   assert_store_condition_and_rewrite Ha2.
@@ -1388,16 +1410,16 @@ Proof.
   inv Hstore.
 
   unfold load_i32, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
-  destruct ((a1 + 4 <=? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hr1. 2: discriminate.
+  destruct ((a1 + 4 <=? N.of_nat (Datatypes.length (ml_data (meminst_data m))))%N) eqn:Hr1. 2: discriminate.
   cbn in Ha4. unfold read_bytes, those, mem_lookup in Hload. cbn in Hload.
 
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
               (N.to_nat (a1 + 0 + 0))) eqn:Hl1. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 1))) eqn:Hl2. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 2))) eqn:Hl3. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 3))) eqn:Hl4. 2: discriminate.
                 cbn in Hload. rewrite -Hload.
 
@@ -1409,7 +1431,7 @@ Proof.
           (set_nth b2
              (set_nth b1
                 (set_nth b0
-                   (set_nth b (ml_data (mem_data m))
+                   (set_nth b (ml_data (meminst_data m))
                       (N.to_nat (a2 + 0 + 0)) b) (N.to_nat (a2 + 0 + 1)) b0) (N.to_nat (a2 + 0 + 2)) b1)
              (N.to_nat (a2 + 0 + 3)) b2)))%N) as Hdf by solve_arith_load_store. rewrite Hdf. cbn.
 
@@ -1439,7 +1461,7 @@ Proof.
   destruct w. 2: inv Hlw.
   clear Hlw. unfold write_bytes in Hstore. cbn in Hstore.
   unfold mem_update in Hstore. cbn in Hstore.
-  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N eqn:Ha1.
+  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (meminst_data m))))%N eqn:Ha1.
   2: { apply N.ltb_nlt in Ha1. lia. }
   cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
   rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
@@ -1453,16 +1475,16 @@ Proof.
   inv Hstore.
 
   unfold load_i32, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
-  destruct ((a1 + 4 <=? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hr1. 2: discriminate.
+  destruct ((a1 + 4 <=? N.of_nat (Datatypes.length (ml_data (meminst_data m))))%N) eqn:Hr1. 2: discriminate.
   cbn in Ha8. unfold read_bytes, those, mem_lookup in Hload. cbn in Hload.
 
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
               (N.to_nat (a1 + 0 + 0))) eqn:Hl1. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 1))) eqn:Hl2. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 2))) eqn:Hl3. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
               (N.to_nat (a1 + 0 + 3))) eqn:Hl4. 2: discriminate.
   cbn in Hload. rewrite -Hload.
 
@@ -1478,7 +1500,7 @@ Proof.
                          (set_nth b2
                        (set_nth b1
                           (set_nth b0
-                             (set_nth b (ml_data (mem_data m))
+                             (set_nth b (ml_data (meminst_data m))
                                 (N.to_nat (a2 + 0 + 0)) b)
                              (N.to_nat (a2 + 0 + 1)) b0)
                           (N.to_nat (a2 + 0 + 2)) b1)
@@ -1511,7 +1533,7 @@ Proof.
   inv Hlw. destruct w. 2: inv Hlw.
   clear Hlw. unfold write_bytes in Hstore. cbn in Hstore.
   unfold mem_update in Hstore. cbn in Hstore.
-  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N eqn:Ha1.
+  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (meminst_data m))))%N eqn:Ha1.
   2: { apply N.ltb_nlt in Ha1. lia. }
   cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
   rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
@@ -1521,16 +1543,16 @@ Proof.
   inv Hstore.
 
   unfold load_i64, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
-  destruct ((a1 + 8 <=? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hr1. 2: discriminate.
+  destruct ((a1 + 8 <=? N.of_nat (Datatypes.length (ml_data (meminst_data m))))%N) eqn:Hr1. 2: discriminate.
   cbn in Ha4. unfold read_bytes, those, mem_lookup in Hload. cbn in Hload.
 
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
               (N.to_nat (a1 + 0 + 0))) eqn:Hl1. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 1))) eqn:Hl2. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 2))) eqn:Hl3. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 3))) eqn:Hl4. 2: discriminate.
                 cbn in Hload. rewrite -Hload.
 
@@ -1542,7 +1564,7 @@ Proof.
           (set_nth b2
              (set_nth b1
                 (set_nth b0
-                   (set_nth b (ml_data (mem_data m))
+                   (set_nth b (ml_data (meminst_data m))
                       (N.to_nat (a2 + 0 + 0)) b) (N.to_nat (a2 + 0 + 1)) b0) (N.to_nat (a2 + 0 + 2)) b1)
              (N.to_nat (a2 + 0 + 3)) b2)))%N) as Hdf by solve_arith_load_store. rewrite Hdf. cbn.
 
@@ -1567,7 +1589,7 @@ Proof.
   destruct w. 2: inv Hlw.
   clear Hlw. unfold write_bytes in Hstore. cbn in Hstore.
   unfold mem_update in Hstore. cbn in Hstore.
-  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N eqn:Ha1.
+  destruct (a2 + 0 + 0 <? N.of_nat (Datatypes.length (ml_data (meminst_data m))))%N eqn:Ha1.
   2: { apply N.ltb_nlt in Ha1. lia. }
   cbn in Hstore. rewrite take_drop_is_set_nth in Hstore; try lia.
   rewrite take_drop_is_set_nth in Hstore. 2: solve_arith_load_store.
@@ -1581,25 +1603,25 @@ Proof.
   inv Hstore.
 
   unfold load_i64, load in *. cbn. unfold mem_length, memory_list.mem_length in *. cbn in *.
-  destruct ((a1 + 8 <=? N.of_nat (Datatypes.length (ml_data (mem_data m))))%N) eqn:Hr1. 2: discriminate.
+  destruct ((a1 + 8 <=? N.of_nat (Datatypes.length (ml_data (meminst_data m))))%N) eqn:Hr1. 2: discriminate.
   cbn in Ha8. unfold read_bytes, those, mem_lookup in Hload. cbn in Hload.
 
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
               (N.to_nat (a1 + 0 + 0))) eqn:Hl1. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 1))) eqn:Hl2. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 2))) eqn:Hl3. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
               (N.to_nat (a1 + 0 + 3))) eqn:Hl4. 2: discriminate.
 
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
               (N.to_nat (a1 + 0 + 4))) eqn:Hl5. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
               (N.to_nat (a1 + 0 + 5))) eqn:Hl6. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
               (N.to_nat (a1 + 0 + 6))) eqn:Hl7. 2: discriminate.
-  destruct (nth_error (ml_data (mem_data m))
+  destruct (nth_error (ml_data (meminst_data m))
                 (N.to_nat (a1 + 0 + 7))) eqn:Hl8. 2: discriminate.
 
   cbn in Hload. rewrite -Hload.
@@ -1616,7 +1638,7 @@ Proof.
                          (set_nth b2
                        (set_nth b1
                           (set_nth b0
-                             (set_nth b (ml_data (mem_data m))
+                             (set_nth b (ml_data (meminst_data m))
                                 (N.to_nat (a2 + 0 + 0)) b)
                              (N.to_nat (a2 + 0 + 1)) b0)
                           (N.to_nat (a2 + 0 + 2)) b1)
@@ -1636,7 +1658,7 @@ Qed.
 
 (* taken from iriswasm *)
 Lemma deserialise_bits v t :
-  types_agree t v -> wasm_deserialise (bits v) t = v.
+  typeof_num v == t -> wasm_deserialise (bits v) t = v.
 Proof.
   intros Htv.
   unfold wasm_deserialise.
@@ -1659,61 +1681,73 @@ Proof.
   by rewrite Wasm_float.FloatSize64.of_to_bits.
 Qed.
 
-
-
 (* global vars *)
 
 Lemma update_global_get_same : forall sr sr' i val fr,
-  supdate_glob sr (f_inst fr) i (VAL_int32 val) = Some sr' ->
-     @sglob_val host_function sr' (f_inst fr) i = Some (VAL_int32 val).
+  supdate_glob sr (f_inst fr) i (VAL_num (VAL_int32 val)) = Some sr' ->
+     sglob_val sr' (f_inst fr) i = Some (VAL_num (VAL_int32 val)).
 Proof.
   unfold supdate_glob, supdate_glob_s, sglob_val, sglob, sglob_ind. cbn. intros.
-  destruct (nth_error (inst_globs (f_inst fr)) i) eqn:H1. 2: inv H. cbn in H.
-  destruct (nth_error (s_globals sr) g) eqn:H2. 2: inv H. inv H. cbn.
+  destruct (lookup_N (inst_globals (f_inst fr)) i) eqn:H1. 2: inv H. cbn in H.
+  destruct (lookup_N (s_globals sr) g) eqn:H2. 2: inv H. inv H. cbn.
+  unfold lookup_N.
   erewrite set_nth_nth_error_same; auto. eassumption.
 Qed.
 
 Lemma update_global_get_other : forall i j sr sr' fr num val,
-  NoDup (inst_globs (f_inst fr)) ->
+  NoDup (inst_globals (f_inst fr)) ->
   i <> j ->
-  sglob_val sr (f_inst fr) i = Some (VAL_int32 val) ->
-  supdate_glob sr (f_inst fr) j (VAL_int32 num) = Some sr' ->
-  @sglob_val host_function sr' (f_inst fr) i = Some (VAL_int32 val).
+  sglob_val sr (f_inst fr) i = Some (VAL_num (VAL_int32 val)) ->
+  supdate_glob sr (f_inst fr) j (VAL_num (VAL_int32 num)) = Some sr' ->
+  sglob_val sr' (f_inst fr) i = Some (VAL_num (VAL_int32 val)).
 Proof.
   intros ? ? ? ? ? ? ? Hnodup Hneq Hr Hw.
     unfold supdate_glob, sglob_ind, supdate_glob_s in *.
-    destruct (nth_error (inst_globs (f_inst fr)) j) eqn:Heqn. 2: inv Hw. cbn in Hw.
-    destruct (nth_error (s_globals sr) g) eqn:Heqn'. 2: inv Hw. inv Hw.
+    destruct (lookup_N (inst_globals (f_inst fr)) j) eqn:Heqn. 2: inv Hw. cbn in Hw.
+    destruct (lookup_N (s_globals sr) g) eqn:Heqn'. 2: inv Hw. inv Hw.
     unfold sglob_val, sglob, sglob_ind in *.
-    destruct (nth_error (inst_globs (f_inst fr)) i) eqn:Heqn''.  2: inv Hr.
+    destruct (lookup_N (inst_globals (f_inst fr)) i) eqn:Heqn''.  2: inv Hr.
     cbn. cbn in Hr.
     assert (g <> g1). {
       intro. subst. rewrite <- Heqn'' in Heqn.
-      apply Hneq. eapply NoDup_nth_error; eauto.
+      apply Hneq. unfold lookup_N in Heqn, Heqn''.
+      eapply NoDup_nth_error in Heqn; eauto. lia.
       apply nth_error_Some. congruence. }
-    erewrite set_nth_nth_error_other; auto.
-     assert (g < length (s_globals sr)) as Hl. { apply nth_error_Some. intro. congruence. }
+    unfold lookup_N in *.
+    erewrite set_nth_nth_error_other; auto; try lia.
+     assert (N.to_nat g < length (s_globals sr)) as Hl. { apply nth_error_Some. intro. congruence. }
     lia.
 Qed.
 
-Lemma update_global_preserves_memory : forall sr sr' fr v j,
-  @supdate_glob host_function sr (f_inst fr) j v = Some sr' ->
-    sr.(s_mems) = sr'.(s_mems).
+(* TODO get rid of, shouldn't be needed *)
+Lemma update_global_preserves_memory' : forall sr sr' fr v j,
+  supdate_glob sr (f_inst fr) j v = Some sr' ->
+  sr.(s_mems) = sr'.(s_mems).
 Proof.
   intros.
   unfold supdate_glob, supdate_glob_s, sglob_ind in H. cbn in H.
-  destruct (nth_error (inst_globs (f_inst fr)) j). 2: inv H. cbn in H.
-  destruct (nth_error (s_globals sr) g). inv H. reflexivity. inv H.
+  destruct (lookup_N (inst_globals (f_inst fr)) j). 2: inv H. cbn in H.
+  destruct (lookup_N (s_globals sr) g). inv H. reflexivity. inv H.
+Qed.
+
+Lemma update_global_preserves_memory : forall sr sr' fr v j,
+  supdate_glob sr (f_inst fr) j v = Some sr' ->
+  smem sr (f_inst fr) = smem sr' (f_inst fr).
+Proof.
+  intros.
+  unfold supdate_glob, supdate_glob_s, sglob_ind in H. cbn in H.
+  destruct (lookup_N (inst_globals (f_inst fr)) j). 2: inv H. cbn in H.
+  destruct (lookup_N (s_globals sr) g). inv H. reflexivity. inv H.
 Qed.
 
 Lemma update_global_preserves_funcs : forall sr sr' fr v j,
-  @supdate_glob host_function sr (f_inst fr) j v = Some sr' ->
-    sr.(s_funcs) = sr'.(s_funcs).
+  supdate_glob sr (f_inst fr) j v = Some sr' ->
+  sr.(s_funcs) = sr'.(s_funcs).
 Proof.
   intros.
   unfold supdate_glob, supdate_glob_s, sglob_ind in H. cbn in H.
-  destruct (nth_error (inst_globs (f_inst fr)) j). 2: inv H. cbn in H.
-  destruct (nth_error (s_globals sr) g). inv H. reflexivity. inv H.
+  destruct (lookup_N (inst_globals (f_inst fr)) j). 2: inv H. cbn in H.
+  destruct (lookup_N (s_globals sr) g). inv H. reflexivity. inv H.
 Qed.
 
 End Wasm.
@@ -1782,18 +1816,25 @@ Proof.
   exists (nat_to_i32 1). constructor.
 Qed.
 
-Lemma i32_exists_nat : forall (x : i32),
-  exists n, x = nat_to_i32 n /\ (-1 < Z.of_nat n <  Wasm_int.Int32.modulus)%Z.
+Lemma i32_exists_N : forall (x : i32),
+  exists n, x = N_to_i32 n /\ (-1 < Z.of_N n < Wasm_int.Int32.modulus)%Z.
 Proof.
-  intros [val H]. exists (Z.to_nat val). split; try lia.
-  destruct (nat_to_i32 (Z.to_nat val)) eqn:He. inv He. revert intrange.
+  intros [val H]. exists (Z.to_N val). split; try lia.
+  destruct (N_to_i32 (Z.to_N val)) eqn:He. inv He. revert intrange.
   rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
-  rewrite Z2Nat.id; try lia. intros.
+  rewrite Z2N.id; try lia. intros.
   destruct H as [low high].
   destruct intrange as [low' high'].
   rewrite (Wasm_int.Int32.Z_lt_irrelevant low low').
   rewrite (Wasm_int.Int32.Z_lt_irrelevant high high'). reflexivity.
 Qed.
 
+Lemma default_vals_i32_Some : forall n,
+  default_vals (repeat (T_num T_i32) n) = Some (repeat (VAL_num (nat_to_value 0)) n).
+Proof.
+  induction n=>//. unfold default_vals in *. cbn in *.
+  rewrite -cat1s. rewrite <- (cat1s (VAL_num (nat_to_value 0))).
+  apply those_cat=>//.
+Qed.
 
 End Arith.
