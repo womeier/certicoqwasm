@@ -23,7 +23,7 @@ import { readFileSync } from 'fs';
 var args = process.argv.slice(2);
 if (args.length != 2) {
     console.log("Expected two args: 0: path to folder containing wasm file to run, 1: program.");
-    console.log("e.g.: $ node --experimental-wasm-return_call run_wasm.js ./binaries/ vs_easy");
+    console.log("e.g.: $ node ./js/run_wasm_external_pp.js ./ vs_easy");
     process.exit(1);
 }
 
