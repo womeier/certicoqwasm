@@ -93,38 +93,39 @@ Fixpoint funcidcs (funs : nat) (startidx : funcidx) : list funcidx :=
   | S funs' => startidx :: funcidcs funs' (1 + startidx)%N
   end.
 
-(* Lemma add_funcs_effect : forall s' s'' l l1 l2 f,
+Check FC_func_native.
+Print module_func.
+
+Lemma add_funcs_effect : forall s' s'' l l1 l2 mi,
     fold_left
           (fun '(s, ys) (x : module_func) =>
-           (add_func host_function s
-              (FC_func_native (f_inst f)
-                 (List.nth match modfunc_type x with
-                      | Mk_typeidx n => n
-                      end (inst_types (f_inst f)) (Tf [] []))
-                 (modfunc_locals x) (modfunc_body x)),
-           (Mk_funcidx (Datatypes.length (s_funcs s)) :: ys)%SEQ)) l
+           (add_func s (gen_func_instance x mi),
+            N.of_nat (Datatypes.length (s_funcs s)) :: ys)) l
           (s', l1) = (s'', l2) ->
 
+    (s_datas s' = s_datas s'') /\
+    (s_elems s' = s_elems s'') /\
     (s_globals s' = s_globals s'') /\
     (s_mems s' = s_mems s'') /\
     (s_tables s' = s_tables s'') /\
     (s_funcs s'' = (s_funcs s') ++
-    (map (fun a => FC_func_native (f_inst f)
-                   (List.nth match modfunc_type a with
-                        | Mk_typeidx n => n
-                        end (inst_types (f_inst f)) (Tf [] []))
-                   (modfunc_locals a) (modfunc_body a)) l ))%list /\
-    l2 = List.app (List.rev (funcidcs (length l) (length (s_funcs s')))) l1.
+    (map (fun a => gen_func_instance a mi) l ))%list /\
+    l2 = List.app (List.rev (funcidcs (length l) (N.of_nat (length (s_funcs s'))))) l1.
 Proof.
-  intros. generalize dependent l1. revert s' s'' f l2.
+  intros. generalize dependent l1. revert s' s'' l2.
   induction l; intros.
-  - inv H. cbn. rewrite app_nil_r. auto.
+  - inv H. cbn. rewrite app_nil_r. tauto.
   - cbn in H. apply IHl in H.
-    destruct H as [H1 [H2 [H3 [H4 H5]]]]. subst l2. rewrite -H1 -H2 -H3 H4.
-    rewrite -app_assoc. auto. cbn.
+    destruct H as [H1 [H2 [H3 [H4 [H5 [H6 H7]]]]]]. subst l2. rewrite -H1 -H2 -H3 -H4 -H5 H6.
+    rewrite -app_assoc. auto.
     repeat split; auto.
-    cbn. rewrite app_length. cbn. now rewrite Nat.add_comm -app_assoc.
-Qed. *)
+    replace (N.of_nat (Datatypes.length (s_funcs s')) :: l1) with ([:: N.of_nat (Datatypes.length (s_funcs s'))]  ++ l1) by reflexivity.
+    rewrite app_length Nat.add_comm. cbn.
+    rewrite -app_assoc. cbn.
+    f_equal. f_equal. f_equal. cbn.
+    destruct (Datatypes.length (s_funcs s')) eqn:Hlen; cbn; try lia.
+    destruct (Pos.of_succ_nat n); lia.
+Qed.
 
 (* Lemma reduce_forall_elem_effect : forall fns l f s state,
   Forall2 (fun (e : module_element) (c : Wasm_int.Int32.T) =>
@@ -958,7 +959,7 @@ Qed.
 *)
 
 Theorem module_instantiate_INV_and_more_hold :
-forall e eAny topExp fds num_funs module fenv main_lenv sr f,
+forall e eAny topExp fds num_funs module fenv main_lenv sr f initExprs,
   NoDup (collect_function_vars (Efun fds eAny)) ->
   expression_restricted cenv e ->
   topExp = match e with | Efun _ _ => e | _ => Efun Fnil e end ->
@@ -969,7 +970,7 @@ forall e eAny topExp fds num_funs module fenv main_lenv sr f,
   (Z.of_nat num_funs < max_num_functions)%Z ->
   LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, main_lenv) ->
   (* instantiate with the two imported functions *)
-  instantiate initial_store module [EV_func 0%N; EV_func 1%N] (sr, f, [::]) ->
+  instantiate initial_store module [EV_func 0%N; EV_func 1%N] (sr, f, initExprs) ->
 
   (* invariants hold initially *)
   INV fenv nenv sr f /\
@@ -1017,16 +1018,13 @@ forall e eAny topExp fds num_funs module fenv main_lenv sr f,
   | _ => Ret []
   end = Ret fns.
 Proof.
-Admitted.
-(*
-  intros e eAny topExp fds num_funs module fenv lenv s f exports Hnodup HeRestr HtopExp Hfds HcenvCorrect Hnumfuns
-    HfdsLength Hcompile Hflocs Hinst. subst num_funs topExp.
+  intros e eAny topExp fds num_funs module fenv lenv s f initExprs Hnodup HeRestr HtopExp Hfds HcenvCorrect Hnumfuns
+    HfnsLength Hcompile Hinst. subst num_funs topExp.
   unfold instantiate in Hinst.
   unfold LambdaANF_to_Wasm in Hcompile.
   remember (list_function_types (Z.to_nat max_function_args)) as types.
   simpl in Hcompile.
   destruct (check_restrictions cenv e) eqn:HRestr. inv Hcompile.
-  destruct (generate_constr_pp_function cenv nenv e) eqn:HgenPP. inv Hcompile.
   destruct (match _ with | Efun fds _ => _ fds | _ => Err _ end) eqn:HtransFns. inv Hcompile.
   destruct (match e with
             | Efun _ _ => e
@@ -1035,53 +1033,56 @@ Admitted.
   destruct (translate_body nenv cenv _ _ _) eqn:Hexpr. inv Hcompile. rename l0 into e'.
   inv Hcompile.
   unfold INV. unfold is_true in *.
-  destruct Hinst as [t_imps [t_exps [state [s' [ g_inits [e_offs [d_offs
-      [Hmodule [Himports [HallocModule [HinstGlobals [HinstElem
-         [HinstData [HboundsElem [HboundsData [_ Hinst]]]]]]]]]]]]]]]].
+  destruct Hinst as [t_imps_mod [t_imps [t_exps [state [mi [ g_inits [r_inits
+          [Hmodule [Himports [HimportsSt [HallocModule [HinstGlobals [HinstElem [Hframe HinitExprs]]]]]]]]]]]]]].
   rename l into fns.
-  (* module typing *) clear Hmodule.
+  (* module typing TODO *) clear Hmodule.
 
   (* globals red. to const *)
   unfold instantiate_globals in HinstGlobals. cbn in HinstGlobals.
-  inv HinstGlobals. inv H3. inv H5. inv H6. inv H7.
-  apply reduce_trans_const in H1, H2, H3. subst y y0 y1.
-  (* data offsets of mem init. red. to const, empty list *)
-  inv HinstData. apply reduce_trans_const in H4. subst y2.
+  inv HinstGlobals. inv H3. inv H5. inv H6. inv H7. cbn in H1.
+  apply reduce_trans_value with (v1:=VAL_num (nat_to_value 0)) in H1, H2, H3, H4. subst y y0 y1 y2.
   (* elem vals red. to const *)
-  unfold instantiate_elem in HinstElem. cbn in Hinst.
+  unfold instantiate_elems in HinstElem.
   repeat rewrite -app_assoc in HinstElem. cbn in HinstElem.
   rewrite Nat.add_comm in HinstElem. cbn in HinstElem.
-  destruct (e_offs_increasing _ _ _ _ _ HinstElem) as [HeoffsVals HeoffsLen].
-  clear HinstElem.
+(*   destruct (e_offs_increasing _ _ _ _ _ HinstElem) as [HeoffsVals HeoffsLen]. *)
+(*   clear HinstElem. *)
 
-  apply store_record_eqb_true in Hinst.
-  unfold alloc_module, alloc_funcs, alloc_globs, add_mem, alloc_Xs in HallocModule.
+  unfold alloc_module, alloc_funcs, alloc_elems, alloc_globs, add_mem, alloc_Xs in HallocModule.
   cbn in HallocModule. repeat rewrite map_app in HallocModule. cbn in HallocModule.
   destruct (fold_left _ (map _ fns) _) eqn:HaddF.
+  destruct (fold_left _ (combine (table_element_mapping (Datatypes.length fns + num_custom_funs) 0) r_inits) _) eqn:HaddElems.
 
   unfold add_glob in HallocModule. cbn in HallocModule.
   repeat (apply andb_prop in HallocModule;
            destruct HallocModule as [HallocModule ?F]).
-  apply store_record_eqb_true in HallocModule.
-  apply eqseq_true in F0,F1,F2,F3,F4,F. cbn in HaddF.
-  apply add_funcs_effect in HaddF. cbn in HaddF. destruct HaddF as [Hs01 [Hs02 [Hs03 [Hs04 Hs05]]]].
+  apply store_record_eqb_true in HallocModule. subst s1.
+  apply eqseq_true in F0,F1,F2,F3,F4,F5,F6,F. cbn in HaddF.
 
-  rewrite <- Hs01 in HallocModule, F0. rewrite <- Hs02 in HallocModule, F1.
-  rewrite <- Hs03 in HallocModule, F2. cbn in Hinst.
+  (* main fn, grow_mem_fn *)
+  destruct ((add_func (add_func initial_store _)) _) eqn:HaddF'.
+  unfold add_func, gen_func_instance in HaddF'. rewrite F6 in HaddF'.
+  replace (Pos.to_nat 20) with 20 in HaddF' by reflexivity. cbn in HaddF'.
+  replace (Pos.to_nat 1) with 1 in HaddF' by reflexivity. cbn in HaddF'.
+  injection HaddF' as <- <- <- <- <- <-.
+
+  apply add_funcs_effect in HaddF. cbn in HaddF. destruct HaddF as [Hs01 [Hs02 [Hs03 [Hs04 [Hs05 [Hs06 ->]]]]]].
+  unfold add_table in HaddElems.
+  (* TODO HaddElems not the best name *)
+
+  rewrite <- Hs01 in HaddElems. rewrite <- Hs02 in HaddElems.
+  rewrite <- Hs03 in F2, F, HaddElems. rewrite <- Hs04 in F3, F, HaddElems.
+  rewrite <- Hs05 in F4, F, HaddElems. cbn in F. (*  rewrite <- Hs04 in. F5. cbn in Hinst.
   rewrite Hs04 in HallocModule. subst l.
-  cbn in F0, F1, F2, F3. clear Hs01 Hs02 Hs03 Hs04 s0.
-  rewrite map_length in F3. rewrite rev_app_distr in F3.
-  rewrite map_app in F3. cbn in F3.
-  clear HboundsData HboundsElem. (* clear for now *)
-  rewrite rev_involutive in F3.
-  rewrite F4 in HallocModule. cbn in HallocModule.
+ *)
 
-  remember (s_tables s') as ts. rewrite HallocModule in Heqts.
-  destruct ts. inv Heqts. destruct ts. 2: inv Heqts.
-  symmetry in Heqts. rewrite -HallocModule in Heqts.
+  cbn in F0, F1, F2, F3. (* clear Hs01 Hs02 Hs03 Hs04 s0. *)
+  rewrite map_length in F5, F. rewrite rev_app_distr in F, F5.
+  rewrite rev_involutive in F5, F.
+  cbn in F0, F1, F2, F3, F4, F5, F.
 
-  assert (Hnone: table_max_opt t = None). { subst s'. now inv Heqts. }
-  assert (Hlen: (length (table_data t) - num_custom_funs) = length fns /\
+(*   assert (Hlen: (length (table_data t) - num_custom_funs) = length fns /\
                  length (table_data t) >= num_custom_funs). {
     subst s'. inv Heqts. cbn. rewrite repeat_length. cbn.
     replace (ssrnat.nat_of_bin (N.of_nat (Datatypes.length fns + num_custom_funs))) with
@@ -1092,10 +1093,12 @@ Admitted.
   rewrite -Hlen' in HeoffsVals.
   assert (HlenMax: (Z.of_nat (Datatypes.length e_offs) < Wasm_int.Int32.modulus)%Z). {
     apply translate_functions_length in HtransFns.
-    unfold max_num_functions in HfdsLength. rewrite Hlen'.
+    unfold max_num_functions in HfnsLength. rewrite Hlen'.
     simpl_modulus; cbn. unfold num_custom_funs in *. lia. }
-  assert (Hlen'': Datatypes.length e_offs = Datatypes.length (table_data t)) by lia.
-  have H' := init_tabs_effect s' _ _ e_offs _ Heqts Hnone F2 F3 Logic.eq_refl HeoffsVals HlenMax Hlen''.
+  assert (Hlen'': Datatypes.length e_offs = Datatypes.length (table_data t)) by lia. *)
+Admitted.
+
+(*  have H' := init_tabs_effect s' _ _ e_offs _ Heqts Hnone F2 F3 Logic.eq_refl HeoffsVals HlenMax Hlen''.
   rewrite Hlen' in H'.
   destruct H' as [t' [Ht' [HtVal' [NtNone' [Htables [Hfuncs [Hmems Hglobals]]]]]]].
   rewrite -Hinst in Hglobals, Hmems, Hfuncs.
@@ -1154,7 +1157,7 @@ Admitted.
      rewrite map_length.
      destruct e; inv HtopExp'; try (inv HtransFns; simpl_modulus; cbn; lia).
      erewrite <- translate_functions_length; eauto.
-     unfold max_num_functions in HfdsLength. simpl_modulus. cbn. lia. }
+     unfold max_num_functions in HfnsLength. simpl_modulus. cbn. lia. }
    split. (* inst_globals (f_inst f) no dups *)
    unfold INV_inst_globals_nodup. rewrite F0.
    repeat constructor; cbn; lia.
@@ -1369,7 +1372,7 @@ Proof.
     now eapply NoDup_app_remove_l in HvarsNodup.
   }
 
-  have HI := module_instantiate_INV_and_more_hold _ _ _ _ _ _ _ _ _ _ Hnodup' HeRestr
+  have HI := module_instantiate_INV_and_more_hold _ _ _ _ _ _ _ _ _ _ _ Hnodup' HeRestr
                Logic.eq_refl Logic.eq_refl Hcenv' Logic.eq_refl Hmaxfuns LANF2Wasm Hinst.
   clear Hnodup' Hcenv'.
   destruct HI as [Hinv [HinstFuncs [HfVal [grow_mem_fn [main_fn [e' [fns' [-> [-> [HsrFuncs [Hexpr' Hfns']]]]]]]]]]].
