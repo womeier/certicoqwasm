@@ -124,7 +124,7 @@ Definition fname_env    := M.tree funcidx. (* maps function variables to their i
 Record wasm_function :=
   { fidx : funcidx
   ; export_name : string
-  ; typeidx : N
+  ; type : N
   ; locals : list value_type
   ; body : list basic_instruction
   }.
@@ -282,7 +282,7 @@ Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : 
   in
   Ret {| fidx := constr_pp_function_idx
        ; export_name := constr_pp_function_name
-       ; typeidx := 1%N (* [i32] -> [] *)
+       ; type := 1%N (* [i32] -> [] *)
        ; locals := []
        ; body := body
        |}.
@@ -318,7 +318,7 @@ Definition grow_memory_if_necessary : list basic_instruction :=
 Definition generate_grow_mem_function : wasm_function :=
   {| fidx := grow_mem_function_idx
    ; export_name := grow_mem_function_name
-   ; typeidx := 1%N (* [i32] -> [] *)
+   ; type := 1%N (* [i32] -> [] *)
    ; locals := []
    ; body := grow_memory_if_necessary
    |}.
@@ -344,7 +344,7 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
   let call := (fun num_args : nat => if tailcall then BI_return_call_indirect 0%N (N.of_nat num_args)
                                                  else BI_call_indirect 0%N (N.of_nat num_args)) in
   Ret (instr_pass_params ++ [instr_fidx] ++ [call (length args)]).
-  (* all fns return nothing, typeidx = num args *)
+  (* all fns return nothing, type = num args *)
 
 (* **** TRANSLATE PRIMITIVE VALUES **** *)
 
@@ -671,7 +671,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   body_res <- translate_body nenv cenv lenv fenv penv body ;;
   Ret {| fidx := fn_idx
        ; export_name := function_export_name nenv f
-       ; typeidx := N.of_nat (length args)
+       ; type := N.of_nat (length args)
        ; locals := map (fun _ => T_num T_i32) locals
        ; body := body_res
        |}.
@@ -752,7 +752,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
   let main_function := {| fidx := main_function_idx
                         ; export_name := main_function_name
-                        ; typeidx := 0%N (* [] -> [] *)
+                        ; type := 0%N (* [] -> [] *)
                         ; locals := map (fun _ => T_num T_i32) main_vars
                         ; body := main_instr
                         |}
@@ -778,7 +778,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
   let elements := table_element_mapping (length fns + num_custom_funs) 0 in
 
-  let functions_final := map (fun f => {| modfunc_type := f.(typeidx)
+  let functions_final := map (fun f => {| modfunc_type := f.(type)
                                         ; modfunc_locals := f.(locals)
                                         ; modfunc_body := f.(body)
                                        |}) functions in
