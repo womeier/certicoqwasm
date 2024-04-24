@@ -90,22 +90,18 @@ Definition write_char_function_name := "write_char".
 Definition write_int_function_idx : funcidx := 1%N.
 Definition write_int_function_name := "write_int".
 
-(* write S-expr of constr to stdout *)
-Definition constr_pp_function_name : string := "pretty_print_constructor".
-Definition constr_pp_function_idx : funcidx := 2%N.
-
 (* grow_mem: grow linear mem by number of bytes if necessary *)
 Definition grow_mem_function_name := "grow_mem_if_necessary".
-Definition grow_mem_function_idx : funcidx := 3%N.
+Definition grow_mem_function_idx : funcidx := 2%N.
 
 (* main function: contains the translated main expression *)
 Definition main_function_name := "main_function".
-Definition main_function_idx : funcidx := 4%N.
+Definition main_function_idx : funcidx := 3%N.
 
 (* then follow the translated functions,
    index of first translated lANF fun, a custom fun should be added before, and this var increased by 1
    (the proof will still break at various places)  *)
-Definition num_custom_funs := 5.
+Definition num_custom_funs := 4.
 
 (* global vars *)
 Definition global_mem_ptr    : globalidx := 0%N. (* ptr to free memory, increased when new 'objects' are allocated, there is no GC *)
@@ -220,73 +216,6 @@ Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
   | Some {| ctor_arity := n |} => Ret (N.to_nat n)
   | _ => Err "found constructor without ctor_arity set"
   end.
-
-(* Generation of PP function for constructors
-
-  Function takes as an argument (local 0) the pointer to a constructor, its name is printed.
-  To print the args, for each argument:
-  - local 0 += 4
-  - call constr_pp_function recursively
-*)
-Fixpoint generate_constr_pp_constr_args (calls : nat) (arity : nat) : list basic_instruction :=
-    match calls with
-    | 0        => []
-    | S calls' => [ BI_local_get 0%N
-                  ; BI_const_num (N_to_value 4)
-                  ; BI_binop T_i32 (Binop_i BOI_add)
-                  ; BI_local_set 0%N
-                  ; BI_local_get 0%N
-                  ; BI_load T_i32 None 2%N 0%N     (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-                  ; BI_call constr_pp_function_idx (* call self *)
-                  ] ++ (generate_constr_pp_constr_args calls' arity)
-    end.
-
-Definition generate_constr_pp_single_constr (cenv : ctor_env) (nenv : name_env) (c : ctor_tag) : error (list basic_instruction) :=
-    let ctor_id := Pos.to_nat c in
-    let ctor_name := show_tree (show_con cenv c) in
-    ctor_arity <- get_ctor_arity cenv c ;;
-    if ctor_arity =? 0 then
-      Ret([ BI_const_num (nat_to_value ctor_id)
-          ; BI_local_get 0%N
-          ; BI_const_num (nat_to_value 1)
-          ; BI_binop T_i32 (Binop_i (BOI_shr SX_S))
-          ; BI_relop T_i32 (Relop_i ROI_eq)
-          ; BI_if (BT_valtype None)
-              (instr_write_string (" " ++ ctor_name) ++ [ BI_return ])
-              []
-          ])
-    else
-      Ret([ BI_const_num (nat_to_value ctor_id)
-          ; BI_local_get 0%N
-          ; BI_load T_i32 None 2%N 0%N
-          ; BI_relop T_i32 (Relop_i ROI_eq)
-          ; BI_if (BT_valtype None)
-                (instr_write_string (" (" ++ ctor_name) ++
-                (generate_constr_pp_constr_args ctor_arity ctor_arity) ++ (instr_write_string ")") ++ [ BI_return ])
-                []
-          ]).
-
-Definition generate_constr_pp_function (cenv : ctor_env) (nenv : name_env) (e : cps.exp) : error wasm_function :=
-  let tags := collect_constr_tags e in
-
-  blocks <- sequence (map (generate_constr_pp_single_constr cenv nenv) tags) ;;
-
-  let body := (concat blocks) ++
-                      ((instr_write_string " <can't print constr: ") ++ (* e.g. could be fn-pointer or env-pointer *)
-                          [ BI_local_get 0%N (* param: ptr to constructor *)
-                            ; BI_call write_int_function_idx
-                          ] ++ instr_write_string ">" ) in
-
-  let _ := ")"  (* hack to fix syntax highlighting bug *)
-
-  in
-  Ret {| fidx := constr_pp_function_idx
-       ; export_name := constr_pp_function_name
-       ; type := 1%N (* [i32] -> [] *)
-       ; locals := []
-       ; body := body
-       |}.
-
 
 (* ***** GENERATE FUNCTION TO GROW LINEAR MEMORY ****** *)
 
@@ -728,7 +657,6 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
   let fname_mapping := create_fname_mapping e in
 
-  constr_pp_function <- generate_constr_pp_function cenv nenv e;;
   let grow_mem_function := generate_grow_mem_function in
 
   (* ensure toplevel exp is an Efun*)
@@ -757,7 +685,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                         ; body := main_instr
                         |}
   in
-  let functions := [constr_pp_function; grow_mem_function; main_function] ++ fns in
+  let functions := [grow_mem_function; main_function] ++ fns in
 
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (f.(fidx))
