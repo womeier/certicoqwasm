@@ -1537,7 +1537,7 @@ Proof.
     remember ({| f_locs := [::]; f_inst := f_inst fr |}) as frameInit.
 
     subst lenv.
-    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv funenv fenv nenv penv _
+    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
                     _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
                     HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
                     HeRestr' Hunbound Hstep hs _ _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
@@ -1634,7 +1634,7 @@ Proof.
     remember ({| f_locs := [::]; f_inst := f_inst fr |}) as frameInit.
 
     subst lenv.
-    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv funenv fenv nenv penv _
+    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
                     _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
                     HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
                     HeRestr Hunbound Hstep hs _ _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.

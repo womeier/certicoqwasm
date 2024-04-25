@@ -5795,45 +5795,38 @@ Proof with eauto.
     eapply rt_trans. apply app_trans_const. apply map_const_const_list.
     separate_instr. apply app_trans. apply HredF.
     eapply rt_trans. apply app_trans_const. apply map_const_const_list.
-    admit. admit. admit. admit. (* TODO: wolfgang tailcall *)
-    (*
     dostep'. apply r_return_call_indirect_success. eapply r_call_indirect_success; eauto.
     { (* table identity map *)
       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [Htableid _]]]]]]]]]]]].
-      inv H6. eapply Htableid. eassumption. }
+      inv H6. cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id.
+      - rewrite N2Z.id. eapply Htableid. eassumption.
+      - unfold lookup_N in H13. apply Some_notNone in H13. apply nth_error_Some in H13.
+        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [HfnsBound _]]]]]]]]]].
+        unfold INV_num_functions_bounds in HfnsBound. lia. }
     { (* type *)
       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [Htype _]]]]]]]]]]]]].
       assert (Hlen: length xs = length ys). {
         apply set_lists_length_eq in H2.
         apply get_list_length_eq in H0. rewrite H2 H0. reflexivity. }
-      rewrite Htype. 2: { inv HeRestr. congruence. } rewrite -Hlen. cbn. inv H9.
-      now rewrite map_repeat_eq. } apply rt_refl. apply rt_refl.
+      rewrite Htype. 2: { inv HeRestr. lia. } rewrite -Hlen. cbn. now rewrite Nat2N.id. } apply rt_refl. apply rt_refl.
 
-    (* TODO cleanup *)
     dostep'. eapply r_return_invoke with (a:=fidx); try eassumption; try reflexivity.
     apply map_const_const_list.
-    do 2! rewrite map_length.
+    rewrite map_length repeat_length.
     apply const_val_list_length_eq in HfargsRes.
-    apply set_lists_length_eq in H2. rewrite H2. congruence.
+    apply set_lists_length_eq in H2. rewrite H2. symmetry. assumption.
 
     dostep'.
-    eapply r_invoke_native with (vcs:= map (fun a => (nat_to_value a)) args)
-                                        (f':=f_before_IH); try eassumption.
-    rewrite -Hfinst. subst f_before_IH.
-    reflexivity. unfold v_to_e_list. now rewrite -map_map_seq.
-    reflexivity. reflexivity.
-    { rewrite map_length length_is_size length_is_size size_map
-              -length_is_size -length_is_size.
-    apply const_val_list_length_eq in HfargsRes.
-    apply set_lists_length_eq in H2. rewrite H2. assumption. }
-    reflexivity. reflexivity. subst; reflexivity. cbn.
-    dostep'. apply r_frame. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto. cbn.
+    eapply r_invoke_native with (vs:= map (fun a => VAL_num (N_to_value a)) args); try eassumption; try reflexivity.
+    - unfold v_to_e_list. by rewrite -map_map_seq.
+    - rewrite repeat_length map_length. apply const_val_list_length_eq in HfargsRes.
+      apply set_lists_length_eq in H2. rewrite H2. assumption.
+    - by apply default_vals_i32_Some.
     (* apply IH *)
-    apply Hred.
+    subst f_before_IH. apply Hred.
 
     subst f_before_IH. cbn in Hfinst.
     repeat (split; auto).
-    *)
     }
   - (* Eletapp *)
     (* needs 2 IH, first one for the function body (mostly copy paste from Eapp, could be refactored),
@@ -7047,6 +7040,6 @@ Proof with eauto.
     now intro.
     now intro.
     Unshelve. all: try assumption; try apply ""%bs; try apply [].
-Admitted.
+Qed.
 
 End MAIN.
