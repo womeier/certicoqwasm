@@ -771,17 +771,17 @@ Definition wasm_i64_prim_related (w : Wasm_int.Int64.int) (p : AstCommon.primiti
 (* VALUE RELATION *)
 (* immediate is pointer to linear memory or function id *)
 Inductive repr_val_LambdaANF_Wasm : LambdaANF.cps.val -> store_record -> moduleinst -> wasm_value -> Prop :=
-| Rconstr_unboxed_v : forall v (t : ctor_tag) (sr : store_record) fi ord,
+| Rconstr_unboxed_v : forall v (t : ctor_tag) (sr : store_record) inst ord,
     get_ctor_ord cenv t = Ret ord ->
     (ord * 2 + 1 = v)%N ->
     (-1 < Z.of_N v < Wasm_int.Int32.modulus)%Z ->
     get_ctor_arity cenv t = Ret 0 ->
-    repr_val_LambdaANF_Wasm (Vconstr t []) sr fi (Val_unboxed v)
+    repr_val_LambdaANF_Wasm (Vconstr t []) sr inst (Val_unboxed v)
 
-| Rconstr_boxed_v : forall v t vs (sr : store_record) fi gmp m (addr : u32) arity ord,
+| Rconstr_boxed_v : forall v t vs (sr : store_record) inst gmp m (addr : u32) arity ord,
     (* simple memory model: gmp is increased whenever new mem is needed,
        gmp only increases *)
-    sglob_val sr fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+    sglob_val sr inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
     (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
     (* constr arity > 0 *)
     get_ctor_ord cenv t = Ret ord ->
@@ -791,15 +791,15 @@ Inductive repr_val_LambdaANF_Wasm : LambdaANF.cps.val -> store_record -> modulei
     (addr + 4 <= gmp)%N ->
     (exists n, addr = 2 * n)%N ->
     (* store_record contains memory *)
-    smem sr fi = Some m ->
+    smem sr inst = Some m ->
     (* constructor tag is set, see LambdaANF_to_W, constr alloc structure*)
     v = (nat_to_i32 (N.to_nat ord)) ->
     load_i32 m addr = Some (VAL_int32 v) ->
     (* arguments are set properly *)
-    repr_val_constr_args_LambdaANF_Wasm vs sr fi (4 + addr)%N ->
-    repr_val_LambdaANF_Wasm (Vconstr t vs) sr fi (Val_ptr addr)
+    repr_val_constr_args_LambdaANF_Wasm vs sr inst (4 + addr)%N ->
+    repr_val_LambdaANF_Wasm (Vconstr t vs) sr inst (Val_ptr addr)
 
-| Rfunction_v : forall fds f func sr fi tag xs e e' idx,
+| Rfunction_v : forall fds f func sr inst tag xs e e' idx,
       repr_funvar f idx ->
       find_def f fds = Some (tag, xs, e) ->
       func = {| modfunc_type := N.of_nat (length xs)
@@ -807,48 +807,48 @@ Inductive repr_val_LambdaANF_Wasm : LambdaANF.cps.val -> store_record -> modulei
               ; modfunc_body := e'
               |} ->
       (* find runtime representation of function *)
-      lookup_N sr.(s_funcs) idx = Some (FC_func_native (Tf (repeat (T_num T_i32) (length xs)) []) fi func) ->
+      lookup_N sr.(s_funcs) idx = Some (FC_func_native (Tf (repeat (T_num T_i32) (length xs)) []) inst func) ->
       repr_expr_LambdaANF_Wasm penv (create_local_variable_mapping (xs ++ collect_local_variables e)) e e' ->
-      repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f) sr fi (Val_funidx idx)
+      repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f) sr inst (Val_funidx idx)
 
-|  Rprim_v : forall w p sr fi gmp m addr,
-    sglob_val sr fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+|  Rprim_v : forall w p sr inst gmp m addr,
+    sglob_val sr inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
     (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
     (addr+8 <= gmp)%N ->
     (exists n, addr = 2 * n)%N ->
-    smem sr fi = Some m ->
+    smem sr inst = Some m ->
     wasm_i64_prim_related w p ->
     load_i64 m addr = Some (VAL_int64 w) ->
-    repr_val_LambdaANF_Wasm (Vprim p) sr fi (Val_ptr addr)
+    repr_val_LambdaANF_Wasm (Vprim p) sr inst (Val_ptr addr)
 
 with repr_val_constr_args_LambdaANF_Wasm : list LambdaANF.cps.val -> store_record -> moduleinst -> u32 -> Prop :=
      | Rnil_l: forall sr fr addr,
         repr_val_constr_args_LambdaANF_Wasm nil sr fr addr
 
-     | Rcons_l: forall v wal vs sr fi m addr gmp,
+     | Rcons_l: forall v wal vs sr inst m addr gmp,
         (* store_record contains memory *)
-        smem sr fi = Some m ->
+        smem sr inst = Some m ->
 
-        sglob_val sr fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+        sglob_val sr inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
         (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
         (addr + 4 <= gmp)%N ->
 
         (* constr arg is ptr related to value v *)
         load_i32 m addr = Some (VAL_int32 (wasm_value_to_i32 wal)) ->
-        repr_val_LambdaANF_Wasm v sr fi wal ->
+        repr_val_LambdaANF_Wasm v sr inst wal ->
 
         (* following constr args are also related *)
-        repr_val_constr_args_LambdaANF_Wasm vs sr fi (4 + addr)%N ->
-        repr_val_constr_args_LambdaANF_Wasm (v::vs) sr fi addr.
+        repr_val_constr_args_LambdaANF_Wasm vs sr inst (4 + addr)%N ->
+        repr_val_constr_args_LambdaANF_Wasm (v::vs) sr inst addr.
 
 Scheme repr_val_LambdaANF_Wasm_mut := Induction for repr_val_LambdaANF_Wasm Sort Prop
   with repr_val_constr_args_LambdaANF_Wasm_mut :=
     Induction for repr_val_constr_args_LambdaANF_Wasm Sort Prop.
 
-Lemma val_relation_func_depends_on_funcs : forall val s s' fi i,
+Lemma val_relation_func_depends_on_funcs : forall val s s' inst i,
   s_funcs s = s_funcs s' ->
-  repr_val_LambdaANF_Wasm val s  fi (Val_funidx i) ->
-  repr_val_LambdaANF_Wasm val s' fi (Val_funidx i).
+  repr_val_LambdaANF_Wasm val s  inst (Val_funidx i) ->
+  repr_val_LambdaANF_Wasm val s' inst (Val_funidx i).
 Proof.
   intros ? ? ? ? ? Hfuncs Hval.
   inv Hval. now econstructor; eauto.
@@ -890,21 +890,21 @@ Ltac solve_eq x y :=
   end.
 
 Lemma val_relation_depends_on_mem_smaller_than_gmp_and_funcs :
-  forall v sr sr' m m' fi gmp gmp' value,
+  forall v sr sr' m m' inst gmp gmp' value,
     sr.(s_funcs) = sr'.(s_funcs) ->
-    smem sr fi = Some m ->
-    smem sr' fi = Some m' ->
+    smem sr inst = Some m ->
+    smem sr' inst = Some m' ->
     (* memories agree on values < gmp *)
-    sglob_val sr fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+    sglob_val sr inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
     (Z.of_N gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
-    sglob_val sr' fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp'))) ->
+    sglob_val sr' inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp'))) ->
     (Z.of_N gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
     (gmp' >= gmp)%N ->
     (forall a, (a + 4 <= gmp)%N -> load_i32 m a = load_i32 m' a) ->
     (forall a, (a + 8 <= gmp)%N -> load_i64 m a = load_i64 m' a) ->
 
-    repr_val_LambdaANF_Wasm v sr fi value ->
-    repr_val_LambdaANF_Wasm v sr' fi value.
+    repr_val_LambdaANF_Wasm v sr inst value ->
+    repr_val_LambdaANF_Wasm v sr' inst value.
 Proof.
   intros. inv H9.
   (* Nullary constructor value *)
@@ -912,37 +912,37 @@ Proof.
   (* Non-nullary constructor value *)
   {
   have indPrinciple := repr_val_constr_args_LambdaANF_Wasm_mut
-  (fun (v : cps.val) (s : store_record) (fi : moduleinst) (w : wasm_value)
-       (H: repr_val_LambdaANF_Wasm v s fi w) =>
+  (fun (v : cps.val) (s : store_record) (inst : moduleinst) (w : wasm_value)
+       (H: repr_val_LambdaANF_Wasm v s inst w) =>
        (forall a s' m m',
           s_funcs s = s_funcs s' ->
-          smem s fi = Some m ->
-          smem s' fi = Some m' ->
+          smem s inst = Some m ->
+          smem s' inst = Some m' ->
           (* memories agree on values < gmp *)
-          sglob_val s fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+          sglob_val s inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
           (Z.of_N gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
-          sglob_val s' fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp'))) ->
+          sglob_val s' inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp'))) ->
           (Z.of_N gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
           (gmp' >= gmp)%N ->
           (forall a, (a + 4<= gmp)%N -> load_i32 m a = load_i32 m' a) ->
           (forall a, (a + 8<= gmp)%N -> load_i64 m a = load_i64 m' a) ->
-              repr_val_LambdaANF_Wasm v s' fi w)
+              repr_val_LambdaANF_Wasm v s' inst w)
     )
-  (fun (l : seq cps.val) (s : store_record) (fi : moduleinst) (addr : u32)
-       (H: repr_val_constr_args_LambdaANF_Wasm l s fi addr) =>
+  (fun (l : seq cps.val) (s : store_record) (inst : moduleinst) (addr : u32)
+       (H: repr_val_constr_args_LambdaANF_Wasm l s inst addr) =>
        (forall a s' m m',
           s_funcs s = s_funcs s' ->
-          smem s fi = Some m ->
-          smem s' fi = Some m' ->
+          smem s inst = Some m ->
+          smem s' inst = Some m' ->
           (* memories agree on values < gmp *)
-          sglob_val s fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+          sglob_val s inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
           (Z.of_N gmp + 8 <= Z.of_N (mem_length m) < Wasm_int.Int32.modulus)%Z ->
-          sglob_val s' fi global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp'))) ->
+          sglob_val s' inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp'))) ->
           (Z.of_N gmp' + 8 <= Z.of_N (mem_length m') < Wasm_int.Int32.modulus)%Z ->
           (gmp' >= gmp)%N ->
           (forall a, (a + 4 <= gmp)%N -> load_i32 m a = load_i32 m' a) ->
           (forall a, (a + 8 <= gmp)%N -> load_i64 m a = load_i64 m' a) ->
-             repr_val_constr_args_LambdaANF_Wasm l s' fi addr)
+             repr_val_constr_args_LambdaANF_Wasm l s' inst addr)
   ). have H20' := H20.
     eapply indPrinciple in H20; intros; clear indPrinciple; try eassumption; try lia.
     { solve_eq gmp0 gmp.
@@ -975,16 +975,14 @@ Qed.
 
 
 (* RESULT RELATION *)
-Definition result_val_LambdaANF_Wasm (val : LambdaANF.cps.val)
-                                        (sr : store_record) (fi : moduleinst) : Prop :=
-
+Definition result_val_LambdaANF_Wasm (val : LambdaANF.cps.val) (sr : store_record) (inst : moduleinst) : Prop :=
      (exists res_i32 wasmval,
        (* global var *result_var* contains correct return value *)
-       sglob_val sr fi result_var = Some (VAL_num (VAL_int32 res_i32))
+       sglob_val sr inst result_var = Some (VAL_num (VAL_int32 res_i32))
          /\ wasm_value_to_i32 wasmval = res_i32
-         /\ repr_val_LambdaANF_Wasm val sr fi wasmval
-         /\ (sglob_val sr fi result_out_of_mem = Some (VAL_num (nat_to_value 0))))
-  \/ (sglob_val sr fi result_out_of_mem = Some (VAL_num (nat_to_value 1))).
+         /\ repr_val_LambdaANF_Wasm val sr inst wasmval
+         /\ (sglob_val sr inst result_out_of_mem = Some (VAL_num (nat_to_value 0))))
+  \/ (sglob_val sr inst result_out_of_mem = Some (VAL_num (nat_to_value 1))).
 
 
 (* ENVIRONMENT RELATION (also named memory relation in C-backend) *)
@@ -1914,8 +1912,8 @@ Proof.
   intros n vs v sr fr addr m Hinv H H1 H2. generalize dependent v.
   generalize dependent n. generalize dependent m.
   induction H2; intros. 1: inv H.
-  assert (n = N.of_nat (N.to_nat n)) as Heq by lia. rewrite Heq in H7. generalize dependent v0. revert Heq.
-  induction (N.to_nat n); intros; rewrite ->Heq in *; clear Heq.
+  generalize dependent v0.
+  induction n using N.peano_ind; intros.
   - (* n = 0 *)
     inv H7. assert (m = m0) by congruence. subst m0. rewrite N.add_comm. unfold load_i32 in H3.
     destruct (load m addr 0%N 4) eqn:Hl; inv H3. exists b. exists wal.
@@ -1925,39 +1923,13 @@ Proof.
     have H' := decode_int32_bounds _ _ _ Hl. simpl_eq.
     rewrite Wasm_int.Int32.Z_mod_modulus_id in H8; auto.
     eapply value_bounds; eauto. assumption.
-  - (* n = S n0 *)
+  - (* n = succ n0 *)
     cbn in H7.
-    replace (match
-         match Pos.of_succ_nat n0 with
-         | (p~1)%positive => Pos.IsPos p~0
-         | (p~0)%positive => Pos.IsPos (Pos.pred_double p)
-         | 1%positive => Pos.IsNul
-         end
-       with
-       | Pos.IsPos p => N.pos p
-       | _ => 0
-       end)%N with (N.of_nat n0)%N in H7.
-    2: { destruct (N.succ (N.of_nat n0)) eqn:Heqn. lia.
-         destruct (Pos.of_succ_nat n0) eqn:Har; lia. }
+    destruct (N.succ n) eqn:Hn; first by lia. rewrite <-Hn in *.
+    replace (N.succ n - 1)%N with n in H7 by lia. clear Hn p.
     edestruct IHrepr_val_constr_args_LambdaANF_Wasm; try eassumption.
     destruct H8 as [wal' [Hl [Heq Hval]]].
     exists x. exists wal'. split. rewrite -Hl. f_equal. lia. split; eauto.
-Qed.
-
-(* TODO get rid of *)
-Lemma memory_grow_success' : forall m sr fr,
-  INV_linear_memory sr fr ->
-  smem sr (f_inst fr) = Some m ->
-  (mem_size m + 1 <=? max_mem_pages)%N ->
-  exists m', mem_grow m 1 = Some m'.
-Proof.
-  intros m sr fr Hinv H Hsize. eexists. unfold mem_grow.
-  assert ((mem_size m + 1 <=? page_limit)%N) as H'. {
-    unfold max_mem_pages in H. unfold page_limit. apply N.leb_le.
-    apply N.leb_le in Hsize. unfold max_mem_pages in Hsize. lia.
-  } rewrite H'. clear H'.
-  unfold INV_linear_memory in Hinv. destruct Hinv as [H1 [m' [H2 [H3 [H4 [H5 H6]]]]]].
-  rewrite H2 in H. inv H. unfold mem_max_opt in H5. rewrite H5. cbn. rewrite Hsize. reflexivity.
 Qed.
 
 Lemma memory_grow_success : forall m sr fr,

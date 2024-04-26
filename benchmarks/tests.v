@@ -114,25 +114,25 @@ Definition even_10000 := even 10000.
 Definition bernstein_yang := W 10.
 
 Eval compute in "Compiling ack".
-CertiCoq Compile Wasm -debug ack_3_9.
+CertiCoq Compile Wasm ack_3_9.
 
 Eval compute in "Compiling even_10000".
-CertiCoq Compile Wasm -debug even_10000.
+CertiCoq Compile Wasm even_10000.
 
 Eval compute in "Bernstein yang termination".
-CertiCoq Compile Wasm -debug bernstein_yang.
+CertiCoq Compile Wasm bernstein_yang.
 (* bernstein_yang: compilation fine, runs for quite long *)
 
 (*******************************************************************)
 Eval compute in "Compiling demo1".
-CertiCoq Compile Wasm -debug demo1.
+CertiCoq Compile Wasm demo1.
 
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo1. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
 (* CertiCoq Generate Glue -file "glue_demo1" [ list, bool ]. *)
 
 Eval compute in "Compiling demo2".
-CertiCoq Compile Wasm -debug demo2.
+CertiCoq Compile Wasm demo2.
 
 (* CertiCoq Compile -O 0 -cps -ext "_cps" demo2. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" demo2. *)
@@ -148,7 +148,7 @@ CertiCoq Compile Wasm -cps -debug demo3.
 (* CertiCoq Generate Glue -file "glue_demo3" [ list, bool ]. *)
 
 Eval compute in "Compiling list_sum".
-CertiCoq Compile Wasm -debug list_sum.
+CertiCoq Compile Wasm list_sum.
 (* CertiCoq Compile -O 0 -cps -ext "_cps" list_sum. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" list_sum. *)
 (* CertiCoq Generate Glue -file "glue_list_sum" [ nat ]. *)
@@ -157,14 +157,14 @@ CertiCoq Compile Wasm -debug list_sum.
 CertiCoq Compile Wasm -debug list_sum_primitive. *)
 
 Eval compute in "Compiling vs_easy".
-CertiCoq Compile Wasm -time -debug vs_easy.
+CertiCoq Compile Wasm vs_easy.
 (* CertiCoq Compile Wasm -cps -time -debug vs_easy. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" -time_anf vs_easy. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" vs_easy. *)
 (* CertiCoq Generate Glue -file "glue_vs_easy" [ list, bool, vs.space_atom, vs.clause ]. *)
 
 Eval compute in "Compiling vs_hard".
-CertiCoq Compile Wasm -time -debug vs_hard.
+CertiCoq Compile Wasm vs_hard.
 (* CertiCoq Compile Wasm -cps -time -debug vs_hard. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" vs_hard. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" vs_hard. *)
@@ -172,7 +172,7 @@ CertiCoq Compile Wasm -time -debug vs_hard.
 
 
 Eval compute in "Compiling binom".
-CertiCoq Compile Wasm -time -debug binom.
+CertiCoq Compile Wasm binom.
 (* CertiCoq Show IR -file "binom" binom. *)
 (* CertiCoq Compile Wasm -cps -time -debug binom. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" binom. *)
@@ -189,7 +189,7 @@ CertiCoq Compile -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *)
 (* CertiCoq Generate Glue -file "glue_lazy_factorial" [ ]. *)
 
 Eval compute in "Compiling color".
-CertiCoq Compile Wasm -time -debug color.
+CertiCoq Compile Wasm color.
 
 (* CertiCoq Compile -O 0 -time -cps -ext "_cps" color. *)
 (* CertiCoq Compile -time -cps -ext "_cps_opt" color. *)
@@ -205,7 +205,7 @@ CertiCoq Compile Wasm -time -debug color.
 (* CertiCoq Generate Glue -file "glue_sha" [ ]. *)
 
 Eval compute in "Compiling sha_fast".
-CertiCoq Compile Wasm -time -debug sha_fast.
+CertiCoq Compile Wasm sha_fast.
 (* CertiCoq Compile Wasm -cps -time -debug sha_fast. *)
 (* CertiCoq Compile -O 0 -cps -ext "_cps" sha_fast. *)
 (* CertiCoq Compile -cps -ext "_cps_opt" sha_fast. *)
@@ -235,9 +235,9 @@ Definition sm_gauss_PrimInt :=
   | _ => None
   end.
 
-CertiCoq Compile Wasm -debug sm_gauss_nat.
+CertiCoq Compile Wasm sm_gauss_nat.
 
-CertiCoq Compile Wasm -debug sm_gauss_N.
+CertiCoq Compile Wasm sm_gauss_N.
 
 (* Not supported yet *)
 (* CertiCoq Compile Wasm -debug sm_gauss_PrimInt. *)
