@@ -7,7 +7,7 @@ Require Import LambdaANF.cps LambdaANF.eval LambdaANF.cps_util LambdaANF.List_ut
 
 Require Import Coq.Program.Program Coq.Sets.Ensembles
                Coq.Logic.Decidable Coq.Lists.ListDec
-               Coq.Relations.Relations Relations.Relation_Operators Lia.
+               Coq.Relations.Relations Relations.Relation_Operators Lia Nnat.
 
 Require Import compcert.lib.Integers compcert.common.Memory.
 
@@ -740,8 +740,8 @@ Proof.
   - (* i=Si' *)
     by eapply IHfds; eauto.
 Qed.
-(*
-Lemma translate_functions_increasing_fids : forall fds fns fenv e e',
+
+(* Lemma translate_functions_increasing_fids : forall fds fns fenv e e',
   fenv = create_fname_mapping e ->
   match e with Efun fds' _ => fds' = fds | _ => True end ->
   map_injective fenv ->
@@ -781,7 +781,7 @@ Proof.
   rewrite (var_mapping_list_lt_length_nth_error_idx _ _ num_custom_funs _ _ _ Hiv) in Hi''; auto.
   rewrite (var_mapping_list_lt_length_nth_error_idx _ _ num_custom_funs _ _ _ Hjv') in Hj''; auto.
   inv Hi''. inv Hj''. lia.
-Qed.
+Qed. *)
 
 Lemma increasing_list_fact_trans : forall n l i i' i'n,
   (forall i j i' j', i > j -> nth_error l i = Some i' ->
@@ -827,14 +827,14 @@ Proof.
   lia.
 Qed.
 
-Lemma fns_fidx_nth_error_fidx : forall fns func j,
-  (forall (i j : nat) (i' j' : immediate),
+(* Lemma fns_fidx_nth_error_fidx : forall fns func j,
+  (forall (i j : nat) (i' j' : funcidx),
       i > j ->
       nth_error [seq fidx f | f <- fns] i = Some i' ->
-      nth_error [seq fidx f | f <- fns] j = Some j' -> i' > j') ->
-  (forall idx, In idx (map fidx fns) -> num_custom_funs <= idx < length fns + num_custom_funs) ->
+      nth_error [seq fidx f | f <- fns] j = Some j' -> (i' > j')%N) ->
+  (forall idx, In idx (map fidx fns) -> N.of_nat num_custom_funs <= idx < N.of_nat (length fns + num_custom_funs))%N ->
   nth_error fns j = Some func ->
-  nth_error fns (fidx func - num_custom_funs) = Some func.
+  nth_error fns (N.to_nat (fidx func - N.of_nat num_custom_funs)) = Some func.
 Proof.
   intros. unfold num_custom_funs in *.
   assert (Hin: In func fns). { eapply nth_error_In. eassumption. }
@@ -856,7 +856,7 @@ Proof.
   have H' := increasing_list_fact_id _ _ _ num_custom_funs H Hbounds Ho.
   unfold num_custom_funs in H'.
   assert (i=j) by lia. congruence.
-Qed.
+Qed. *)
 
 Lemma translate_functions_NoDup : forall fds fns fenv e e',
   fenv = create_fname_mapping e ->
@@ -866,7 +866,7 @@ Lemma translate_functions_NoDup : forall fds fns fenv e e',
   translate_functions nenv cenv fenv penv fds = Ret fns ->
   NoDup (map (fun f => fidx f) fns).
 Proof.
-  intros ? ? ? ? ? ? Hfds Hinj Hnodup HtransFns. subst fenv.
+(*   intros ? ? ? ? ? ? Hfds Hinj Hnodup HtransFns. subst fenv.
   have H' := translate_functions_increasing_fids _ _ _ _ _ Logic.eq_refl Hfds Hinj Hnodup HtransFns.
   apply NoDup_nth_error. intros ? ? HiLen Heq.
   destruct (Nat.eq_dec i j); auto. exfalso.
@@ -878,7 +878,7 @@ Proof.
   (* i>j *)
   assert (Hgt: i>j) by lia.
   have Hcontra := H' _ _ _ _ Hgt Hv Heq. lia.
-Qed.
+Qed. *) Admitted.
 
 Lemma translate_functions_nth_error_idx : forall eTop e eAny fds fns j func,
   match eTop with
@@ -888,8 +888,8 @@ Lemma translate_functions_nth_error_idx : forall eTop e eAny fds fns j func,
   NoDup (collect_function_vars (Efun fds eAny)) ->
   translate_functions nenv cenv (create_fname_mapping eTop) penv fds = Ret fns ->
   nth_error fns j = Some func ->
-  j = fidx func - num_custom_funs.
-Proof.
+  (j = N.to_nat (fidx func) - num_custom_funs).
+(* Proof.
   intros ??????? Htop Hnodup Hfns Hin.
   assert (Hinj: map_injective (create_fname_mapping eTop)). {
     apply create_local_variable_mapping_injective.
@@ -918,18 +918,20 @@ Proof.
   apply NoDup_nth_error in Hnth =>//.
   have Hnodup' := translate_functions_NoDup _ _ _ _ _ Logic.eq_refl Hfds Hinj Hnodup Hfns.
   now eapply NoDup_map_inv.
-Qed.
+Qed. *) Admitted.
 
 Lemma translate_functions_find_def : forall fds f fns t ys e fenv,
   NoDup (collect_function_vars (Efun fds e)) ->
   translate_functions nenv cenv fenv penv fds = Ret fns ->
   find_def f fds = Some (t, ys, e) ->
   (forall f t ys e, find_def f fds = Some (t, ys, e) -> correct_cenv_of_exp cenv e) ->
-  exists idx e' locs ftype func, repr_funvar fenv nenv f idx /\
-    locs = repeat T_i32 (length (collect_local_variables e)) /\
-    ftype = Tf (List.map (fun _ => T_i32) ys) [] /\
+  exists idx e' locs func, repr_funvar fenv nenv f idx /\
+    locs = repeat (T_num T_i32) (length (collect_local_variables e)) /\
     In func fns /\
-    func.(fidx) = idx /\ func.(type) = ftype /\ func.(locals) = locs /\ func.(body) = e' /\
+    func.(fidx) = idx /\
+    func.(type) = N.of_nat (length ys) /\
+    func.(locals) = locs /\
+    func.(body) = e' /\
     repr_expr_LambdaANF_Wasm cenv fenv nenv penv e e'
      (lenv := create_local_variable_mapping (ys ++ collect_local_variables e)).
 Proof.
@@ -943,12 +945,11 @@ Proof.
     unfold translate_function in Hf.
     destruct (translate_var _ _ _ _) eqn:Hvar. inv Hf.
     destruct (translate_body _ _ _ _ _) eqn:Hexp; inv Hf.
-    exists i, l. eexists. eexists. eexists.
-    split. { now econstructor. }
-    do 2! (split; try reflexivity).
-    split. now left.
+    exists u, l. eexists. eexists. eexists.
+    now econstructor.
+    do 2! (split; try reflexivity). now left.
     cbn. rewrite map_repeat_eq.
-    repeat (split; first reflexivity).
+    repeat split=>//.
     eapply translate_body_correct in Hexp; eauto. eapply HcorrCenv with (f:=v). cbn.
     by destruct (M.elt_eq v v).
   - (* f0<>v *)
@@ -963,13 +964,10 @@ Proof.
       destruct (M.elt_eq f1 v); auto; congruence.
     }
     have IH := IHfds _ _ _ _ _ _ Hnodup' Hfns HfDef HcorrCenv'.
-    destruct IH as [idx [e' [locs [type [func [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]].
-    inversion H.
-    repeat eexists.
-    repeat (split; eauto). subst idx. eassumption.
-    now right. all: congruence.
+    destruct IH as [idx [e' [locs [func [? [? [? [? [? [? [? ?]]]]]]]]]]].
+    inversion H. subst. inv H.
+    repeat eexists; eauto. now right.
 Qed.
-*)
 
 Lemma gen_fun_instance_simplify_eq : forall fns mi,
   (Z.of_nat (length fns) < max_num_functions)%Z ->
@@ -1278,25 +1276,26 @@ Proof.
     destruct e; inv HtopExp'; inv HtransFns; auto.
     symmetry. eapply translate_functions_length. eassumption. }
   split. (* val relation holds for functions *)
-  { admit.
-(*     intros. apply notNone_Some in H. destruct H as [[[v' ys'] e''] Hfd].
+  { intros. apply notNone_Some in H. destruct H as [[[v' ys'] e''] Hfd].
     assert (Hnodup' : NoDup (collect_function_vars (Efun fds e))). {
       replace (collect_function_vars (Efun fds e'')) with
               (collect_function_vars (Efun fds e0)) by reflexivity. assumption. }
 
     have H' := translate_functions_find_def _ _ _ _ _ e'' _ Hnodup' HtransFns Hfd HcenvCorrect.
-    destruct H' as [fidx [e''' [? [? [func [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]].
+    destruct H' as [fidx [e''' [? [func [? [? [? [? [? [? [? ?]]]]]]]]]]].
     subst. eauto.
     exists (fidx func).
     split. { inv H. unfold translate_var. unfold translate_var in H0.
-      now destruct ((create_fname_mapping e) ! a). }
+      destruct ((create_fname_mapping e) ! a) eqn:Hmap; rewrite Hmap in H0=>//.
+      rewrite Hmap. by injection H0 as ->. }
     econstructor; eauto. rewrite Hfuncs. cbn.
-    assert (fidx func >= num_custom_funs). { inv H. unfold translate_var in H0.
-      destruct ((create_fname_mapping e) ! a) eqn:Ha; inv H0.
-      now apply local_variable_mapping_gt_idx in Ha. }
+    unfold lookup_N.
+    assert ((N.to_nat (fidx func)) >= num_custom_funs). { inv H. unfold translate_var in H0.
+      destruct ((create_fname_mapping e) ! a) eqn:Ha; rewrite Ha in H0=>//. injection H0 as ->.
+      apply local_variable_mapping_gt_idx in Ha. lia. }
 
-    assert (nth_error fns (fidx func - num_custom_funs) = Some func). {
-      apply In_nth_error in H2. destruct H2 as [j Hj].
+    assert (nth_error fns ((N.to_nat (fidx func)) - num_custom_funs) = Some func). {
+      apply In_nth_error in H1. destruct H1 as [j Hj].
       erewrite <- translate_functions_nth_error_idx; eauto. }
     unfold num_custom_funs in *.
 
@@ -1311,12 +1310,19 @@ Proof.
       now eapply NoDup_map_inv.
     }
 
-    destruct (fidx func). lia. do 4! (destruct i; try lia). cbn.
-    replace (S (S (S (S (S i)))) - 5) with i in H1 by lia.
+    destruct (N.to_nat (fidx func)). lia. do 3! (destruct n; try lia). cbn.
+    replace (S (S (S (S n))) - 4) with n in H2 by lia.
 
-    rewrite nth_error_map.
-    rewrite H1. cbn. f_equal. f_equal. rewrite H4.
-    now rewrite map_repeat_eq -map_map_seq. *)
+    do 2! rewrite nth_error_map. rewrite H2.
+    cbn. f_equal. unfold gen_func_instance.
+    rewrite F6. cbn. f_equal. rewrite H4.
+    assert (HtypeBound : (type func <= 20)%N). {
+      eapply translate_functions_type_bound; eauto.
+      destruct e; inv HtopExp'=>//. by inv HeRestr.
+    }
+    unfold lookup_N. erewrite nth_error_nth'. 2:{ rewrite length_list_function_types. lia. }
+    rewrite nth_list_function_types; try lia.
+    rewrite H3. by rewrite Nat2N.id.
   }
   (* from exists statement on *)
   do 2 eexists. exists e', fns. do 2 split=>//. rewrite Hfuncs.
