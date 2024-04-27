@@ -208,8 +208,8 @@ Proof.
     { (* f0=v *) subst f0. rewrite M.gss in Hf. inv Hf. lia. }
     { (* f0<>v *) cbn in Hf. rewrite M.gso in Hf; auto.
       apply IHfds in Hf. injection Heqlen as ->. cbn. destruct n; try lia.
-      destruct p; lia. assumption. intros.
-      apply H in H0. cbn in H0. destruct n; try lia. destruct p; lia. }
+      assumption. intros.
+      apply H in H0. cbn in H0. destruct n; lia. }
   - inv H0. now apply H in H2.
 Qed.
 
