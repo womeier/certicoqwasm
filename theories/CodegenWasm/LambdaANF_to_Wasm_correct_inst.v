@@ -971,6 +971,54 @@ Proof.
 Qed.
 *)
 
+Lemma gen_fun_instance_simplify_eq : forall fns mi,
+  (Z.of_nat (length fns) < max_num_functions)%Z ->
+  (forall fn, In fn fns -> type fn <= 20)%N ->
+  inst_types mi = list_function_types (Pos.to_nat 20) ->
+  [seq gen_func_instance {| modfunc_type := type fn; modfunc_locals := locals fn; modfunc_body := body fn |}
+         mi
+     | fn <- fns] =
+  [seq FC_func_native (Tf (repeat (T_num T_i32) (N.to_nat (type fn))) [::])
+         (f_inst {| f_locs := [::]; f_inst := mi |})
+         {| modfunc_type := type fn; modfunc_locals := locals fn; modfunc_body := body fn |}
+     | fn <- fns].
+Proof.
+  induction fns; intros=>//. cbn. f_equal.
+  - unfold gen_func_instance. rewrite H1.
+    assert (type a <= 20)%N by (apply H0; cbn; auto).
+    unfold lookup_N. cbn. rewrite (nth_error_nth' _ (Tf [] [])). 2:{ rewrite length_list_function_types. lia. }
+    rewrite nth_list_function_types; try lia=>//. reflexivity.
+  - cbn in H. apply IHfns; eauto; try lia.
+    intros. by apply H0; cbn; auto.
+Qed.
+
+(* TODO move up *)
+Lemma translate_functions_type_bound {fenv} : forall fds fns fn eAny,
+  NoDup (collect_function_vars (Efun fds eAny)) ->
+  (forall f t ys e', find_def f fds = Some (t, ys, e') ->
+             Z.of_nat (length ys) <= max_function_args /\
+             expression_restricted cenv e')%Z ->
+  translate_functions nenv cenv fenv penv fds = Ret fns ->
+  In fn fns ->
+  (type fn <= 20)%N.
+Proof.
+  induction fds. 2:{ intros. by inv H1. }
+  intros ??? Hnodup Hrestr Htrans Hin. cbn in Htrans.
+  destruct (translate_var nenv fenv v "translate function") eqn:Hvar=>//.
+  destruct (translate_body _ _ _ _ _) eqn:Hbody=>//.
+  destruct (translate_functions _ _ _ _ _) eqn:Hfns=>//. inv Htrans.
+  have H' := Hrestr v f l e. cbn in H'. destruct (M.elt_eq v v)=>//. destruct H' as [H' _]=>//.
+  unfold max_function_args in H'.
+  destruct Hin as [Hin|Hin].
+  - subst. cbn. lia.
+  - eapply IHfds; eauto.
+    + cbn in Hnodup. inv Hnodup. eassumption.
+    + intros. eapply Hrestr with (f:=f0); eauto. cbn.
+      destruct (M.elt_eq f0 v); eauto. exfalso.
+      subst. inv Hnodup. apply H2. apply find_def_in_collect_function_vars; auto. congruence.
+Unshelve. assumption.
+Qed.
+
 Theorem module_instantiate_INV_and_more_hold :
 forall e eAny topExp fds num_funs module fenv main_lenv sr f initExprs,
   NoDup (collect_function_vars (Efun fds eAny)) ->
@@ -1273,28 +1321,17 @@ Proof.
   (* from exists statement on *)
   do 2 eexists. exists e', fns. do 2 split=>//. rewrite Hfuncs.
   split. do 4 f_equal.
-  assert (HfRepeat: (fun x : wasm_function =>
-     FC_func_native (host_function:=host_function) (f_inst f)
-         match type x with
-         | Tf args _ => Tf (repeat T_i32 (Datatypes.length args)) []
-         end (locals x) (body x)) = (fun x : wasm_function =>
-     FC_func_native (f_inst f)
-         (Tf (repeat T_i32
-               match type x with
-               | Tf args _ => Datatypes.length args
-               end) []) (locals x) (body x))). {
-      apply functional_extensionality. intros.
-      now destruct (type x).
-  }
-  rewrite HfRepeat.
-	rewrite HtopExp'. split. reflexivity.
+  by destruct e; inv HtopExp'.
+  rewrite <- map_map_seq.
+  { clear Hmodule Hglobals HinstElem F.
+   rewrite gen_fun_instance_simplify_eq; eauto.
+   - apply translate_functions_length in HtransFns. lia.
+   - intros. eapply translate_functions_type_bound; eauto.
+     destruct e; inv HtopExp'=>//. inv HeRestr. assumption. }
 	split=>//. rewrite -Hexpr.
-	replace (match e with | Efun _ exp => exp
-                        | _ => e end) with e0 by now destruct e.
-  reflexivity.
+	destruct e; inv HtopExp'=>//.
 Unshelve. apply (Tf [] []).
-Qed.
- *)
+Admitted.
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 Theorem LambdaANF_Wasm_related :
