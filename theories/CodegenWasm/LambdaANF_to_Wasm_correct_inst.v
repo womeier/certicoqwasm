@@ -456,24 +456,6 @@ Proof.
    }}
 Qed. *)
 
-(* Lemma init_tabs_only_changes_tables : forall s s' f l1 l2,
-  length l1 = length l2 ->
-  s' = init_tabs host_function s (f_inst f) l1 l2 ->
-     s_funcs s = s_funcs s'
-  /\ s_mems s = s_mems s'
-  /\ s_globals s = s_globals s'.
-Proof.
-  intros. subst. revert s f l2 H.
-  induction l1; intros; cbn; auto.
-  destruct l2; first inv H.
-  assert (Hlen: length l1 = length l2). { cbn in H. lia. } clear H.
-  have IH := IHl1 (init_tab host_function s (f_inst f) a m) f _ Hlen.
-  destruct IH as [IH1 [IH2 IH3]]. cbn. unfold init_tabs in IH2.
-  rewrite -IH1 -IH2 -IH3.
-  unfold init_tab.
-  now destruct (List.nth _ _ _).
-Qed. *)
-
 Lemma eoffs_nodup : forall e_offs,
   (Z.of_nat (Datatypes.length e_offs) < Wasm_int.Int32.modulus)%Z ->
   (forall i, i < Datatypes.length e_offs ->
@@ -496,7 +478,6 @@ Proof.
     rewrite H in Hsame. inv Hsame.
   }
 Qed.
-
 
 (* Lemma reduce_forall_elem_effect : forall fns l f s state,
   Forall2 (fun (e : module_element) (c : Wasm_int.Int32.T) =>
@@ -1716,30 +1697,29 @@ Ltac separate_instr :=
      lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
   end.
 
-(*
 (* for main function, translated fns *)
 Definition context_restr (lenv: localvar_env) (c: t_context) :=
   (* locals in bound, i32 *)
-  (forall x x', @repr_var nenv lenv x x' -> nth_error (tc_local c) x' = Some T_i32) /\
+  (forall x x', @repr_var nenv lenv x x' -> lookup_N (tc_locals c) x' = Some (T_num T_i32)) /\
   (* globals i32, mut *)
   (forall var, In var [global_mem_ptr; constr_alloc_ptr; result_var; result_out_of_mem] ->
-    nth_error (tc_global c) var = Some {| tg_mut:= MUT_mut; tg_t:= T_i32|}) /\
+    lookup_N (tc_globals c) var = Some {| tg_mut:= MUT_var; tg_t:= T_num T_i32|}) /\
   (* no return value *)
   (tc_return c = Some []) /\
   (* mem exists *)
-  (tc_memory c <> []) /\
+  (tc_mems c <> []) /\
   (* table *)
-  (tc_table c <> [::]) /\
+  (tc_tables c <> [::]) /\
   (* grow mem func *)
-  (grow_mem_function_idx < length (tc_func_t c)) /\
-  (nth_error (tc_func_t c) grow_mem_function_idx = Some (Tf [:: T_i32] [::])) /\
+  (N.to_nat grow_mem_function_idx < length (tc_funcs c)) /\
+  (lookup_N (tc_funcs c) grow_mem_function_idx = Some (Tf [:: T_num T_i32] [::])) /\
   (* function types *)
-  (Z.of_nat (length (tc_types_t c)) > max_function_args)%Z /\
-  (forall i, (Z.of_nat i <= max_function_args)%Z -> nth_error (tc_types_t c) i = Some (Tf (repeat T_i32 i) [::])).
+  (Z.of_nat (length (tc_types c)) > max_function_args)%Z /\
+  (forall i, (Z.of_nat i <= max_function_args)%Z -> nth_error (tc_types c) i = Some (Tf (repeat (T_num T_i32) i) [::])).
 
 Lemma update_label_preserves_context_restr lenv c :
   context_restr lenv c ->
-  context_restr lenv (upd_label c ([:: [::]] ++ tc_label c)%list).
+  context_restr lenv (upd_label c ([:: [::]] ++ tc_labels c)%list).
 Proof. auto. Qed.
 
 (* Prove that a list of instructions is well-typed, context_restr is required to hold *)
@@ -1747,180 +1727,106 @@ Ltac solve_bet Hcontext :=
   let Hglob := fresh "Hglob" in
   simpl; try rewrite List.app_nil_r;
   match goal with
-  (* locals general *)
-  | H: repr_var _ _ ?x' |- be_typing _ [:: BI_get_local ?x'] (Tf [::] _) =>
-      apply Hcontext in H; apply bet_get_local; last eassumption; apply /ssrnat.leP; simpl in *; now apply nth_error_Some
-  | H: repr_var _ _ ?x' |- be_typing _ [:: BI_set_local ?x'] (Tf [::_] _) =>
-      apply Hcontext in H; apply bet_set_local; last eassumption; apply /ssrnat.leP; simpl in *; now apply nth_error_Some
+  | |- be_typing _ [::] (Tf [::] [::]) => by apply bet_empty
+  (* globals *)
+  | |- be_typing ?context [:: BI_global_get ?var] _ =>
+         assert (lookup_N (tc_globals context) var = Some {| tg_mut:= MUT_var; tg_t := T_num T_i32 |}) as Hglob by
+          (apply Hcontext; now cbn); eapply bet_global_get with (t:=T_num T_i32); [eassumption | now cbn]
+  | |- be_typing ?context [:: BI_global_set ?var] _ =>
+         assert (lookup_N (tc_globals context) var = Some {| tg_mut:= MUT_var; tg_t := T_num T_i32 |}) as Hglob by
+          (apply Hcontext; now cbn); eapply bet_global_set with (t:=T_num T_i32); [eassumption | now cbn | now cbn]
+  (* locals with mapping *)
+(*   | H: repr_var _ _ ?x' |- be_typing _ [:: BI_local_get ?x'] (Tf [::] _) =>
+         apply Hcontext in H; apply bet_local_get; last eassumption; apply /ssrnat.leP; simpl in *; now apply nth_error_Some
+  | H: repr_var _ _ ?x' |- be_typing _ [:: BI_local_set ?x'] (Tf [::_] _) =>
+         apply Hcontext in H; apply bet_local_set; last eassumption; apply /ssrnat.leP; simpl in *; now apply nth_error_Some *)
+  (* locals without mapping (e.g. grow_mem) *)
+  | |- be_typing ?context [:: BI_local_set 0%N] _ =>
+         apply bet_local_set; eassumption
+  | |- be_typing ?context [:: BI_local_get 0%N] _ =>
+         apply bet_local_get; eassumption
+  (* arithmetic *)
+  | |- be_typing _ [:: BI_const_num _] (Tf [::] _) =>
+        apply bet_const_num
+  | |- be_typing _ [:: BI_testop (T_num T_i32) _] (Tf [:: _] _) =>
+        apply bet_testop; by simpl
+  | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) =>
+        apply bet_binop; apply Binop_i32_agree
+(*   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
+         apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_binop; apply Binop_i32_agree *)
+  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) =>
+         apply bet_binop; apply Binop_i64_agree
+  | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) =>
+         apply bet_relop; apply Relop_i32_agree
+  (* memory *)
+  | H: lookup_N (tc_mems _) 0 = Some _ |- be_typing _ [:: BI_memory_size] (Tf [::] _) => eapply bet_memory_size; apply H
+  | H: lookup_N (tc_mems _) 0 = Some _ |- be_typing _ [:: BI_memory_grow] (Tf [:: T_num T_i32] _) => eapply bet_memory_grow; apply H
+  (* simple if statement *)
+  | |- be_typing _ [:: BI_if (BT_valtype None) _ _] _ =>
+         apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext
+  (* if above failed, try to frame the leading const *)
+  | |- be_typing _ _ (Tf [:: T_num T_i32] _) =>
+         apply bet_weakening with (ts:=[::T_num T_i32]); solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i32] _) =>
+         apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
+         apply bet_weakening with (ts:=[::T_num T_i32; T_num T_i32]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64] _) =>
+         apply bet_weakening with (ts:=[::T_num T_i32; T_num T_i64]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64; T_num T_i64] _) =>
+         apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64; T_num T_i32] _) =>
+         apply bet_weakening with (ts:=[::T_num T_i32; T_num T_i64]); by solve_bet Hcontext
+  end.
+  (*
+
   (* param for pp *)
-  | H: nth_error (tc_local _) ?i = Some T_i32 |- be_typing _ [:: BI_get_local ?i] (Tf [::] _) =>
-      apply bet_get_local; last eassumption; apply /ssrnat.leP; apply nth_error_Some; simpl in *; congruence
-  | H: nth_error (tc_local _) ?i = Some T_i32 |- be_typing _ [:: BI_set_local ?i] (Tf [::_] _) =>
-      apply bet_set_local; last eassumption; apply /ssrnat.leP; apply nth_error_Some; simpl in *; congruence
+  | H: lookup_N (tc_locals _) ?i = Some T_i32 |- be_typing _ [:: BI_local_get ?i] (Tf [::] _) =>
+      apply bet_local_get; last eassumption; apply /ssrnat.leP; apply nth_error_Some; simpl in *; congruence
+  | H: lookup_N (tc_locals _) ?i = Some T_i32 |- be_typing _ [:: BI_local_set ?i] (Tf [::_] _) =>
+      apply bet_local_set; last eassumption; apply /ssrnat.leP; apply nth_error_Some; simpl in *; congruence
   (* general automation *)
   | |- be_typing _ [::] (Tf [::] [::]) => by apply bet_empty
-  | |- be_typing _ [:: BI_const _] (Tf [::] _) => apply bet_const
-  | |- be_typing _ [:: BI_current_memory] (Tf [::] _) => apply bet_current_memory; by apply Hcontext
-  | |- be_typing _ [:: BI_grow_memory] (Tf [:: T_i32] _) => apply bet_grow_memory; by apply Hcontext
-  | |- be_typing _ [:: BI_call write_char_function_idx] (Tf [:: T_i32] _) =>
+  | |- be_typing _ [:: BI_memory_size] (Tf [::] _) => apply bet_memory_size; by apply Hcontext
+  | |- be_typing _ [:: BI_memory_grow] (Tf [:: T_num T_i32] _) => apply bet_memory_grow; by apply Hcontext
+  | |- be_typing _ [:: BI_call write_char_function_idx] (Tf [:: T_num T_i32] _) =>
          apply bet_call; try apply Hcontext; apply /ssrnat.leP; apply Hcontext
-  | |- be_typing _ [:: BI_call write_int_function_idx] (Tf [:: T_i32] _) =>
+  | |- be_typing _ [:: BI_call write_int_function_idx] (Tf [:: T_num T_i32] _) =>
          apply bet_call; try apply Hcontext; apply /ssrnat.leP; apply Hcontext
-  | |- be_typing _ [:: BI_call constr_pp_function_idx] (Tf [:: T_i32] _) =>
+  | |- be_typing _ [:: BI_call grow_mem_function_idx] (Tf [:: T_num T_i32] _) =>
          apply bet_call; try apply Hcontext; apply /ssrnat.leP; apply Hcontext
-  | |- be_typing _ [:: BI_call grow_mem_function_idx] (Tf [:: T_i32] _) =>
-         apply bet_call; try apply Hcontext; apply /ssrnat.leP; apply Hcontext
-  | |- be_typing _ [:: BI_testop T_i32 _] (Tf [:: _] _) => apply bet_testop; by simpl
-  | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_i32; T_i32] _) => apply bet_binop; apply Binop_i32_agree
-  | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_i32; T_i32; T_i32] _) => apply bet_weakening with (ts:=[::T_i32]); apply bet_binop; apply Binop_i32_agree
-  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_i64; T_i64] _) => apply bet_binop; apply Binop_i64_agree
-  | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_i32; T_i32] _) => apply bet_relop; apply Relop_i32_agree
-  | |- be_typing _ [:: BI_store _ None _ _] (Tf [:: T_i32; _] _) => apply bet_store; simpl; auto; by apply Hcontext
-  | |- be_typing _ [:: BI_load T_i32 None _ _] (Tf [:: T_i32] _) => apply bet_load; simpl; auto; by apply Hcontext
-  | |- be_typing _ [:: BI_load T_i64 None _ _] (Tf [:: T_i32] _) => apply bet_load; simpl; auto; by apply Hcontext
+  | |- be_typing _ [:: BI_store _ None _ _] (Tf [:: T_num T_i32; _] _) => apply bet_store; simpl; auto; by apply Hcontext
+  | |- be_typing _ [:: BI_load (T_num T_i32) None _ _] (Tf [:: T_num T_i32] _) => apply bet_load; simpl; auto; by apply Hcontext
+  | |- be_typing _ [:: BI_load (T_num T_i64) None _ _] (Tf [:: T_num T_i32] _) => apply bet_load; simpl; auto; by apply Hcontext
   | |- be_typing _ [:: BI_unreachable] _ => apply bet_unreachable
   | |- be_typing _ [:: BI_return] _ => apply bet_return with (t1s:=[::]); by apply Hcontext
-  | |- be_typing ?context [:: BI_set_global ?var] (Tf [:: T_i32] _) =>
-         assert (nth_error (tc_global context) var = Some {| tg_mut:= MUT_mut; tg_t := T_i32 |}) as Hglob by
-          (apply Hcontext; now cbn); eapply bet_set_global; eauto; apply /ssrnat.leP; now apply nth_error_Some
-  | |- be_typing ?context [:: BI_get_global ?var] _ =>
-         assert (nth_error (tc_global context) var = Some {| tg_mut:= MUT_mut; tg_t := T_i32 |}) as Hglob by
-          (apply Hcontext; now cbn); eapply bet_get_global with (t:=T_i32); last (by rewrite Hglob); apply /ssrnat.leP; now apply nth_error_Some
-  | |- be_typing _ [:: BI_if (Tf [::] [::]) _ _] _ => apply bet_if_wasm;
+  | |- be_typing ?context [:: BI_global_set ?var] (Tf [:: T_i32] _) =>
+         assert (nth_error (tc_globals context) var = Some {| tg_mut:= MUT_var; tg_t := T_num T_i32 |}) as Hglob by
+          (apply Hcontext; now cbn); eapply bet_global_set; eauto; apply /ssrnat.leP; now apply nth_error_Some
+  | |- be_typing ?context [:: BI_global_get ?var] _ =>
+        assert (lookup_N (tc_globals context) var = Some {| tg_mut:= MUT_var; tg_t := T_num T_i32 |}) as Hglob by
+          (apply Hcontext; now cbn); eapply bet_global_get with (t:=T_num T_i32); [eassumption | cbn; reflexivity]
+  | |- be_typing _ [:: BI_if (BT_valtype None) _ _] _ => apply bet_if_wasm with (tn:=[]);
       apply update_label_preserves_context_restr in Hcontext; separate_instr; repeat rewrite catA;
       repeat eapply bet_composition'; try solve_bet Hcontext
-  (* if above failed, try to frame the leading i32 *)
-  | |- be_typing _ _ (Tf [:: T_i32] _) => apply bet_weakening with (ts:=[::T_i32]); solve_bet Hcontext
-  | |- be_typing _ _ (Tf [:: T_i32; T_i32] _) => apply bet_weakening with (ts:=[::T_i32]); by solve_bet Hcontext
-  | |- be_typing _ _ (Tf [:: T_i32; T_i32; T_i32] _) => apply bet_weakening with (ts:=[::T_i32; T_i32]); by solve_bet Hcontext
-  | |- be_typing _ _ (Tf [:: T_i32; T_i64] _) => apply bet_weakening with (ts:=[::T_i32; T_i64]); by solve_bet Hcontext
-  | |- be_typing _ _ (Tf [:: T_i32; T_i64; T_i64] _) => apply bet_weakening with (ts:=[::T_i32]); by solve_bet Hcontext
-  | |- be_typing _ _ (Tf [:: T_i32; T_i64; T_i32] _) => apply bet_weakening with (ts:=[::T_i32; T_i64]); by solve_bet Hcontext
-  end.
+
+  end. *)
 
 Ltac prepare_solve_bet :=
   separate_instr; repeat rewrite catA; repeat eapply bet_composition'.
 
-(* PP function is well-typed *)
-
-(* only for the pp function, TODO consider combining with context_restr_pp *)
-Definition context_restr_pp (c: t_context) :=
-  (* memory *)
-  (tc_memory c <> [::]) /\
-  (* no return value *)
-  (tc_return c = Some []) /\
-  (* imported funcs *)
-  (write_char_function_idx < length (tc_func_t c)) /\
-  (write_int_function_idx  < length (tc_func_t c)) /\
-  (constr_pp_function_idx  < length (tc_func_t c)) /\
-  (nth_error (tc_func_t c) write_char_function_idx = Some (Tf [:: T_i32] [::])) /\
-  (nth_error (tc_func_t c) write_int_function_idx = Some (Tf [:: T_i32] [::])) /\
-  (nth_error (tc_func_t c) constr_pp_function_idx = Some (Tf [:: T_i32] [::])) /\
-  (* param *)
-  (nth_error (tc_local c) 0 = Some T_i32).
-
-Lemma update_label_preserves_context_restr_pp c :
-  context_restr_pp c ->
-  context_restr_pp (upd_label c ([:: [::]] ++ tc_label c)%list).
-Proof. auto. Qed.
-
-Lemma instr_write_string_typing : forall s c,
-  context_restr_pp c ->
-  be_typing c (instr_write_string s) (Tf [::] [::]).
-Proof.
-  induction s; intros ? Hcontext; first by apply bet_empty.
-  unfold instr_write_string. simpl.
-  prepare_solve_bet. all: try solve_bet Hcontext.
-  by apply IHs.
-Qed.
-
-Lemma pp_constr_args_typing : forall calls arity c,
-  context_restr_pp c ->
-  be_typing c (generate_constr_pp_constr_args calls arity) (Tf [::] [::]).
-Proof.
-  induction calls; intros ?? Hcontext.
-  - apply bet_empty.
-  - simpl.
-    assert (nth_error (tc_local c) 0 = Some T_i32) as Hloc1 by apply Hcontext.
-    prepare_solve_bet. all: try solve_bet Hcontext.
-    by apply IHcalls.
-Qed.
-
-Lemma pp_constr_single_constr_typing : forall tag instr c,
-  context_restr_pp c ->
-  generate_constr_pp_single_constr cenv nenv tag = Ret instr ->
-  be_typing c instr (Tf [::] [::]).
-Proof.
-  intros ??? Hcontext Hconstr.
-  unfold generate_constr_pp_single_constr in Hconstr.
-  remember (instr_write_string _) as s.
-  remember (instr_write_string _) as s1 in Hconstr.
-  remember (instr_write_string _) as s2 in Hconstr.
-  destruct (get_ctor_arity cenv tag) eqn:Har =>//. simpl in Hconstr.
-  assert (nth_error (tc_local c) 0 = Some T_i32) as Hloc0 by apply Hcontext.
-  destruct (n =? 0) eqn:?; inversion Hconstr; subst instr; clear Hconstr.
-  - prepare_solve_bet. all: try solve_bet Hcontext.
-    apply bet_if_wasm; try by solve_bet Hcontext.
-    eapply bet_composition'. subst s.
-    apply instr_write_string_typing =>//.
-    solve_bet Hcontext.
-    prepare_solve_bet. all: try solve_bet Hcontext.
-    apply bet_if_wasm; try by solve_bet Hcontext.
-    eapply bet_composition'. subst s1.
-    apply instr_write_string_typing =>//.
-    prepare_solve_bet. all: try solve_bet Hcontext.
-    by apply pp_constr_args_typing.
-    subst s2. by apply instr_write_string_typing.
-Qed.
-
-Lemma sequence_concat_map_typing : forall tags f blocks c,
-  (forall (t:ctor_tag) instr, f t = Ret instr -> be_typing c instr (Tf [::] [::])) ->
-  sequence (map f tags) = Ret blocks ->
-  be_typing c (concat blocks) (Tf [::] [::]).
-Proof.
-  induction tags; intros ??? Hf Hseq.
-  - injection Hseq as <-. apply bet_empty.
-  - simpl in Hseq.
-    destruct (f a) eqn:Hfa=>//.
-    destruct (sequence _) eqn:Hseq'; inv Hseq.
-    simpl. eapply bet_composition'.
-    + now eapply Hf.
-    + now eapply IHtags.
-Qed.
-
-Theorem pp_function_body_typing : forall e fn c,
-  context_restr_pp c ->
-  generate_constr_pp_function cenv nenv e = Ret fn ->
-  be_typing c (body fn) (Tf [::] [::]).
-Proof.
-  intros ??? Hcontext Hfn.
-  unfold generate_constr_pp_function in Hfn.
-  destruct (sequence _) eqn:Hseq =>//.
-  remember (instr_write_string _) as s.
-  remember (instr_write_string _) as s1 in Hfn.
-  inversion Hfn; subst fn; clear Hfn. simpl.
-  eapply bet_composition'.
-  eapply sequence_concat_map_typing;
-    [ by move => ?? Hconstr; now eapply pp_constr_single_constr_typing | eassumption].
-  eapply bet_composition'. subst s. by apply instr_write_string_typing.
-  assert (nth_error (tc_local c) 0 = Some T_i32) as Hloc0 by apply Hcontext.
-  prepare_solve_bet; try solve_bet Hcontext.
-  subst s1. by apply instr_write_string_typing.
-Qed.
-
-
 Definition context_restr_grow_mem (c: t_context) :=
   (* globals i32, mut *)
   (forall var, In var [global_mem_ptr; constr_alloc_ptr; result_var; result_out_of_mem] ->
-    nth_error (tc_global c) var = Some {| tg_mut:= MUT_mut; tg_t:= T_i32|}) /\
+    lookup_N (tc_globals c) var = Some {| tg_mut:= MUT_var; tg_t:= T_num T_i32|}) /\
   (* memory *)
-  (tc_memory c <> [::]) /\
+  (tc_mems c <> [::]) /\
   (* param *)
-  (nth_error (tc_local c) 0 = Some T_i32).
+  (lookup_N (tc_locals c) 0 = Some (T_num T_i32)).
 
 Lemma update_label_preserves_context_restr_grow_mem c :
   context_restr_grow_mem c ->
-  context_restr_grow_mem (upd_label c ([:: [::]] ++ tc_label c)%list).
+  context_restr_grow_mem (upd_label c ([:: [::]] ++ tc_labels c)%list).
 Proof. auto. Qed.
 
 (* Translated expression (= all other functions bodies) has type (Tf [::] [::]) *)
@@ -1930,10 +1836,10 @@ Lemma grow_memory_if_necessary_typing : forall c,
   be_typing c grow_memory_if_necessary (Tf [::] [::]).
 Proof.
   intros c Hcontext. unfold grow_memory_if_necessary.
-  assert (nth_error (tc_local c) 0 = Some T_i32) as Hloc0 by apply Hcontext.
-  prepare_solve_bet. all: try solve_bet Hcontext.
-  apply bet_if_wasm. prepare_solve_bet. all: try solve_bet Hcontext.
-  apply bet_if_wasm; prepare_solve_bet; solve_bet Hcontext.
+  assert (lookup_N (tc_locals c) 0 = Some (T_num T_i32)) as Hloc0 by apply Hcontext.
+  assert (exists m, lookup_N (tc_mems c) 0 = Some m) as [m Hm]. {
+    destruct (tc_mems c) eqn:Hc; cbn; eauto. exfalso. by apply Hcontext. }
+  prepare_solve_bet; solve_bet Hcontext.
 Qed.
 
 Lemma constr_args_store_typing {lenv} : forall args n instr c,
