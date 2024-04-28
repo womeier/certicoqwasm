@@ -239,5 +239,4 @@ CertiCoq Compile Wasm sm_gauss_nat.
 
 CertiCoq Compile Wasm sm_gauss_N.
 
-(* Not supported yet *)
-(* CertiCoq Compile Wasm -debug sm_gauss_PrimInt. *)
+CertiCoq Compile Wasm sm_gauss_PrimInt.
