@@ -357,17 +357,14 @@ Definition primInt63Lsl  : Kernames.kername := (primInt63ModPath, "lsl"%bs).
 Definition primInt63Lsr  : Kernames.kername := (primInt63ModPath, "lsr"%bs).
 Definition primInt63Eqb : Kernames.kername := (primInt63ModPath, "eqb"%bs).
 
-Definition apply_binop_and_store_i64 (op : basic_instruction) y1 y2 :=
+Definition apply_binop_and_store_i64 (op : list basic_instruction) y1 y2 :=
   [ BI_global_get global_mem_ptr (* Address to store the result of the operation *)
   ; BI_local_get y1
   ; BI_load T_i64 None 2%N 0%N
   ; BI_local_get y2
-  ; BI_load T_i64 None 2%N 0%N
-  ; op
-  (* Ensure that value fits in 63 bits *)
-  ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
-  ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-  ; BI_store T_i64 None 2%N 0%N
+  ; BI_load T_i64 None 2%N 0%N ] ++
+  op ++
+  [ BI_store T_i64 None 2%N 0%N
   ; BI_global_get global_mem_ptr (* value to be stored in the let binding ('return value') *)
   (* Increment global memory pointer to next free memory segment  *)
   ; BI_global_get global_mem_ptr
@@ -379,40 +376,59 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
     y1_var <- translate_var nenv lenv y1 "translate primitive integer arithmetic operation 1st argument" ;;
     y2_var <- translate_var nenv lenv y2 "translate primitive integer arithmetic operation 2nd argument" ;;
     if Kername.eqb kname primInt63Add then
-      Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_add)) y1_var y2_var)
+      (* Ensure that value fits in 63 bits *)
+      Ret (apply_binop_and_store_i64
+             [ BI_binop T_i64 (Binop_i BOI_add)
+             ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
+             ; BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Sub then
-      Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_sub)) y1_var y2_var)
+      (* Ensure that value fits in 63 bits *)
+      Ret (apply_binop_and_store_i64
+             [ BI_binop T_i64 (Binop_i BOI_sub)
+             ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
+             ; BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Mul then
-      Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_mul)) y1_var y2_var)
+      (* Ensure that value fits in 63 bits *)
+      Ret (apply_binop_and_store_i64
+             [ BI_binop T_i64 (Binop_i BOI_mul)
+             ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
+             ; BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Div then
       (* Euclidean division *)
       Ret ([ BI_local_get y2_var
             ; BI_load T_i64 None 2%N 0%N
             ; BI_testop T_i64 TO_eqz
-             ; BI_if (BT_valtype None)
-                 [ BI_global_get global_mem_ptr
-                   ; BI_const_num (nat_to_value64 0)
-                   ; BI_store T_i64 None 2%N 0%N ]
-                 [ BI_global_get global_mem_ptr
-                   ; BI_local_get y1_var
-                   ; BI_load T_i64 None 2%N 0%N
-                   ; BI_local_get y2_var
-                   ; BI_load T_i64 None 2%N 0%N
-                   ; BI_binop T_i64 (Binop_i (BOI_div SX_U))
-                   ; BI_store T_i64 None 2%N 0%N ]
-             ; BI_global_get global_mem_ptr
-             ; BI_global_get global_mem_ptr
-             ; BI_const_num (nat_to_value 8)
-             ; BI_binop T_i32 (Binop_i BOI_add)
-             ; BI_global_set global_mem_ptr ])
+            ; BI_if (BT_valtype None)
+                [ BI_global_get global_mem_ptr
+                ; BI_const_num (nat_to_value64 0)
+                ; BI_store T_i64 None 2%N 0%N
+                ]
+                [ BI_global_get global_mem_ptr
+                ; BI_local_get y1_var
+                ; BI_load T_i64 None 2%N 0%N
+                ; BI_local_get y2_var
+                ; BI_load T_i64 None 2%N 0%N
+                ; BI_binop T_i64 (Binop_i (BOI_div SX_U))
+                ; BI_store T_i64 None 2%N 0%N
+                ]
+            ; BI_global_get global_mem_ptr
+            ; BI_global_get global_mem_ptr
+            ; BI_const_num (nat_to_value 8)
+            ; BI_binop T_i32 (Binop_i BOI_add)
+            ; BI_global_set global_mem_ptr
+            ])
     else if Kername.eqb kname primInt63Land then
-      Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_and)) y1_var y2_var)
+      Ret (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_and) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Lor then
-      Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_or)) y1_var y2_var)
+      Ret (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_or) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Lsl then
-      Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_shl)) y1_var y2_var)
+      (* Ensure that value fits in 63 bits *)
+      Ret (apply_binop_and_store_i64
+             [ BI_binop T_i64 (Binop_i BOI_shl)
+             ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
+             ; BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Lsr then
-      Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_shr SX_U))) y1_var y2_var)
+      Ret (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Eqb then
       Ret ([ BI_local_get y1_var
            ; BI_load T_i64 None 2%N 0%N
