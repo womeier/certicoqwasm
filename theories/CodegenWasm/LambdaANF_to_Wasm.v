@@ -363,8 +363,8 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
       Ret ([ BI_local_get x_var
            ; BI_ref_test (T_abs T_i31ref)
            ; BI_if (BT_valtype None)
-               (create_case_nested_if_chain true x_var arms_boxed)
                (create_case_nested_if_chain false x_var arms_unboxed)
+               (create_case_nested_if_chain true x_var arms_boxed)
            ] : list basic_instruction)
 
    | Eproj x tg n y e' =>
