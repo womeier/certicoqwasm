@@ -94,7 +94,7 @@ Definition write_int_function_idx : funcidx := 1%N.
 Definition write_int_function_name := "write_int".
 
 (* grow_mem: grow linear mem by number of bytes if necessary *)
-Definition grow_mem_function_name := "grow_mem_if_necessary".
+Definition grow_mem_function_name := "todo_delete_this_function".
 Definition grow_mem_function_idx : funcidx := 2%N.
 
 (* main function: contains the translated main expression *)
@@ -107,10 +107,7 @@ Definition main_function_idx : funcidx := 3%N.
 Definition num_custom_funs := 4.
 
 (* global vars *)
-Definition global_mem_ptr    : globalidx := 0%N. (* ptr to free memory, increased when new 'objects' are allocated, there is no GC *)
-Definition constr_alloc_ptr  : globalidx := 1%N. (* ptr to beginning of constr alloc in linear mem *)
-Definition result_var        : globalidx := 2%N. (* final result *)
-Definition result_out_of_mem : globalidx := 3%N.
+Definition result_var        : globalidx := 0%N. (* final result *)
 
 (* ***** MAPPINGS ****** *)
 Definition localvar_env := M.tree localidx. (* maps variables to their id (id=index in list of local vars) *)
@@ -173,92 +170,18 @@ Definition instr_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : 
          Ret [BI_local_get var].
 
 
-(* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)
-
-Module S_pos := MSetAVL.Make Positive_as_OT.
-
-Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
-  match e with
-  | Efun fds e' => S_pos.union (collect_constr_tags' e')
-          ((fix iter (fds : fundefs) : S_pos.t :=
-            match fds with
-            | Fnil => S_pos.empty
-            | Fcons _ _ _ e'' fds' =>
-                S_pos.union (collect_constr_tags' e'') (iter fds')
-            end) fds)
-  | Econstr _ tg _ e' => S_pos.add tg (collect_constr_tags' e')
-  | Ecase _ arms => fold_left (fun _s a => S_pos.union _s (S_pos.add (fst a) (collect_constr_tags' (snd a)))) arms S_pos.empty
-  | Eproj _ _ _ _ e' => collect_constr_tags' e'
-  | Eletapp _ _ _ _ e' => collect_constr_tags' e'
-  | Eprim _ _ _ e' => collect_constr_tags' e'
-  | Eprim_val _ _ e' => collect_constr_tags' e'
-  | Eapp _ _ _ => S_pos.empty
-  | Ehalt _ => S_pos.empty
-  end.
-
-Definition collect_constr_tags (e : exp) : list ctor_tag :=
-  S_pos.elements (collect_constr_tags' e).
-
-Definition instr_write_string (s : string) : list basic_instruction :=
-  let fix to_ascii_list s' :=
-    match s' with
-    | String.EmptyString => []
-    | String.String b s'' => Byte.to_nat b :: to_ascii_list s''
-    end in
-  flat_map (fun c => [BI_const_num (nat_to_value c); BI_call write_char_function_idx]) (to_ascii_list s).
-
 Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
   match M.get t cenv with
   | Some {| ctor_arity := n |} => Ret (N.to_nat n)
   | _ => Err "found constructor without ctor_arity set"
   end.
 
-(* ***** GENERATE FUNCTION TO GROW LINEAR MEMORY ****** *)
-
-(* a page is 2^16 bytes, expected num of required bytes in local 0 *)
-Definition grow_memory_if_necessary : list basic_instruction :=
-  (* required number of total pages *)
-  [ BI_global_get global_mem_ptr
-  ; BI_local_get 0%N
-  ; BI_ref_cast (T_abs T_i31ref)
-  ; BI_i31_get_u
-  ; BI_binop T_i32 (Binop_i BOI_add)
-  ; BI_const_num (Z_to_value (Z.pow 2 16))
-  ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
-
-  (* current number of pages *)
-  ; BI_memory_size
-  ; BI_relop T_i32 (Relop_i (ROI_ge SX_S))
-  (* allocate one page if necessary *)
-  ; BI_if (BT_valtype None)
-      [ BI_const_num (nat_to_value 1)
-      ; BI_memory_grow (* returns -1 on alloc failure *)
-      ; BI_const_num (Z_to_value (-1))
-      ; BI_relop T_i32 (Relop_i ROI_eq)
-      ; BI_if (BT_valtype None)
-         [ BI_const_num (nat_to_value 1); BI_global_set result_out_of_mem ]
-         []
-      ]
-      []
-  ].
-
-
-
-Definition test_body : list basic_instruction :=
-  [ BI_const_num (N_to_value 3)
-  ; BI_ref_i31
-  ; BI_struct_new (struct_type_base_id + 1)%N
-  ; BI_ref_cast (T_index (struct_type_base_id + 1)%N)
-  ; BI_struct_get (struct_type_base_id + 1)%N 0%N
-  ; BI_drop
-  ].
-
 Definition generate_grow_mem_function : wasm_function :=
   {| fidx := grow_mem_function_idx
    ; export_name := grow_mem_function_name
    ; type := 1%N (* [T_eqref] -> [] *)
    ; locals := []
-   ; body := grow_memory_if_necessary
+   ; body := [BI_unreachable]
    |}.
 
 
@@ -296,65 +219,6 @@ Definition translate_primitive_value (p : AstCommon.primitive) : error Wasm_int.
   | AstCommon.primFloat => fun f => Err "TODO"
   end (projT2 p).
 
-(* ***** TRANSLATE CONSTRUCTOR ALLOCATION ****** *)
-
-(* Example placement of constructors in the linear memory:
-     data Bintree := Leaf | Node Bintree Value Bintree
-
-     Leaf: --> +---+
-               |T_l|
-               +---+
-
-     Node: --> +---+---+---+---+
-               |T_n| L | V | R |
-               +---+---+---+---+
-    T_l, T_n unique constructor tags
-    L, V, R pointers to linear memory
-*)
-
-(* store argument pointers in memory *)
-Fixpoint set_constructor_args (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (args : list cps.var) (current : nat) : error (list basic_instruction) :=
-  match args with
-  | [] => Ret []
-  | y :: ys => read_y <- instr_local_var_read nenv lenv fenv y;;
-               remaining <- set_constructor_args nenv lenv fenv ys (1 + current);;
-
-               Ret ([ BI_global_get constr_alloc_ptr
-                    ; BI_const_num (nat_to_value (4 * (1 + current))) (* plus 1 : skip tag *)
-                    ; BI_binop T_i32 (Binop_i BOI_add)
-                    ] ++ read_y ++
-                    [ BI_ref_cast (T_abs T_i31ref)
-                    ; BI_i31_get_u
-                    ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-
-                    (* increase gmp by 4 *)
-                    ; BI_global_get global_mem_ptr
-                    ; BI_const_num (nat_to_value 4)
-                    ; BI_binop T_i32 (Binop_i BOI_add)
-                    ; BI_global_set global_mem_ptr
-
-                    ] ++ remaining)
-  end.
-
-
-Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localvar_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
-  ord <- get_ctor_ord cenv c ;;
-  set_constr_args <- set_constructor_args nenv lenv fenv ys 0;;
-  Ret ([ BI_global_get global_mem_ptr
-       ; BI_global_set constr_alloc_ptr
-
-       (* set tag *)
-       ; BI_global_get constr_alloc_ptr
-       ; BI_const_num (nat_to_value (N.to_nat ord))
-       ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-       (* increase gmp by 4 *)
-       ; BI_global_get global_mem_ptr
-       ; BI_const_num (nat_to_value 4)
-       ; BI_binop T_i32 (Binop_i BOI_add)
-       ; BI_global_set global_mem_ptr
-
-       ] ++ set_constr_args).
-
 (* **** TRANSLATE PRIMITIVE OPERATIONS **** *)
 
 Definition primInt63ModPath : Kernames.modpath :=
@@ -372,7 +236,7 @@ Definition primInt63Lxor : Kernames.kername := (primInt63ModPath, "lxor"%bs).
 Definition primInt63Lsl  : Kernames.kername := (primInt63ModPath, "lsl"%bs).
 Definition primInt63Lsr  : Kernames.kername := (primInt63ModPath, "lsr"%bs).
 
-Definition apply_binop_and_store_i64 (op : basic_instruction) y1 y2 :=
+(*Definition apply_binop_and_store_i64 (op : basic_instruction) y1 y2 :=
   [ BI_global_get global_mem_ptr (* Address to store the result of the operation *)
   ; BI_local_get y1
   ; BI_ref_cast (T_abs T_i31ref)
@@ -430,22 +294,25 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
       Ret (op_instrs ++ [ BI_local_set x_var ])
   | _ =>
       Err "Only primitive operations with two arguments are supported"
-  end.
+  end. *)
 
-Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N * list basic_instruction)) : list basic_instruction :=
+Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N * list basic_instruction * nat)) : list basic_instruction :=
   match es with
   | [] => [ BI_unreachable ]
-  | (ord, instrs) :: tl =>
+  | (ord, instrs, arity) :: tl =>
       (* if boxed (pointer), then load tag from memory;
          otherwise, the unboxed representation is (ord << 1) + 1 = 2 * ord + 1.
        *)
-      BI_local_get v ::
-      BI_ref_cast (T_abs T_i31ref) ::
-      BI_i31_get_u ::
         (if boxed then
-           [ BI_load T_i32 None 2%N 0%N ; BI_const_num (nat_to_value (N.to_nat ord)) ]
+           [ BI_local_get v
+           ; BI_ref_cast (T_index (N.of_nat arity + struct_type_base_id)%N)
+           ; BI_struct_get (N.of_nat arity + struct_type_base_id)%N 0%N
+           ; BI_const_num (N_to_value ord)]
          else
-           [ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N)) ]) ++
+           [ BI_local_get v
+           ; BI_ref_cast (T_abs T_i31ref)
+           ; BI_i31_get_u
+           ; BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N))]) ++
         [ BI_relop T_i32 (Relop_i ROI_eq)
         ; BI_if (BT_valtype None) instrs (create_case_nested_if_chain boxed v tl) ]
   end.
@@ -461,28 +328,23 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
       match ys with
       | [] =>
           ord <- get_ctor_ord cenv tg ;;
-          Ret ([ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N)) ; BI_ref_i31; BI_local_set x_var ] ++ following_instr)
+          Ret ([ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N))
+               ; BI_ref_i31
+               ; BI_local_set x_var
+               ] ++ following_instr)
       | _ => (* n > 0 ary constructor  *)
           (* Boxed representation *)
-          store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
-          Ret ([ BI_const_num (N_to_value page_size)
-               ; BI_ref_i31
-               ; BI_call grow_mem_function_idx
-               ; BI_global_get result_out_of_mem
-               ; BI_const_num (nat_to_value 1)
-               ; BI_relop T_i32 (Relop_i ROI_eq)
-               ; BI_if (BT_valtype None)
-                 [ BI_return ]
-                 []
-               ] ++ store_constr ++
-               [ BI_global_get constr_alloc_ptr
-               ; BI_ref_i31
+          ord <- get_ctor_ord cenv tg ;;
+          instr_pass_args <- pass_function_args nenv lenv fenv ys;;
+          Ret ([ BI_const_num (nat_to_value (N.to_nat ord))] ++ (* tag *)
+               instr_pass_args ++
+               [ BI_struct_new (struct_type_base_id + N.of_nat (length ys))%N
                ; BI_local_set x_var
                ] ++ following_instr)
       end
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
-        : error (list (N * list basic_instruction) * list (N  * list basic_instruction)) :=
+        : error (list (N * list basic_instruction * nat) * list (N  * list basic_instruction * nat)) :=
         match arms with
         | [] => Ret ([], [])
         | (t, e)::tl =>
@@ -491,36 +353,30 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
             ord <- get_ctor_ord cenv t ;;
             arity <- get_ctor_arity cenv t ;;
             if arity =? 0 then
-              Ret (arms_boxed, (ord, instrs) :: arms_unboxed)
+              Ret (arms_boxed, (ord, instrs, arity) :: arms_unboxed)
             else
-              Ret ((ord, instrs) :: arms_boxed, arms_unboxed)
+              Ret ((ord, instrs, arity) :: arms_boxed, arms_unboxed)
         end
       in
       x_var <- translate_var nenv lenv x "translate_body case" ;;
       '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions arms ;;
       Ret ([ BI_local_get x_var
-           ; BI_ref_cast (T_abs T_i31ref)
-           ; BI_i31_get_u
-           ; BI_const_num (nat_to_value 1)
-           ; BI_binop T_i32 (Binop_i BOI_and)
-           ; BI_testop T_i32 TO_eqz
+           ; BI_ref_test (T_abs T_i31ref)
            ; BI_if (BT_valtype None)
                (create_case_nested_if_chain true x_var arms_boxed)
                (create_case_nested_if_chain false x_var arms_unboxed)
-           ])
+           ] : list basic_instruction)
 
    | Eproj x tg n y e' =>
       following_instr <- translate_body nenv cenv lenv fenv penv e' ;;
       y_var <- translate_var nenv lenv y "translate_body proj y";;
       x_var <- translate_var nenv lenv x "translate_body proj x";;
+      arity <- get_ctor_arity cenv tg ;;
+      let tidx := (N.of_nat arity + struct_type_base_id)%N in
 
       Ret ([ BI_local_get y_var
-           ; BI_ref_cast (T_abs T_i31ref)
-           ; BI_i31_get_u
-           ; BI_const_num (nat_to_value (((N.to_nat n) + 1) * 4)) (* skip ctor_id and previous constr arguments *)
-           ; BI_binop T_i32 (Binop_i BOI_add)
-           ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
-           ; BI_ref_i31
+           ; BI_ref_cast (T_index tidx)
+           ; BI_struct_get tidx (n + 1)%N
            ; BI_local_set x_var
            ] ++ following_instr)
 
@@ -529,16 +385,13 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
       following_instr <- translate_body nenv cenv lenv fenv penv e' ;;
       instr_call <- translate_call nenv lenv fenv f ys false;;
 
-      Ret (instr_call ++ [ BI_global_get result_out_of_mem
-                         ; BI_if (BT_valtype None)
-                            [ BI_return ]
-                            []
-                         ; BI_global_get result_var
+      Ret (instr_call ++ [ BI_global_get result_var
                          ; BI_local_set x_var
                          ] ++ following_instr)
 
    | Eapp f ft ys => translate_call nenv lenv fenv f ys true
 
+(*
    | Eprim_val x p e' =>
        following_instrs <- translate_body nenv cenv lenv fenv penv e' ;;
        x_var <- translate_var nenv lenv x "translate_body prim val" ;;
@@ -562,9 +415,9 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
             ; BI_const_num (nat_to_value 8)
             ; BI_binop T_i32 (Binop_i BOI_add)
             ; BI_global_set global_mem_ptr
-            ] ++ following_instrs)
+            ] ++ following_instrs) *)
 
-   | Eprim x p ys e' => (* Err "temp" *)
+            (*   | Eprim x p ys e' => (* Err "temp" *)
        match M.get p penv with
        | None => Err "Primitive operation not found in prim_env"
        | Some p' =>
@@ -580,11 +433,12 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
                  ; BI_if (BT_valtype None)
                      [ BI_return ]
                      []
-                 ] ++ instrs ++ following_instrs)
-       end
+               ] ++ instrs ++ following_instrs)
+               end *)
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_body halt";;
      Ret [ BI_local_get x_var; BI_global_set result_var; BI_return ]
+   | _ => Err "not supported yet"
    end.
 
 
@@ -674,10 +528,14 @@ Fixpoint list_function_types (n : nat) : list function_type :=
   | S n' => (Tf [] []) :: map (fun t => match t with Tf args rt => Tf (T_ref (T_heap (T_abs T_eqref)) :: args) rt end) (list_function_types n')
   end.
 
+(* n: number of constr args, probably slow for bigger n *)
 Fixpoint list_struct_types (n : nat) : list struct_type :=
+  let t32 := Build_field_type MUT_const (T_num T_i32) in
+  let teq := Build_field_type MUT_const (T_ref (T_heap (T_abs T_eqref))) in
   match n with
-  | 0 => [Ts []]
-  | S n' => (Ts []) :: map (fun t => match t with Ts ts => Ts (Build_field_type MUT_const (T_ref (T_heap (T_abs T_eqref))) :: ts) end) (list_struct_types n')
+  | 0 => [Ts [t32]]
+  | S n' => (Ts [t32]) :: map (fun t => match t with Ts ts => Ts (ts ++ [teq]) end)
+                                      (list_struct_types n')
   end.
 
 (* for indirect calls maps fun ids to themselves *)
@@ -728,17 +586,8 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (f.(fidx))
                                 |}) functions (* function exports for debug names *)
-                 ++ {| modexp_name := String.print "result_out_of_mem"
-                     ; modexp_desc := MED_global result_out_of_mem
-                     |} ::
-                    {| modexp_name := String.print "bytes_used"
-                     ; modexp_desc := MED_global global_mem_ptr
-                     |} ::
-                    {| modexp_name := String.print "result"
+                 ++ {| modexp_name := String.print "result"
                      ; modexp_desc := MED_global result_var
-                    |} ::
-                    {| modexp_name := String.print "memory"
-                     ; modexp_desc := MED_mem 0%N
                     |} :: nil
   in
 
@@ -758,26 +607,12 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                                             ; tt_elem_type := T_heap_null (T_abs T_funcref)
                                             |} |}]
 
-       ; mod_mems := {| modmem_type :=
-                         {| lim_min := 1%N  (* initial memory size in pages (1 page = 2^16 = 64 KiB), is grown as needed *)
-                          ; lim_max := Some max_mem_pages (* to ensure, i32 ptr doesn't overflow, but memory grow fails instead *)
-                          |}
-                      |} :: nil
-
-       ; mod_globals := {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* global_mem_ptr *)
-                         ; modglob_init := [BI_const_num (nat_to_value 0)]
-                         |} ::
-                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* constr_alloc_ptr *)
-                         ; modglob_init := [BI_const_num (nat_to_value 0)]
-                         |} ::
-                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_ref (T_heap (T_abs T_eqref))|}  (* result_var *)
+       ; mod_globals := {| modglob_type := {| tg_mut := MUT_var; tg_t := T_ref (T_heap (T_abs T_eqref))|}  (* result_var *)
                          ; modglob_init := [BI_const_num (Z_to_value (-1)); BI_ref_i31]
-                         |} ::
-                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* out of memory indicator *)
-                         ; modglob_init := [BI_const_num (nat_to_value 0)]
                          |} :: nil
 
        ; mod_elems := elements
+       ; mod_mems := []
        ; mod_datas := []
        ; mod_start := None
 
