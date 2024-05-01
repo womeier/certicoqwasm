@@ -73,7 +73,8 @@ let importObject = {
 	    process.stdout.write("====>");
 
 	    const start_pp = Date.now();
-	    pp_fun(res_value, null);
+//	    pp_fun(res_value, null);
+	    process.stdout.write(res_value.toString());
 	    const stop_pp = Date.now();
 	    time_pp = stop_pp - start_pp;
 	    process.stdout.write("\n");

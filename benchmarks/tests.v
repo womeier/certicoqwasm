@@ -236,6 +236,7 @@ Definition sm_gauss_PrimInt :=
   end.
 
 CertiCoq Compile Wasm sm_gauss_nat.
+CertiCoq Show IR sm_gauss_nat.
 
 CertiCoq Compile Wasm sm_gauss_N.
 
