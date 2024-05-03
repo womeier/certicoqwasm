@@ -355,7 +355,7 @@ Definition primInt63Lor  : Kernames.kername := (primInt63ModPath, "lor"%bs).
 Definition primInt63Lxor : Kernames.kername := (primInt63ModPath, "lxor"%bs).
 Definition primInt63Lsl  : Kernames.kername := (primInt63ModPath, "lsl"%bs).
 Definition primInt63Lsr  : Kernames.kername := (primInt63ModPath, "lsr"%bs).
-Definition primInt63Eqb : Kernames.kername := (primInt63ModPath, "eqb"%bs).
+Definition primInt63Eqb  : Kernames.kername := (primInt63ModPath, "eqb"%bs).
 
 Definition apply_binop_and_store_i64 (op : list basic_instruction) y1 y2 :=
   [ BI_global_get global_mem_ptr (* Address to store the result of the operation *)
@@ -376,25 +376,21 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
     y1_var <- translate_var nenv lenv y1 "translate primitive integer arithmetic operation 1st argument" ;;
     y2_var <- translate_var nenv lenv y2 "translate primitive integer arithmetic operation 2nd argument" ;;
     if Kername.eqb kname primInt63Add then
-      (* Ensure that value fits in 63 bits *)
       Ret (apply_binop_and_store_i64
              [ BI_binop T_i64 (Binop_i BOI_add)
              ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
              ; BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Sub then
-      (* Ensure that value fits in 63 bits *)
       Ret (apply_binop_and_store_i64
              [ BI_binop T_i64 (Binop_i BOI_sub)
              ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
              ; BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Mul then
-      (* Ensure that value fits in 63 bits *)
       Ret (apply_binop_and_store_i64
              [ BI_binop T_i64 (Binop_i BOI_mul)
              ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
              ; BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Div then
-      (* Euclidean division *)
       Ret ([ BI_local_get y2_var
             ; BI_load T_i64 None 2%N 0%N
             ; BI_testop T_i64 TO_eqz
@@ -422,7 +418,6 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
     else if Kername.eqb kname primInt63Lor then
       Ret (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_or) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Lsl then
-      (* Ensure that value fits in 63 bits *)
       Ret (apply_binop_and_store_i64
              [ BI_binop T_i64 (Binop_i BOI_shl)
              ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
@@ -430,14 +425,17 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
     else if Kername.eqb kname primInt63Lsr then
       Ret (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ] y1_var y2_var)
     else if Kername.eqb kname primInt63Eqb then
+      (* Assumptions about constructor environment for primitive operations that return bools:
+         1. ordinal(true) = 0
+         2. ordinal(false) = 1 *)
       Ret ([ BI_local_get y1_var
            ; BI_load T_i64 None 2%N 0%N
            ; BI_local_get y2_var
            ; BI_load T_i64 None 2%N 0%N
            ; BI_relop T_i64 (Relop_i ROI_eq)
            ; BI_if (BT_valtype (Some (T_num T_i32)))
-               [ BI_const_num (nat_to_value 1) ]
-               [ BI_const_num (nat_to_value 3) ]
+               [ BI_const_num (nat_to_value 1) ] (* 2 * ordinal(true) + 1 *)
+               [ BI_const_num (nat_to_value 3) ] (* 2 * ordinal(false) + 1 *)
            ])
     else
       Err ("Unknown primitive arithmetic operator: " ++ (Kernames.string_of_kername kname))%bs.
@@ -445,9 +443,8 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
 Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (x_var : localidx) (p : (kername * string * bool * nat)) (args : list var) : error (list basic_instruction) :=
   let '(kname, _, _, _) := p in
   match args with
-  | [ y1 ; y2 ] =>
-      op_instrs <- translate_primitive_arith_op nenv lenv kname y1 y2 ;;
-      Ret (op_instrs ++ [ BI_local_set x_var ])
+  | [ y1 ; y2 ] => translate_primitive_arith_op nenv lenv kname y1 y2
+
   | _ =>
       Err "Only primitive operations with two arguments are supported"
   end.
@@ -579,16 +576,16 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
        | Some p' =>
            following_instrs <- translate_body nenv cenv lenv fenv penv e';;
            x_var <- translate_var nenv lenv x "translate_exp prim op" ;;
-           instrs <- translate_primitive_operation nenv lenv x_var p' ys ;;
-           Ret ( [ BI_const_num (N_to_value page_size)
-                 ; BI_call grow_mem_function_idx
-                 ; BI_global_get result_out_of_mem
-                 ; BI_const_num (nat_to_value 1)
-                 ; BI_relop T_i32 (Relop_i ROI_eq)
-                 ; BI_if (BT_valtype None)
-                     [ BI_return ]
-                     []
-                 ] ++ instrs ++ following_instrs)
+           prim_op_instrs <- translate_primitive_operation nenv lenv x_var p' ys ;;
+           Ret (([ BI_const_num (N_to_value page_size)
+                   ; BI_call grow_mem_function_idx
+                   ; BI_global_get result_out_of_mem
+                   ; BI_const_num (nat_to_value 1)
+                   ; BI_relop T_i32 (Relop_i ROI_eq)
+                   ; BI_if (BT_valtype None)
+                       [ BI_return ]
+                       []
+                  ] ++ prim_op_instrs ++ [ BI_local_set x_var ])  ++ following_instrs)
        end
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_body halt";;
