@@ -1,2 +1,15 @@
-addition
 addition_primitive
+addition_primitive_overflow
+subtraction_primitive
+subtraction_primitive_underflow
+multiplication_primitive
+multiplication_primitive_overflow
+division_primitive
+division_primitive_0
+land_primitive
+lor_primitive
+lsl_primitive
+lsl_primitive_overflow
+lsr_primitive
+eqb_true_primitive
+eqb_false_primitive

@@ -52,4 +52,4 @@ test_primitive_i63:
 
 $(PRIMITIVE_TESTS):
 	@ulimit -s unlimited
-	@node --experimental-wasm-return_call --stack-size=8192 js/run_wasm_external_pp.js ./ $@
+	@node --experimental-wasm-return_call --stack-size=100000 js/run_wasm_external_pp.js ./ $@

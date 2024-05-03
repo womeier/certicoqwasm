@@ -14,8 +14,21 @@ const pp_map = {
     "bernstein_yang": print_Z_sexp,
     "sm_gauss_nat": (val, dataView) => print_option(val, dataView, print_nat_sexp),
     "sm_gauss_N": (val, dataView) => print_option(val, dataView, print_N_sexp),
-    "addition": print_nat_notation,
-    "addition_primitive": print_i63
+    "sm_gauss_PrimInt": (val, dataView) => print_option(val, dataView, print_i63),
+    "addition_primitive": print_bool,
+    "addition_primitive_overflow": print_bool,
+    "subtraction_primitive": print_bool,
+    "subtraction_primitive_underflow": print_bool,
+    "multiplication_primitive": print_bool,
+    "multiplication_primitive_overflow": print_bool,
+    "division_primitive": print_bool,
+    "division_primitive_0": print_bool,
+    "land_primitive": print_bool,
+    "lor_primitive": print_bool,
+    "lsl_primitive": print_bool,
+    "lsr_primitive": print_bool,
+    "eqb_true_primitive": print_bool,
+    "eqb_false_primitive": print_bool,
 };
 
 import { readFileSync } from 'fs';

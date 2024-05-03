@@ -4,68 +4,67 @@ From Coq Require Import List Uint63 ZArith.
 
 Import ListNotations.
 
-Definition addition := 1000 + 1000.
+(* A collection of sanity checks *)
 
-Definition addition_primitive := (1000 + 1000)%uint63.
+Definition max_uint63 := 9223372036854775807%uint63.
+Definition max_uint63_Z := 9223372036854775807%Z.
 
-CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.addition" addition.
+Definition addition_primitive := (42 + 42 =? Uint63.to_Z (42 + 42)%uint63)%Z.
+
+Definition addition_primitive_overflow := ((max_uint63_Z + 1) mod Uint63.wB  =? Uint63.to_Z (max_uint63 + 1)%uint63)%Z.
 
 CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.addition_primitive" addition_primitive.
 
-(* Definition subtraction := 1000 - 1000. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.addition_primitive_overflow" addition_primitive_overflow.
 
-(* Definition subtraction_primitive := (1000 - 1000)%uint63. *)
+Definition subtraction_primitive := (42 - 42 =? Uint63.to_Z (42 - 42)%uint63)%Z.
 
-(* CertiCoq Compile Wasm subtraction. *)
+Definition subtraction_primitive_underflow := ((0 -1) mod Uint63.wB  =? Uint63.to_Z (0 - 1)%uint63)%Z.
 
-(* CertiCoq Compile Wasm subtraction_primitive. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.subtraction_primitive" subtraction_primitive.
 
-(* Definition multiplication := 250 * 250. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.subtraction_primitive_underflow" subtraction_primitive_underflow.
 
-(* Definition multiplication_primitive := (250 * 250)%uint63.  *)
+Definition multiplication_primitive := (42 * 42 =? Uint63.to_Z (42 * 42)%uint63)%Z.
 
-(* CertiCoq Compile Wasm multiplication. *)
+Definition multiplication_primitive_overflow := ((2 * max_uint63_Z) mod Uint63.wB =? Uint63.to_Z (2 * max_uint63)%uint63)%Z.
 
-(* CertiCoq Compile Wasm multiplication_primitive. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.multiplication_primitive" multiplication_primitive.
 
-(* Definition division := 1000 / 1000. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.multiplication_primitive_overflow" multiplication_primitive_overflow.
 
-(* Definition division_primitive := (1000 / 1000)%uint63. *)
+Definition division_primitive := (7 / 3 =? Uint63.to_Z (7 / 3)%uint63)%Z.
 
-(* CertiCoq Compile Wasm division. *)
+Definition division_primitive_0 := (42 / 0 =? Uint63.to_Z (42 / 0)%uint63)%Z.
 
-(* CertiCoq Compile Wasm division_primitive. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.division_primitive" division_primitive.
 
-(* Definition modulus := 1000 mod 1000. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.division_primitive_0" division_primitive_0.
 
-(* Definition modulus_primitive := (1000 mod 1000)%uint63. *)
+Definition land_primitive := (Z.land 3 7 =? Uint63.to_Z (3 land 7)%uint63)%Z.
 
-(* CertiCoq Compile Wasm modulus. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.land_primitive" land_primitive.
 
-(* CertiCoq Compile Wasm modulus_primitive. *)
+Definition lor_primitive := (Z.lor 3 7 =? Uint63.to_Z (3 lor 7)%uint63)%Z.
 
-(* Definition list_sum := List.fold_left plus (List.repeat 1 (10 * 1000)) 0. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.lor_primitive" lor_primitive.
 
-(* Definition list_sum_primitive := *)
-(*   List.fold_left Uint63.add (List.repeat 1%uint63 (10 * 1000)) 0%uint63. *)
+Definition lsl_primitive := (Z.shiftl 1 8 =? Uint63.to_Z (1 << 8)%uint63)%Z.
 
-(* CertiCoq Compile Wasm list_sum. *)
+Definition lsl_primitive_overflow := ((Z.shiftl 1 63) mod Uint63.wB =? Uint63.to_Z (1 << 63)%uint63)%Z.
 
-(* CertiCoq Compile Wasm list_sum_primitive. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.lsl_primitive" lsl_primitive.
 
-(* Fixpoint fac (n : nat) (nint : int) : int := *)
-(*   match n with *)
-(*   | 0 => 1%uint63 *)
-(*   | S n' => *)
-(*       let r := fac n' (nint - 1)%uint63 in *)
-(*       (nint * r)%uint63 *)
-(*   end. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.lsl_primitive_overflow" lsl_primitive_overflow.
 
-(* Definition fac_main := fac 3 3%uint63. *)
+Definition lsr_primitive := (Z.shiftr 256 8 =? Uint63.to_Z (256 >> 8)%uint63)%Z.
 
-(* Compute fac_main. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.lsr_primitive" lsr_primitive.
 
-(* CertiCoq Compile -debug fac_main. *)
+Definition eqb_true_primitive := (42 =? 42)%uint63.
 
-(* CertiCoq Show IR -debug fac_main. *)
-(* CertiCoq Compile Wasm -debug fac_main. *)
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.eqb_true_primitive" eqb_true_primitive.
+
+Definition eqb_false_primitive := (41 =? 42)%uint63.
+
+CertiCoq Compile Wasm -file "CertiCoq.Benchmarks.tests.eqb_false_primitive" eqb_false_primitive.
