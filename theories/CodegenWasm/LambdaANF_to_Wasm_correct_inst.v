@@ -970,16 +970,77 @@ Proof.
       destruct es. injection Heqes; intros; subst=>//. destruct a0=>//.
 Qed.
 
+Ltac solve_table_init :=
+  match goal with
+  | H: $V ?c = AI_basic (BI_table_init _ _) |- _ => by do 2 destruct c as [c|c|c]=>//
+  | H: vref_to_e ?c = AI_basic (BI_table_init _ _) |- _ => by do 2 destruct c as [c|c|c]=>//
+  end.
+
+Ltac injection' :=
+  match goal with
+(*   | H: _ ++ _ = _ |- _ => injection H; intros; subst
+  | H: _ :: (_ ++ _) = _ |- _ => injection H; intros; subst *)
+  | H: _ = _ |- _ => injection H; intros; subst
+  end.
+
 Lemma reduce_not_table_init_too_few_params : forall hs sr fr es hs' sr' fr' es' l0 l l' idx,
   reduce hs sr fr es hs' sr' fr' es' ->
-  [seq $V i | i <- l0] ++ es ++ l =
+  [seq $V i | i <- l] ++ es ++ l0 =
      [:: $VN VAL_int32 (Wasm_int.Int32.repr 0),
          $VN VAL_int32 (Wasm_int.Int32.repr 1),
          AI_basic (BI_table_init 0%N (N.of_nat idx))
        & l'] ->
   False.
 Proof.
-Admitted.
+  intros. generalize dependent l. revert l0 l'. induction H; intros.
+  { (* reduce_simple *)
+    generalize dependent l. revert l0 l'.
+    induction H; intros.
+    all: destruct l as [|a' [|b' [|c' l]]]=>//; cbn in *; try injection'; try solve_table_init.
+    + destruct lh; cbn in *.
+      destruct es as [|e [|e' es]]; (try injection'); try do 2 destruct l=>//.
+      inv H0. destruct l=>//. do 2 destruct v1=>//.
+      destruct es as [|e [|e' es]]; (try injection'); try do 2 destruct l=>//.
+      inv H0. destruct l=>//. do 2 destruct v1=>//.
+    + destruct lh; cbn in *. do 2 destruct l=>//. do 2 destruct v0=>//.
+      do 2 destruct l=>//. do 2 destruct v0=>//.
+    + destruct lh; cbn in *; destruct l=>//; inv H2; do 2 destruct v=>//.
+  }
+  all: (try by do 3 destruct l=>//; try injection'; do 2 destruct v1=>//).
+  all: destruct l as [|a' [|b' [|c' l]]].
+  all: (try destruct vs as [|v1 [|v2 [|v3 vs]]]); try injection'; intros; subst=>//; try solve_table_init.
+  all: (try destruct vcs as [|v1 [|v2 [|v3 vcs]]]); try injection'=>//; try solve_table_init.
+  all: cbn in *.
+  { destruct lh; cbn in *; last by do 3 destruct l=>//; do 2 destruct v1=>//.
+    destruct l as [|a [|b [|c l]]]; cbn in *.
+    + destruct es; first by apply reduce_not_nil in H. injection'.
+      destruct es; first by apply reduce_not_value in H. injection'.
+      destruct es; first by apply reduce_not_value2 in H. injection'.
+      now eapply IHreduce with (l:=[]).
+    + destruct es; first by apply reduce_not_nil in H. injection'.
+      destruct es; first by apply reduce_not_value in H. injection'.
+      now eapply IHreduce with (l:=[VAL_num (VAL_int32 (Wasm_int.Int32.repr 0))]).
+    + destruct es; first by apply reduce_not_nil in H. cbn in H2. injection'.
+      now eapply IHreduce with (l:=[ VAL_num (VAL_int32 (Wasm_int.Int32.repr 0))
+                                   ; VAL_num (VAL_int32 (Wasm_int.Int32.repr 1))]).
+    + inv H2. by do 2 destruct c as [c|c|c]=>//. }
+  { destruct lh; cbn in *; last by do 3 destruct l=>//; do 2 destruct v0=>//.
+    destruct l as [|a [|b l]]; cbn in *.
+    + destruct es; first by apply reduce_not_nil in H. injection'.
+      destruct es; first by apply reduce_not_value in H. injection'.
+      now eapply IHreduce with (l:=[VAL_num (VAL_int32 (Wasm_int.Int32.repr 0))]).
+    + destruct es; first by apply reduce_not_nil in H. cbn in H2. injection'.
+      now eapply IHreduce with (l:=[ VAL_num (VAL_int32 (Wasm_int.Int32.repr 0))
+                                   ; VAL_num (VAL_int32 (Wasm_int.Int32.repr 1))]).
+    + inv H2. by do 2 destruct b as [b|b|b]=>//. }
+  { destruct lh; cbn in *; last by do 2 destruct l=>//; do 2 destruct v=>//.
+    destruct l as [|a l]; cbn in *.
+    + destruct es; first by apply reduce_not_nil in H. injection'.
+      now eapply IHreduce with (l:=[ VAL_num (VAL_int32 (Wasm_int.Int32.repr 0))
+                                   ; VAL_num (VAL_int32 (Wasm_int.Int32.repr 1))]).
+    + inv H2. by do 2 destruct a as [a|a|a]=>//. }
+Unshelve. all: auto.
+Qed.
 
 Definition post_instantiation_effect : forall num_funs hs sr_pre sr fr idx,
   reduce_trans
