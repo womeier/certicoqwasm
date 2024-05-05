@@ -811,7 +811,7 @@ Qed.
 Definition post_instantiation_effect : forall num_funs hs sr_pre sr fr idx,
   reduce_trans (hs, sr_pre, fr, [seq AI_basic i | i <- concat (mapi_aux (idx, [::])
                                                        (fun n : nat => get_init_expr_elem n)
-                                                       (table_element_mapping num_funs idx)) ++ [::]])
+                                                       (table_element_mapping num_funs idx))])
                (hs, sr, fr, [::]) ->
   (* table after initialisation, before post-initialisation *)
   [:: {| tableinst_type := {| tt_limits := {| lim_min := N.of_nat num_funs; lim_max := None |}
@@ -831,7 +831,7 @@ Proof.
   - apply Operators_Properties.clos_rt_rt1n_iff in H. inv H.
     repeat split; intros=>//. lia. destruct y as [[[??]?]?].
     by apply reduce_not_nil in H1.
-  - exfalso. rewrite cats0 in H. cbn in H.
+  - exfalso. cbn in H.
     rewrite (mapi_aux_acc_snoc _ _ []) in H.
     cbn in H. apply Operators_Properties.clos_rt_rt1n_iff in H. inv H.
     destruct y as [[[??]?]?].
@@ -849,7 +849,7 @@ Proof.
       destruct es; first by solve_table. injection'.
       destruct es; first by solve_table. injection'.
       destruct es; first by solve_table. injection'.
-      destruct es; first solve_table. injection'.
+      destruct es; first by solve_table. injection'.
       { remember ([:: $VN nat_to_value idx,
           $VN VAL_int32 (Wasm_int.Int32.repr 0),
           $VN VAL_int32 (Wasm_int.Int32.repr 1),
@@ -896,12 +896,72 @@ Proof.
                           destruct l=>//; by do 2 destruct v2=>//. }
                       - { (* actual case *)
                            inv Heqes''. cbn in *. subst. inv H7. destruct y as [[[??]?]?].
-
-
-
-
-                       admit.
-                      }
+                           remember ([:: $VN VAL_int32
+                                        (Wasm_int.Int32.repr
+                                           (Wasm_int.Int32.Z_mod_modulus (Z.of_nat idx) +
+                                            1)), $VN VAL_int32 (Wasm_int.Int32.repr 1),
+                                      $VN VAL_int32 (Wasm_int.Int32.repr 0),
+                                      AI_basic (BI_table_init 0%N (N.of_nat idx)),
+                                      AI_basic (BI_elem_drop (N.of_nat idx)) & _]) as es''.
+                           cbn in H8. revert Heqes''.
+                           induction H8; intros; subst=>//.
+                           + { (* reduce simple *)
+                                inv H7. destruct lh; cbn in *;
+                                  do 3 (destruct l; injection'=>//; try by destruct v=>//);
+                                  destruct l=>//; by do 2 destruct v3=>//. }
+                            + do 4 destruct vs=>//. injection'. destruct v=>//.
+                            + do 4 destruct vs=>//. injection'. destruct v=>//.
+                            + do 4 destruct vs=>//. injection'. by do 2 destruct v3=>//.
+                            + do 4 destruct vcs=>//. injection'. solve_table.
+                            + do 4 destruct vcs=>//. injection'. solve_table.
+                            + destruct lh; cbn in *. 2:{ do 4 destruct l=>//; injection'=>//.
+                                                         by do 2 destruct v3=>//. }
+                              destruct l.
+                              -- (* l=[] *) {
+                                destruct es; first by solve_table. injection'.
+                                destruct es; first by solve_table. injection'.
+                                destruct es; first by solve_table. injection'.
+                                destruct es; first by solve_table. injection'.
+                                destruct es.
+                                (* es=[] *) { inv H8.
+                                (* reduce_simple *) inv H7. destruct lh; cbn in *;
+                  do 3 (destruct l; injection'=>//; try by destruct v=>//);
+                  destruct l=>//; by do 2 destruct v3=>//.
+            -- do 4 destruct vs=>//. injection'. destruct v=>//.
+            -- do 4 destruct vs=>//. injection'. destruct v=>//.
+            -- do 4 destruct vs=>//. injection'. by do 2 destruct v3=>//.
+            -- do 4 destruct vcs=>//. injection'. solve_table.
+            -- do 4 destruct vcs=>//. injection'. solve_table.
+            -- apply clos_rt_rt1n_iff in H9. apply reduce_trans_trap_trap in H9. now destruct H9.
+            -- (* r_table_return *) { cbn in *. subst. inv H9.
+                destruct y as [[[??]?]?]. cbn in H7. clear IHreduce.
+                remember (AI_basic (BI_elem_drop (N.of_nat idx))
+        :: [seq AI_basic i
+              | i <- concat
+                       (mapi_aux (idx + 1, [::])
+                          (fun n : nat => get_init_expr_elem n)
+                          (table_element_mapping num_funs
+                             (S idx)))]) as es'. revert Heqes'. induction H7; intros; subst=>//.
+             { (* reduce_simple *) inv H7. by destruct ref=>//. by do 2 destruct v0=>//. destruct v1=>//.
+              destruct v0=>//. destruct v1=>//. destruct v0=>//. destruct v0=>//. destruct v0=>//.
+              destruct lh, l=>//; do 2 destruct v0=>//. }
+             all: try by (destruct vs=>//; injection'; (try solve_table); repeat destruct v0=>//).
+             destruct vcs=>//. injection'. do 2 destruct v0=>//.
+             destruct vcs=>//. injection'. do 2 destruct v0=>//. do 2 destruct v0=>//.
+             do 2 destruct v0=>//. by destruct tabinit=>//. by destruct tabinit=>//.
+              {(* actual *) injection'. remember (hs, sr, f, [::]) as y. rewrite H9 in H8. subst y.
+             apply Operators_Properties.clos_rt_rt1n_iff in H8. replace (S idx) with (idx + 1) in H8 by lia.
+             apply IHnum_funs in H8; eauto. admit. admit. (* actual *) }
+             destruct lh; cbn in *; destruct l=>//; try by do 2 destruct v0=>//.
+             destruct es; first by solve_table. injection'. apply IHreduce; eauto. admit. }
+            -- (* r_table_step *) cbn in *. lia.
+            -- destruct lh; cbn in *. 2:{ repeat (destruct l; injection'=>//). by do 2 destruct v3=>//. }
+               admit.
+                      } injection'. admit. }
+                               (* a::l *) injection'.
+                               destruct l.
+                               (* l=[] *)
+                               (* a::l *) admit. }
                       - apply Operators_Properties.clos_rt_rt1n_iff in H7.
                         apply reduce_trans_trap_trap in H7. now destruct H7.
                       - try by do 3 destruct vcs=>//; injection'; try solve_table.
