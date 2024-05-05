@@ -669,6 +669,7 @@ Ltac solve_table :=
   | H: reduce _ _ _ [:: vref_to_e ?v] _ _ _ _ |- _ => by apply reduce_not_value' with (c:=VAL_ref v) in H
   | H: reduce _ _ _ [:: $VN _] _ _ _ _ |- _ => by apply reduce_not_value in H
   | H: reduce _ _ _ [:: $VN _; $VN _] _ _ _ _ |- _ => by apply reduce_not_value2 in H
+  | H: reduce _ _ _ [:: $VN ?c1'; vref_to_e ?c2'] _ _ _ _ |- _ => by eapply reduce_not_value2' with (c1:=VAL_num c1')(c2:=VAL_ref c2') in H; eassumption
   | H: reduce _ _ _ [:: $VN _; $VN _; $VN _] _ _ _ _ |- _ => by apply reduce_not_value3 in H
   | H: AI_trap = vref_to_e ?v |- _ => by destruct v=>//
   | H: AI_label _ _ _ = vref_to_e ?v |- _ => by destruct v=>//
@@ -828,7 +829,7 @@ Definition post_instantiation_effect : forall num_funs hs sr_pre sr fr idx,
 Proof.
   induction num_funs; intros.
   - apply Operators_Properties.clos_rt_rt1n_iff in H. inv H.
-    repeat split; intros=>//. lia. unfold reduce_tuple in H1. destruct y as [[[??]?]?].
+    repeat split; intros=>//. lia. destruct y as [[[??]?]?].
     by apply reduce_not_nil in H1.
   - exfalso. rewrite cats0 in H. cbn in H.
     rewrite (mapi_aux_acc_snoc _ _ []) in H.
@@ -884,16 +885,44 @@ Proof.
                  ++ (* l=[] *)
                     { destruct es; first by solve_table. injection'.
                       destruct es; first by solve_table. injection'.
-                      destruct es; first by apply reduce_not_value2' with (c1:=VAL_num (VAL_int32 (nat_to_i32 idx))) (c2:=VAL_ref v) in H8.
-                      injection'.
+                      destruct es; first by solve_table. injection'.
                       (* table_set *)
-                      inv H8; (try by injection'; solve_table); (try by do 3 destruct vs=>//; injection'; try solve_table; destruct v=>//); (try by do 3 destruct vcs=>//; injection'; try solve_table).
-                      - (* reduce_simple *) admit.
-                      - (* actual case *) admit.
+                      remember ([:: $VN VAL_int32 (nat_to_i32 idx),
+          vref_to_e v, AI_basic (BI_table_set 0%N)
+         & es]) as es''. generalize dependent es. generalize dependent l0.
+                      induction H8; intros; subst=>//; (try by injection'; solve_table); (try by do 3 destruct vs=>//; injection'; try solve_table; destruct v=>//); (try by do 3 destruct vcs=>//; injection'; try solve_table).         - { (* reduce_simple *)
+                        inv H6. destruct lh; cbn in *;
+                          do 3 (destruct l; injection'=>//; try by destruct v=>//);
+                          destruct l=>//; by do 2 destruct v2=>//. }
+                      - { (* actual case *)
+                           inv Heqes''. cbn in *. subst. inv H7. destruct y as [[[??]?]?].
+
+
+
+
+                       admit.
+                      }
                       - apply Operators_Properties.clos_rt_rt1n_iff in H7.
                         apply reduce_trans_trap_trap in H7. now destruct H7.
                       - try by do 3 destruct vcs=>//; injection'; try solve_table.
-                       admit. }
+                      - { destruct lh; cbn in *. 2:{ do 2 destruct l=>//; injection'=>//.
+                  destruct v=>//. destruct l=>//. by do 2 destruct v2=>//. }
+                          destruct l.
+                          + (* l=[] *)
+                            destruct es; first by solve_table. injection'.
+                            destruct es; first by solve_table. injection'.
+                            destruct es; first by destruct l1=>//; injection'; solve_table. injection'.
+                            cbn in H9. rewrite <- catA in H10, H9. eapply IHreduce with (l0:= l1 ++ l0); eauto.
+                         + (* a::l *) injection'.
+                            destruct l.
+                            2:{ destruct l; last by do 2 destruct v2=>//.
+                                destruct es; first by solve_table. injection'.
+                                by apply reduce_not_table_set_too_few_params0 in H8. }
+                            (* l=[] *)
+                            destruct es; first by solve_table. injection'.
+                            destruct es; first by solve_table. injection'.
+                            by apply reduce_not_table_set_too_few_params1 in H8. }
+                    }
                  ++ (* a::l *) injection'.
                     destruct l.
                     2:{ destruct l; last by do 2 destruct v2=>//.
