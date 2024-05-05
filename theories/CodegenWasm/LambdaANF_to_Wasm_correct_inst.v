@@ -554,6 +554,7 @@ Proof.
     intros. by apply H0; cbn; auto.
 Qed.
 
+(*
 (* instantiation + post-instantiation *)
 Definition instantiate_complete module sr fr hs :=
   exists sr_pre es_post,
@@ -825,7 +826,7 @@ Definition post_instantiation_effect : forall num_funs hs sr_pre sr fr idx,
   s_mems sr_pre = s_mems sr /\
   s_funcs sr_pre = s_funcs sr /\
   s_datas sr_pre = s_datas sr /\
-  (forall i, N.to_nat i < num_funs -> stab_elem sr (f_inst fr) 0%N i = Some (VAL_ref_func (i + N.of_nat idx)%N)).
+  (forall i, N.to_nat i + idx < num_funs -> stab_elem sr (f_inst fr) 0%N i = Some (VAL_ref_func (i + N.of_nat idx)%N)).
 Proof.
   induction num_funs; intros.
   - apply Operators_Properties.clos_rt_rt1n_iff in H. inv H.
@@ -952,7 +953,7 @@ Proof.
               {(* actual *) injection'. remember (hs, sr, f, [::]) as y. rewrite H9 in H8. subst y.
              apply Operators_Properties.clos_rt_rt1n_iff in H8. replace (S idx) with (idx + 1) in H8 by lia.
              apply IHnum_funs in H8; eauto. admit. admit. (* actual *) }
-             destruct lh; cbn in *; destruct l=>//; try by do 2 destruct v0=>//.
+             destruct lh; cbn in *; destruct l=>//; try by do 2 destruct v0=>//. cbn in *.
              destruct es; first by solve_table. injection'. apply IHreduce; eauto. admit. }
             -- (* r_table_step *) cbn in *. lia.
             -- destruct lh; cbn in *. 2:{ repeat (destruct l; injection'=>//). by do 2 destruct v3=>//. }
@@ -1026,9 +1027,96 @@ Proof.
             -- (* lh=LH_rec *)
                do 4 destruct l=>//. by do 2 destruct v2=>//.
 Admitted.
+*)
+
+Compute 32.
+
+Lemma table_element_mapping_nth_error : forall num_funs idx x,
+  x < num_funs ->
+  nth_error (table_element_mapping num_funs idx) x =
+    Some {| modelem_type := T_funcref
+          ; modelem_init := [:: [:: BI_ref_func (N.of_nat (idx + x))]]
+          ; modelem_mode := ME_active 0%N [:: BI_const_num (nat_to_value (idx + x))]
+          |}.
+Proof.
+  induction num_funs; intros; cbn.
+  - intros. lia.
+  - destruct x. cbn. eauto. repeat f_equal; lia. cbn.
+    replace (idx + S x) with (S idx + x) by lia.
+    apply IHnum_funs. lia.
+Qed.
+
+Lemma funcidcs_length : forall n m,
+  length (funcidcs n m) = n.
+Proof.
+  induction n; intros; cbn; eauto.
+Qed.
+
+Lemma init_elems_effect : forall num_funs state sr fr mi r_inits idx,
+  Forall2
+  (fun (e1 : module_element) (rs : seq value_ref) =>
+   Forall2
+     (fun (bes : seq basic_instruction) (r : value_ref) =>
+      reduce_trans
+        (state, sr, fr, to_e_list bes)
+        (state, sr, fr, [:: vref_to_e r])) (modelem_init e1) rs)
+  (table_element_mapping num_funs idx) r_inits ->
+  fr.(f_inst).(inst_funcs) = mi.(inst_funcs) ->
+  inst_funcs mi = funcidcs num_funs 0%N ->
+  inst_elems mi = iota_N 0 num_funs ->
+  s_elems sr = [ seq {| eleminst_type := modelem_type elem; eleminst_elem := refs |} |
+                          '(elem, refs) <- combine (table_element_mapping num_funs 0) r_inits ] ->
+
+  (forall x, N.to_nat x < num_funs -> selem sr mi x = Some (Build_eleminst T_funcref [:: VAL_ref_func (N.of_nat idx + x)%N])).
+Proof.
+  intros ??????????????. unfold selem. rewrite H2. unfold lookup_N.
+  rewrite iota_N_lookup; last by apply /ssrnat.leP.
+  rewrite N2Nat.id. rewrite H3. rewrite nth_error_map.
+  erewrite nth_error_nth'. 2:{ rewrite combine_length table_element_mapping_length.
+                               apply Forall2_length in H. rewrite table_element_mapping_length in H. lia. }
+  erewrite combine_nth. 2:{ apply Forall2_length in H. now rewrite -> table_element_mapping_length in *. }
+  erewrite nth_error_nth; last by eapply table_element_mapping_nth_error.
+  have H' := table_element_mapping_nth_error _ idx _ H4.
+  assert (exists l, nth_error r_inits (N.to_nat x) = Some l) as [l Hl]. { apply notNone_Some. apply nth_error_Some. apply Forall2_length in H. rewrite table_element_mapping_length in H. lia. }
+  have H'' := Forall2_nth_error H H' Hl. cbn in H''. inv H''. inv H9. cbn in H7.
+  cbn. erewrite nth_error_nth; last eassumption.
+  apply Operators_Properties.clos_rt_rt1n_iff in H7. inv H7. destruct y=>//.
+  destruct y0 as [[[??]?]?]. apply reduce_ref_func in H5.
+  destruct H5 as [addr [Hf ->]]. rewrite H0 H1 in Hf. unfold lookup_N in Hf.
+  erewrite nth_error_funcidcs in Hf; eauto. 2:{ apply Some_notNone in Hf. apply nth_error_Some in Hf.
+    rewrite funcidcs_length in Hf. lia. }
+  rewrite N2Nat.id in Hf. cbn in Hf. inv Hf.
+  apply Operators_Properties.clos_rt_rt1n_iff in H6. eapply reduce_trans_value with (v2:=VAL_ref y) in H6.
+  inv H6. repeat f_equal. lia.
+Unshelve. repeat constructor. apply [].
+Qed.
+
+Definition INV_instantiation_elems s f num_funs := forall x,
+  N.to_nat x < num_funs ->
+  selem s f.(f_inst) x = Some (Build_eleminst T_funcref [:: VAL_ref_func x]).
+
+(* same as INV, except INV_table_id since it doesn't hold yet *)
+Definition INV_instantiation (s : store_record) (f : frame) (num_funs : nat) :=
+    INV_result_var_writable s f
+ /\ INV_result_var_out_of_mem_writable s f
+ /\ INV_result_var_out_of_mem_is_zero s f
+ /\ INV_global_mem_ptr_writable s f
+ /\ INV_constr_alloc_ptr_writable s f
+ /\ INV_globals_all_mut_i32 s
+ /\ INV_linear_memory s f
+ /\ INV_global_mem_ptr_in_linear_memory s f
+ /\ INV_locals_all_i32 f
+ /\ INV_num_functions_bounds s
+ /\ INV_inst_globals_nodup f
+ /\ INV_types s f
+ /\ INV_global_mem_ptr_multiple_of_two s f
+ /\ INV_exists_func_grow_mem s f
+ /\ INV_inst_funcs_id s f
+(* additional *)
+ /\ INV_instantiation_elems s f num_funs.
 
 Theorem module_instantiate_INV_and_more_hold :
-forall e eAny topExp fds num_funs module fenv main_lenv sr f hs,
+forall e eAny topExp fds num_funs module fenv main_lenv sr f es_post,
   NoDup (collect_function_vars (Efun fds eAny)) ->
   expression_restricted cenv e ->
   topExp = match e with | Efun _ _ => e | _ => Efun Fnil e end ->
@@ -1039,10 +1127,10 @@ forall e eAny topExp fds num_funs module fenv main_lenv sr f hs,
   (Z.of_nat num_funs < max_num_functions)%Z ->
   LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, main_lenv) ->
   (* instantiate with the two imported functions *)
-  instantiate_complete module sr f hs ->
+  instantiate initial_store module [EV_func 0%N; EV_func 1%N] (sr, f, es_post) ->
 
   (* invariants hold initially *)
-  INV fenv nenv sr f /\
+  INV_instantiation sr f (num_funs + num_custom_funs) /\
   inst_funcs (f_inst f) = [:: 0%N, 1%N, 2%N, 3%N & (funcidcs num_funs (N.of_nat num_custom_funs))] /\
   (* value relation holds for all funcs in fds *)
   (forall a errMsg, find_def a fds <> None ->
@@ -1070,6 +1158,8 @@ forall e eAny topExp fds num_funs module fenv main_lenv sr f hs,
              {| modfunc_type := type f0; modfunc_locals := locals f0; modfunc_body := body f0 |})
             fns
      ] /\
+  es_post = concat (mapi_aux (0, [::]) (fun n : nat => get_init_expr_elem n)
+                             (table_element_mapping (Datatypes.length fns + num_custom_funs) 0)) /\
   (* links e and e' in main_fn above *)
   translate_body nenv cenv
           (create_local_variable_mapping
@@ -1087,9 +1177,8 @@ forall e eAny topExp fds num_funs module fenv main_lenv sr f hs,
   | _ => Ret []
   end = Ret fns.
 Proof.
-  intros e eAny topExp fds num_funs module fenv lenv s f hs Hnodup HeRestr HtopExp Hfds HcenvCorrect Hnumfuns
+  intros e eAny topExp fds num_funs module fenv lenv s f es_post Hnodup HeRestr HtopExp Hfds HcenvCorrect Hnumfuns
     HfnsLength Hcompile Hinst. subst num_funs topExp.
-  unfold instantiate_complete in Hinst. destruct Hinst as [sr_pre [es_post [Hinst HredPost]]].
   unfold instantiate in Hinst.
   unfold LambdaANF_to_Wasm in Hcompile.
   remember (list_function_types (Z.to_nat max_function_args)) as types.
@@ -1102,7 +1191,7 @@ Proof.
             end) eqn:HtopExp'; try (by inv Hcompile).
   destruct (translate_body nenv cenv _ _ _) eqn:Hexpr. inv Hcompile. rename l0 into e'.
   inv Hcompile.
-  unfold INV. unfold is_true in *.
+  unfold INV_instantiation. unfold is_true in *.
   destruct Hinst as [t_imps_mod [t_imps [t_exps [state [mi [ g_inits [r_inits
           [Hmodule [Himports [HimportsSt [HallocModule [HinstGlobals [HinstElem [Hframe HinitExprs]]]]]]]]]]]]]].
   rename l into fns. cbn in HinitExprs.
@@ -1125,6 +1214,7 @@ Proof.
            destruct HallocModule as [HallocModule ?F]).
   apply store_record_eqb_true in HallocModule. subst s1.
   apply eqseq_true in F0,F1,F2,F3,F4,F5,F6,F. cbn in HaddF.
+  rewrite table_element_mapping_length in F1.
 
   (* main fn, grow_mem_fn *)
   destruct ((add_func (add_func initial_store _)) _) eqn:HaddF'.
@@ -1143,12 +1233,6 @@ Proof.
   rewrite map_length in F5, F. rewrite rev_app_distr in F, F5.
   rewrite rev_involutive in F5, F.
   cbn in F0, F1, F2, F3, F4, F5, F.
-
-  (* post instantiation *)
-  cbn in HredPost.
-  apply post_instantiation_effect in HredPost; last assumption.
-  destruct HredPost as [P0 [P1 [P2 [P3 P4]]]].
-  rewrite -> P0 in *. rewrite -> P1 in *. rewrite -> P2 in *. rewrite -> P3 in *.
 
   split.
   (* INV *)
@@ -1196,12 +1280,6 @@ Proof.
    split. (* inst_globals (f_inst f) no dups *)
    unfold INV_inst_globals_nodup. rewrite F2.
    repeat constructor; cbn; lia.
-   split. (* INV_table_id *)
-   { unfold INV_table_id. intros.
-     apply P4. destruct e; try by inv H. inv HtopExp'.
-     apply translate_fvar_fname_mapping in H.
-     apply translate_functions_length in HtransFns. lia.
-  }
   split. (* types *)
   { unfold INV_types. intros. unfold stypes. cbn. unfold max_function_args in H.
     rewrite F6. unfold lookup_N. erewrite nth_error_nth'.
@@ -1216,7 +1294,7 @@ Proof.
   split. (* func grow_mem exists *)
   { unfold INV_exists_func_grow_mem.
     by rewrite -E0. }
-  (* inst_funcs_id *)
+  split. (* inst_funcs_id *)
   { unfold INV_inst_funcs_id. intros ? Hbound. cbn. rewrite F5. unfold lookup_N.
     remember (N.to_nat i) as i'.
     destruct (Nat.leb_spec i' 3).
@@ -1229,6 +1307,11 @@ Proof.
       f_equal. lia. unfold num_custom_funs in *.
       rewrite -E0 in Hbound. cbn in Hbound.
       do 2! rewrite map_length in Hbound. lia. }
+  }
+  (* instantiation_elems *)
+  { unfold INV_instantiation_elems. intros.
+    erewrite init_elems_effect; eauto. f_equal; lia. rewrite F5. by rewrite Nat.add_comm.
+    now apply translate_functions_length in HtransFns.
   }
   split. (* inst_funcs (f_inst f) *)
   { rewrite F5. repeat f_equal.
@@ -1293,6 +1376,7 @@ Proof.
    - apply translate_functions_length in HtransFns. lia.
    - intros. eapply translate_functions_type_bound; eauto.
      destruct e; inv HtopExp'=>//. inv HeRestr. assumption. }
+	split; first by rewrite cats0.
 	split=>//. rewrite -Hexpr.
 	destruct e; inv HtopExp'=>//.
 Unshelve. all: apply (Tf [] []).
@@ -1302,11 +1386,11 @@ Qed.
 Theorem LambdaANF_Wasm_related :
   forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var)
          (hs : host_state) module fenv lenv
-         (sr : store_record) (fr : frame) (pfs : M.t (list val -> option val)),
+         (sr : store_record) (fr : frame) (pfs : M.t (list val -> option val)) (es_post : list basic_instruction),
   (* evaluation of LambdaANF expression *)
     bstep_e pfs cenv (M.empty _) e v n ->
         bstep_prim_funs_no_fun_return_values pfs ->
-  bs_LambdaANF_prim_fun_env_extracted_prim_env_related penv pfs ->
+  bs_LambdaANF_prim_fun_env_extracted_prim_env_related cenv penv pfs ->
   (* compilation function *)
   LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, lenv) ->
   (* constructors wellformed *)
@@ -1320,15 +1404,20 @@ Theorem LambdaANF_Wasm_related :
   (~ exists x, occurs_free e x ) ->
   (* instantiation with the two imported functions *)
 
-  instantiate_complete module sr fr hs ->
-  (* reduces to some sr' that has the result variable set to the corresponding value *)
+  instantiate initial_store module [EV_func 0%N; EV_func 1%N] (sr, fr, es_post) ->
+  (* perform post_instantiation: initialises table for indirect calls *)
   exists (sr' : store_record),
-       reduce_trans (hs, sr,  (Build_frame [] (f_inst fr)), [ AI_basic (BI_call main_function_idx) ])
+       reduce_trans (hs, sr,  (Build_frame [] (f_inst fr)), map AI_basic es_post)
                     (hs, sr', (Build_frame [] (f_inst fr)), [])    /\
+
+  (* reduces to some sr' that has the result variable set to the corresponding value *)
+  exists (sr'' : store_record),
+       reduce_trans (hs, sr',  (Build_frame [] (f_inst fr)), [ AI_basic (BI_call main_function_idx) ])
+                    (hs, sr'', (Build_frame [] (f_inst fr)), [])    /\
 
        result_val_LambdaANF_Wasm cenv fenv nenv penv v sr' (f_inst fr).
 Proof.
-  intros ??????????? Hstep HprimFunsRet HprimFunsRelated LANF2Wasm Hcenv HcenvRestr HvarsEq HvarsNodup Hfreevars Hinst.
+  intros ???????????? Hstep HprimFunsRet HprimFunsRelated LANF2Wasm Hcenv HcenvRestr HvarsEq HvarsNodup Hfreevars Hinst.
   subst vars.
 
   assert (HeRestr: expression_restricted cenv e).
@@ -1379,7 +1468,8 @@ Proof.
   have HI := module_instantiate_INV_and_more_hold _ _ _ _ _ _ _ _ _ _ _ Hnodup' HeRestr
                Logic.eq_refl Logic.eq_refl Hcenv' Logic.eq_refl Hmaxfuns LANF2Wasm Hinst.
   clear Hnodup' Hcenv'.
-  destruct HI as [Hinv [HinstFuncs [HfVal [grow_mem_fn [main_fn [e' [fns' [-> [-> [HsrFuncs [Hexpr' Hfns']]]]]]]]]]].
+  destruct HI as [Hinv [HinstFuncs [HfVal [grow_mem_fn [main_fn [e' [fns' [-> [-> [HsrFuncs [-> [Hexpr' Hfns']]]]]]]]]]]].
+
 
   remember (Build_frame (repeat (VAL_num (nat_to_value 0)) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
 
