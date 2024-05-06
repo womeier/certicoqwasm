@@ -1581,13 +1581,26 @@ Proof.
   induction num_funs; cbn; intros; eauto.
 Qed.
 
+Lemma elem_vals_nth_error : forall num_funs idx n,
+  n < num_funs ->
+  nth_error (elem_vals num_funs idx) n = Some [:: VAL_ref_func (N.of_nat (idx + n))].
+Proof.
+  induction num_funs; intros; try lia.
+  destruct n.
+  - cbn. do 3 f_equal. lia.
+  - cbn. replace (idx + S n) with (S idx + n) by lia.
+    rewrite IHnum_funs. reflexivity. lia.
+Qed.
+
 Lemma list_function_types_valid :
   Forall (fun ft : function_type => functype_valid ft)
          (list_function_types (Z.to_nat max_function_args)).
 Proof.
-Admitted.
+  by apply Forall_forall.
+Qed.
 
 Lemma elems_instantiate : forall hs sr fr num_funs,
+  fr.(f_inst).(inst_funcs) = [seq N.of_nat i | i <- iota 0 num_funs] ->
   Forall2
   (fun (e1 : module_element) (rs : seq value_ref) =>
    Forall2
@@ -1598,31 +1611,75 @@ Lemma elems_instantiate : forall hs sr fr num_funs,
   (table_element_mapping num_funs 0)
   (elem_vals num_funs 0).
 Proof.
-Admitted.
+  intros ?????.
+  apply Forall2_spec.
+  - by rewrite table_element_mapping_length elem_vals_length.
+  - intros ??? Hnth1 Hnth2.
+    assert (n < num_funs). {
+      apply nth_error_Some_length in Hnth1.
+      by rewrite table_element_mapping_length in Hnth1.
+    }
+    rewrite table_element_mapping_nth_error in Hnth1=>//. injection Hnth1 as <-.
+    cbn in H. cbn.
+    rewrite elem_vals_nth_error in Hnth2; auto.
+    injection Hnth2 as <-.
+    apply Forall2_spec=>//.
+    intros.
+    destruct n0; last by destruct n0.
+    injection H1 as <-. injection H2 as <-.
+    apply rt_step. apply r_ref_func.
+    rewrite H.
+    unfold lookup_N. rewrite nth_error_map.
+    rewrite iota_lookup. cbn. f_equal. lia.
+    apply /ssrnat.leP. lia.
+Qed.
 
-Lemma module_typing_module_elem_typing : forall fns c,
-  (* types of print_char, print_int, pp, grow_mem, main, fns *)
+Lemma funcidx_in_table_element_mapping : forall num_funs n idx,
+  n < num_funs ->
+  In (N.of_nat (idx + n))
+  (concat
+     (List.map module_elem_get_funcidx
+        (table_element_mapping num_funs idx))).
+Proof.
+  induction num_funs; intros; first lia.
+  destruct n. left. lia. cbn. right.
+  replace (idx + S n) with (S idx + n) by lia.
+  apply IHnum_funs. lia.
+Qed.
+
+Lemma module_typing_module_elem_typing : forall fns c t,
+  (* types of print_char, print_int, grow_mem, main, fns *)
   tc_funcs c = [:: Tf [:: T_num T_i32] [::], Tf [:: T_num T_i32] [::], Tf [:: T_num T_i32] [::], Tf [::] [::] &
                 [seq Tf (repeat (T_num T_i32) (N.to_nat (type f))) [::] | f <- fns]] ->
-  length (tc_tables c) > 0 ->
+  lookup_N (tc_tables c) 0%N = Some t ->
+  tt_elem_type t = T_funcref ->
+  tc_refs c = nlist_nodup (module_elems_get_funcidx (table_element_mapping (Datatypes.length fns + num_custom_funs) 0)) ->
   Forall2 (module_elem_typing c) (table_element_mapping (Datatypes.length fns + num_custom_funs) 0)
                                  (repeat T_funcref (Datatypes.length fns + num_custom_funs)).
 Proof.
-  intros ?? Hft Htab. unfold num_custom_funs.
+  intros ??? Hft Htab1 Htab2 Hrefs. unfold num_custom_funs.
   apply Forall2_spec. by rewrite table_element_mapping_length repeat_length.
   intros ??? Hnth1 Hnth2.
-(*  apply In_nth_error in Hnth. destruct Hnth as [n Hnth].
-  have Hlen := Hnth. apply Some_notNone in Hlen. apply nth_error_Some in Hlen. rewrite table_element_mapping_length in Hlen.
-  erewrite table_element_mapping_nth in Hnth=>//.
-  injection Hnth as <-. repeat split =>//.
-  - by apply bet_const.
-  - by apply /ssrnat.leP.
-  - rewrite Hft. cbn. rewrite length_is_size. rewrite size_map.
-    rewrite length_is_size in Hlen.
-    rewrite -ssrnat.subnE -ssrnat.minusE. rewrite Nat.add_0_r.
-    now replace (n - S (S (S (S (size fns))))) with 0 by lia.
-Qed. *)
-Admitted.
+  assert (n < length fns + 4). {
+    apply nth_error_Some_length in Hnth1.
+    by rewrite table_element_mapping_length in Hnth1.
+  }
+  rewrite table_element_mapping_nth_error in Hnth1=>//. injection Hnth1 as <-.
+  rewrite nth_error_repeat in Hnth2=>//. injection Hnth2 as <-.
+  do 2 split=>//.
+  - apply Forall_forall.
+    intros. cbn in H0. destruct H0=>//. subst x.
+    split=>//.
+    assert (length (tc_funcs c) = 4 + length fns). { rewrite Hft. cbn. now rewrite map_length. }
+    assert (exists x, lookup_N (tc_funcs c) (N.of_nat n) = Some x) as [x Hx].
+    { apply notNone_Some. apply nth_error_Some. lia. }
+    eapply bet_ref_func; eauto. rewrite Hrefs. apply nodup_In.
+    unfold module_elems_get_funcidx. apply nodup_In.
+    by apply funcidx_in_table_element_mapping with (idx:=0).
+  - cbn. exists t. cbn in Htab1. rewrite Htab1.
+    destruct t. cbn in Htab2.
+    repeat split=>//. apply bet_const_num.
+Qed.
 
 Theorem module_instantiate : forall e module fenv venv (hs : host_state),
   correct_cenv_of_exp cenv e ->
@@ -1815,7 +1872,7 @@ Proof.
       repeat (apply Forall2_cons; repeat split; try by apply bet_const_num =>//).
       by apply Forall2_nil.
     + (* module_elem_typing *)
-      simpl. by apply module_typing_module_elem_typing.
+      simpl. by eapply module_typing_module_elem_typing.
     + (* module_import_typing *)
       apply Forall2_cons. subst ts. unfold module_import_typing. cbn.
         erewrite nth_error_nth'. 2: { rewrite length_list_function_types. lia. }
@@ -1891,7 +1948,7 @@ Proof.
     rewrite Hfuncs1 -Hfuncs3 -Hfuncs4 -Hfuncs5.
     repeat (apply andb_true_iff; split=>//).
     + by apply /eqstore_recordP.
-    + by apply /eqseqP. (* TODO types shouldn't be unfolded, slow *)
+    + by apply /eqseqP. (* TODO types shouldn't be unfolded here, slow *)
     + subst l. by apply /eqseqP.
     + subst l0. by apply /eqseqP.
     + by apply /eqexportinstP.
@@ -1903,8 +1960,13 @@ Proof.
     repeat (apply Forall2_cons; first by apply rt_refl).
     by apply Forall2_nil.
   - (* instantiate elem *)
-    unfold instantiate_elems. cbn.
-    by apply elems_instantiate.
+    unfold instantiate_elems. cbn. unfold interp_alloc_module in HallocM.
+    destruct (alloc_funcs _ _ _) eqn:Hfuncs.
+    apply alloc_func_iota_N in Hfuncs. cbn in Hfuncs. cbn in HallocM.
+    destruct (alloc_elems _ _) eqn:Helems.
+    injection HallocM as <-.
+    apply elems_instantiate. subst inst. cbn.
+    rewrite Nat.add_comm. by rewrite map_length.
   - by rewrite cats0.
 Unshelve. all: apply (Tf [] []).
 Admitted.
