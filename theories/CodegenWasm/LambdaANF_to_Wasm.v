@@ -613,7 +613,7 @@ Fixpoint collect_local_variables (e : exp) : list cps.var :=
 Fixpoint create_var_mapping (start_id : u32) (vars : list cps.var) (env : M.tree u32) : M.tree u32 :=
    match vars with
    | [] => env
-   | v :: l' => let mapping := create_var_mapping (1 + start_id)%N l' env in
+   | v :: l' => let mapping := create_var_mapping (N.succ start_id) l' env in
                 M.set v start_id mapping
    end.
 
