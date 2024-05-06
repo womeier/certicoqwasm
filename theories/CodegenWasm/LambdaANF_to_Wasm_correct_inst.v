@@ -554,129 +554,6 @@ Proof.
     intros. by apply H0; cbn; auto.
 Qed.
 
-(*
-(* instantiation + post-instantiation *)
-Definition instantiate_complete module sr fr hs :=
-  exists sr_pre es_post,
-  instantiate initial_store module [EV_func 0%N; EV_func 1%N] (sr_pre, fr, es_post) /\
-  reduce_trans (hs, sr_pre, fr, map AI_basic es_post) (hs, sr, fr, [::]).
-
-Lemma mapi_aux_acc_snoc {A B} : forall xs idx l a (f : nat -> A -> B),
-  mapi_aux (idx, l ++ [::a]) f xs = a :: mapi_aux (idx, l) f xs.
-Proof.
-  induction xs; intros.
-  - cbn. by rewrite rev_app_distr.
-  - cbn. by rewrite -IHxs.
-Qed.
-
-Lemma reduce_not_value' : forall hs hs' sr sr' fr fr' es' c,
-  reduce hs sr fr [:: $V c] hs' sr' fr' es' -> False.
-Proof.
-  intros ???????? Hcontra.
-  remember [:: $V c] as es. generalize dependent c.
-  induction Hcontra; intros; subst; try by inv Heqes; destruct c; destruct v;
-    (try by destruct vs=>//; now destruct vs);
-    (try by destruct vcs=>//; now destruct vcs).
-  - { destruct c; destruct v; inv H=>//; destruct lh; cbn in *; repeat destruct l=>//. }
-  - destruct c; destruct v0=>//.
-  - destruct c; destruct v0=>//.
-  - destruct lh; cbn in *.
-    + destruct l. 2:{ destruct l, es=>//. by apply reduce_not_nil in Hcontra. }
-      destruct es. { by apply reduce_not_nil in Hcontra. }
-      injection Heqes as ->. destruct es,l0=>//. by eapply IHHcontra=>//.
-    + repeat destruct l=>//. destruct c=>//. destruct v=>//.
-Qed.
-
-Lemma reduce_not_value : forall hs hs' sr sr' fr fr' es' c,
-  reduce hs sr fr [:: $VN c] hs' sr' fr' es' -> False.
-Proof.
-  intros. by apply reduce_not_value' with (c:=VAL_num c) in H.
-Qed.
-
-Lemma reduce_not_value2' : forall hs hs' sr sr' fr fr' es' c1 c2,
-  reduce hs sr fr [:: $V c1; $V c2] hs' sr' fr' es' -> False.
-Proof.
-  intros ????????? Hcontra.
-  remember [:: $V c1; $V c2] as es. generalize dependent c1. revert c2.
-  induction Hcontra; intros; subst; try by inv Heqes;
-    (try by repeat destruct vs=>//; do 2 destruct c2 as [c2|c2|c2]=>//).
-  - inv H; (try by do 2 destruct c2 as [c2|c2|c2]=>//; try destruct v0=>//).
-    destruct lh; cbn in *; repeat destruct l=>//.
-    all: try by destruct c1=>//; destruct v=>//.
-    all: try by do 2 destruct c2 as [c2|c2|c2]=>//.
-  - repeat destruct vcs=>//. destruct c2=>//. destruct v0=>//.
-  - repeat destruct vcs=>//. destruct c2=>//. destruct v0=>//.
-  - inv Heqes. destruct lh; cbn in *; repeat destruct l=>//.
-    + destruct es. 1: by apply reduce_not_nil in Hcontra.
-      injection H0 as ->. destruct es. 1: by apply reduce_not_value' in Hcontra.
-      injection H as ->. destruct es=>//. now eapply IHHcontra.
-    + destruct es. 1: by apply reduce_not_nil in Hcontra.
-      injection H0; intros; subst. destruct es=>//. by apply reduce_not_value' in Hcontra.
-      destruct es=>//. by apply reduce_not_nil in Hcontra.
-    + destruct c1=>//. destruct v=>//.
-    + destruct c2=>//. destruct v0=>//.
-Qed.
-
-Lemma reduce_not_value2 : forall hs hs' sr sr' fr fr' es' c1 c2,
-  reduce hs sr fr [:: $VN c1; $VN c2] hs' sr' fr' es' -> False.
-Proof.
-  intros. by apply reduce_not_value2' with (c1:=VAL_num c1)(c2:=VAL_num c2) in H.
-Qed.
-
-Lemma reduce_not_value3' : forall hs hs' sr sr' fr fr' es' c1 c2 c3,
-  reduce hs sr fr [:: $V c1; $V c2; $V c3] hs' sr' fr' es' -> False.
-Proof.
-  intros ?????????? Hcontra.
-  remember [:: $V c1; $V c2; $V c3] as es. generalize dependent c1. revert c2 c3.
-  induction Hcontra; intros; subst; try by inv Heqes;
-  (try by repeat destruct vs=>//; do 2 destruct c3 as [c3|c3|c3]=>//).
-  - (* inv H. destruct lh; cbn in *; repeat destruct l=>//. *)
-    { (* reduce_simple *) inv H; try by do 2 destruct c3 as [c3|c3|c3]=>//.
-      destruct lh; destruct l=>//; cbn in *. destruct c1=>//. destruct v=>//.
-      destruct l=>//. destruct c2=>//. destruct v0=>//. inv H1.
-      destruct l=>//. destruct c3=>//. destruct v1=>//. now destruct l.
-      destruct c1, v=>//. inv H1. destruct l. destruct c2, v0=>//. destruct l. destruct c3, v1=>//.
-      now destruct l. }
-  - do 3 destruct vcs=>//; inv Heqes. destruct c3, v1=>//. destruct vcs=>//.
-  - do 3 destruct vcs=>//; inv Heqes. destruct c3, v1=>//. destruct vcs=>//.
-  - destruct lh; cbn in *; repeat destruct l=>//;
-    destruct es; try by apply reduce_not_nil in Hcontra.
-    + destruct es. injection Heqes; intros; subst. by apply reduce_not_value' in Hcontra.
-      destruct es. injection Heqes; intros; subst. by apply reduce_not_value2' in Hcontra.
-      destruct es=>//. injection Heqes; intros; subst. by eapply IHHcontra.
-    + destruct es. injection Heqes; intros; subst. by apply reduce_not_value' in Hcontra.
-      destruct es. injection Heqes; intros; subst. by apply reduce_not_value2' in Hcontra.
-      destruct es=>//.
-    + destruct es. injection Heqes; intros; subst. by apply reduce_not_value' in Hcontra.
-      destruct es. injection Heqes; intros; subst=>//. destruct a0=>//.
-    + by destruct c1,v=>//.
-    + by destruct c2,v0=>//.
-    + by destruct c3,v1=>//.
-Qed.
-
-Lemma reduce_not_value3 : forall hs hs' sr sr' fr fr' es' c1 c2 c3,
-  reduce hs sr fr [:: $VN c1; $VN c2; $VN c3] hs' sr' fr' es' -> False.
-Proof.
-  intros. by apply reduce_not_value3' with (c1:=VAL_num c1)(c2:=VAL_num c2)(c3:=VAL_num c3) in H.
-Qed.
-
-Ltac solve_table :=
-  match goal with
-  | H: $V ?c = AI_basic (BI_table_init _ _) |- _ => by do 2 destruct c as [c|c|c]=>//
-  | H: vref_to_e ?c = AI_basic (BI_table_init _ _) |- _ => by do 2 destruct c as [c|c|c]=>//
-  | H: $V ?c = AI_basic (BI_table_set _) |- _ => by do 2 destruct c as [c|c|c]=>//
-  | H: vref_to_e ?c = AI_basic (BI_table_set _) |- _ => by do 2 destruct c as [c|c|c]=>//
-  | H: reduce _ _ _ [::] _ _ _ _ |- _ => by apply reduce_not_nil in H
-  | H: reduce _ _ _ [:: vref_to_e ?v] _ _ _ _ |- _ => by apply reduce_not_value' with (c:=VAL_ref v) in H
-  | H: reduce _ _ _ [:: $VN _] _ _ _ _ |- _ => by apply reduce_not_value in H
-  | H: reduce _ _ _ [:: $VN _; $VN _] _ _ _ _ |- _ => by apply reduce_not_value2 in H
-  | H: reduce _ _ _ [:: $VN ?c1'; vref_to_e ?c2'] _ _ _ _ |- _ => by eapply reduce_not_value2' with (c1:=VAL_num c1')(c2:=VAL_ref c2') in H; eassumption
-  | H: reduce _ _ _ [:: $VN _; $VN _; $VN _] _ _ _ _ |- _ => by apply reduce_not_value3 in H
-  | H: AI_trap = vref_to_e ?v |- _ => by destruct v=>//
-  | H: AI_label _ _ _ = vref_to_e ?v |- _ => by destruct v=>//
-  | H: $V ?v = AI_trap |- _ => by do 2 destruct v as [v|v|v]=>//
-  | H: vref_to_e ?ref = AI_trap |- _ => by destruct ref=>//
-  end.
 
 Ltac injection' :=
   match goal with
@@ -684,352 +561,6 @@ Ltac injection' :=
   | H: _ :: (_ ++ _) = _ |- _ => injection H; intros; subst *)
   | H: _ = _ |- _ => injection H; intros; subst; clear H
   end.
-
-Lemma reduce_not_table_set_too_few_params0 : forall hs sr fr es hs' sr' fr' es',
-  reduce hs sr fr (AI_basic (BI_table_set 0%N) :: es) hs' sr' fr' es' -> False.
-Proof.
-  intros. remember (AI_basic (BI_table_set 0%N) :: es) as es''. generalize dependent es.
-  induction H; intros; subst=>//.
-  all: try by injection'; solve_table.
-  all: try by destruct vs; injection'=>//; solve_table.
-  all: try by destruct vcs; injection'=>//; solve_table.
-  - inv H; try by solve_table. destruct lh; cbn in *; destruct l=>//; injection'; solve_table.
-  - inv Heqes''. destruct lh; cbn in *.
-    + destruct l=>//; destruct es; try injection'; cbn in *; try solve_table; eauto.
-    + destruct l=>//; destruct es; try injection'; cbn in *; try solve_table; eauto.
-Qed.
-
-Lemma reduce_not_table_set_too_few_params1 : forall hs sr fr es hs' sr' fr' es' v,
-  reduce hs sr fr (vref_to_e v :: AI_basic (BI_table_set 0%N) :: es) hs' sr' fr' es' -> False.
-Proof.
-  intros. remember (vref_to_e v :: AI_basic (BI_table_set 0%N) :: es) as es''. generalize dependent es.
-  revert v.
-  induction H; intros; subst=>//.
-  all: try by destruct vs as [|a [|b vs]], v=>//; injection'=>//; solve_table.
-  all: try by injection'; solve_table.
-  all: try by destruct vcs as [|a'[|b' vcs]]=>//; try injection'; solve_table.
-  - inv H; try by solve_table. destruct lh; cbn in *; destruct l=>//; injection'; try solve_table.
-    all: try by destruct l as [|a[|b l]]; injection'=>//; solve_table.
-  - inv Heqes''. destruct lh; cbn in *.
-    + destruct l=>//; destruct es; cbn in *; try injection'; try solve_table.
-      destruct es; try solve_table. injection'. eauto.
-      destruct l=>//; injection'; try solve_table.
-      by apply reduce_not_table_set_too_few_params0 in H.
-    + destruct l=>//; destruct es; try injection'; cbn in *; try solve_table.
-      destruct l=>//; injection'; solve_table.
-Qed.
-
-Lemma reduce_not_table_init_too_few_params : forall hs sr fr es hs' sr' fr' es' l0 l l' idx,
-  reduce hs sr fr es hs' sr' fr' es' ->
-  [seq $V i | i <- l] ++ es ++ l0 =
-     [:: $VN VAL_int32 (Wasm_int.Int32.repr 0),
-         $VN VAL_int32 (Wasm_int.Int32.repr 1),
-         AI_basic (BI_table_init 0%N (N.of_nat idx))
-       & l'] ->
-  False.
-Proof.
-  intros. generalize dependent l. revert l0 l'. induction H; intros.
-  { (* reduce_simple *)
-    generalize dependent l. revert l0 l'.
-    induction H; intros.
-    all: destruct l as [|a' [|b' [|c' l]]]=>//; cbn in *; try injection'; try solve_table.
-    + destruct lh; cbn in *.
-      destruct es as [|e [|e' es]]; (try injection'); try do 2 destruct l=>//.
-      inv H0. destruct l=>//. do 2 destruct v1=>//.
-      destruct es as [|e [|e' es]]; (try injection'); try do 2 destruct l=>//.
-      inv H0. destruct l=>//. do 2 destruct v1=>//.
-    + destruct lh; cbn in *. do 2 destruct l=>//. do 2 destruct v0=>//.
-      do 2 destruct l=>//. do 2 destruct v0=>//.
-    + destruct lh; cbn in *; destruct l=>//; inv H2; do 2 destruct v=>//.
-  }
-  all: (try by do 3 destruct l=>//; try injection'; do 2 destruct v1=>//).
-  all: destruct l as [|a' [|b' [|c' l]]].
-  all: (try destruct vs as [|v1 [|v2 [|v3 vs]]]); try injection'; intros; subst=>//; try solve_table.
-  all: (try destruct vcs as [|v1 [|v2 [|v3 vcs]]]); try injection'=>//; try solve_table.
-  all: cbn in *.
-  { destruct lh; cbn in *; last by do 3 destruct l=>//; do 2 destruct v1=>//.
-    destruct l as [|a [|b [|c l]]]; cbn in *.
-    + destruct es; first by solve_table. injection'.
-      destruct es; first by solve_table. injection'.
-      destruct es; first by solve_table. injection'.
-      now eapply IHreduce with (l:=[]).
-    + destruct es; first by solve_table. injection'.
-      destruct es; first by solve_table. injection'.
-      now eapply IHreduce with (l:=[VAL_num (VAL_int32 (Wasm_int.Int32.repr 0))]).
-    + destruct es; first by solve_table. cbn in H2. injection'.
-      now eapply IHreduce with (l:=[ VAL_num (VAL_int32 (Wasm_int.Int32.repr 0))
-                                   ; VAL_num (VAL_int32 (Wasm_int.Int32.repr 1))]).
-    + inv H2. by do 2 destruct c as [c|c|c]=>//. }
-  { destruct lh; cbn in *; last by do 3 destruct l=>//; do 2 destruct v0=>//.
-    destruct l as [|a [|b l]]; cbn in *.
-    + destruct es; first by solve_table. injection'.
-      destruct es; first by solve_table. injection'.
-      now eapply IHreduce with (l:=[VAL_num (VAL_int32 (Wasm_int.Int32.repr 0))]).
-    + destruct es; first by apply reduce_not_nil in H. injection'.
-      now eapply IHreduce with (l:=[ VAL_num (VAL_int32 (Wasm_int.Int32.repr 0))
-                                   ; VAL_num (VAL_int32 (Wasm_int.Int32.repr 1))]).
-    + by do 2 destruct b as [b|b|b]=>//. }
-  { destruct lh; cbn in *; last by do 2 destruct l=>//; do 2 destruct v=>//.
-    destruct l as [|a l]; cbn in *.
-    + destruct es; first by solve_table. injection'.
-      now eapply IHreduce with (l:=[ VAL_num (VAL_int32 (Wasm_int.Int32.repr 0))
-                                   ; VAL_num (VAL_int32 (Wasm_int.Int32.repr 1))]).
-    + by do 2 destruct a as [a|a|a]=>//. }
-Unshelve. all: auto.
-Qed.
-
-(* AI_trap persists, e.g. AI_trap :: es -->* [] not possible *)
-
-Lemma reduce_trap_trap : forall hs sr fr es hs' sr' fr' es',
-  reduce hs sr fr (AI_trap :: es) hs' sr' fr' es' -> exists es'', es' = AI_trap :: es''.
-Proof.
-  intros. remember (AI_trap :: es) as es''.
-  generalize dependent es.
-  induction H; intros; subst=>//.
-  { (* reduce_simple *)
-    inv H; intros; subst=>//; try solve_table; eauto. }
-  all: try destruct vs=>//; try injection'=>//; try solve_table.
-  - destruct vcs=>//. injection'. solve_table.
-  - destruct vcs=>//. injection'. solve_table.
-  - destruct lh; cbn in *. 2:{ destruct l=>//; try injection'; try solve_table. }
-    destruct l=>//; try injection'; try solve_table. cbn in *.
-    destruct es; first by solve_table. injection'.
-    edestruct IHreduce; eauto. subst. now exists (x ++ l0).
-Qed.
-
-Lemma reduce_trans_trap_trap : forall hs sr fr es hs' sr' fr' es',
-  reduce_trans (hs, sr, fr, AI_trap :: es) (hs', sr', fr', es') -> exists es'', es' = AI_trap :: es''.
-Proof.
-  intros. apply Operators_Properties.clos_rt_rt1n_iff in H.
-  remember (hs, sr, fr, AI_trap :: es) as x. remember (hs', sr', fr', es') as x'.
-  revert hs sr fr es hs' sr' fr' es' Heqx' Heqx.
-  induction H; intros; subst=>//. inv Heqx. eauto.
-  destruct y as [[[??]?]?]. apply reduce_trap_trap in H. destruct H; subst.
-  now eapply IHclos_refl_trans_1n.
-Qed.
-
-(* TODO better automation *)
-Definition post_instantiation_effect : forall num_funs hs sr_pre sr fr idx,
-  reduce_trans (hs, sr_pre, fr, [seq AI_basic i | i <- concat (mapi_aux (idx, [::])
-                                                       (fun n : nat => get_init_expr_elem n)
-                                                       (table_element_mapping num_funs idx))])
-               (hs, sr, fr, [::]) ->
-  (* table after initialisation, before post-initialisation *)
-  [:: {| tableinst_type := {| tt_limits := {| lim_min := N.of_nat num_funs; lim_max := None |}
-                            ; tt_elem_type := T_funcref
-                            |}
-       ; tableinst_elem := repeat (VAL_ref_null T_funcref) (N.to_nat (N.of_nat num_funs))
-       |}] = s_tables sr_pre ->
-
-  (* after post initialisation *)
-  s_globals sr_pre = s_globals sr /\
-  s_mems sr_pre = s_mems sr /\
-  s_funcs sr_pre = s_funcs sr /\
-  s_datas sr_pre = s_datas sr /\
-  (forall i, N.to_nat i + idx < num_funs -> stab_elem sr (f_inst fr) 0%N i = Some (VAL_ref_func (i + N.of_nat idx)%N)).
-Proof.
-  induction num_funs; intros.
-  - apply Operators_Properties.clos_rt_rt1n_iff in H. inv H.
-    repeat split; intros=>//. lia. destruct y as [[[??]?]?].
-    by apply reduce_not_nil in H1.
-  - exfalso. cbn in H.
-    rewrite (mapi_aux_acc_snoc _ _ []) in H.
-    cbn in H. apply Operators_Properties.clos_rt_rt1n_iff in H. inv H.
-    destruct y as [[[??]?]?].
-    inv H1; (try by do 4 destruct vs=>//; injection'=>//; solve_table).
-    + inv H. destruct lh; do 4 destruct l=>//; do 2 destruct v2=>//.
-    + do 4 destruct vcs=>//. injection'; solve_table.
-    + do 4 destruct vcs=>//. injection'; solve_table.
-    + (* actual case *)
-      destruct lh. 2:{ cbn in H3. do 4 destruct l=>//; do 2 destruct v2=>//. }
-      cbn in H3. destruct l. 2:{ (* absurd: not enough vals for table_init_step *)
-        cbn in H3. injection H3; intros; clear H3.
-        by eapply reduce_not_table_init_too_few_params in H1; eauto.
-      }
-      cbn in H3.
-      destruct es; first by solve_table. injection'.
-      destruct es; first by solve_table. injection'.
-      destruct es; first by solve_table. injection'.
-      destruct es; first by solve_table. injection'.
-      { remember ([:: $VN nat_to_value idx,
-          $VN VAL_int32 (Wasm_int.Int32.repr 0),
-          $VN VAL_int32 (Wasm_int.Int32.repr 1),
-          AI_basic (BI_table_init 0%N (N.of_nat idx))
-        & es]) as es''.
-        generalize dependent es. generalize dependent l0.
-        induction H; intros; subst=>//.
-        * inv H. destruct lh; do 4 destruct l=>//; injection'; solve_table.
-        * do 4 destruct vs=>//. injection'=>//.
-        * do 4 destruct vs=>//. injection'=>//.
-        * do 4 destruct vs=>//. injection'. solve_table.
-        * do 4 destruct vcs=>//. injection'. solve_table.
-        * do 4 destruct vcs=>//. injection'. solve_table.
-        * (* r_table_init_bound: AI_trap *)
-          apply Operators_Properties.clos_rt_rt1n_iff in H3.
-          apply reduce_trans_trap_trap in H3. now destruct H3.
-        * (* r_table_init_return (no value to set -> skip) *)
-          injection Heqes''; intros; subst. cbn in *. lia.
-        * { (* r_table_init_step *)
-            inv Heqes''. cbn in *. inv H9. destruct y as [[[??]?]?].
-            inv H6; (try by do 4 destruct vs=>//; injection'; solve_table).
-            -- { (* reduce simple *)
-                inv H8. destruct lh; cbn in *;
-                  do 3 (destruct l; injection'=>//; try by destruct v=>//);
-                  destruct l=>//; by do 2 destruct v2=>//. }
-            -- do 4 destruct vs=>//. injection'. destruct v=>//.
-            -- do 4 destruct vs=>//. injection'. destruct v=>//.
-            -- do 4 destruct vcs=>//. injection'. solve_table.
-            -- do 4 destruct vcs=>//. injection'. solve_table.
-            -- { destruct lh; cbn in *. 2:{ do 2 destruct l=>//; injection'=>//.
-                  destruct v=>//. destruct l=>//. by do 2 destruct v2=>//. }
-                 destruct l.
-                 ++ (* l=[] *)
-                    { destruct es; first by solve_table. injection'.
-                      destruct es; first by solve_table. injection'.
-                      destruct es; first by solve_table. injection'.
-                      (* table_set *)
-                      remember ([:: $VN VAL_int32 (nat_to_i32 idx),
-          vref_to_e v, AI_basic (BI_table_set 0%N)
-         & es]) as es''. generalize dependent es. generalize dependent l0.
-                      induction H8; intros; subst=>//; (try by injection'; solve_table); (try by do 3 destruct vs=>//; injection'; try solve_table; destruct v=>//); (try by do 3 destruct vcs=>//; injection'; try solve_table).         - { (* reduce_simple *)
-                        inv H6. destruct lh; cbn in *;
-                          do 3 (destruct l; injection'=>//; try by destruct v=>//);
-                          destruct l=>//; by do 2 destruct v2=>//. }
-                      - { (* actual case *)
-                           inv Heqes''. cbn in *. subst. inv H7. destruct y as [[[??]?]?].
-                           remember ([:: $VN VAL_int32
-                                        (Wasm_int.Int32.repr
-                                           (Wasm_int.Int32.Z_mod_modulus (Z.of_nat idx) +
-                                            1)), $VN VAL_int32 (Wasm_int.Int32.repr 1),
-                                      $VN VAL_int32 (Wasm_int.Int32.repr 0),
-                                      AI_basic (BI_table_init 0%N (N.of_nat idx)),
-                                      AI_basic (BI_elem_drop (N.of_nat idx)) & _]) as es''.
-                           cbn in H8. revert Heqes''.
-                           induction H8; intros; subst=>//.
-                           + { (* reduce simple *)
-                                inv H7. destruct lh; cbn in *;
-                                  do 3 (destruct l; injection'=>//; try by destruct v=>//);
-                                  destruct l=>//; by do 2 destruct v3=>//. }
-                            + do 4 destruct vs=>//. injection'. destruct v=>//.
-                            + do 4 destruct vs=>//. injection'. destruct v=>//.
-                            + do 4 destruct vs=>//. injection'. by do 2 destruct v3=>//.
-                            + do 4 destruct vcs=>//. injection'. solve_table.
-                            + do 4 destruct vcs=>//. injection'. solve_table.
-                            + destruct lh; cbn in *. 2:{ do 4 destruct l=>//; injection'=>//.
-                                                         by do 2 destruct v3=>//. }
-                              destruct l.
-                              -- (* l=[] *) {
-                                destruct es; first by solve_table. injection'.
-                                destruct es; first by solve_table. injection'.
-                                destruct es; first by solve_table. injection'.
-                                destruct es; first by solve_table. injection'.
-                                destruct es.
-                                (* es=[] *) { inv H8.
-                                (* reduce_simple *) inv H7. destruct lh; cbn in *;
-                  do 3 (destruct l; injection'=>//; try by destruct v=>//);
-                  destruct l=>//; by do 2 destruct v3=>//.
-            -- do 4 destruct vs=>//. injection'. destruct v=>//.
-            -- do 4 destruct vs=>//. injection'. destruct v=>//.
-            -- do 4 destruct vs=>//. injection'. by do 2 destruct v3=>//.
-            -- do 4 destruct vcs=>//. injection'. solve_table.
-            -- do 4 destruct vcs=>//. injection'. solve_table.
-            -- apply clos_rt_rt1n_iff in H9. apply reduce_trans_trap_trap in H9. now destruct H9.
-            -- (* r_table_return *) { cbn in *. subst. inv H9.
-                destruct y as [[[??]?]?]. cbn in H7. clear IHreduce.
-                remember (AI_basic (BI_elem_drop (N.of_nat idx))
-        :: [seq AI_basic i
-              | i <- concat
-                       (mapi_aux (idx + 1, [::])
-                          (fun n : nat => get_init_expr_elem n)
-                          (table_element_mapping num_funs
-                             (S idx)))]) as es'. revert Heqes'. induction H7; intros; subst=>//.
-             { (* reduce_simple *) inv H7. by destruct ref=>//. by do 2 destruct v0=>//. destruct v1=>//.
-              destruct v0=>//. destruct v1=>//. destruct v0=>//. destruct v0=>//. destruct v0=>//.
-              destruct lh, l=>//; do 2 destruct v0=>//. }
-             all: try by (destruct vs=>//; injection'; (try solve_table); repeat destruct v0=>//).
-             destruct vcs=>//. injection'. do 2 destruct v0=>//.
-             destruct vcs=>//. injection'. do 2 destruct v0=>//. do 2 destruct v0=>//.
-             do 2 destruct v0=>//. by destruct tabinit=>//. by destruct tabinit=>//.
-              {(* actual *) injection'. remember (hs, sr, f, [::]) as y. rewrite H9 in H8. subst y.
-             apply Operators_Properties.clos_rt_rt1n_iff in H8. replace (S idx) with (idx + 1) in H8 by lia.
-             apply IHnum_funs in H8; eauto. admit. admit. (* actual *) }
-             destruct lh; cbn in *; destruct l=>//; try by do 2 destruct v0=>//. cbn in *.
-             destruct es; first by solve_table. injection'. apply IHreduce; eauto. admit. }
-            -- (* r_table_step *) cbn in *. lia.
-            -- destruct lh; cbn in *. 2:{ repeat (destruct l; injection'=>//). by do 2 destruct v3=>//. }
-               admit.
-                      } injection'. admit. }
-                               (* a::l *) injection'.
-                               destruct l.
-                               (* l=[] *)
-                               (* a::l *) admit. }
-                      - apply Operators_Properties.clos_rt_rt1n_iff in H7.
-                        apply reduce_trans_trap_trap in H7. now destruct H7.
-                      - try by do 3 destruct vcs=>//; injection'; try solve_table.
-                      - { destruct lh; cbn in *. 2:{ do 2 destruct l=>//; injection'=>//.
-                  destruct v=>//. destruct l=>//. by do 2 destruct v2=>//. }
-                          destruct l.
-                          + (* l=[] *)
-                            destruct es; first by solve_table. injection'.
-                            destruct es; first by solve_table. injection'.
-                            destruct es; first by destruct l1=>//; injection'; solve_table. injection'.
-                            cbn in H9. rewrite <- catA in H10, H9. eapply IHreduce with (l0:= l1 ++ l0); eauto.
-                         + (* a::l *) injection'.
-                            destruct l.
-                            2:{ destruct l; last by do 2 destruct v2=>//.
-                                destruct es; first by solve_table. injection'.
-                                by apply reduce_not_table_set_too_few_params0 in H8. }
-                            (* l=[] *)
-                            destruct es; first by solve_table. injection'.
-                            destruct es; first by solve_table. injection'.
-                            by apply reduce_not_table_set_too_few_params1 in H8. }
-                    }
-                 ++ (* a::l *) injection'.
-                    destruct l.
-                    2:{ destruct l; last by do 2 destruct v2=>//.
-                        destruct es; first by solve_table. injection'.
-                        by apply reduce_not_table_set_too_few_params0 in H8. }
-                    (* l=[] *)
-                    destruct es; first by solve_table. injection'.
-                    destruct es; first by solve_table. injection'.
-                    by apply reduce_not_table_set_too_few_params1 in H8.
-           }}
-        * { destruct lh; cbn in *.
-            -- (* lh=LH_base *)
-               { destruct l.
-                 ++ (* l=[] *)
-                   destruct es; first by solve_table. injection'.
-                   destruct es; first by solve_table. injection'.
-                   destruct es; first by solve_table. injection'.
-                   destruct es; first by solve_table. injection'.
-                   cbn in *. rewrite <- catA in H3, H4. by eapply IHreduce; eauto.
-                 ++ (* a::l *)
-                   injection Heqes''; intros; subst.
-                   destruct l.
-                   ** (* [] *)
-                     destruct es; first by solve_table. injection'.
-                     destruct es; first by solve_table. injection'.
-                     destruct es; first by solve_table. injection'.
-                     by eapply reduce_not_table_init_too_few_params with(l:=[]) in H.
-                   ** (* a::l *)
-                     injection H1; intros; subst.
-                     destruct l.
-                     --- (* [] *)
-                         destruct es; first by solve_table. injection'.
-                         destruct es; first by solve_table. injection'.
-                         by eapply reduce_not_table_init_too_few_params in H; eauto.
-                     --- (* a::l *)
-                         injection H1; intros; subst.
-                         destruct l; last by do 2 destruct v2=>//.
-                         destruct es; first by solve_table. injection'.
-                         by eapply reduce_not_table_init_too_few_params in H; eauto.
-               }
-            -- (* lh=LH_rec *)
-               do 4 destruct l=>//. by do 2 destruct v2=>//.
-Admitted.
-*)
-
-Compute 32.
 
 Lemma table_element_mapping_nth_error : forall num_funs idx x,
   x < num_funs ->
@@ -1382,6 +913,21 @@ Proof.
 Unshelve. all: apply (Tf [] []).
 Qed.
 
+Lemma post_instantiation_reduce {fenv} : forall hs sr fr fr' num_funs,
+  INV_instantiation sr fr num_funs ->
+  f_inst fr = f_inst fr' ->
+  exists sr',
+    reduce_trans (hs, sr, fr', [seq AI_basic i | i <- concat
+                                                (mapi_aux (0, [::])
+                                                  (fun n0 : nat => get_init_expr_elem n0)
+                                                  (table_element_mapping num_funs 0))])
+                 (hs, sr', fr', [::]) /\
+  INV fenv nenv sr' fr' /\
+  s_funcs sr = s_funcs sr'.
+Proof.
+  intros.
+Admitted.
+
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 Theorem LambdaANF_Wasm_related :
   forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var)
@@ -1415,7 +961,7 @@ Theorem LambdaANF_Wasm_related :
        reduce_trans (hs, sr',  (Build_frame [] (f_inst fr)), [ AI_basic (BI_call main_function_idx) ])
                     (hs, sr'', (Build_frame [] (f_inst fr)), [])    /\
 
-       result_val_LambdaANF_Wasm cenv fenv nenv penv v sr' (f_inst fr).
+       result_val_LambdaANF_Wasm cenv fenv nenv penv v sr'' (f_inst fr).
 Proof.
   intros ???????????? Hstep HprimFunsRet HprimFunsRelated LANF2Wasm Hcenv HcenvRestr HvarsEq HvarsNodup Hfreevars Hinst.
   subst vars.
@@ -1470,6 +1016,8 @@ Proof.
   clear Hnodup' Hcenv'.
   destruct HI as [Hinv [HinstFuncs [HfVal [grow_mem_fn [main_fn [e' [fns' [-> [-> [HsrFuncs [-> [Hexpr' Hfns']]]]]]]]]]]].
 
+  have HpostInst := @post_instantiation_reduce fenv hs sr fr {| f_locs := [::]; f_inst := f_inst fr |} _ Hinv Logic.eq_refl.
+  destruct HpostInst as [sr' [HredPost [Hinv' Hsr'F]]].
 
   remember (Build_frame (repeat (VAL_num (nat_to_value 0)) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
 
@@ -1492,6 +1040,9 @@ Proof.
   assert (e' = wasm_main_instr). { destruct e; inv HtopExp; congruence. } subst e'. clear Hexpr'.
   assert (fns = fns'). { destruct e; inv HtopExp; congruence. } subst fns'. clear Hfns'.
 
+  (* step through post instantiation *)
+  exists sr'. split. apply translate_functions_length in Hfuns. rewrite -Hfuns. apply HredPost.
+
   remember (Build_frame (repeat (VAL_num (nat_to_value 0)) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
   remember (create_local_variable_mapping (collect_local_variables e)) as lenv.
   remember (create_fname_mapping e) as fenv.
@@ -1501,13 +1052,9 @@ Proof.
    { intros ? ? Hvar. subst f_before_IH. cbn. rewrite repeat_length. inv Hvar.
      eapply var_mapping_list_lt_length. eassumption. }
 
-  assert (Hinv_before_IH: INV fenv nenv sr f_before_IH). { subst.
-    destruct Hinv as [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]].
-    unfold INV. repeat (split; try assumption).
-    unfold INV_locals_all_i32. cbn. intros. exists (nat_to_i32 0).
-    assert (i < (length (repeat (VAL_num (nat_to_value 0)) (Datatypes.length (collect_local_variables e))))).
-    { subst. now apply nth_error_Some. }
-    rewrite nth_error_repeat in H12. inv H12. reflexivity. rewrite repeat_length in H13. assumption.
+  assert (Hinv_before_IH: INV fenv nenv sr' f_before_IH). {
+    subst f_before_IH.
+    eapply init_locals_preserves_INV with (args:=[]). apply Hinv'. reflexivity.
   }
 
   have Heqdec := inductive_eq_dec e. destruct Heqdec.
@@ -1586,7 +1133,7 @@ Proof.
            collect_function_vars (Efun fds e0)) /\
         (exists fidx : funcidx,
            translate_var nenv fenv a errMsg = Ret fidx /\
-           repr_val_LambdaANF_Wasm cenv fenv nenv penv (Vfun (M.empty _) fds a) sr (f_inst f_before_IH) (Val_funidx fidx))). {
+           repr_val_LambdaANF_Wasm cenv fenv nenv penv (Vfun (M.empty _) fds a) sr' (f_inst f_before_IH) (Val_funidx fidx))). {
       intros ????? Hcontra.
       split. { inv HeRestr. eapply H3. eassumption. }
       split. { intros x Hocc.
@@ -1604,12 +1151,14 @@ Proof.
       { assert (Hc: find_def a fds <> None) by congruence.
         apply HfVal with (errMsg:=errMsg) in Hc; auto.
         destruct Hc as [fidx [HtransF Hval]].
-        exists fidx. split. assumption. subst f_before_IH. assumption. }
+        exists fidx. split. assumption. subst f_before_IH.
+        eapply val_relation_func_depends_on_funcs. 2: apply Hval.
+        congruence. }
     }
 
     assert (HrelE : @rel_env_LambdaANF_Wasm cenv fenv nenv penv
                    _ (create_local_variable_mapping (collect_local_variables e)) e (def_funs fds fds (M.empty _) (M.empty _))
-          sr f_before_IH fds). {
+          sr' f_before_IH fds). {
       split.
       { (* funs1 (follows from previous Hfds) *)
         intros ? ? ? ? ? Hdf Hval. have H' := Hdf.
@@ -1637,18 +1186,16 @@ Proof.
     have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
                     _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
                     HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
-                    HeRestr' Hunbound Hstep hs _ _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
-
-    destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn.
-    subst frameInit.
+                    HeRestr' Hunbound Hstep hs sr' _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
+    destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn. subst frameInit.
     exists s'. split.
     dostep'. apply r_call. cbn.
     rewrite HinstFuncs. reflexivity.
     dostep'. eapply r_invoke_native with (ves:=[]) (vs:=[]); eauto.
-    rewrite HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst. reflexivity. reflexivity.
+    rewrite- Hsr'F HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst. reflexivity. reflexivity.
     erewrite <-map_repeat_eq. by apply default_vals_i32_Some.
-    subst f_before_IH. cbn. cbn. subst lh. cbn in Hred. rewrite <- Hfinst. rewrite cats0 in Hred.
-    eapply rt_trans. apply Hred.
+    subst f_before_IH. cbn. subst lh. cbn in Hred. rewrite <- Hfinst. rewrite cats0 in Hred.
+    eapply rt_trans. cbn. unfold to_e_list. apply Hred.
     dostep'. constructor. apply rs_return with (lh:=lh') (vs:=[::]) =>//. apply rt_refl.
     subst f_before_IH. apply Hval.
   }
@@ -1664,7 +1211,7 @@ Proof.
     eapply translate_body_correct in Hexpr; eauto.
 
     assert (HrelE : @rel_env_LambdaANF_Wasm cenv fenv nenv penv
-                    _ (create_local_variable_mapping (collect_local_variables e)) e (M.empty _) sr f_before_IH Fnil). {
+                    _ (create_local_variable_mapping (collect_local_variables e)) e (M.empty _) sr' f_before_IH Fnil). {
     split.
     { intros. exfalso. cbn in HsrFuncs. inv H. } split.
     { intros. inv H. }
@@ -1699,7 +1246,7 @@ Proof.
         (exists fidx : funcidx,
            translate_var nenv fenv a errMsg = Ret fidx /\
            repr_val_LambdaANF_Wasm cenv fenv nenv penv (Vfun (M.empty _) Fnil a)
-             sr (f_inst f_before_IH) (Val_funidx fidx))). {
+             sr' (f_inst f_before_IH) (Val_funidx fidx))). {
         intros ? ? ? ? ? Hcontra. inv Hcontra. }
 
     assert (Hunbound : (forall x : var,
@@ -1734,7 +1281,7 @@ Proof.
     have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
                     _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
                     HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
-                    HeRestr Hunbound Hstep hs _ _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
+                    HeRestr Hunbound Hstep hs sr' _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
 
     subst lh frameInit.
 
@@ -1743,7 +1290,7 @@ Proof.
     dostep'. apply r_call. cbn.
     rewrite HinstFuncs. reflexivity.
     dostep'. eapply r_invoke_native with (ves:=[]) (vs:=[]); eauto.
-    rewrite HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst. reflexivity. reflexivity.
+    rewrite -Hsr'F HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst. reflexivity. reflexivity.
     subst f_before_IH. cbn.
     assert (HexpEq: match e with | Efun _ exp => exp
                                  | _ => e end= e).
