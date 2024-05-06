@@ -1575,22 +1575,28 @@ Fixpoint elem_vals (funs : nat) (startidx : nat) : seq (seq value_ref) :=
   | S funs' => [:: VAL_ref_func (N.of_nat startidx)] :: elem_vals funs' (S startidx)
   end.
 
-(* Lemma elems_instantiate : forall len n hs s inst,
-  List.Forall2 (fun e c =>
-      reduce_trans (hs, s, (Build_frame nil inst), operations.to_e_list e.(modelem_offset))
-                   (hs, s, (Build_frame nil inst), [::AI_basic (BI_const_num (VAL_int32 c))]))
-    (table_element_mapping len n)
-    (elem_vals len n).
+Lemma elem_vals_length : forall num_funs idx,
+  length (elem_vals num_funs idx) = num_funs.
 Proof.
-  induction len; intros ????.
-  - cbn. by apply Forall2_nil.
-  - cbn. apply Forall2_cons. cbn. apply rt_refl.
-    eapply IHlen.
-Qed. *)
+  induction num_funs; cbn; intros; eauto.
+Qed.
 
 Lemma list_function_types_valid :
   Forall (fun ft : function_type => functype_valid ft)
          (list_function_types (Z.to_nat max_function_args)).
+Proof.
+Admitted.
+
+Lemma elems_instantiate : forall hs sr fr num_funs,
+  Forall2
+  (fun (e1 : module_element) (rs : seq value_ref) =>
+   Forall2
+     (fun (bes : seq basic_instruction) (r : value_ref) =>
+      reduce_trans
+        (hs, sr, fr, to_e_list bes)
+        (hs, sr, fr, [:: vref_to_e r])) (modelem_init e1) rs)
+  (table_element_mapping num_funs 0)
+  (elem_vals num_funs 0).
 Proof.
 Admitted.
 
@@ -1643,9 +1649,9 @@ Proof.
   assert (Hnodup: NoDup (collect_function_vars (Efun fds e))). {
     destruct e; inv He; inv Hfuns; try by apply NoDup_nil. assumption. } clear Hnodup'.
 
-  (* TODO use correct elems <> [] *)
-  destruct (interp_alloc_module (initial_store hfn) module
-            [:: EV_func 0%N; EV_func 1%N] (repeat (VAL_num (nat_to_value 0)) 4) [])
+  destruct (interp_alloc_module (initial_store hfn) module [:: EV_func 0%N; EV_func 1%N]
+                                (repeat (VAL_num (nat_to_value 0)) 4)
+                                (elem_vals (Datatypes.length fns + num_custom_funs) 0))
          as [s' inst] eqn:HallocM.
 
   subst module.
@@ -1665,7 +1671,7 @@ Proof.
   (* export types *)
   exists ([:: ET_func (Tf [::T_num T_i32] [::]); (* grow_mem *)
               ET_func (Tf [::] [::])] ++         (* main *)
-         [] ++                         (* TODO all fns exported *)
+         map (fun f => ET_func (Tf (repeat (T_num T_i32) (N.to_nat f.(type))) [::])) fns ++ (* all fns exported *)
          [:: ET_global {| tg_mut := MUT_var; tg_t := T_num T_i32 |}
            ; ET_global {| tg_mut := MUT_var; tg_t := T_num T_i32 |}
            ; ET_global {| tg_mut := MUT_var; tg_t := T_num T_i32 |}           (* global vars *)
@@ -1831,70 +1837,76 @@ Proof.
         intros ??? Hnth1 Hnth2. rewrite nth_error_map in Hnth2.
         destruct (nth_error fns n) eqn:Hnth =>//.
         rewrite nth_error_map in Hnth1. rewrite Hnth in Hnth1. inv Hnth1. inv Hnth2.
-        rewrite -ssrnat.subnE -ssrnat.minusE. simpl.
-        rewrite map_length.
         destruct e; try by inv He; inv Hfuns; destruct n=>//. inv He.
-        assert (n = fidx w0 - num_custom_funs). { now eapply translate_functions_nth_error_idx; eauto. } subst n.
-        assert (Hbounds: num_custom_funs <= fidx w0 < length fns + num_custom_funs). {
+        assert (n = N.to_nat (fidx w) - num_custom_funs). { now eapply translate_functions_nth_error_idx; eauto. } subst n. cbn.
+        assert (Hbounds: (N.of_nat num_custom_funs <= fidx w < N.of_nat (length fns + num_custom_funs))%N). {
           eapply translate_functions_idx_bounds; eauto.
-          * intros. split; first by apply local_variable_mapping_gt_idx in H.
-            assert (Hvar: translate_var nenv (create_fname_mapping (Efun fds e0)) f ""%bs = Ret f')
-              by (unfold translate_var; rewrite H=>//). clear H.
-            have H' := Hvar.
-            apply var_mapping_list_lt_length' in Hvar.
-            rewrite collect_function_vars_length in Hvar.
-            now erewrite translate_functions_length in Hvar.
-          * apply In_map. now eapply nth_error_In. }
-        unfold num_custom_funs in *.
-        replace (fidx w0 - S (S (S (S (Datatypes.length fns))))) with 0 by lia.
-        destruct (fidx w0); first by lia.
-        do 4! (destruct i; first by lia). cbn in Hnth.
+          2:{ apply In_map. now eapply nth_error_In. }
+          intros. split; first by apply local_variable_mapping_gt_idx in H; lia.
+          assert (Hvar: translate_var nenv (create_fname_mapping (Efun fds e0)) f ""%bs = Ret f')
+            by (unfold translate_var; rewrite H=>//). clear H.
+          have H' := Hvar.
+          apply var_mapping_list_lt_length' in Hvar.
+          rewrite collect_function_vars_length in Hvar.
+          erewrite (translate_functions_length _ _ _ _ fns) in Hvar; eauto. lia.
+        }
+        unfold num_custom_funs in *. unfold lookup_N.
+        destruct (N.to_nat (fidx w)) eqn:Hidx; first by lia.
+        do 3! (destruct n; first by lia). cbn in Hnth.
         rewrite Nat.sub_0_r in Hnth. cbn.
         rewrite nth_error_map. rewrite Hnth. by apply /eqfunction_typeP.
       }
       (* global vars, memory *)
-      repeat apply Forall2_cons =>//. }
+      repeat apply Forall2_cons =>//.
+      (* export names unique *)
+      admit.
+    }
   - (* imports typing *)
-    apply Forall2_cons. eapply ETY_func; cbn; eauto.
-    apply Forall2_cons. eapply ETY_func; cbn; eauto. by apply Forall2_nil.
+    apply Forall2_cons=>//.
+    apply Forall2_cons=>//.
+  - (* imports subtyping *)
+    apply Forall2_cons=>//.
+    apply Forall2_cons=>//.
   - (* alloc_module is true *) { cbn.
     unfold interp_alloc_module, initial_store in HallocM.
-    destruct (alloc_funcs _) eqn:Hfuncs. cbn in Hfuncs. rewrite Hty.
+    destruct (alloc_funcs _ _ _) eqn:Hfuncs.
     have Hfuncs' := Hfuncs.
+    apply alloc_func_iota_N in Hfuncs.
     cbn in HallocM.
-    apply alloc_func_gen_index in Hfuncs.
-    destruct Hfuncs as [Hfuncs1 [Hfuncs2 [Hfuncs3 [Hfuncs4 Hfuncs5]]]].
-    cbn in Hfuncs1, Hfuncs2, Hfuncs3, Hfuncs4, Hfuncs5.
-    unfold add_table, add_glob in HallocM. cbn in HallocM.
-    rewrite Hfuncs2 -Hfuncs3 -Hfuncs4 -Hfuncs5 in HallocM. cbn in HallocM.
-    unfold gen_func_instance in HallocM. cbn in HallocM.
-    rewrite -Heqts in HallocM. (* fold list of types again *)
-    injection HallocM as <-<-<-.
+    destruct Hfuncs as [Hfuncs1 [Hfuncs2 [Hfuncs3 [Hfuncs4 [Hfuncs5 [Hfuncs6 Hfuncs7]]]]]].
+    cbn in Hfuncs1, Hfuncs2, Hfuncs3, Hfuncs4, Hfuncs5, Hfuncs6, Hfuncs7.
 
-    rewrite -Heqts in Hfuncs'. rewrite Hfuncs'. cbn.
-    unfold add_glob. cbn.
-    rewrite map_length map_map HwId. rewrite Hfuncs1 Hfuncs2 -Hfuncs3 -Hfuncs4 -Hfuncs5. cbn.
-    repeat (apply andb_true_iff; split =>//).
-    + apply /eqstore_recordP.
-      unfold gen_func_instance. cbn. rewrite map_length.
-      repeat rewrite map_map. by subst ts; reflexivity.
+    destruct (alloc_elems _ _ _) eqn:Helems.
+    injection HallocM as <-<-.
+    have Helems' := Helems.
+    apply alloc_elem_iota_N in Helems. cbn in Helems.
+    rewrite Hfuncs2 -Hfuncs3 -Hfuncs4 -Hfuncs5 -Hfuncs6 -Hfuncs7 in Helems.
+    (*  clear Hfuncs2 Hfuncs3 Hfuncs4 Hfuncs5 Hfuncs6 Hfuncs7. *)
+    destruct Helems as [Helems1 [Helems2 [Helems3 [Helems4 [Helems5 [Helems6 Helems7]]]]]].
+    cbn in Helems1, Helems2, Helems3, Helems4, Helems5, Helems6, Helems7.
+
+    rewrite Hfuncs'. rewrite Helems'. cbn. clear Hfuncs' Helems'.
+    (* rewrite Helems1. -Helems2. Helems3. -Helems4 -Helems5. *)
+
+    rewrite Hfuncs1 -Hfuncs3 -Hfuncs4 -Hfuncs5.
+    repeat (apply andb_true_iff; split=>//).
+    + by apply /eqstore_recordP.
+    + by apply /eqseqP. (* TODO types shouldn't be unfolded, slow *)
+    + subst l. by apply /eqseqP.
+    + subst l0. by apply /eqseqP.
+    + by apply /eqexportinstP.
+    + by apply /eqexportinstP.
     + by apply /eqseqP.
-    + apply /eqseqP. rewrite map_length.
-      cbn. repeat f_equal. erewrite map_id.
-      rewrite -gen_index_iota. by apply imap_aux_offset.
-    + by apply /eqmodule_exportP.
-    + by apply /eqseqP. }
+    + rewrite table_element_mapping_length elem_vals_length. reflexivity.  }
   - (* instantiate globals *)
     unfold instantiate_globals. cbn.
     repeat (apply Forall2_cons; first by apply rt_refl).
     by apply Forall2_nil.
   - (* instantiate elem *)
-    unfold instantiate_elem. cbn.
+    unfold instantiate_elems. cbn.
     by apply elems_instantiate.
-  - (* instantiate data *)
-    by apply Forall2_nil.
-  - (* check_bounds elem *) { (* TODO changes with update to 2.0 *) admit. }
-  - (* data *) { cbn. admit. (* TODO false, but will change with the update to 2.0 *) }
+  - by rewrite cats0.
+Unshelve. all: apply (Tf [] []).
 Admitted.
 
 End INSTANTIATION.
