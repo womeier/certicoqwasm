@@ -1588,16 +1588,24 @@ Proof.
     eapply IHlen.
 Qed. *)
 
-(* Lemma module_typing_module_elem_typing : forall fns c,
+Lemma list_function_types_valid :
+  Forall (fun ft : function_type => functype_valid ft)
+         (list_function_types (Z.to_nat max_function_args)).
+Proof.
+Admitted.
+
+Lemma module_typing_module_elem_typing : forall fns c,
   (* types of print_char, print_int, pp, grow_mem, main, fns *)
   tc_funcs c = [:: Tf [:: T_num T_i32] [::], Tf [:: T_num T_i32] [::], Tf [:: T_num T_i32] [::], Tf [::] [::] &
-                [seq type f | f <- fns]] ->
+                [seq Tf (repeat (T_num T_i32) (N.to_nat (type f))) [::] | f <- fns]] ->
   length (tc_tables c) > 0 ->
-  Forall (module_elem_typing c) (table_element_mapping (Datatypes.length fns + num_custom_funs) 0).
+  Forall2 (module_elem_typing c) (table_element_mapping (Datatypes.length fns + num_custom_funs) 0)
+                                 (repeat T_funcref (Datatypes.length fns + num_custom_funs)).
 Proof.
   intros ?? Hft Htab. unfold num_custom_funs.
-  apply Forall_forall. intros ? Hnth.
-  apply In_nth_error in Hnth. destruct Hnth as [n Hnth].
+  apply Forall2_spec. by rewrite table_element_mapping_length repeat_length.
+  intros ??? Hnth1 Hnth2.
+(*  apply In_nth_error in Hnth. destruct Hnth as [n Hnth].
   have Hlen := Hnth. apply Some_notNone in Hlen. apply nth_error_Some in Hlen. rewrite table_element_mapping_length in Hlen.
   erewrite table_element_mapping_nth in Hnth=>//.
   injection Hnth as <-. repeat split =>//.
@@ -1608,6 +1616,7 @@ Proof.
     rewrite -ssrnat.subnE -ssrnat.minusE. rewrite Nat.add_0_r.
     now replace (n - S (S (S (S (size fns))))) with 0 by lia.
 Qed. *)
+Admitted.
 
 Theorem module_instantiate : forall e module fenv venv (hs : host_state),
   correct_cenv_of_exp cenv e ->
@@ -1654,8 +1663,8 @@ Proof.
   exists [:: ET_func (Tf [::T_num T_i32] [::]); ET_func (Tf [::T_num T_i32] [::])].
 
   (* export types *)
-  exists ([:: ET_func (Tf [::T_num T_i32] [::]); ET_func (Tf [::T_num T_i32] [::]);   (* pp, grow_mem *)
-              ET_func (Tf [::] [::])] ++  (* main *)
+  exists ([:: ET_func (Tf [::T_num T_i32] [::]); (* grow_mem *)
+              ET_func (Tf [::] [::])] ++         (* main *)
          [] ++                         (* TODO all fns exported *)
          [:: ET_global {| tg_mut := MUT_var; tg_t := T_num T_i32 |}
            ; ET_global {| tg_mut := MUT_var; tg_t := T_num T_i32 |}
@@ -1689,7 +1698,7 @@ Proof.
 
     repeat split=>//.
     + (* func_types valid *)
-      subst ts. admit.
+      subst ts. by apply list_function_types_valid.
     + (* module_func_typing *)
       apply Forall2_cons.
       { (* grow mem func *)
@@ -1715,7 +1724,8 @@ Proof.
         * (* globals *)
           intros var Hin. cbn.
           by repeat destruct Hin as [|Hin]; subst =>//.
-        * admit.
+        * (* table *)
+          eexists. cbn. split; reflexivity.
         * (* grow_mem func id *)
           cbn. unfold grow_mem_function_idx; lia.
         * (* types *)
@@ -1786,21 +1796,29 @@ Proof.
         { rewrite Hlocs. apply notNone_Some. eexists. apply default_vals_i32_Some. }
       }
     + (* module_table_typing *)
-      { apply Forall2_cons. unfold module_table_typing, tabletype_valid, limit_valid_range. cbn.
-
+      apply Forall2_cons. unfold module_table_typing, tabletype_valid, limit_valid_range. cbn.
+      assert (HfnsBound: (N.of_nat (Datatypes.length fns + num_custom_funs) <= 4294967295)%N).
+      { apply translate_functions_length in Hfuns. rewrite -Hfuns.
+        destruct e; inv He=>//. inv Hrestr. unfold num_custom_funs.
+        unfold max_num_functions in H4. lia. }
+        apply N.leb_le in HfnsBound. rewrite HfnsBound. by apply /eqtable_typeP.
+      apply Forall2_nil.
+    + (* module_mem_typing *)
+      apply Forall2_cons=>//.
     + (* module_glob_typing *)
-      repeat (apply Forall2_cons; repeat split; try by apply bet_const =>//).
+      repeat (apply Forall2_cons; repeat split; try by apply bet_const_num =>//).
       by apply Forall2_nil.
     + (* module_elem_typing *)
       simpl. by apply module_typing_module_elem_typing.
     + (* module_import_typing *)
-      apply Forall2_cons. subst ts. cbn. rewrite length_list_function_types. by unfold Pos.to_nat.
-      apply Forall2_cons. subst ts. cbn. rewrite length_list_function_types. by unfold Pos.to_nat.
+      apply Forall2_cons. subst ts. unfold module_import_typing. cbn.
+        erewrite nth_error_nth'. 2: { rewrite length_list_function_types. lia. }
+        rewrite nth_list_function_types; last lia. cbn. by apply /eqextern_typeP.
+      apply Forall2_cons. subst ts. unfold module_import_typing. cbn.
+        erewrite nth_error_nth'. 2: { rewrite length_list_function_types. lia. }
+        rewrite nth_list_function_types; last lia. cbn. by apply /eqextern_typeP.
       by apply Forall2_nil.
     + (* module_export_typing *)
-      apply Forall2_cons.
-      { (* pp func *)
-        cbn. by rewrite HwId. }
       apply Forall2_cons.
       { (* grow_mem func *)
         now cbn. }
@@ -1879,5 +1897,4 @@ Proof.
   - (* data *) { cbn. admit. (* TODO false, but will change with the update to 2.0 *) }
 Admitted.
 
-*)
 End INSTANTIATION.
