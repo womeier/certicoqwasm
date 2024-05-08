@@ -1214,7 +1214,7 @@ Definition INV_fvar_idx_inbounds sr := forall fvar fIdx,
   repr_funvar fvar fIdx ->
   (fIdx < N.of_nat (length (s_funcs sr)))%N.
 
-Definition INV_types (sr : store_record) (fr : frame) := forall i,
+Definition INV_types (fr : frame) := forall i,
   (Z.of_N i <= max_function_args)%Z ->
   lookup_N (inst_types (f_inst fr)) i = Some (Tf (List.repeat (T_num T_i32) (N.to_nat i)) [::]).
 
@@ -1251,7 +1251,7 @@ Definition INV (s : store_record) (f : frame) :=
  /\ INV_num_functions_bounds s
  /\ INV_inst_globals_nodup f
  /\ INV_table_id s f
- /\ INV_types s f
+ /\ INV_types f
  /\ INV_global_mem_ptr_multiple_of_two s f
  /\ INV_exists_func_grow_mem s f
  /\ INV_inst_funcs_id s f.
@@ -1392,13 +1392,13 @@ Proof.
 Qed.
 
 Lemma update_global_preserves_types : forall j sr sr' f m num,
-  INV_types sr f ->
+  INV_types f ->
   INV_inst_globals_nodup f ->
   smem sr (f_inst f) = Some m ->
   (-1 < Z.of_N num < Wasm_int.Int32.modulus)%Z ->
   (j = global_mem_ptr -> num + 8 < mem_length m)%N ->
   supdate_glob sr (f_inst f) j (VAL_num (VAL_int32 (N_to_i32 num))) = Some sr' ->
-  INV_types sr' f.
+  INV_types f.
 Proof.
   unfold INV_types, stab_elem. intros.
   apply H in H5. now rewrite -H5.
@@ -1687,9 +1687,9 @@ Proof.
 Qed.
 
 Lemma update_mem_preserves_types : forall s s' f m vd,
-  INV_types s f ->
+  INV_types f ->
   upd_s_mem s (set_nth vd (s_mems s) 0 m) = s' ->
-  INV_types s' f.
+  INV_types f.
 Proof.
   unfold INV_types. intros. subst. (* apply H in H1. rewrite -H1. reflexivity. *) auto.
 Qed.

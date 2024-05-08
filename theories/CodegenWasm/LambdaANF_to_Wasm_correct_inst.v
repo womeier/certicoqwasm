@@ -1288,16 +1288,67 @@ Ltac separate_instr :=
   |- context C [?x :: ?l] =>
      lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
   end.
+
+(* isolate instr. + n leading args, e.g. with n=2 for add:
+   [const 1, const 2, add, remaining instr] => [const 1, const 2, add]  *)
+Ltac elimr_nary_instr n :=
+  let H := fresh "H" in
+  match n with
+  | 0 => lazymatch goal with
+         | |- reduce _ _ _ ([:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([:: ?instr] ++ ?l3) _ _ _ _ => apply r_elimr
+         end
+  | 1 => lazymatch goal with
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([:: $VN c1] ++ [:: instr] ++ l3 =
+                    [:: $VN c1; instr] ++ l3) as H by reflexivity; rewrite H;
+                                                       apply r_elimr; clear H
+         end
+  | 2 => lazymatch goal with
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [::AI_ref ?r] ++ [:: ?instr]) _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [::AI_ref ?r] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([:: $VN c1] ++ [:: AI_ref r] ++ [:: instr] ++ l3 =
+                    [:: $VN c1; AI_ref r; instr] ++ l3) as H by reflexivity; rewrite H;
+                                                       apply r_elimr; clear H
+         end
+  | 3 => lazymatch goal with
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [::$VN ?c2] ++ [::$VN ?c3] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [::$VN ?c2] ++ [::$VN ?c3] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([:: $VN c1] ++ [::$VN c2] ++ [::$VN c3] ++ [:: instr] ++ l3 =
+                    [:: $VN c1; $VN c2; $VN c3; instr] ++ l3) as H by reflexivity; rewrite H;
+                                                       apply r_elimr; clear H
+         end
+  end.
+
 Ltac dostep :=
-  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])); first apply rt_step; separate_instr.
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t]));
+  first (apply rt_step; separate_instr).
 
 (* only returns single list of instructions *)
 Ltac dostep' :=
-   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s])); first  apply rt_step.
+   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s]));
+   first (apply rt_step; separate_instr).
 
-Definition INV_instantiation_elems s f num_funs := forall x,
-  N.to_nat x < num_funs ->
-  selem s f.(f_inst) x = Some (Build_eleminst T_funcref [:: VAL_ref_func x]).
+Ltac dostep_nary n :=
+  dostep; first elimr_nary_instr n.
+
+Ltac dostep_nary' n :=
+  dostep'; first elimr_nary_instr n.
+
+
+Definition INV_instantiation_elems s f num_funs :=
+  (forall x, N.to_nat x < num_funs ->
+             selem s f.(f_inst) x = Some (Build_eleminst T_funcref [:: VAL_ref_func x])) /\
+  inst_elems f.(f_inst) = iota_N 0 num_funs.
+
+Definition INV_instantiation_table_empty s f num_funs :=
+  f.(f_inst).(inst_tables) = [0%N] /\
+  s.(s_tables) = [ {| tableinst_type := {| tt_limits := {| lim_min := N.of_nat num_funs
+                                                         ; lim_max := None |}
+                                         ; tt_elem_type := T_funcref |}
+                    ; tableinst_elem := repeat (VAL_ref_null T_funcref) num_funs
+                    |}].
 
 (* invariants that hold after initialisation, but before post-initialisation,
    the table is initialised during post-initialisation, so INV_table_id doesn't yet hold here *)
@@ -1314,12 +1365,13 @@ Definition INV_instantiation (s : store_record) (f : frame) (num_funs : nat) :=
  /\ INV_locals_all_i32 f
  /\ INV_num_functions_bounds s
  /\ INV_inst_globals_nodup f
- /\ INV_types s f
+ /\ INV_types f
  /\ INV_global_mem_ptr_multiple_of_two s f
  /\ INV_exists_func_grow_mem s f
  /\ INV_inst_funcs_id s f
 (* additional *)
- /\ INV_instantiation_elems s f num_funs.
+ /\ INV_instantiation_elems s f num_funs
+ /\ INV_instantiation_table_empty s f num_funs.
 
 Theorem module_instantiate_INV_and_more_hold :
 forall e eAny topExp fds num_funs module fenv main_lenv sr f es_post,
@@ -1514,10 +1566,18 @@ Proof.
       rewrite -E0 in Hbound. cbn in Hbound.
       do 2! rewrite map_length in Hbound. lia. }
   }
-  (* instantiation_elems *)
-  { unfold INV_instantiation_elems. intros.
-    erewrite init_elems_effect; eauto. f_equal; lia. rewrite F5. by rewrite Nat.add_comm.
-    now apply translate_functions_length in HtransFns.
+  split. (* instantiation_elems *)
+  { unfold INV_instantiation_elems.
+    apply translate_functions_length in HtransFns. split.
+    - intros. erewrite init_elems_effect; eauto.
+      f_equal; lia. rewrite F5. by rewrite Nat.add_comm. congruence.
+    - rewrite F1. congruence.
+  }
+  (* instantiate table *)
+  { unfold INV_instantiation_table_empty. cbn. split.
+    - rewrite F4. reflexivity.
+    - rewrite -E1. cbn.
+      apply translate_functions_length in HtransFns. repeat f_equal; try lia.
   }
   split. (* inst_funcs (f_inst f) *)
   { rewrite F5. repeat f_equal.
@@ -1588,20 +1648,476 @@ Proof.
 Unshelve. all: apply (Tf [] []).
 Qed.
 
+(* helper lemmas for post-instantiation *)
+
+Lemma mapi_aux_acc_snoc {A B} : forall xs idx l a (f : nat -> A -> B),
+  mapi_aux (idx, l ++ [::a]) f xs = a :: mapi_aux (idx, l) f xs.
+Proof.
+  induction xs; intros.
+  - cbn. by rewrite rev_app_distr.
+  - cbn. by rewrite -IHxs.
+Qed.
+
+Lemma selem_drop_selem_same : forall sr sr' fr i elem,
+  selem sr (f_inst fr) i = Some (Build_eleminst T_funcref elem) ->
+  selem_drop sr (f_inst fr) i = Some sr' ->
+  selem sr' (f_inst fr) i = Some (Build_eleminst T_funcref [::]).
+Proof.
+  unfold selem_drop, selem. intros.
+  destruct (lookup_N (inst_elems (f_inst fr)) i)=>//.
+  destruct (lookup_N (s_elems sr) e) eqn:He=>//. injection H as ->. injection H0 as <-. cbn.
+  assert (N.to_nat e < length (s_elems sr)). { apply nth_error_Some. unfold lookup_N in He. congruence. }
+  unfold lookup_N. eapply set_nth_nth_error_same. eassumption.
+Qed.
+
+Lemma selem_drop_selem_other : forall sr sr' fr i j elem,
+  NoDup fr.(f_inst).(inst_elems) ->
+  N.to_nat i <> N.to_nat j ->
+  selem sr (f_inst fr) i = Some elem ->
+  selem_drop sr (f_inst fr) j = Some sr' ->
+  selem sr' (f_inst fr) i = Some elem.
+Proof.
+  unfold selem_drop, selem. intros.
+  destruct (lookup_N (inst_elems (f_inst fr)) i) eqn:Hi=>//.
+  destruct (lookup_N (inst_elems (f_inst fr)) j) eqn:Hj=>//.
+  destruct (lookup_N (s_elems sr) e) eqn:He=>//. injection H1 as ->.
+  destruct (lookup_N (s_elems sr) e0) eqn:He0=>//. injection H2 as <-. cbn.
+  unfold lookup_N in *.
+  erewrite set_nth_nth_error_other; auto.
+  intro. assert (e = e0) as Heq by lia. subst e0.
+  eapply NoDup_nth_error in H. apply H0. eassumption.
+  apply nth_error_Some; congruence. congruence.
+  apply nth_error_Some; congruence.
+Qed.
+
+Lemma selem_drop_preserves_stab_elem : forall sr sr' fr i j,
+  selem_drop sr (f_inst fr) j = Some sr' ->
+  stab_elem sr (f_inst fr) 0%N i = stab_elem sr' (f_inst fr) 0%N i.
+Proof.
+  unfold selem_drop, stab_elem. intros.
+  destruct (lookup_N (inst_elems (f_inst fr)) j)=>//.
+  destruct (lookup_N (s_elems sr) e)=>//.
+  injection H as <-.
+  by destruct (lookup_N (inst_tables (f_inst fr)) 0).
+Qed.
+
+Lemma selem_drop_preserves_funcs : forall sr sr' fr i,
+  selem_drop sr (f_inst fr) i = Some sr' ->
+  s_funcs sr = s_funcs sr'.
+Proof.
+  unfold selem_drop, stab_elem. intros.
+  destruct (lookup_N (inst_elems (f_inst fr)) i)=>//.
+  destruct (lookup_N (s_elems sr) e)=>//.
+  by injection H as <-.
+Qed.
+
+Lemma selem_drop_preserves_mems : forall sr sr' fr i,
+  selem_drop sr (f_inst fr) i = Some sr' ->
+  s_mems sr = s_mems sr'.
+Proof.
+  unfold selem_drop, stab_elem. intros.
+  destruct (lookup_N (inst_elems (f_inst fr)) i)=>//.
+  destruct (lookup_N (s_elems sr) e)=>//.
+  by injection H as <-.
+Qed.
+
+Lemma selem_drop_preserves_globals : forall sr sr' fr i,
+  selem_drop sr (f_inst fr) i = Some sr' ->
+  s_globals sr = s_globals sr'.
+Proof.
+  unfold selem_drop, stab_elem. intros.
+  destruct (lookup_N (inst_elems (f_inst fr)) i)=>//.
+  destruct (lookup_N (s_elems sr) e)=>//.
+  by injection H as <-.
+Qed.
+
+Lemma stab_update_stab : forall sr sr' fr i v,
+  stab_update sr (f_inst fr) 0%N i v = Some sr' ->
+  exists tab, stab sr' (f_inst fr) 0%N = Some tab.
+Proof.
+  unfold stab_update, stab. intros.
+  destruct (lookup_N (inst_tables (f_inst fr)) 0) eqn:Ht=>//.
+  destruct (lookup_N (s_tables sr) t) eqn:Ht0=>//.
+  destruct ((i <? N.of_nat (tab_size t0))%N) eqn:Hsize=>//.
+  injection H as <-. cbn.
+  eexists.
+  now eapply set_nth_nth_error_same.
+Qed.
+
+Lemma stab_update_preserves_tab_size : forall sr sr' fr t t' i v,
+  stab sr (f_inst fr) 0%N = Some t ->
+  stab sr' (f_inst fr) 0%N = Some t' ->
+  stab_update sr (f_inst fr) 0%N i v = Some sr' ->
+  tab_size t = tab_size t'.
+Proof.
+  unfold stab, stab_update, tab_size. intros.
+  destruct (lookup_N (inst_tables (f_inst fr)) 0) eqn:Ht=>//.
+  destruct (lookup_N (s_tables sr) t0) eqn:Ht0=>//.
+  destruct ((i <? N.of_nat (Datatypes.length (tableinst_elem t1)))%N) eqn:Hsize=>//.
+  apply N.ltb_lt in Hsize.
+  assert (exists t, nth_error (tableinst_elem t1) (N.to_nat i) = Some t) as [x Hx]. {
+    apply notNone_Some. apply nth_error_Some. lia.
+  }
+
+  injection H1 as <-. injection H as ->. cbn in *. unfold lookup_N in H0.
+  erewrite set_nth_nth_error_same in H0; eauto.
+  injection H0 as <-. cbn.
+  now erewrite nth_error_set_nth_length.
+Qed.
+
+Lemma stab_update_stab_elem_same : forall sr sr' fr i,
+  stab_update sr (f_inst fr) 0%N i (VAL_ref_func i) = Some sr' ->
+  stab_elem sr' (f_inst fr) 0%N i = Some (VAL_ref_func i).
+Proof.
+Admitted.
+
+Lemma stab_update_stab_elem_other : forall sr sr' fr i j,
+  i <> j ->
+  stab_update sr (f_inst fr) 0%N i (VAL_ref_func i) = Some sr' ->
+  stab_elem sr (f_inst fr) 0%N j = stab_elem sr' (f_inst fr) 0%N j.
+Proof.
+Admitted.
+
+Lemma stab_update_preserves_selem : forall sr sr' fr i v j,
+  stab_update sr (f_inst fr) 0%N i v = Some sr' ->
+  selem sr (f_inst fr) j = selem sr' (f_inst fr) j.
+Proof.
+  unfold stab_update. intros.
+  destruct (lookup_N (inst_tables (f_inst fr)) 0)=>//.
+  destruct (lookup_N (s_tables sr) t)=>//.
+  destruct ((i <? N.of_nat (tab_size t0))%N)=>//.
+  by injection H as <-.
+Qed.
+
+Lemma stab_update_preserves_funcs : forall sr sr' fr i v,
+  stab_update sr (f_inst fr) 0%N i v = Some sr' ->
+  s_funcs sr = s_funcs sr'.
+Proof.
+  unfold stab_update. intros.
+  destruct (lookup_N (inst_tables (f_inst fr)) 0)=>//.
+  destruct (lookup_N (s_tables sr) t)=>//.
+  destruct ((i <? N.of_nat (tab_size t0))%N)=>//.
+  by injection H as <-.
+Qed.
+
+Lemma stab_update_preserves_mems : forall sr sr' fr i v,
+  stab_update sr (f_inst fr) 0%N i v = Some sr' ->
+  s_mems sr = s_mems sr'.
+Proof.
+  unfold stab_update. intros.
+  destruct (lookup_N (inst_tables (f_inst fr)) 0)=>//.
+  destruct (lookup_N (s_tables sr) t)=>//.
+  destruct ((i <? N.of_nat (tab_size t0))%N)=>//.
+  by injection H as <-.
+Qed.
+
+Lemma stab_update_preserves_globals : forall sr sr' fr i v,
+  stab_update sr (f_inst fr) 0%N i v = Some sr' ->
+  s_globals sr = s_globals sr'.
+Proof.
+  unfold stab_update. intros.
+  destruct (lookup_N (inst_tables (f_inst fr)) 0)=>//.
+  destruct (lookup_N (s_tables sr) t)=>//.
+  destruct ((i <? N.of_nat (tab_size t0))%N)=>//.
+  by injection H as <-.
+Qed.
+
+(* strengthened version of post_instantiation_reduce *)
+Lemma post_instantiation_reduce_aux : forall num_funs idx hs sr fr t,
+  (forall i, i < num_funs + idx ->
+     nth_error fr.(f_inst).(inst_elems) i = Some (N.of_nat i)) ->
+  length fr.(f_inst).(inst_elems) = num_funs + idx ->
+  fr.(f_inst).(inst_tables) = [0%N] ->
+  sr.(s_tables) = [:: t ] ->
+  t.(tableinst_type).(tt_elem_type) = T_funcref ->
+  tab_size t = idx + num_funs ->
+  idx + num_funs < Z.to_nat max_num_functions ->
+  (* s_elems[i] not yet dropped for i >= idx *)
+  (forall i, idx <= N.to_nat i < num_funs + idx ->
+     selem sr fr.(f_inst) i = Some (Build_eleminst T_funcref [:: VAL_ref_func i])) ->
+  (* s_elems[i] dropped for i < idx *)
+  (forall i, N.to_nat i < idx ->
+     selem sr fr.(f_inst) i = Some (Build_eleminst T_funcref [::])) ->
+  (* tab[i] already initialised for i < idx *)
+  (forall i, N.to_nat i < idx ->
+     stab_elem sr (f_inst fr) 0%N i = Some (VAL_ref_func i)) ->
+  exists sr',
+    reduce_trans (hs, sr, fr, [seq AI_basic i | i <- concat
+                                 (mapi_aux (idx, [::])
+                                   (fun n : nat => get_init_expr_elem n)
+                                   (table_element_mapping num_funs idx))])
+                 (hs, sr', fr, [::]) /\
+  (* table initialised *)
+  (forall i, idx <= N.to_nat i < num_funs + idx ->
+     stab_elem sr' (f_inst fr) 0%N i = Some (VAL_ref_func i)) /\
+  (* TODO: necessary? *)
+  (forall i, N.to_nat i < idx ->
+     stab_elem sr (f_inst fr) 0%N i = stab_elem sr' (f_inst fr) 0%N i) /\
+  (* others preserved *)
+  s_funcs sr = s_funcs sr' /\
+  s_mems sr = s_mems sr' /\
+  s_globals sr = s_globals sr'.
+Proof.
+  induction num_funs; intros ????? HiE1 HiE2 HiT HsT1 HsT2 Htabsize Hnumfuns HsE1 HsE2 Htab. cbn.
+  - exists sr. split. apply rt_refl. split=>//. intros. lia.
+  - cbn.
+    (* store after tab[i] := i *)
+    assert (exists sr', stab_update sr (f_inst fr) 0%N (Wasm_int.N_of_uint i32m (nat_to_i32 idx))
+                                   (VAL_ref_func (N.of_nat idx)) = Some sr') as [sr' Hsr']. {
+      unfold stab_update. rewrite HiT. cbn. rewrite HsT1.
+      assert (HtabSize: (Z.to_N (Wasm_int.Int32.Z_mod_modulus (Z.of_nat idx)) <? N.of_nat (tab_size t))%N).
+      apply N.ltb_lt. rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
+      simpl_modulus. cbn. unfold max_num_functions in Hnumfuns. lia.
+      rewrite HtabSize. now eexists.
+    }
+
+    (* store after elem_drop i *)
+    assert (exists sr'', selem_drop sr' (f_inst fr) (N.of_nat idx) = Some sr'') as [sr'' Hsr'']. {
+      unfold selem_drop. unfold lookup_N. rewrite HiE1; last lia. do 2 rewrite Nat2N.id.
+      assert (Hidx: idx < length (s_elems sr)). {
+        have He := HsE1 (N.of_nat idx).
+        unfold selem in He. unfold lookup_N in He. rewrite HiE1 in He; last lia.
+        do 2 rewrite Nat2N.id in He. apply nth_error_Some. apply notNone_Some.
+        eexists. apply He. lia.
+      }
+      assert (Hlen: length (s_elems sr) = length (s_elems sr')). {
+        unfold stab_update in Hsr'. rewrite HiT in Hsr'.
+        cbn in Hsr'. rewrite HsT1 in Hsr'.
+        destruct (_ <? _)%N=>//. by injection Hsr' as <-.
+      }
+      rewrite Hlen in Hidx.
+      apply nth_error_Some in Hidx.
+      apply notNone_Some in Hidx as [x Hx].
+      rewrite Hx. now eexists.
+    }
+
+    (* prepare IH *)
+    assert (HiE1' : forall i : nat, i < num_funs + S idx ->
+      nth_error (inst_elems (f_inst fr)) i = Some (N.of_nat i)). {
+      intros ? H. replace (num_funs + S idx) with (S num_funs + idx) in H by lia.
+      by apply HiE1 in H.
+    }
+    assert (HsE1' : (forall x : N,
+        S idx <= N.to_nat x < num_funs + S idx ->
+        selem sr'' (f_inst fr) x = Some {| eleminst_type := T_funcref; eleminst_elem := [:: VAL_ref_func x] |})). {
+      intros ? H.
+      eapply selem_drop_selem_other; last apply Hsr''. {
+        intros. apply NoDup_nth_error. apply HiE'.
+        intros.
+        rewrite HiE1 in H1; try lia.
+        assert (j < length (inst_elems (f_inst fr))). { now apply nth_error_Some. }
+        rewrite HiE1 in H1. injection H1. lia. lia.
+      }
+      lia.
+      erewrite <- stab_update_preserves_selem; eauto.
+      apply HsE1. lia.
+    }
+    assert (HiE2': Datatypes.length (inst_elems (f_inst fr)) = num_funs + S idx) by lia.
+    assert (HsE2' : (forall i : N,
+        N.to_nat i < S idx ->
+        selem sr'' (f_inst fr) i = Some {| eleminst_type := T_funcref; eleminst_elem := [::] |})). {
+      intros.
+      destruct (Nat.eq_dec idx (N.to_nat i)).
+      - (* i = idx *)
+        subst.
+        rewrite N2Nat.id in Hsr''.
+        eapply selem_drop_selem_same; last apply Hsr''.
+        erewrite <- stab_update_preserves_selem; eauto.
+        apply HsE1. lia.
+      - (* i<>idx *)
+        eapply selem_drop_selem_other; last apply Hsr''. {
+        intros. apply NoDup_nth_error.
+        intros.
+        rewrite HiE1 in H1; try lia.
+        assert (j < length (inst_elems (f_inst fr))). { now apply nth_error_Some. }
+        rewrite HiE1 in H1. injection H1. lia. lia.
+      }
+      lia.
+      erewrite <- stab_update_preserves_selem; eauto.
+      apply HsE2. lia.
+    }
+
+    assert (Hstab: stab sr (f_inst fr) 0%N = Some t). {
+      unfold stab. rewrite HiT. now rewrite HsT1.
+    }
+    assert (HsT1' : s_tables sr'' = [:: t]). {
+      (* falsch, müsste aktualisiertes t sein *)
+      admit.
+    }
+    assert (HsT3' : tab_size t = S idx + num_funs) by lia.
+
+    assert (Htab': (forall i : N,
+        N.to_nat i < S idx ->
+        stab_elem sr'' (f_inst fr) 0%N i = Some (VAL_ref_func i))). {
+      intros.
+      erewrite <- selem_drop_preserves_stab_elem; eauto.
+      replace (Wasm_int.N_of_uint i32m (nat_to_i32 idx)) with (N.of_nat idx) in Hsr'.
+      2:{ cbn. unfold max_num_functions in Hnumfuns.
+          repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia. }
+      destruct (Nat.eq_dec idx (N.to_nat i)).
+      - (* idx = i *)
+        subst idx. rewrite N2Nat.id in Hsr'.
+        by eapply stab_update_stab_elem_same; eauto.
+      - (* idx <> i*)
+        erewrite <- stab_update_stab_elem_other; last eassumption; try lia.
+        apply Htab; lia.
+    }
+
+    have Ht := stab_update_stab _ _ _ _ _ Hsr'. destruct Ht as [tab Ht].
+    have HtabsizeEq := stab_update_preserves_tab_size _ _ _ _ _ _ _ Hstab Ht Hsr'.
+    assert (Hnumfuns' : S idx + num_funs < Z.to_nat max_num_functions) by lia.
+    assert (Htabsize' : tab_size t = S idx + num_funs) by lia.
+
+    have IH := IHnum_funs (S idx) hs sr'' fr t HiE1' HiE2' HiT HsT1' HsT2 Htabsize' Hnumfuns' HsE1' HsE2' Htab'.
+    destruct IH as [sr_final [Hred [Htable_final1 [Htable_final2 [Hfuncs [Hmems Hglobals]]]]]].
+    unfold max_num_functions in Hnumfuns.
+
+    exists sr_final. cbn. split.
+    { (* step through instructions *)
+      rewrite (mapi_aux_acc_snoc _ _ []). cbn.
+      dostep_nary 3. eapply r_table_init_step; cbn; eauto; try apply HsE1; cbn; eauto; try lia.
+      rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.
+
+      dostep_nary 2. eapply r_table_set_success with (tabv:=VAL_ref_func (N.of_nat idx)). eassumption.
+      dostep_nary 3. eapply r_table_init_return; cbn; eauto.
+      erewrite <- stab_update_preserves_selem; eauto. apply HsE1. lia. now cbn.
+      repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.
+      dostep_nary 0. apply r_elem_drop. eassumption. cbn.
+      replace (idx + 1) with (S idx) by lia. apply Hred.
+    }
+    { (* table entries set correctly *)
+      split.
+      - intros.
+        destruct (Nat.eq_dec idx (N.to_nat i)).
+        + (* i = idx *)
+          subst idx. rewrite -(Htable_final2 i); auto.
+        + (* i <> idx *)
+          apply Htable_final1. lia.
+      - split. intros.
+        rewrite -(Htable_final2 i); try lia.
+        replace (Wasm_int.N_of_uint i32m (nat_to_i32 idx)) with (N.of_nat idx) in Hsr'.
+        2:{ cbn. repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia. }
+        erewrite (stab_update_stab_elem_other _ _ _ (N.of_nat idx)); try apply Hsr'; try lia.
+        by erewrite selem_drop_preserves_stab_elem; eauto.
+        split.
+        apply stab_update_preserves_funcs in Hsr'. apply selem_drop_preserves_funcs in Hsr''. congruence.
+        split.
+        apply stab_update_preserves_mems in Hsr'. apply selem_drop_preserves_mems in Hsr''. congruence.
+        apply stab_update_preserves_globals in Hsr'. apply selem_drop_preserves_globals in Hsr''. congruence.
+   }
+(* Unshelve. all: by repeat constructor. *)
+Admitted.
+
+
+(* main result about post-instantiation: initialises table with id mapping for i < num_funs *)
 Theorem post_instantiation_reduce {fenv} : forall hs sr fr fr' num_funs,
   INV_instantiation sr fr num_funs ->
   f_inst fr = f_inst fr' ->
   exists sr',
     reduce_trans (hs, sr, fr', [seq AI_basic i | i <- concat
-                                                (mapi_aux (0, [::])
-                                                  (fun n : nat => get_init_expr_elem n)
-                                                  (table_element_mapping num_funs 0))])
+                                 (mapi_aux (0, [::])
+                                   (fun n : nat => get_init_expr_elem n)
+                                   (table_element_mapping num_funs 0))])
                  (hs, sr', fr', [::]) /\
-  INV fenv nenv sr' fr' /\
+  INV fenv nenv sr' fr /\
   s_funcs sr = s_funcs sr'.
 Proof.
   intros ????? Hinv Hfinst.
-  destruct Hinv as [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]]]].
+  destruct Hinv as [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]]]]].
+  destruct H15 as [HiT HsT].
+  destruct H14 as [HsE HiE].
+
+  assert (HiE1': (forall i : nat,
+      i < num_funs + 0 -> nth_error (inst_elems (f_inst fr')) i = Some (N.of_nat i))). {
+    intros ? Hn. rewrite Nat.add_0_r in Hn. rewrite -Hfinst.
+    rewrite HiE. rewrite iota_N_lookup. f_equal. apply /ssrnat.leP. lia. }
+  assert (HsE': (forall i : N,
+    0 <= N.to_nat i < num_funs + 0 ->
+    selem sr (f_inst fr') i = Some {| eleminst_type := T_funcref; eleminst_elem := [:: VAL_ref_func i] |})). {
+    intros. rewrite -Hfinst. apply HsE. lia. }
+
+  assert (Hempty1: (forall i : N,
+      N.to_nat i < 0 ->
+      selem sr (f_inst fr') i = Some {| eleminst_type := T_funcref; eleminst_elem := [::] |})). {
+    intros. lia. }
+  assert (Hempty2: (forall i : N,
+      N.to_nat i < 0 ->
+      stab_elem sr (f_inst fr') 0%N i = Some (VAL_ref_func i))). {
+    intros. lia. }
+
+  assert (HiE2': Datatypes.length (inst_elems (f_inst fr')) = num_funs + 0). {
+    rewrite -Hfinst HiE. rewrite iota_N_length. lia.
+  }
+
+  assert (Htabsize: tab_size {| tableinst_type := {| tt_limits := {| lim_min := N.of_nat num_funs
+                                                                   ; lim_max := None
+                                                                   |}
+                                                   ; tt_elem_type := T_funcref
+                                                   |}
+                               ; tableinst_elem := repeat (VAL_ref_null T_funcref) num_funs
+                               |} = 0 + num_funs). { cbn. by rewrite repeat_length. }
+
+  assert (Hnumfuns: num_funs < Z.to_nat max_num_functions). { cbn. unfold INV_num_functions_bounds in H8. }
+
+  rewrite Hfinst in HiT.
+  have H' := post_instantiation_reduce_aux num_funs 0 hs sr fr' _ HiE1' HiE2' HiT HsT Logic.eq_refl Htabsize Hnumfuns HsE'  Hempty1 Hempty2.
+  destruct H' as [sr' [Hred [Htab [_ [Hfuncs [Hmems Hglobals]]]]]].
+  exists sr'.
+  split. apply Hred.
+  split=>//.
+  (* INV holds now *)
+  unfold INV.
+  split. (* result_var writable *)
+    intro. destruct (H val) as [s Hs].
+    unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
+    destruct (lookup_N (inst_globals (f_inst fr)) result_var)=>//. cbn. cbn in Hs.
+    rewrite <- Hglobals in *.
+    destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
+  split. (* result_out_of_mem writable *)
+    intro. destruct (H0 val) as [s Hs].
+    unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
+    destruct (lookup_N (inst_globals (f_inst fr)) result_out_of_mem)=>//. cbn. cbn in Hs.
+    rewrite <- Hglobals in *.
+    destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
+  split. (* result_var is 0 *)
+  unfold INV_result_var_out_of_mem_is_zero, sglob_val, sglob, sglob_ind in *.
+    by repeat rewrite <- Hglobals in *.
+  split. (* global_mem_ptr writable *)
+    intro. destruct (H2 val) as [s Hs].
+    unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
+    destruct (lookup_N (inst_globals (f_inst fr)) global_mem_ptr)=>//. cbn. cbn in Hs.
+    rewrite <- Hglobals in *.
+    destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
+  split. (* constr_alloc_ptr writable *)
+    intro. destruct (H3 val) as [s Hs].
+    unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
+    destruct (lookup_N (inst_globals (f_inst fr)) constr_alloc_ptr)=>//. cbn. cbn in Hs.
+    rewrite <- Hglobals in *.
+    destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
+  split. (* globals all mut i32s *)
+    unfold INV_globals_all_mut_i32, globals_all_mut_i32. rewrite -Hglobals. assumption.
+  split. (* linear memory *)
+    unfold INV_linear_memory, smem. by rewrite -Hmems.
+  split. (* global_mem_ptr in linear mem *)
+    unfold INV_global_mem_ptr_in_linear_memory. unfold smem, sglob_val, sglob, sglob_ind.
+    rewrite - Hglobals. by rewrite -Hmems.
+  split. (* locals all i32s *)
+    assumption.
+  split. (* num funcs bound *)
+    unfold INV_num_functions_bounds. by rewrite -Hfuncs.
+  split. (* globals nodup *)
+    assumption.
+  split. (* table id mapping *)
+    unfold INV_table_id. intros. rewrite Hfinst. apply Htab. admit. (* translate_var fenv f = Some i => i < num_funs *)
+  split. (* types *)
+    assumption.
+  split. (* global_mem_ptr multiple of 2 *)
+    unfold INV_global_mem_ptr_multiple_of_two, sglob_val, sglob, sglob_ind, smem.
+    rewrite -Hglobals. rewrite -Hmems. assumption.
+  split. (* exists mem_grow_func *)
+    unfold INV_exists_func_grow_mem. rewrite -Hfuncs. assumption.
+  (* inst funcs id mapping *)
+  unfold INV_inst_funcs_id. rewrite -Hfuncs. assumption.
 Admitted.
 
 
