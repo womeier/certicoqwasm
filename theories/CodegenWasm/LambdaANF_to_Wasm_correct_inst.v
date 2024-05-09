@@ -1902,7 +1902,7 @@ Proof.
         selem sr'' (f_inst fr) x = Some {| eleminst_type := T_funcref; eleminst_elem := [:: VAL_ref_func x] |})). {
       intros ? H.
       eapply selem_drop_selem_other; last apply Hsr''. {
-        intros. apply NoDup_nth_error. apply HiE'.
+        intros. apply NoDup_nth_error.
         intros.
         rewrite HiE1 in H1; try lia.
         assert (j < length (inst_elems (f_inst fr))). { now apply nth_error_Some. }
@@ -2011,6 +2011,7 @@ Admitted.
 
 (* main result about post-instantiation: initialises table with id mapping for i < num_funs *)
 Theorem post_instantiation_reduce {fenv} : forall hs sr fr fr' num_funs,
+  (forall f f' errMsg, translate_var nenv fenv f errMsg = Ret f' -> N.to_nat f' < num_funs) ->
   INV_instantiation sr fr num_funs ->
   f_inst fr = f_inst fr' ->
   exists sr',
@@ -2022,7 +2023,7 @@ Theorem post_instantiation_reduce {fenv} : forall hs sr fr fr' num_funs,
   INV fenv nenv sr' fr /\
   s_funcs sr = s_funcs sr'.
 Proof.
-  intros ????? Hinv Hfinst.
+  intros ????? Hfenv Hinv Hfinst.
   destruct Hinv as [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]]]]].
   destruct H15 as [HiT HsT].
   destruct H14 as [HsE HiE].
@@ -2057,7 +2058,7 @@ Proof.
                                ; tableinst_elem := repeat (VAL_ref_null T_funcref) num_funs
                                |} = 0 + num_funs). { cbn. by rewrite repeat_length. }
 
-  assert (Hnumfuns: num_funs < Z.to_nat max_num_functions). { cbn. unfold INV_num_functions_bounds in H8. }
+  assert (Hnumfuns: num_funs < Z.to_nat max_num_functions). { cbn. unfold INV_num_functions_bounds in H8. admit. }
 
   rewrite Hfinst in HiT.
   have H' := post_instantiation_reduce_aux num_funs 0 hs sr fr' _ HiE1' HiE2' HiT HsT Logic.eq_refl Htabsize Hnumfuns HsE'  Hempty1 Hempty2.
@@ -2108,7 +2109,8 @@ Proof.
   split. (* globals nodup *)
     assumption.
   split. (* table id mapping *)
-    unfold INV_table_id. intros. rewrite Hfinst. apply Htab. admit. (* translate_var fenv f = Some i => i < num_funs *)
+    unfold INV_table_id. intros ??? Htrans. rewrite Hfinst.
+    apply Htab. apply Hfenv in Htrans. lia.
   split. (* types *)
     assumption.
   split. (* global_mem_ptr multiple of 2 *)
@@ -2207,12 +2209,43 @@ Proof.
     now eapply NoDup_app_remove_l in HvarsNodup.
   }
 
+  assert (HfenvBound: (forall (f : var) (f' : u32) (errMsg : string),
+             translate_var nenv fenv f errMsg = Ret f' ->
+             N.to_nat f' < match match e with
+                                 | Efun _ _ => e
+                                 | _ => Efun Fnil e
+                                 end
+                           with
+                           | Efun fds _ => numOf_fundefs fds
+                           | _ => 42
+                           end + num_custom_funs)). {
+    intros.
+    unfold LambdaANF_to_Wasm in LANF2Wasm.
+    remember (list_function_types (Z.to_nat max_function_args)) as ftypes.
+    simpl in LANF2Wasm.
+    destruct (check_restrictions cenv e). inv LANF2Wasm.
+    destruct (match _ with
+       | Efun fds _ => _ fds
+       | _ => Err _
+       end) eqn:Hfuns. inv LANF2Wasm. rename l into fns.
+    destruct (match e with
+                    | Efun _ _ => e
+                    | _ => Efun Fnil e
+                    end) eqn:HtopExp; try (by inv LANF2Wasm).
+    destruct (translate_body nenv cenv _ _ _) eqn:Hexpr. inv LANF2Wasm. rename l into wasm_main_instr.
+    inv LANF2Wasm.
+    unfold create_fname_mapping in H.
+    eapply var_mapping_list_lt_length' in H.
+    destruct e; inv HtopExp=>//.
+    rewrite collect_function_vars_length in H. lia. }
+
   have HI := module_instantiate_INV_and_more_hold _ _ _ _ _ _ _ _ _ _ _ Hnodup' HeRestr
                Logic.eq_refl Logic.eq_refl Hcenv' Logic.eq_refl Hmaxfuns LANF2Wasm Hinst.
   clear Hnodup' Hcenv'.
   destruct HI as [Hinv [HinstFuncs [HfVal [grow_mem_fn [main_fn [e' [fns' [-> [-> [HsrFuncs [-> [Hexpr' Hfns']]]]]]]]]]]].
 
-  have HpostInst := post_instantiation_reduce (fenv:=fenv) hs sr fr {| f_locs := [::]; f_inst := f_inst fr |} _ Hinv Logic.eq_refl.
+  have HpostInst := post_instantiation_reduce (fenv:=fenv) hs sr fr {| f_locs := [::]; f_inst := f_inst fr |} _
+                       HfenvBound Hinv Logic.eq_refl.
   destruct HpostInst as [sr' [HredPost [Hinv' Hsr'F]]].
 
   remember (Build_frame (repeat (VAL_num (nat_to_value 0)) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
