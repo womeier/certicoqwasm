@@ -2056,7 +2056,7 @@ Proof.
                                                    ; tt_elem_type := T_funcref
                                                    |}
                                ; tableinst_elem := repeat (VAL_ref_null T_funcref) num_funs
-                               |} = 0 + num_funs). { cbn. by rewrite repeat_length. }
+                               |} = num_funs). { cbn. by rewrite repeat_length. }
 
   assert (Hnumfuns: num_funs < Z.to_nat max_num_functions). { cbn. unfold INV_num_functions_bounds in H8. admit. }
 

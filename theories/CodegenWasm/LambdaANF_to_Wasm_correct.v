@@ -1896,17 +1896,17 @@ Ltac elimr_nary_instr n :=
          | |- reduce _ _ _ ([:: ?instr] ++ ?l3) _ _ _ _ => apply r_elimr
          end
   | 1 => lazymatch goal with
-         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [:: ?instr])        _ _ _ _ => idtac
-         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
-            assert ([:: AI_basic (BI_const_num c1)] ++ [:: instr] ++ l3 =
-                    [:: AI_basic (BI_const_num c1); instr] ++ l3) as H by reflexivity; rewrite H;
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([::$VN c1] ++ [:: instr] ++ l3 =
+                    [:: $VN c1; instr] ++ l3) as H by reflexivity; rewrite H;
                                                        apply r_elimr; clear H
          end
   | 2 => lazymatch goal with
-         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [::AI_basic (BI_const_num ?c2)] ++ [:: ?instr])        _ _ _ _ => idtac
-         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [::AI_basic (BI_const_num ?c2)] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
-            assert ([:: AI_basic (BI_const_num c1)] ++ [:: AI_basic (BI_const_num c2)] ++ [:: instr] ++ l3 =
-                    [:: AI_basic (BI_const_num c1); AI_basic (BI_const_num c2); instr] ++ l3) as H by reflexivity; rewrite H;
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [::$VN ?c2] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [::$VN ?c2] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([::$VN c1] ++ [:: $VN c2] ++ [:: instr] ++ l3 =
+                    [::$VN c1; $VN c2; instr] ++ l3) as H by reflexivity; rewrite H;
                                                        apply r_elimr; clear H
          end
   end.
