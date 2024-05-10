@@ -58,7 +58,7 @@ Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :
                 "found function application with too many function params, check max_function_args";;
       check_restrictions cenv e'
   | Efun fds e' =>
-      _ <- assert (Z.of_nat (numOf_fundefs fds) <? max_num_functions)%Z
+      _ <- assert (Z.of_nat (numOf_fundefs fds) <=? max_num_functions)%Z
                 "too many functions, check max_num_functions";;
       _ <- ((fix iter (fds : fundefs) : error Datatypes.unit :=
               match fds with

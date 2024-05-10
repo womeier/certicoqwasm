@@ -910,7 +910,7 @@ Proof.
 Qed.
 
 Lemma gen_fun_instance_simplify_eq : forall fns mi,
-  (Z.of_nat (length fns) < max_num_functions)%Z ->
+  (Z.of_nat (length fns) <= max_num_functions)%Z ->
   (forall fn, In fn fns -> type fn <= 20)%N ->
   inst_types mi = list_function_types (Pos.to_nat 20) ->
   [seq gen_func_instance {| modfunc_type := type fn; modfunc_locals := locals fn; modfunc_body := body fn |}
@@ -1363,7 +1363,7 @@ Definition INV_instantiation (s : store_record) (f : frame) (num_funs : nat) :=
  /\ INV_linear_memory s f
  /\ INV_global_mem_ptr_in_linear_memory s f
  /\ INV_locals_all_i32 f
- /\ INV_num_functions_bounds s
+ /\ INV_num_functions_bounds s f
  /\ INV_inst_globals_nodup f
  /\ INV_types f
  /\ INV_global_mem_ptr_multiple_of_two s f
@@ -1382,7 +1382,7 @@ forall e eAny topExp fds num_funs module fenv main_lenv sr f es_post,
   (forall (f : var) (t : fun_tag) (ys : seq var) (e : exp),
       find_def f fds = Some (t, ys, e) -> correct_cenv_of_exp cenv e) ->
   num_funs = match topExp with | Efun fds _ => numOf_fundefs fds | _ => 42 (* unreachable*) end ->
-  (Z.of_nat num_funs < max_num_functions)%Z ->
+  (Z.of_nat num_funs <= max_num_functions)%Z ->
   LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, main_lenv) ->
   (* instantiate with the two imported functions *)
   instantiate initial_store module [EV_func 0%N; EV_func 1%N] (sr, f, es_post) ->
@@ -1517,7 +1517,7 @@ Proof.
     split; auto. unfold smem. eexists; auto.
     split. rewrite -E2. reflexivity.
     unfold mem_size, operations.mem_length, memory_list.mem_length. cbn. eexists. split. reflexivity.
-    split; auto. unfold max_mem_pages. rewrite repeat_length. cbn.
+    split. reflexivity. unfold max_mem_pages. rewrite repeat_length. cbn.
     replace (N.of_nat (Pos.to_nat 65536)) with 65536%N by lia. cbn. lia. }
    split. (* gmp in linmem *)
    { unfold INV_global_mem_ptr_in_linear_memory.
@@ -1529,12 +1529,16 @@ Proof.
    split. (* all locals i32 *)
    { unfold INV_locals_all_i32. intros. rewrite nth_error_nil in H. inv H. }
    split. (* num functions upper bound *)
-   { unfold INV_num_functions_bounds. cbn.
-     rewrite -E0. cbn.
-     do 2! rewrite map_length.
-     destruct e; inv HtopExp'; try (inv HtransFns; simpl_modulus; cbn; lia).
-     erewrite <- translate_functions_length; eauto.
-     unfold max_num_functions in HfnsLength. simpl_modulus. cbn. lia. }
+   { unfold INV_num_functions_bounds, max_num_functions.
+     split.
+     - cbn. rewrite -E0. cbn.
+       do 2! rewrite map_length.
+       destruct e; inv HtopExp'; try (inv HtransFns; simpl_modulus; cbn; lia).
+       erewrite <- translate_functions_length; eauto.
+       unfold max_num_functions in HfnsLength. simpl_modulus. cbn. lia.
+     - cbn. rewrite F1. rewrite iota_N_length. unfold num_custom_funs.
+       erewrite <- translate_functions_length; eauto.
+       unfold max_num_functions in HfnsLength. lia. }
    split. (* inst_globals (f_inst f) no dups *)
    unfold INV_inst_globals_nodup. rewrite F2.
    repeat constructor; cbn; lia.
@@ -1639,13 +1643,14 @@ Proof.
   rewrite <- map_map_seq.
   { clear Hmodule E1 F.
    rewrite gen_fun_instance_simplify_eq; eauto.
-   - apply translate_functions_length in HtransFns. lia.
+   - apply translate_functions_length in HtransFns.
+     rewrite -HtransFns. lia.
    - intros. eapply translate_functions_type_bound; eauto.
      destruct e; inv HtopExp'=>//. inv HeRestr. assumption. }
 	split; first by rewrite cats0.
 	split=>//. rewrite -Hexpr.
 	destruct e; inv HtopExp'=>//.
-Unshelve. all: apply (Tf [] []).
+Unshelve. all: repeat constructor.
 Qed.
 
 (* helper lemmas for post-instantiation *)
@@ -1859,7 +1864,7 @@ Lemma post_instantiation_reduce_aux : forall num_funs idx hs sr fr t,
   stab sr fr.(f_inst) 0%N = Some t ->
   t.(tableinst_type).(tt_elem_type) = T_funcref ->
   tab_size t = idx + num_funs ->
-  idx + num_funs < Z.to_nat max_num_functions ->
+  idx + num_funs <= Z.to_nat max_num_functions + num_custom_funs ->
   (* s_elems[i] not yet dropped for i >= idx *)
   (forall i, idx <= N.to_nat i < num_funs + idx ->
      selem sr fr.(f_inst) i = Some (Build_eleminst T_funcref [:: VAL_ref_func i])) ->
@@ -1897,7 +1902,7 @@ Proof.
       destruct (lookup_N (s_tables sr) t0) eqn:Ht0=>//. injection HsT1 as ->.
       assert (HtabSize: (Z.to_N (Wasm_int.Int32.Z_mod_modulus (Z.of_nat idx)) <? N.of_nat (tab_size t))%N).
       apply N.ltb_lt. rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia.
-      simpl_modulus. cbn. unfold max_num_functions in Hnumfuns. lia.
+      simpl_modulus. cbn. unfold max_num_functions, num_custom_funs in Hnumfuns. lia.
       rewrite HtabSize. now eexists.
     }
 
@@ -1999,7 +2004,7 @@ Proof.
       intros.
       erewrite <- selem_drop_preserves_stab_elem; eauto.
       replace (Wasm_int.N_of_uint i32m (nat_to_i32 idx)) with (N.of_nat idx) in Hsr'.
-      2:{ cbn. unfold max_num_functions in Hnumfuns.
+      2:{ cbn. unfold max_num_functions, num_custom_funs in Hnumfuns.
           repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia. }
       destruct (Nat.eq_dec idx (N.to_nat i)).
       - (* idx = i *)
@@ -2012,7 +2017,7 @@ Proof.
 
     have Ht := stab_update_stab _ _ _ _ _ Hsr'. destruct Ht as [tab Ht].
     have HtabsizeEq := stab_update_preserves_tab_size _ _ _ _ _ _ _ HsT1 Ht Hsr'.
-    assert (Hnumfuns' : S idx + num_funs < Z.to_nat max_num_functions) by lia.
+    assert (Hnumfuns' : S idx + num_funs <= Z.to_nat max_num_functions + num_custom_funs) by lia.
 
     have IH := IHnum_funs (S idx) hs sr'' fr t' HiE1' HiE2' HsT1' HsT2' HsT3' Hnumfuns' HsE1' HsE2' Htab'.
     destruct IH as [sr_final [Hred [Htable_final1 [Htable_final2 [Hfuncs [Hmems Hglobals]]]]]].
@@ -2022,11 +2027,13 @@ Proof.
     { (* step through instructions *)
       rewrite (mapi_aux_acc_snoc _ _ []). cbn.
       dostep_nary 3. eapply r_table_init_step; cbn; eauto; try apply HsE1; cbn; eauto; try lia.
+      unfold num_custom_funs in Hnumfuns.
       rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.
 
       dostep_nary 2. eapply r_table_set_success with (tabv:=VAL_ref_func (N.of_nat idx)). eassumption.
       dostep_nary 3. eapply r_table_init_return; cbn; eauto.
       erewrite <- stab_update_preserves_selem; eauto. apply HsE1. lia. now cbn.
+      unfold num_custom_funs in Hnumfuns.
       repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.
       dostep_nary 0. apply r_elem_drop. eassumption. cbn.
       replace (idx + 1) with (S idx) by lia. apply Hred.
@@ -2042,7 +2049,7 @@ Proof.
       - split. intros.
         rewrite -(Htable_final2 i); try lia.
         replace (Wasm_int.N_of_uint i32m (nat_to_i32 idx)) with (N.of_nat idx) in Hsr'.
-        2:{ cbn. repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia. }
+        2:{ cbn. unfold num_custom_funs in Hnumfuns. repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia. }
         erewrite (stab_update_stab_elem_other _ _ _ (N.of_nat idx)); try apply Hsr'; try lia.
         by erewrite selem_drop_preserves_stab_elem; eauto.
         split.
@@ -2106,7 +2113,10 @@ Proof.
   assert (Htabsize: tab_size t = num_funs). { subst t. cbn. by rewrite repeat_length. }
   assert (HTtype : tt_elem_type (tableinst_type t) = T_funcref). { subst t. reflexivity. }
 
-  assert (Hnumfuns: num_funs < Z.to_nat max_num_functions). { cbn. unfold INV_num_functions_bounds in H8. admit. }
+  assert (Hnumfuns: num_funs <= Z.to_nat max_num_functions + num_custom_funs). {
+    destruct H8 as [Hbound1 Hbound2].
+    rewrite Nat.add_0_r in HiE2'.
+    rewrite -HiE2' -Hfinst. lia. }
 
   rewrite Hfinst in HiT.
   have H' := post_instantiation_reduce_aux num_funs 0 hs sr fr' t HiE1' HiE2' HsT' HTtype Htabsize Hnumfuns HsE'  Hempty1 Hempty2.
@@ -2223,7 +2233,7 @@ Proof.
                                      end with
                                | Efun fds _ => numOf_fundefs fds
                                | _ => 42 (* unreachable *)
-                               end < max_num_functions)%Z). {
+                               end <= max_num_functions)%Z). {
     unfold max_num_functions. destruct e; cbn; try lia. inv HeRestr. assumption.
   }
   assert (Hnodup: NoDup (collect_function_vars (Efun Fnil e))) by constructor.
