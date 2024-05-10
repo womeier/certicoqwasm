@@ -325,6 +325,8 @@ extraction/bytes.ml
 extraction/bytes.mli
 extraction/binary_format_printer.ml
 extraction/binary_format_printer.mli
+extraction/list_extra.ml
+extraction/list_extra.mli
 extraction/lambdaANF_to_Wasm.ml
 extraction/lambdaANF_to_Wasm.mli
 extraction/toplevel3.ml

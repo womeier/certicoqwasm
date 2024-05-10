@@ -58,7 +58,7 @@ Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :
                 "found function application with too many function params, check max_function_args";;
       check_restrictions cenv e'
   | Efun fds e' =>
-      _ <- assert (Z.of_nat (numOf_fundefs fds) <? max_num_functions)%Z
+      _ <- assert (Z.of_nat (numOf_fundefs fds) <=? max_num_functions)%Z
                 "too many functions, check max_num_functions";;
       _ <- ((fix iter (fds : fundefs) : error Datatypes.unit :=
               match fds with
@@ -116,7 +116,9 @@ Definition fname_env    := M.tree funcidx. (* maps function variables to their i
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
 
-(* target type for generating functions, contains more info than the one from Wasm *)
+(* target type for generating functions,
+   in addition to WasmCert's *module_func*, it contains:
+   fidx and export_name *)
 Record wasm_function :=
   { fidx : funcidx
   ; export_name : string
@@ -620,14 +622,6 @@ Fixpoint create_var_mapping (start_id : u32) (vars : list cps.var) (env : M.tree
 Definition create_local_variable_mapping (vars : list cps.var) : localvar_env :=
   create_var_mapping 0%N vars (M.empty _).
 
-Definition function_export_name (nenv : name_env) (v : cps.var) : string :=
-  let bytes := String.print ("_" ++ show_tree (show_var nenv v)) in
-  String.parse (map (fun b => match b with
-                              | "."%byte => "_"%byte
-                              |_ => b
-                              end)
-                    bytes).
-
 Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_env) (penv : prim_env)
                               (f : cps.var) (args : list cps.var) (body : exp) : error wasm_function :=
   let locals := collect_local_variables body in
@@ -636,7 +630,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   fn_idx <- translate_var nenv fenv f "translate function" ;;
   body_res <- translate_body nenv cenv lenv fenv penv body ;;
   Ret {| fidx := fn_idx
-       ; export_name := function_export_name nenv f
+       ; export_name := show_tree (show_var nenv f)
        ; type := N.of_nat (length args)
        ; locals := map (fun _ => T_num T_i32) locals
        ; body := body_res
@@ -652,8 +646,22 @@ Fixpoint translate_functions (nenv : name_env) (cenv : ctor_env) (fenv : fname_e
       Ret (fn :: following)
   end.
 
+Definition sanitize_function_name (s : string) (prefix_id : nat) : string :=
+  let prefix_bytes := String.print (string_of_nat prefix_id) ++ ["_"%byte; "_"%byte] in
+  let s_bytes := String.print s in
+  let s_bytes' := map (fun b => match b with | "."%byte => "_"%byte |_ => b end) s_bytes in
+  let bytes'' := "_"%byte :: prefix_bytes ++ s_bytes' in
+  String.parse bytes''.
 
-
+(* prefix function names with unique number *)
+Definition unique_export_names (fns : list wasm_function) :=
+  mapi (fun i fn =>
+          {| fidx := fn.(fidx)
+           ; export_name := sanitize_function_name fn.(export_name) i
+           ; type := fn.(type)
+           ; locals := fn.(locals)
+           ; body := fn.(body)
+           |}) fns.
 
 (* ***** MAIN: GENERATE COMPLETE WASM_MODULE FROM lambdaANF EXP ****** *)
 
@@ -722,7 +730,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                         ; body := main_instr
                         |}
   in
-  let functions := [grow_mem_function; main_function] ++ fns in
+  let functions := [grow_mem_function; main_function] ++ unique_export_names fns in
 
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (f.(fidx))

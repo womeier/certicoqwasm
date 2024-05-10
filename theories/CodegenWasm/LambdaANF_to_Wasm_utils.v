@@ -136,15 +136,68 @@ Proof.
   induction l; intros; cbn; auto. f_equal. now apply IHl.
 Qed.
 
-(* Lemma imap_aux_offset : forall l a a' b b',
-  a + a' = b + b' ->
-  imap_aux (fun i x : nat => i + a + x) l a' =
-  imap_aux (fun i x : nat => i + b + x) l b'.
+Lemma mapi_aux_acc_snoc {A B} : forall xs idx l a (f : nat -> A -> B),
+  mapi_aux (idx, l ++ [::a]) f xs = a :: mapi_aux (idx, l) f xs.
 Proof.
-  induction l; intros ???? Heq=>//.
-  cbn. replace (a' + a0 + a) with (b' + b + a) by lia.
-  f_equal. apply IHl. lia.
-Qed. *)
+  induction xs; intros.
+  - cbn. by rewrite rev_app_distr.
+  - cbn. by rewrite -IHxs.
+Qed.
+
+Lemma mapi_aux_nth_error {A B} : forall xs i x (f : nat -> A -> B) idx,
+  nth_error xs i = Some x ->
+  nth_error (mapi_aux (idx, []) f xs) i = Some (f (idx + i) x).
+Proof.
+  induction xs; intros. destruct i=>//.
+  cbn. rewrite (mapi_aux_acc_snoc _ _ []).
+  destruct i. injection H as <-. cbn. do 2 f_equal. lia.
+  replace (idx + S i) with (S idx + i) by lia.
+  rewrite -IHxs; auto. cbn.
+  do 4 f_equal. lia.
+Qed.
+
+Lemma mapi_nth_error {A B} : forall xs i x (f : nat -> A -> B),
+  nth_error xs i = Some x ->
+  nth_error (mapi f xs) i = Some (f i x).
+Proof.
+  intros.
+  by eapply mapi_aux_nth_error.
+Qed.
+
+Lemma mapi_aux_nth_error_None {A B} : forall xs i (f : nat -> A -> B) idx,
+  nth_error xs i = None ->
+  nth_error (mapi_aux (idx, []) f xs) i = None.
+Proof.
+  induction xs; intros. destruct i=>//.
+  cbn. rewrite (mapi_aux_acc_snoc _ _ []).
+  destruct i=>//.
+  cbn. erewrite <-IHxs; eauto.
+Qed.
+
+Lemma mapi_nth_error_None {A B} : forall xs i (f : nat -> A -> B),
+  nth_error xs i = None ->
+  nth_error (mapi f xs) i = None.
+Proof.
+  intros.
+  by eapply mapi_aux_nth_error_None.
+Qed.
+
+Lemma mapi_aux_length {A B} : forall xs idx l (f : nat -> A -> B) ys,
+  mapi_aux (idx, l) f xs = ys ->
+  length xs + length l = length ys.
+Proof.
+  induction xs; cbn; intros.
+  - subst ys. by rewrite rev_length.
+  - apply IHxs in H. cbn in H. lia.
+Qed.
+
+Lemma mapi_length {A B} : forall xs (f : nat -> A -> B) ys,
+  mapi f xs = ys ->
+  length xs = length ys.
+Proof.
+  intros.
+  apply mapi_aux_length in H. cbn in H. lia.
+Qed.
 
 Lemma drop_is_skipn {A} : forall l n, @drop A n l = List.skipn n l.
 Proof.

@@ -100,7 +100,7 @@ Inductive expression_restricted : ctor_env -> cps.exp -> Prop :=
       (forall f t ys e', find_def f fds = Some (t, ys, e') ->
                    Z.of_nat (length ys) <= max_function_args /\
                    expression_restricted cenv e')%Z ->
-      (Z.of_nat (numOf_fundefs fds) < max_num_functions)%Z ->
+      (Z.of_nat (numOf_fundefs fds) <= max_num_functions)%Z ->
       expression_restricted cenv (Efun fds e)
   | ER_app : forall f ft ys cenv,
       (Z.of_nat (Datatypes.length ys) <= max_function_args)%Z ->
@@ -184,7 +184,7 @@ Proof.
     now apply clos_rtn1_rt. }
   { (* Efun *)
     rename H1 into IHfds, H2 into IHe, H4 into Hsub. inv H3.
-    destruct (Z.of_nat (numOf_fundefs f2) <? max_num_functions)%Z eqn:HmaxFns. 2: inv H2.
+    destruct (Z.of_nat (numOf_fundefs f2) <=? max_num_functions)%Z eqn:HmaxFns. 2: inv H2.
     cbn in H2.
     destruct ((fix iter (fds : fundefs) := _) f2) eqn:Hfds. inv H2. destruct u.
     apply clos_rt_rtn1 in Hsub. inv Hsub.
@@ -208,7 +208,7 @@ Proof.
             destruct u. eapply IHfds; eauto.
         }
         apply find_def_dsubterm_fds_e in H1. eapply IHfds; eauto. apply rt_refl.
-      - now apply Z.ltb_lt in HmaxFns.
+      - now apply Z.leb_le in HmaxFns.
     } inv H1.
     { apply clos_rtn1_rt in H3. eapply IHfds; eauto. }
     { apply IHe; auto. apply clos_rtn1_rt in H3. assumption. }
@@ -1200,8 +1200,9 @@ Definition INV_constr_alloc_ptr_in_linear_memory s f := forall addr t m,
 Definition INV_locals_all_i32 f := forall i v,
   nth_error (f_locs f) i = Some v -> exists v', v = VAL_num (VAL_int32 v').
 
-Definition INV_num_functions_bounds sr :=
-  (Z.of_nat num_custom_funs <= Z.of_nat (length (s_funcs sr)) < Wasm_int.Int32.modulus)%Z.
+Definition INV_num_functions_bounds sr fr :=
+  (Z.of_nat num_custom_funs <= Z.of_nat (length (s_funcs sr)) <= max_num_functions + Z.of_nat num_custom_funs)%Z /\
+  length (inst_elems (f_inst fr)) <= Z.to_nat max_num_functions + num_custom_funs.
 
 Definition INV_inst_globals_nodup f :=
   NoDup (inst_globals (f_inst f)).
@@ -1214,7 +1215,7 @@ Definition INV_fvar_idx_inbounds sr := forall fvar fIdx,
   repr_funvar fvar fIdx ->
   (fIdx < N.of_nat (length (s_funcs sr)))%N.
 
-Definition INV_types (sr : store_record) (fr : frame) := forall i,
+Definition INV_types (fr : frame) := forall i,
   (Z.of_N i <= max_function_args)%Z ->
   lookup_N (inst_types (f_inst fr)) i = Some (Tf (List.repeat (T_num T_i32) (N.to_nat i)) [::]).
 
@@ -1248,10 +1249,10 @@ Definition INV (s : store_record) (f : frame) :=
  /\ INV_linear_memory s f
  /\ INV_global_mem_ptr_in_linear_memory s f
  /\ INV_locals_all_i32 f
- /\ INV_num_functions_bounds s
+ /\ INV_num_functions_bounds s f
  /\ INV_inst_globals_nodup f
  /\ INV_table_id s f
- /\ INV_types s f
+ /\ INV_types f
  /\ INV_global_mem_ptr_multiple_of_two s f
  /\ INV_exists_func_grow_mem s f
  /\ INV_inst_funcs_id s f.
@@ -1326,9 +1327,9 @@ Proof.
 Qed.
 
 Lemma update_global_preserves_num_functions_bounds : forall j sr sr' f  num,
-  INV_num_functions_bounds sr ->
+  INV_num_functions_bounds sr f ->
   supdate_glob sr (f_inst f) j (VAL_num (VAL_int32 num)) = Some sr' ->
-  INV_num_functions_bounds sr'.
+  INV_num_functions_bounds sr' f.
 Proof.
   unfold INV_num_functions_bounds. intros.
   assert (s_funcs sr = s_funcs sr') as Hfuncs. {
@@ -1392,13 +1393,13 @@ Proof.
 Qed.
 
 Lemma update_global_preserves_types : forall j sr sr' f m num,
-  INV_types sr f ->
+  INV_types f ->
   INV_inst_globals_nodup f ->
   smem sr (f_inst f) = Some m ->
   (-1 < Z.of_N num < Wasm_int.Int32.modulus)%Z ->
   (j = global_mem_ptr -> num + 8 < mem_length m)%N ->
   supdate_glob sr (f_inst f) j (VAL_num (VAL_int32 (N_to_i32 num))) = Some sr' ->
-  INV_types sr' f.
+  INV_types f.
 Proof.
   unfold INV_types, stab_elem. intros.
   apply H in H5. now rewrite -H5.
@@ -1670,12 +1671,12 @@ Proof.
   eapply H in H3; eauto. now eapply update_mem_preserves_all_mut_i32.
 Qed.
 
-Lemma update_mem_preserves_num_functions_bounds : forall s s' m vd,
-   INV_num_functions_bounds s  ->
+Lemma update_mem_preserves_num_functions_bounds : forall s s' f m vd,
+   INV_num_functions_bounds s f ->
    upd_s_mem s (set_nth vd (s_mems s) 0 m) = s' ->
-   INV_num_functions_bounds s'.
+   INV_num_functions_bounds s' f.
 Proof.
-  unfold INV_num_functions_bounds. intros. subst. cbn. assumption.
+  unfold INV_num_functions_bounds. intros. subst. assumption.
 Qed.
 
 Lemma update_mem_preserves_table_id : forall s s' f m vd,
@@ -1687,9 +1688,9 @@ Proof.
 Qed.
 
 Lemma update_mem_preserves_types : forall s s' f m vd,
-  INV_types s f ->
+  INV_types f ->
   upd_s_mem s (set_nth vd (s_mems s) 0 m) = s' ->
-  INV_types s' f.
+  INV_types f.
 Proof.
   unfold INV_types. intros. subst. (* apply H in H1. rewrite -H1. reflexivity. *) auto.
 Qed.
@@ -1896,17 +1897,17 @@ Ltac elimr_nary_instr n :=
          | |- reduce _ _ _ ([:: ?instr] ++ ?l3) _ _ _ _ => apply r_elimr
          end
   | 1 => lazymatch goal with
-         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [:: ?instr])        _ _ _ _ => idtac
-         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
-            assert ([:: AI_basic (BI_const_num c1)] ++ [:: instr] ++ l3 =
-                    [:: AI_basic (BI_const_num c1); instr] ++ l3) as H by reflexivity; rewrite H;
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([::$VN c1] ++ [:: instr] ++ l3 =
+                    [:: $VN c1; instr] ++ l3) as H by reflexivity; rewrite H;
                                                        apply r_elimr; clear H
          end
   | 2 => lazymatch goal with
-         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [::AI_basic (BI_const_num ?c2)] ++ [:: ?instr])        _ _ _ _ => idtac
-         | |- reduce _ _ _ ([::AI_basic (BI_const_num ?c1)] ++ [::AI_basic (BI_const_num ?c2)] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
-            assert ([:: AI_basic (BI_const_num c1)] ++ [:: AI_basic (BI_const_num c2)] ++ [:: instr] ++ l3 =
-                    [:: AI_basic (BI_const_num c1); AI_basic (BI_const_num c2); instr] ++ l3) as H by reflexivity; rewrite H;
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [::$VN ?c2] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [::$VN ?c2] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([::$VN c1] ++ [:: $VN c2] ++ [:: instr] ++ l3 =
+                    [::$VN c1; $VN c2; instr] ++ l3) as H by reflexivity; rewrite H;
                                                        apply r_elimr; clear H
          end
   end.
@@ -1925,6 +1926,14 @@ Ltac dostep_nary n :=
 
 Ltac dostep_nary' n :=
   dostep'; first elimr_nary_instr n.
+
+Ltac simpl_modulus_in H :=
+  unfold Wasm_int.Int32.modulus, Wasm_int.Int64.modulus, Wasm_int.Int32.half_modulus, Wasm_int.Int64.half_modulus, two_power_nat in H; cbn in H.
+Ltac simpl_modulus :=
+  unfold Wasm_int.Int64.max_unsigned, Wasm_int.Int32.modulus, Wasm_int.Int64.modulus, Wasm_int.Int32.half_modulus, Wasm_int.Int64.half_modulus, two_power_nat.
+
+Ltac simpl_modulus64_in H :=
+  unfold Wasm_int.Int64.max_unsigned, Wasm_int.Int64.half_modulus, Wasm_int.Int64.modulus, two_power_nat in H.
 
 (* Print caseConsistent. *)
 Lemma caseConsistent_findtag_In_cenv:
@@ -2019,23 +2028,24 @@ Proof.
 Qed.
 
 Lemma value_bounds : forall wal v sr fr,
-  INV_num_functions_bounds sr ->
-  repr_val_LambdaANF_Wasm v sr fr wal ->
+  INV_num_functions_bounds sr fr ->
+  repr_val_LambdaANF_Wasm v sr (f_inst fr) wal ->
  (-1 < Z.of_N (wasm_value_to_u32 wal) < Wasm_int.Int32.modulus)%Z.
 Proof.
-  intros ? ? ? ? Hinv H.
+  intros ? ? ? ? [Hbound1 Hbound2] H.
   inv H.
   - (* constr. value unboxed *) cbn. lia.
   - (* constr. value boxed *) cbn. lia.
   - (* function value *)
     cbn.
     assert (N.to_nat idx < length (s_funcs sr)). { apply nth_error_Some. unfold lookup_N in *. congruence. }
-    unfold INV_num_functions_bounds in Hinv. lia.
+    unfold INV_num_functions_bounds in Hbound1.
+    unfold max_num_functions, num_custom_funs in *. simpl_modulus. cbn. lia.
   - (* prim. value boxed *) cbn. lia.
 Qed.
 
 Lemma extract_constr_arg : forall n vs v sr fr addr m,
-  INV_num_functions_bounds sr ->
+  INV_num_functions_bounds sr fr ->
   nthN vs n = Some v ->
   smem sr (f_inst fr) = Some m ->
   (* addr points to the first arg after the constructor tag *)
@@ -2045,8 +2055,9 @@ Lemma extract_constr_arg : forall n vs v sr fr addr m,
              repr_val_LambdaANF_Wasm v sr (f_inst fr) wal.
 Proof.
   intros n vs v sr fr addr m Hinv H H1 H2. generalize dependent v.
-  generalize dependent n. generalize dependent m.
-  induction H2; intros. 1: inv H.
+  generalize dependent n. generalize dependent m. remember (f_inst fr) as inst.
+  generalize dependent fr.
+  induction H2; intros; subst. 1: inv H.
   generalize dependent v0.
   induction n using N.peano_ind; intros.
   - (* n = 0 *)
@@ -2062,7 +2073,7 @@ Proof.
     cbn in H7.
     destruct (N.succ n) eqn:Hn; first by lia. rewrite <-Hn in *.
     replace (N.succ n - 1)%N with n in H7 by lia. clear Hn p.
-    edestruct IHrepr_val_constr_args_LambdaANF_Wasm; try eassumption.
+    edestruct IHrepr_val_constr_args_LambdaANF_Wasm; eauto.
     destruct H8 as [wal' [Hl [Heq Hval]]].
     exists x. exists wal'. split. rewrite -Hl. f_equal. lia. split; eauto.
 Qed.
@@ -2085,15 +2096,6 @@ Proof.
   solve_eq m m'. unfold mem_max_opt in H5. rewrite H5.
   rewrite Hsize. cbn. eauto.
 Qed.
-
-Ltac simpl_modulus_in H :=
-  unfold Wasm_int.Int32.modulus, Wasm_int.Int64.modulus, Wasm_int.Int32.half_modulus, Wasm_int.Int64.half_modulus, two_power_nat in H; cbn in H.
-Ltac simpl_modulus :=
-  unfold Wasm_int.Int64.max_unsigned, Wasm_int.Int32.modulus, Wasm_int.Int64.modulus, Wasm_int.Int32.half_modulus, Wasm_int.Int64.half_modulus, two_power_nat.
-
-Ltac simpl_modulus64_in H :=
-  unfold Wasm_int.Int64.max_unsigned, Wasm_int.Int64.half_modulus, Wasm_int.Int64.modulus, two_power_nat in H.
-
 
 Lemma memory_grow_reduce_need_grow_mem : forall state s f gmp m,
   nth_error (f_locs f) 0 = Some (VAL_num (N_to_value page_size)) ->
@@ -6365,7 +6367,8 @@ Proof with eauto.
           rewrite length_is_size size_map -length_is_size.
           apply const_val_list_length_eq in HfargsRes.
           rewrite -HfargsRes.
-          apply nth_error_Some. rewrite Nat2N.id. congruence. } rewrite Nat2N.id. assumption.
+          apply nth_error_Some. rewrite Nat2N.id. congruence. }
+        rewrite Nat2N.id. assumption.
         subst f_before_IH. assumption. }
     }
 
@@ -6464,8 +6467,8 @@ Proof with eauto.
       inv H6. cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id.
       - rewrite N2Z.id. eapply Htableid. eassumption.
       - unfold lookup_N in H13. apply Some_notNone in H13. apply nth_error_Some in H13.
-        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [HfnsBound _]]]]]]]]]].
-        unfold INV_num_functions_bounds in HfnsBound. lia. }
+        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [[HfnsBound _] _]]]]]]]]]].
+        unfold max_num_functions, num_custom_funs in HfnsBound. simpl_modulus. cbn. lia. }
     { (* type *)
       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [Htype _]]]]]]]]]]]]].
       assert (Hlen: length xs = length ys). {
@@ -6990,8 +6993,8 @@ Proof with eauto.
       inv H6. cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id.
       - rewrite N2Z.id. eapply Htableid. eassumption.
       - unfold lookup_N in H15. apply Some_notNone in H15. apply nth_error_Some in H15.
-        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [HfnsBound _]]]]]]]]]].
-        unfold INV_num_functions_bounds in HfnsBound. lia. }
+        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [[HfnsBound _] _]]]]]]]]]].
+        unfold max_num_functions, num_custom_funs in HfnsBound. simpl_modulus. cbn. lia. }
     { (* type *)
       have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [Htype _]]]]]]]]]]]]].
       assert (Hlen: length xs = length ys). {
