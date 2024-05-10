@@ -14,9 +14,11 @@ Require Import LambdaANF.cps LambdaANF.eval LambdaANF.cps_util LambdaANF.List_ut
 
 Require Import Coq.Program.Program Coq.Sets.Ensembles
                Coq.Logic.Decidable Coq.Lists.ListDec
-               Coq.Relations.Relations Relations.Relation_Operators Lia Nnat.
+               Coq.Relations.Relations Relations.Relation_Operators Lia Nnat Permutation.
 
 Require Import compcert.lib.Integers compcert.common.Memory.
+
+From MetaCoq Require Import EWcbvEvalNamed. (* for string_of_nat_inj *)
 
 From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm LambdaANF_to_Wasm_utils LambdaANF_to_Wasm_correct.
 
@@ -29,9 +31,8 @@ From Coq Require Import List.
 
 Import ssreflect eqtype ssrbool eqtype.
 Import LambdaANF.toplevel LambdaANF.cps compM.
-Import bytestring.
 Import ExtLib.Structures.Monad MonadNotation.
-Import bytestring.
+Import bytestring MCString.
 Import ListNotations.
 Import seq.
 
@@ -909,6 +910,25 @@ Proof.
     repeat eexists; eauto. now right.
 Qed.
 
+Lemma unique_export_names_preserves_functions : forall fns mi,
+  [seq gen_func_instance {| modfunc_type := type a
+                          ; modfunc_locals := locals a
+                          ; modfunc_body := body a
+                          |} mi | a <- unique_export_names fns] =
+  [seq gen_func_instance {| modfunc_type := type a
+                          ; modfunc_locals := locals a
+                          ; modfunc_body := body a
+                          |} mi | a <- fns].
+Proof.
+  intro fns.
+  unfold unique_export_names. unfold mapi.
+  remember 0 as idx. clear Heqidx.
+  revert fns idx.
+  induction fns; intros=>//. cbn.
+  rewrite (mapi_aux_acc_snoc _ _ []).
+  cbn. f_equal. now rewrite IHfns.
+Qed.
+
 Lemma gen_fun_instance_simplify_eq : forall fns mi,
   (Z.of_nat (length fns) <= max_num_functions)%Z ->
   (forall fn, In fn fns -> type fn <= 20)%N ->
@@ -970,6 +990,101 @@ Proof.
   apply Operators_Properties.clos_rt_rt1n_iff in H6. eapply reduce_trans_value with (v2:=VAL_ref y) in H6.
   inv H6. repeat f_equal. lia.
 Unshelve. repeat constructor. apply [].
+Qed.
+
+Lemma parse_print_inv: forall x,
+  String.print (String.parse x) = x.
+Proof.
+  induction x; intros; cbn; auto.
+  congruence.
+Qed.
+
+Lemma string_print_inj : forall x y,
+  String.print x = String.print y ->
+  x = y.
+Proof.
+  induction x; destruct y; intros=>//.
+  inv H. apply IHx in H2. now subst.
+Qed.
+
+Lemma string_of_nat_no_underscore : forall n,
+  ~ In "_"%byte (String.print (string_of_nat n)).
+Proof.
+  unfold string_of_nat.
+  intro n.
+  induction (Nat.to_uint n); intros; cbn; intro; by destruct H.
+Qed.
+
+(* prefixed id only occurs once *)
+Lemma unique_export_names_smaller_idx_not_In : forall fns name idx idx' post_fix,
+  idx' < idx ->
+  name = "_"%byte :: String.print (string_of_nat idx') ++ "_"%byte :: "_"%byte :: post_fix ->
+  ~ In name
+  (List.map
+     (fun x : wasm_function =>
+      String.print (export_name x))
+     (mapi_aux (idx, [::])
+        (fun (i : nat) (fn : wasm_function) =>
+         {| fidx := fidx fn
+          ; export_name := sanitize_function_name (export_name fn) i
+          ; type := type fn
+          ; locals := locals fn
+          ; body := body fn
+          |}) fns)).
+Proof.
+  induction fns; intros; subst; intro.
+  - inv H0.
+  - cbn in H0.
+    rewrite (mapi_aux_acc_snoc _ _ []) in H0. destruct H0 as [Hc|Hc].
+    + cbn in Hc.
+      rewrite -app_assoc in Hc.
+      rewrite parse_print_inv in Hc.
+      injection Hc as Hc.
+      remember (List.map _ _) as post_fix'. clear Heqpost_fix'.
+      apply app_eq_app in Hc as [l Hl]. destruct Hl as [[Hl1 Hl2] | [Hl1 Hl2]].
+      * destruct l.
+        -- erewrite cats0 in Hl1.
+           apply string_print_inj in Hl1.
+           apply string_of_nat_inj in Hl1. lia.
+        -- injection Hl2 as <-.
+           apply string_of_nat_no_underscore with (n:=idx).
+           rewrite Hl1. apply in_app_iff. right. by left.
+      * destruct l.
+        -- erewrite cats0 in Hl1.
+           apply string_print_inj in Hl1.
+           apply string_of_nat_inj in Hl1. lia.
+        -- injection Hl2 as <-.
+           apply string_of_nat_no_underscore with (n:=idx').
+           rewrite Hl1. apply in_app_iff. right. by left.
+    + eapply IHfns in Hc; eauto. lia.
+Qed.
+
+(* export names prefixed with an underscore and unique id *)
+Lemma unique_export_name_NoDup : forall fns names,
+  names = List.map (fun x : wasm_function => String.print (export_name x)) (unique_export_names fns) ->
+  NoDup names /\
+  (forall n, In n names -> nth_error n 0 = Some "_"%byte).
+Proof.
+  unfold unique_export_names, mapi. intros. remember 0 as idx in H. clear Heqidx. revert fns idx names H.
+  induction fns; intros; subst names.
+  - split. apply NoDup_nil. intros. inv H.
+  - cbn. rewrite (mapi_aux_acc_snoc _ _ []).
+    have IH := IHfns (idx + 1) _ Logic.eq_refl. destruct IH as [IH1 IH2].
+    split.
+    + constructor.
+      eapply unique_export_names_smaller_idx_not_In with (idx':=idx). lia.
+      cbn. rewrite parse_print_inv. f_equal.
+      now rewrite -app_assoc.
+      by apply IH1.
+    + intros.
+      apply In_nth_error in H as [i Hnth].
+      rewrite nth_error_map in Hnth. cbn in Hnth.
+      destruct (nth_error _ _) eqn:He=>//. injection Hnth as <-.
+      destruct i.
+      * cbn in He. now injection He as <-.
+      * apply IH2. eapply nth_error_In.
+        rewrite nth_error_map'. cbn in He. cbn. erewrite He.
+        reflexivity.
 Qed.
 
 Theorem module_instantiate : forall e module fenv venv (hs : host_state),
@@ -1089,10 +1204,16 @@ Proof.
           apply notNone_Some. rewrite <- map_repeat_eq. eexists. apply default_vals_i32_Some.
       }
       { (* funcs *)
-        apply Forall2_spec; first by rewrite map_length length_is_size length_is_size size_map.
+        apply Forall2_spec.
+        { rewrite map_length length_is_size length_is_size size_map -length_is_size.
+          now erewrite <-mapi_length.
+        }
         intros ?? [t1s t2s] Hnth1 Hnth2. cbn. unfold module_func_typing. repeat split =>//.
         rewrite nth_error_map in Hnth1. simpl in Hfuns.
-        destruct (nth_error fns n) eqn:Hin =>//. cbn. inv Hnth1.
+        unfold unique_export_names in Hnth1.
+        destruct (nth_error fns n) eqn:Hin =>//. 2:{ by rewrite mapi_nth_error_None in Hnth1. }
+        erewrite mapi_nth_error in Hnth1; eauto. cbn in Hnth1.
+        destruct m. injection Hnth1 as <-<-<-.
         rewrite nth_error_map in Hnth2. rewrite Hin in Hnth2. injection Hnth2 as Hnth2. subst t1s t2s.
         assert (n = N.to_nat (fidx w) - num_custom_funs).
         { eapply translate_functions_nth_error_idx; eauto. } subst n.
@@ -1141,8 +1262,10 @@ Proof.
             eexists. cbn. unfold lookup_N. split; reflexivity.
           * (* grow_mem func id *)
             cbn. unfold grow_mem_function_idx; lia.
+          * (* length *)
+            cbn. subst ts. rewrite length_list_function_types. lia.
           * (* types *)
-            intros ? Hmax. unfold lookup_N.
+            intros ? Hmax. unfold lookup_N. cbn. subst ts.
             erewrite nth_error_nth'. rewrite nth_list_function_types. now rewrite Nat2N.id. lia.
             rewrite length_list_function_types. lia.
         }
@@ -1181,10 +1304,15 @@ Proof.
         now cbn. }
       apply Forall2_app.
       { (* fns *)
-        intros. cbn. apply Forall2_spec; first by repeat rewrite map_length.
+        intros. cbn.
+        apply Forall2_spec. { repeat rewrite map_length. now erewrite <-mapi_length. }
         intros ??? Hnth1 Hnth2. rewrite nth_error_map in Hnth2.
         destruct (nth_error fns n) eqn:Hnth =>//.
-        rewrite nth_error_map in Hnth1. rewrite Hnth in Hnth1. inv Hnth1. inv Hnth2.
+        rewrite nth_error_map in Hnth1.
+        unfold unique_export_names in Hnth1.
+        erewrite mapi_nth_error in Hnth1; eauto. cbn in Hnth1.
+        destruct m. injection Hnth1 as <-<-.
+        injection Hnth2 as <-.
         destruct e; try by inv He; inv Hfuns; destruct n=>//. inv He.
         assert (n = N.to_nat (fidx w) - num_custom_funs). { now eapply translate_functions_nth_error_idx; eauto. } subst n. cbn.
         assert (Hbounds: (N.of_nat num_custom_funs <= fidx w < N.of_nat (length fns + num_custom_funs))%N). {
@@ -1207,7 +1335,20 @@ Proof.
       (* global vars, memory *)
       repeat apply Forall2_cons =>//.
       (* export names unique *)
-      admit.
+      apply /eqseqP.
+      apply nodup_fixed_point. cbn.
+      erewrite map_app, map_map. cbn.
+      have H' := unique_export_name_NoDup fns _ Logic.eq_refl. destruct H' as [HnoDup H_].
+      eapply Permutation_NoDup.
+      have Hperm := Permutation_app_rot _ [ String.print grow_mem_function_name
+                                          ; String.print main_function_name
+                                          ]
+                                          (List.map (fun x : wasm_function => String.print (export_name x))
+                                                    (unique_export_names fns)).
+      apply Hperm.
+      repeat (constructor; first
+                (intro Hc; repeat (destruct Hc as [Hc|Hc]=>//); by apply H_ in Hc)).
+      assumption.
     }
   - (* imports typing *)
     apply Forall2_cons=>//.
@@ -1257,10 +1398,11 @@ Proof.
     destruct (alloc_elems _ _) eqn:Helems.
     injection HallocM as <-.
     apply elems_instantiate. subst inst. cbn.
-    rewrite Nat.add_comm. by rewrite map_length.
+    rewrite Nat.add_comm. rewrite map_length.
+    unfold unique_export_names. now erewrite <-mapi_length.
   - by rewrite cats0.
 Unshelve. all: apply (Tf [] []).
-Admitted.
+Qed.
 
 End INSTANTIATION.
 
@@ -1461,7 +1603,7 @@ Proof.
 
   unfold alloc_module, alloc_funcs, alloc_globs, add_mem, alloc_Xs in HallocModule.
   cbn in HallocModule. repeat rewrite map_app in HallocModule. cbn in HallocModule.
-  destruct (fold_left _ (map _ fns) _) eqn:HaddF.
+  destruct (fold_left _ (map _ (unique_export_names fns)) _) eqn:HaddF.
   destruct (alloc_elems _ _ _) eqn:HallocElems.
   apply alloc_elem_iota_N in HallocElems. 2:{ by apply Forall2_length in HinstElem. }
   cbn in HallocElems.
@@ -1534,6 +1676,7 @@ Proof.
      - cbn. rewrite -E0. cbn.
        do 2! rewrite map_length.
        destruct e; inv HtopExp'; try (inv HtransFns; simpl_modulus; cbn; lia).
+       unfold unique_export_names. erewrite <-mapi_length; eauto.
        erewrite <- translate_functions_length; eauto.
        unfold max_num_functions in HfnsLength. simpl_modulus. cbn. lia.
      - cbn. rewrite F1. rewrite iota_N_length. unfold num_custom_funs.
@@ -1574,7 +1717,9 @@ Proof.
   { unfold INV_instantiation_elems.
     apply translate_functions_length in HtransFns. split.
     - intros. erewrite init_elems_effect; eauto.
-      f_equal; lia. rewrite F5. by rewrite Nat.add_comm. congruence.
+      f_equal; lia. rewrite F5.
+      unfold unique_export_names. erewrite <- mapi_length; eauto.
+      by rewrite Nat.add_comm. congruence.
     - rewrite F1. congruence.
   }
   (* instantiate table *)
@@ -1586,6 +1731,7 @@ Proof.
   split. (* inst_funcs (f_inst f) *)
   { rewrite F5. repeat f_equal.
     destruct e; inv HtopExp'; inv HtransFns; auto.
+    unfold unique_export_names. erewrite <-mapi_length;eauto.
     symmetry. eapply translate_functions_length. eassumption. }
   split. (* val relation holds for functions *)
   { intros. apply notNone_Some in H. destruct H as [[[v' ys'] e''] Hfd].
@@ -1622,10 +1768,12 @@ Proof.
       now eapply NoDup_map_inv.
     }
 
-    destruct (N.to_nat (fidx func)). lia. do 3! (destruct n; try lia). cbn.
+    destruct (N.to_nat (fidx func)). lia. do 3! (destruct n; first lia). cbn.
     replace (_ - _) with n in H2 by lia.
 
-    do 2! rewrite nth_error_map. rewrite H2.
+    do 2! rewrite nth_error_map.
+    unfold unique_export_names.
+    erewrite mapi_nth_error; eauto.
     cbn. f_equal. unfold gen_func_instance.
     rewrite F6. cbn. f_equal. rewrite H4.
     assert (HtypeBound : (type func <= 20)%N). {
@@ -1642,26 +1790,19 @@ Proof.
   by destruct e; inv HtopExp'.
   rewrite <- map_map_seq.
   { clear Hmodule E1 F.
-   rewrite gen_fun_instance_simplify_eq; eauto.
-   - apply translate_functions_length in HtransFns.
-     rewrite -HtransFns. lia.
-   - intros. eapply translate_functions_type_bound; eauto.
-     destruct e; inv HtopExp'=>//. inv HeRestr. assumption. }
-	split; first by rewrite cats0.
-	split=>//. rewrite -Hexpr.
-	destruct e; inv HtopExp'=>//.
+    rewrite unique_export_names_preserves_functions=>//.
+    rewrite gen_fun_instance_simplify_eq; eauto.
+    - apply translate_functions_length in HtransFns.
+      rewrite -HtransFns. lia.
+    - intros. eapply translate_functions_type_bound; eauto.
+      destruct e; inv HtopExp'=>//. inv HeRestr. assumption. }
+	  split; first by rewrite cats0.
+	  split=>//. rewrite -Hexpr.
+	  destruct e; inv HtopExp'=>//.
 Unshelve. all: repeat constructor.
 Qed.
 
 (* helper lemmas for post-instantiation *)
-
-Lemma mapi_aux_acc_snoc {A B} : forall xs idx l a (f : nat -> A -> B),
-  mapi_aux (idx, l ++ [::a]) f xs = a :: mapi_aux (idx, l) f xs.
-Proof.
-  induction xs; intros.
-  - cbn. by rewrite rev_app_distr.
-  - cbn. by rewrite -IHxs.
-Qed.
 
 Lemma selem_drop_selem_same : forall sr sr' fr i elem,
   selem sr (f_inst fr) i = Some (Build_eleminst T_funcref elem) ->
@@ -1788,20 +1929,32 @@ Proof.
   unfold stab_update, stab_elem. intros.
   destruct (lookup_N (inst_tables (f_inst fr)) 0) eqn:Ht=>//.
   destruct (lookup_N (s_tables sr) t) eqn:Ht0=>//.
-  destruct ((i <? N.of_nat (tab_size t0))%N)=>//.
+  destruct ((i <? N.of_nat (tab_size t0))%N) eqn:Hsize=>//.
   injection H as <-.
   unfold lookup_N. cbn.
+  apply N.ltb_lt in Hsize. destruct t0.
+  cbn in Hsize.
+  assert (exists x, nth_error tableinst_elem (N.to_nat i) = Some x) as [x Hx].
+  { apply notNone_Some, nth_error_Some. lia. }
   erewrite set_nth_nth_error_same; eauto. cbn.
   erewrite set_nth_nth_error_same; eauto.
-
-Admitted.
+Qed.
 
 Lemma stab_update_stab_elem_other : forall sr sr' fr i j,
   i <> j ->
   stab_update sr (f_inst fr) 0%N i (VAL_ref_func i) = Some sr' ->
   stab_elem sr (f_inst fr) 0%N j = stab_elem sr' (f_inst fr) 0%N j.
 Proof.
-Admitted.
+  unfold stab_update, stab_elem. intros.
+  destruct (lookup_N (inst_tables (f_inst fr)) 0) eqn:Ht=>//.
+  destruct (lookup_N (s_tables sr) t) eqn:Ht0=>//.
+  destruct ((i <? N.of_nat (tab_size t0))%N) eqn:Hsize=>//.
+  injection H0 as <-. cbn. unfold lookup_N.
+  erewrite set_nth_nth_error_same; eauto. cbn.
+  erewrite set_nth_nth_error_other; eauto. lia.
+  apply N.ltb_lt in Hsize. unfold tab_size in Hsize.
+  lia.
+Qed.
 
 Lemma stab_update_preserves_tt_elem_type : forall sr sr' fr t t' i f,
   stab sr (f_inst fr) 0%N = Some t ->
@@ -1810,7 +1963,16 @@ Lemma stab_update_preserves_tt_elem_type : forall sr sr' fr t t' i f,
   stab sr' (f_inst fr) 0%N = Some t' ->
   tt_elem_type (tableinst_type t') = T_funcref.
 Proof.
-Admitted.
+  unfold stab, stab_update. intros.
+  destruct (lookup_N (inst_tables (f_inst fr)) 0) eqn:Ht=>//.
+  destruct (lookup_N (s_tables sr) t0) eqn:Ht0=>//.
+  injection H as ->.
+  destruct ((i <? N.of_nat (tab_size t))%N) eqn:Hsize=>//.
+  injection H1 as <-.
+  cbn in H2. unfold lookup_N in H2.
+  erewrite set_nth_nth_error_same in H2; eauto.
+  now injection H2 as <-.
+Qed.
 
 Lemma stab_update_preserves_selem : forall sr sr' fr i v j,
   stab_update sr (f_inst fr) 0%N i v = Some sr' ->
@@ -2178,7 +2340,7 @@ Proof.
     unfold INV_exists_func_grow_mem. rewrite -Hfuncs. assumption.
   (* inst funcs id mapping *)
   unfold INV_inst_funcs_id. rewrite -Hfuncs. assumption.
-Admitted.
+Qed.
 
 
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
