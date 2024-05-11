@@ -47,9 +47,14 @@ PRIMITIVE_TESTS=$(shell cat PRIMITIVE_TESTS)
 
 primitives: test_primitive_i63 $(PRIMITIVE_TESTS)
 
+primitive_unit_tests:
+	@coqc -quiet -R ./ CertiCoq.Benchmarks uint63_unit_tests.v
+	@ulimit -s unlimited
+	@node --stack-size=100000 js/run_uint63_unit_tests.js
+
 test_primitive_i63:
 	coqc -R ./ CertiCoq.Benchmarks test_primitive_i63.v
 
 $(PRIMITIVE_TESTS):
 	@ulimit -s unlimited
-	@node --experimental-wasm-return_call --stack-size=100000 js/run_wasm_external_pp.js ./ $@
+	@node --stack-size=100000 js/run_wasm_external_pp.js ./ $@
