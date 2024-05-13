@@ -272,7 +272,7 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
   : error (list basic_instruction) :=
   instr_pass_params <- pass_function_args nenv lenv fenv args;;
   instr_fidx <- instr_local_var_read nenv lenv fenv f;;
-  let call := (fun num_args : nat => if tailcall then BI_return_call_indirect 0%N (N.of_nat num_args)
+  let call := (fun num_args : nat => if tailcall then BI_call_indirect 0%N (N.of_nat num_args)
                                                  else BI_call_indirect 0%N (N.of_nat num_args)) in
   Ret (instr_pass_params ++ [instr_fidx] ++ [call (length args)]).
   (* all fns return nothing, type = num args *)
