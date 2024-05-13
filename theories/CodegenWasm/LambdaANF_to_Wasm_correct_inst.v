@@ -2387,7 +2387,7 @@ Proof.
   subst vars.
 
   assert (Hnodup: NoDup (collect_function_vars e)) by now eapply NoDup_app_remove_l in HvarsNodup.
-  have Hinst := module_instantiate cenv funenv nenv penv hfn _ _ _ _ hs Hcenv Hnodup LANF2Wasm.
+  have Hinst := module_instantiate cenv nenv penv hfn _ _ _ _ hs Hcenv Hnodup LANF2Wasm.
   destruct Hinst as [sr [fr [es_post Hinst]]]. clear Hnodup.
   exists sr, fr, es_post.
 
