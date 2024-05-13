@@ -383,7 +383,6 @@ Definition primInt63Diveucl_21   : Kernames.kername := (primInt63ModPath, "diveu
 
 Definition maxuint31 := VAL_int64 (Wasm_int.Int64.repr 2147483647%Z).
 Definition maxuint63 := VAL_int64 (Wasm_int.Int64.repr 9223372036854775807%Z).
-Definition uint63modulus := VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus).
 
 Definition load_local_i64 (i : localidx) : list basic_instruction :=
   [ BI_local_get i ; BI_load T_i64 None 2%N 0%N ].
@@ -395,29 +394,17 @@ Definition increment_global_mem_ptr i :=
   ; BI_global_set global_mem_ptr
   ].
 
-Definition apply_binop_and_store_i64 (op : list basic_instruction) y1 y2 :=
+Definition apply_binop_and_store_i64 (op : list basic_instruction) x y :=
   BI_global_get global_mem_ptr :: (* Address to store the result of the operation *)
-  load_local_i64 y1 ++            (* Load the arguments onto the stack *)
-  load_local_i64 y2 ++
+  load_local_i64 x ++            (* Load the arguments onto the stack *)
+  load_local_i64 y ++
   op ++
-  [ BI_global_set tmp1 ] ++
-  (load_local_i64 y1 ++ [ BI_call write_int64_function_idx ] ++
-     (instr_write_string " ") ++
-     load_local_i64 y2 ++ [ BI_call write_int64_function_idx ] ++
-     (instr_write_string " = ") ++
-     [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++
-     instr_write_newline) ++
-  [ BI_global_get tmp1
-    ; BI_store T_i64 None 2%N 0%N (* Store the result *)
+  [ BI_store T_i64 None 2%N 0%N (* Store the result *)
     ; BI_global_get global_mem_ptr (* Put the address where the result was stored on the stack *)
   ] ++
   increment_global_mem_ptr 8.
 
-(* Assume argument is stored in gidx *)
 Definition make_carry (ord : nat) (gidx : N) : list basic_instruction :=
-  (if (ord =? 0) then instr_write_string "C0 " else instr_write_string "C1 ") ++
-    [ BI_global_get gidx ; BI_call write_int64_function_idx ] ++
-    instr_write_newline ++
     [ BI_global_get global_mem_ptr
     ; BI_global_get gidx
     ; BI_store T_i64 None 2%N 0%N
@@ -436,7 +423,9 @@ Definition make_carry (ord : nat) (gidx : N) : list basic_instruction :=
     ; BI_global_get constr_alloc_ptr
   ] ++ increment_global_mem_ptr 16.
 
-(* Assume 1st argument is stored in global gidx1, 2nd argument in global gidx2 *)
+(* Assumptions for constructing a prod value:
+   - The 1st argument is stored in global gidx1, 2nd argument in global gidx2
+   - ordinal(pair) = 0 *)
 Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
   [ BI_global_get global_mem_ptr
     ; BI_global_get gidx1
@@ -471,252 +460,164 @@ Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
     ; BI_global_get constr_alloc_ptr
   ] ++ increment_global_mem_ptr 28.
 
-Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basic_instruction) :=
-    y1_var <- translate_var nenv lenv y1 "translate primitive integer arithmetic operation 1st argument" ;;
-    y2_var <- translate_var nenv lenv y2 "translate primitive integer arithmetic operation 2nd argument" ;;
-    if Kername.eqb kname primInt63Add then
-      Ret ( (instr_write_string "Uint63.add ") ++
-              apply_binop_and_store_i64
+Definition translate_primitive_binary_op op_name x y : error (list basic_instruction) :=
+    if Kername.eqb op_name primInt63Add then
+      Ret (apply_binop_and_store_i64
               [ BI_binop T_i64 (Binop_i BOI_add)
                 ; BI_const_num maxuint63
                 ; BI_binop T_i64 (Binop_i BOI_and)
-              ]  y1_var y2_var)
-    else if Kername.eqb kname primInt63Sub then
-      Ret ((instr_write_string "Uint63.sub ") ++ apply_binop_and_store_i64
+              ] x y)
+    else if Kername.eqb op_name primInt63Sub then
+      Ret (apply_binop_and_store_i64
              [ BI_binop T_i64 (Binop_i BOI_sub)
                ; BI_const_num maxuint63
                ; BI_binop T_i64 (Binop_i BOI_and)
-             ]  y1_var y2_var)
-    else if Kername.eqb kname primInt63Mul then
-      Ret ((instr_write_string "Uint63.mul ") ++ apply_binop_and_store_i64
+             ] x y)
+    else if Kername.eqb op_name primInt63Mul then
+      Ret (apply_binop_and_store_i64
              [ BI_binop T_i64 (Binop_i BOI_mul)
                ; BI_const_num maxuint63
                ; BI_binop T_i64 (Binop_i BOI_and)
-             ]  y1_var y2_var)
-    else if Kername.eqb kname primInt63Div then
-           Ret (((instr_write_string "Uint63.div ") ++
-                   (load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ]) ++
-                   (instr_write_string " ") ++
-                   (load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ]) ++
-                   (instr_write_string " = ")) ++
-                  [ BI_local_get y2_var
-                    ; BI_load T_i64 None 2%N 0%N
-                    ; BI_testop T_i64 TO_eqz
-                    ; BI_if (BT_valtype None)
-                        [ BI_global_get global_mem_ptr
-                          ; BI_const_num (nat_to_value64 0)
-                          ; BI_store T_i64 None 2%N 0%N
-                          ; BI_const_num (nat_to_value64 0)
-                          ; BI_call write_int64_function_idx
-                        ]
-                        [ BI_global_get global_mem_ptr
-                          ; BI_local_get y1_var
-                          ; BI_load T_i64 None 2%N 0%N
-                          ; BI_local_get y2_var
-                          ; BI_load T_i64 None 2%N 0%N
-                          ; BI_binop T_i64 (Binop_i (BOI_div SX_U))
-                          ; BI_global_set tmp1
-                          ; BI_global_get tmp1
-                          ; BI_call write_int64_function_idx
-                          ; BI_global_get tmp1
-                          ; BI_store T_i64 None 2%N 0%N
-                        ]
-                    ; BI_global_get global_mem_ptr
-                  ] ++ instr_write_newline ++ increment_global_mem_ptr 8)
-    else if Kername.eqb kname primInt63Land then
-      Ret ((instr_write_string "Uint63.land ") ++ apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_and) ] y1_var y2_var)
-    else if Kername.eqb kname primInt63Lor then
-      Ret ((instr_write_string "Uint63.lor ") ++ apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_or) ] y1_var y2_var)
-    else if Kername.eqb kname primInt63Lsl then
-           Ret (((instr_write_string "Uint63.lsl ") ++
-                   (load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ]) ++
-                   (instr_write_string " ") ++
-                   (load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ]) ++
-                   (instr_write_string " = ")) ++
-                  BI_global_get global_mem_ptr ::
-                  load_local_i64 y2_var ++
-                  [ BI_const_num (nat_to_value64 64)
+             ] x y)
+    else if Kername.eqb op_name primInt63Div then
+           Ret ( BI_global_get global_mem_ptr ::
+                 load_local_i64 y ++
+                   [ BI_testop T_i64 TO_eqz
+                     ; BI_if (BT_valtype (Some (T_num T_i64)))
+                         [ BI_const_num (nat_to_value64 0) ]
+                         (load_local_i64 x ++
+                            load_local_i64 y ++
+                            [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ])
+                     ; BI_store T_i64 None 2%N 0%N
+                     ; BI_global_get global_mem_ptr
+                   ] ++ increment_global_mem_ptr 8)
+    else if Kername.eqb op_name primInt63Mod then
+           Ret( BI_global_get global_mem_ptr ::
+                  load_local_i64 y ++
+                [ BI_testop T_i64 TO_eqz
+                ; BI_if (BT_valtype (Some (T_num T_i64)))
+                        (load_local_i64 x)
+                        (load_local_i64 x ++
+                           load_local_i64 y ++
+                           [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ])
+                  ; BI_store T_i64 None 2%N 0%N
+                  ; BI_global_get global_mem_ptr
+                ] ++ increment_global_mem_ptr 8)
+    else if Kername.eqb op_name primInt63Land then
+      Ret (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_and) ] x y)
+    else if Kername.eqb op_name primInt63Lor then
+      Ret (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_or) ] x y)
+    else if Kername.eqb op_name primInt63Lxor then
+      Ret (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_xor) ] x y)
+    else if Kername.eqb op_name primInt63Lsl then
+           Ret (BI_global_get global_mem_ptr ::
+                  load_local_i64 y ++
+                  [ BI_const_num (nat_to_value64 63)
                     ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
                     ; BI_if (BT_valtype (Some (T_num T_i64)))
-                       (load_local_i64 y1_var ++
-                          load_local_i64 y2_var ++
+                       (load_local_i64 x ++
+                          load_local_i64 y ++
                           [ BI_binop T_i64 (Binop_i BOI_shl) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ])
                        [ BI_const_num (nat_to_value64 0) ]
-                    ; BI_global_set tmp1
-                  ] ++
-                  ([ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++
-                     instr_write_newline) ++
-                  [ BI_global_get tmp1
                    ; BI_store T_i64 None 2%N 0%N
                    ; BI_global_get global_mem_ptr
                    ] ++ increment_global_mem_ptr 8)
 
-    else if Kername.eqb kname primInt63Lsr then
-           Ret (((instr_write_string "Uint63.lsr ") ++
-                   (load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ]) ++
-                   (instr_write_string " ") ++
-                   (load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ]) ++
-                   (instr_write_string " = ")) ++
-                  BI_global_get global_mem_ptr ::
-                  load_local_i64 y2_var ++
-                  [ BI_const_num (nat_to_value64 64)
-                    ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-                    ; BI_if (BT_valtype (Some (T_num T_i64)))
-                       (load_local_i64 y1_var ++
-                          load_local_i64 y2_var ++
+    else if Kername.eqb op_name primInt63Lsr then
+           Ret(BI_global_get global_mem_ptr ::
+                 load_local_i64 y ++
+                 [ BI_const_num (nat_to_value64 63)
+                   ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
+                   ; BI_if (BT_valtype (Some (T_num T_i64)))
+                       (load_local_i64 x ++
+                          load_local_i64 y ++
                           [ BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ])
                        [ BI_const_num (nat_to_value64 0) ]
-                    ; BI_global_set tmp1
-                  ] ++
-                  ([ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++
-                     instr_write_newline) ++
-                  [ BI_global_get tmp1
                    ; BI_store T_i64 None 2%N 0%N
                    ; BI_global_get global_mem_ptr
-                   ] ++ increment_global_mem_ptr 8)
+                 ] ++ increment_global_mem_ptr 8)
 
-    else if Kername.eqb kname primInt63Eqb then
-      (* Assumptions about constructor environment for primitive operations that return bools:
+    (* Assumptions about constructor environment for primitive operations that return bools:
          1. ordinal(true) = 0
          2. ordinal(false) = 1 *)
-           Ret (((instr_write_string "Uint63.eqb ") ++
-                   (load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ]) ++
-                   (instr_write_string " ") ++
-                   (load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ]) ++
-                   (instr_write_string " = ")) ++
-                   [ BI_local_get y1_var
+    else if Kername.eqb op_name primInt63Eqb then
+           Ret (
+                   [ BI_local_get x
                      ; BI_load T_i64 None 2%N 0%N
-                     ; BI_local_get y2_var
+                     ; BI_local_get y
                      ; BI_load T_i64 None 2%N 0%N
                      ; BI_relop T_i64 (Relop_i ROI_eq)
                      ; BI_if (BT_valtype (Some (T_num T_i32)))
-                         (instr_write_string "true" ++ instr_write_newline ++ [ BI_const_num (nat_to_value 1) ]) (* 2 * ordinal(true) + 1 *)
-                         (instr_write_string "false" ++ instr_write_newline ++ [ BI_const_num (nat_to_value 3) ]) (* 2 * ordinal(false) + 1 *)
+                         [ BI_const_num (nat_to_value 1) ] (* 2 * ordinal(true) + 1 *)
+                         [ BI_const_num (nat_to_value 3) ] (* 2 * ordinal(false) + 1 *)
                    ])
 
-    else if Kername.eqb kname primInt63Ltb then
-           Ret (((instr_write_string "Uint63.ltb ") ++
-                  (load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ]) ++
-                  (instr_write_string " ") ++
-                  (load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ]) ++
-                  (instr_write_string " = ")) ++
-                  [ BI_local_get y1_var
+    else if Kername.eqb op_name primInt63Ltb then
+           Ret ([ BI_local_get x
                     ; BI_load T_i64 None 2%N 0%N
-                    ; BI_local_get y2_var
+                    ; BI_local_get y
                     ; BI_load T_i64 None 2%N 0%N
                     ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
                     ; BI_if (BT_valtype (Some (T_num T_i32)))
-                        (instr_write_string "true" ++ instr_write_newline ++ [ BI_const_num (nat_to_value 1) ]) (* 2 * ordinal(true) + 1 *)
-                        (instr_write_string "false" ++ instr_write_newline ++ [ BI_const_num (nat_to_value 3) ]) (* 2 * ordinal(false) + 1 *)
+                        [ BI_const_num (nat_to_value 1) ] (* 2 * ordinal(true) + 1 *)
+                        [ BI_const_num (nat_to_value 3) ] (* 2 * ordinal(false) + 1 *)
                   ])
 
 
-    else if Kername.eqb kname primInt63Leb then
-           Ret (
-               ((instr_write_string "Uint63.leb ") ++
-                  (load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ]) ++
-                  (instr_write_string " ") ++
-                  (load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ]) ++
-                  (instr_write_string " = ")) ++
-                  
-                  [ BI_local_get y1_var
+    else if Kername.eqb op_name primInt63Leb then
+           Ret ([ BI_local_get x
                     ; BI_load T_i64 None 2%N 0%N
-                    ; BI_local_get y2_var
+                    ; BI_local_get y
                     ; BI_load T_i64 None 2%N 0%N
                     ; BI_relop T_i64 (Relop_i (ROI_le SX_U))
                     ; BI_if (BT_valtype (Some (T_num T_i32)))
-                        (instr_write_string "true" ++ instr_write_newline ++ [ BI_const_num (nat_to_value 1) ]) (* 2 * ordinal(true) + 1 *)
-                        (instr_write_string "false" ++ instr_write_newline ++ [ BI_const_num (nat_to_value 3) ]) (* 2 * ordinal(false) + 1 *)
+                        [ BI_const_num (nat_to_value 1) ] (* 2 * ordinal(true) + 1 *)
+                        [ BI_const_num (nat_to_value 3) ] (* 2 * ordinal(false) + 1 *)
                   ])
 
-
-    else if Kername.eqb kname primInt63Compare then
-           Ret (
-               ((instr_write_string "Uint63.compare ") ++
-                  (load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ]) ++
-                  (instr_write_string " ") ++
-                  (load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ]) ++
-                  (instr_write_string " = ")) ++
-
-                 [ BI_local_get y1_var
+    (* Assumptions about constructor environment for compare:
+         1. ordinal(Eq) = 0
+         2. ordinal(Lt) = 1
+         3. ordinal(Gt) = 2 *)
+    else if Kername.eqb op_name primInt63Compare then
+           Ret ([ BI_local_get x
                    ; BI_load T_i64 None 2%N 0%N
-                   ; BI_local_get y2_var
+                   ; BI_local_get y
                    ; BI_load T_i64 None 2%N 0%N
                    ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
                    ; BI_if (BT_valtype (Some (T_num T_i32)))
-                       (instr_write_string "Lt" ++ instr_write_newline ++ [ BI_const_num (nat_to_value 3) ]) (* 2 * ordinal(Lt) + 1 *)
-                       (load_local_i64 y1_var ++
-                          load_local_i64 y2_var ++
+                       [ BI_const_num (nat_to_value 3) ] (* 2 * ordinal(Lt) + 1 *)
+                       (load_local_i64 x ++
+                          load_local_i64 y ++
                           [ BI_relop T_i64 (Relop_i ROI_eq)
                             ; BI_if (BT_valtype (Some (T_num T_i32)))
-                                (instr_write_string "Eq" ++ instr_write_newline ++ [ BI_const_num (nat_to_value 1) ])
-                                (instr_write_string "Gt" ++ instr_write_newline ++ [ BI_const_num (nat_to_value 5) ])
+                                [ BI_const_num (nat_to_value 1) ] (* 2 * ordinal(Eq) *)
+                                [ BI_const_num (nat_to_value 5) ] (* 2 * ordinal(Gt) *)
                        ])
              ])
-    else if Kername.eqb kname primInt63Lxor then
-      Ret ((instr_write_string "Uint63.lxor ") ++ apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_xor) ] y1_var y2_var)
 
-    else if Kername.eqb kname primInt63Mod then
-           Ret (((instr_write_string "Uint63.mod ") ++
-                   (load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ]) ++
-                   (instr_write_string " ") ++
-                   (load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ]) ++
-                   (instr_write_string " = ")) ++
-                  [ BI_local_get y2_var
-                    ; BI_load T_i64 None 2%N 0%N
-                    ; BI_testop T_i64 TO_eqz
-                    ; BI_if (BT_valtype None)
-                        [ BI_global_get global_mem_ptr
-                          ; BI_local_get y1_var
-                          ; BI_load T_i64 None 2%N 0%N
-                          ; BI_store T_i64 None 2%N 0%N
-                          ; BI_local_get y1_var
-                          ; BI_load T_i64 None 2%N 0%N
-                          ; BI_call write_int64_function_idx
-                        ]
-                        [ BI_global_get global_mem_ptr
-                          ; BI_local_get y1_var
-                          ; BI_load T_i64 None 2%N 0%N
-                          ; BI_local_get y2_var
-                          ; BI_load T_i64 None 2%N 0%N
-                          ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-                          ; BI_global_set tmp1
-                          ; BI_global_get tmp1
-                          ; BI_call write_int64_function_idx
-                          ; BI_global_get tmp1
-                          ; BI_store T_i64 None 2%N 0%N
-                        ]
-                    ; BI_global_get global_mem_ptr
-                  ] ++ instr_write_newline ++ increment_global_mem_ptr 8)
-
-    else if Kername.eqb kname primInt63Addc then
-           Ret (((instr_write_string "Uint63.addc ") ++
-                   load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ] ++
-                   (instr_write_string " ") ++
-                   load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ] ++
-                   (instr_write_string " = ")) ++
-                  load_local_i64 y1_var ++
-                  load_local_i64 y2_var ++
+(* Assumptions for constructing a carry value:
+   - The argument is stored in global with index gidx
+   - ordinal(C0) = 0
+   - ordinal(C1) = 1 *)
+    else if Kername.eqb op_name primInt63Addc then
+           Ret(load_local_i64 x ++
+                  load_local_i64 y ++
                   [ BI_binop T_i64 (Binop_i BOI_add)
                     ; BI_const_num maxuint63
                     ; BI_binop T_i64 (Binop_i BOI_and)
                     ; BI_global_set tmp1
                     ; BI_global_get tmp1
-                  ] ++ load_local_i64 y1_var ++
+                  ] ++ load_local_i64 x ++
                   [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
                     ; BI_if (BT_valtype (Some (T_num T_i32)))
                         (make_carry 1 tmp1)
                         (make_carry 0 tmp1)
                   ])
 
-    else if Kername.eqb kname primInt63Addcarryc then
-           Ret (((instr_write_string "Uint63.addcarryc ") ++
-                   load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ] ++
-                   (instr_write_string " ") ++
-                   load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ] ++
-                   (instr_write_string " = ")) ++
-                  load_local_i64 y1_var ++
-                  load_local_i64 y2_var ++
+    else if Kername.eqb op_name primInt63Addcarryc then
+                  Ret( load_local_i64 x ++
+                  load_local_i64 y ++
                   [ BI_binop T_i64 (Binop_i BOI_add)
                     ; BI_const_num (nat_to_value64 1)
                     ; BI_binop T_i64 (Binop_i BOI_add)
@@ -725,42 +626,32 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                     ; BI_global_set tmp1
                     ; BI_global_get tmp1
                   ] ++
-                  load_local_i64 y1_var ++
+                  load_local_i64 x ++
                   [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
                     ; BI_if (BT_valtype (Some (T_num T_i32)))
                         (make_carry 1 tmp1)
                         (make_carry 0 tmp1)
                   ])
 
-    else if Kername.eqb kname primInt63Subc then
-           Ret (((instr_write_string "Uint63.subc ") ++
-                   load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ] ++
-                   (instr_write_string " ") ++
-                   load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ] ++
-                   (instr_write_string " = ")) ++
-                  load_local_i64 y1_var ++
-                  load_local_i64 y2_var ++
+    else if Kername.eqb op_name primInt63Subc then
+                  Ret( load_local_i64 x ++
+                  load_local_i64 y ++
                   [ BI_binop T_i64 (Binop_i BOI_sub)
                     ; BI_const_num maxuint63
                     ; BI_binop T_i64 (Binop_i BOI_and)
                     ; BI_global_set tmp1
                   ] ++
-                  load_local_i64 y2_var ++
-                  load_local_i64 y1_var ++
+                  load_local_i64 y ++
+                  load_local_i64 x ++
                   [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
                     ; BI_if (BT_valtype (Some (T_num T_i32)))
                         (make_carry 0 tmp1)
                         (make_carry 1 tmp1)
                   ])
 
-    else if Kername.eqb kname primInt63Subcarryc then
-           Ret (((instr_write_string "Uint63.subcarryc ") ++
-                   load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ] ++
-                   (instr_write_string " ") ++
-                   load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ] ++
-                   (instr_write_string " = ")) ++
-                  load_local_i64 y1_var ++
-                  load_local_i64 y2_var ++
+    else if Kername.eqb op_name primInt63Subcarryc then
+                  Ret( load_local_i64 x ++
+                  load_local_i64 y ++
                   [ BI_binop T_i64 (Binop_i BOI_sub)
                     ; BI_const_num (nat_to_value64 1)
                     ; BI_binop T_i64 (Binop_i BOI_sub)
@@ -768,34 +659,34 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                     ; BI_binop T_i64 (Binop_i BOI_and)
                     ; BI_global_set tmp1
                   ] ++
-                  load_local_i64 y2_var ++
-                  load_local_i64 y1_var ++
+                  load_local_i64 y ++
+                  load_local_i64 x ++
                   [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
                     ; BI_if (BT_valtype (Some (T_num T_i32)))
                         (make_carry 0 tmp1)
                         (make_carry 1 tmp1)
                   ])
 
-    else if Kername.eqb kname primInt63Mulc then
-           Ret (load_local_i64 y1_var ++
+    else if Kername.eqb op_name primInt63Mulc then
+           Ret (load_local_i64 x ++
                   [ BI_const_num (nat_to_value64 62) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_testop T_i64 TO_eqz ] ++
-                  load_local_i64 y2_var ++
+                  load_local_i64 y ++
                   [ BI_const_num (nat_to_value64 62) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_testop T_i64 TO_eqz ] ++
                   [ BI_binop T_i32 (Binop_i BOI_or)
                     ; BI_if (BT_valtype None)
-                        (load_local_i64 y2_var ++
+                        (load_local_i64 y ++
                            [ BI_global_set tmp3 ])
-                        (load_local_i64 y2_var ++
+                        (load_local_i64 y ++
                            [ BI_const_num (VAL_int64 (Wasm_int.Int64.repr 4611686018427387904%Z))
                              ; BI_binop T_i64 (Binop_i BOI_xor)
                              ; BI_global_set tmp3 ])
                   ] ++
 
                   (* tmp1 <- let hx = x >> 31 *)
-                  load_local_i64 y1_var ++
+                  load_local_i64 x ++
                   [ BI_const_num (nat_to_value64 31) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_global_set tmp1 ] ++
                   (* tmp2 <- let lx = x & ((1 << 31) - 1) *)
-                  load_local_i64 y1_var ++
+                  load_local_i64 x ++
                   [ BI_const_num maxuint31 ; BI_binop T_i64 (Binop_i BOI_and) ; BI_global_set tmp2 ] ++
                   (* tmp4 <- let hy =  y >> 31 *)
                   [ BI_global_get tmp3 ; BI_const_num (nat_to_value64 31) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_global_set tmp4 ] ++
@@ -814,10 +705,6 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                     ; BI_global_set tmp2
                     ; BI_global_set tmp1
                   ]  ++
-                  (* (instr_write_string "tmp1 = ") ++ [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
-                  (* (instr_write_string "tmp2 = ") ++ [ BI_global_get tmp2 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
-                  (* (instr_write_string "tmp3 = ") ++ [ BI_global_get tmp3 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
-                  (* (instr_write_string "tmp4 = ") ++ [ BI_global_get tmp4 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
                   (* tmp4 <- let l = lxy | (hxy << 62) = tmp4 | (tmp1 << 62) *)
                   [ BI_global_get tmp4
                     ; BI_global_get tmp1
@@ -828,14 +715,12 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                     ; BI_binop T_i64 (Binop_i BOI_or)
                     ; BI_global_set tmp4
                   ] ++
-                  (* (instr_write_string "tmp4 = ") ++ [ BI_global_get tmp4 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
                   (* tmp1 <- let h = hxy >> 1 = tmp1 >> 1 *)
                   [ BI_global_get tmp1
                     ; BI_const_num (nat_to_value64 1)
                     ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
                     ; BI_global_set tmp1
                   ] ++
-                  (* (instr_write_string "tmp1 = ") ++ [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
                   (* tmp3 <- let hl = hxly + lxhy = tmp2 + tmp3 *)
                   [ BI_global_get tmp2
                     ; BI_global_get tmp3
@@ -844,7 +729,6 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                     ; BI_binop T_i64 (Binop_i BOI_and)
                     ; BI_global_set tmp3
                   ] ++
-                  (* (instr_write_string "tmp3 = ") ++ [ BI_global_get tmp3 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
                   (* tmp1 <- let h = if hl < hxly then h + (1 << 31) else h *)
                   [ BI_global_get tmp3
                     ; BI_global_get tmp2
@@ -853,13 +737,12 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                         [ BI_global_get tmp1
                           ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr 2147483648%Z))
                           ; BI_binop T_i64 (Binop_i BOI_add)
-                          ; BI_const_num maxuint63
-                          ; BI_binop T_i64 (Binop_i BOI_and)
+                          (* ; BI_const_num maxuint63 *)
+                          (* ; BI_binop T_i64 (Binop_i BOI_and) *)
                           ; BI_global_set tmp1
                         ]
                         [ ]
                   ] ++
-                  (* (instr_write_string "tmp1 = ") ++ [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
                   (* tmp2 <- let hl' = hl << 31 *)
                   [ BI_global_get tmp3
                     ; BI_const_num (nat_to_value64 31)
@@ -868,7 +751,6 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                     ; BI_binop T_i64 (Binop_i BOI_and)
                     ; BI_global_set tmp2
                   ] ++
-                  (* (instr_write_string "tmp2 = ") ++ [ BI_global_get tmp2 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
                   (* tmp4 <- let l = l + hl' *)
                   [ BI_global_get tmp4
                     ; BI_global_get tmp2
@@ -877,7 +759,6 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                     ; BI_binop T_i64 (Binop_i BOI_and)
                     ; BI_global_set tmp4
                   ] ++
-                  (* (instr_write_string "tmp4 = ") ++ [ BI_global_get tmp4 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
                   (* tmp1 <- let h = if l < hl' then h + 1 else h *)
                   [ BI_global_get tmp4
                     ; BI_global_get tmp2
@@ -886,13 +767,12 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                         [ BI_global_get tmp1
                           ; BI_const_num (nat_to_value64 1)
                           ; BI_binop T_i64 (Binop_i BOI_add)
-                          ; BI_const_num maxuint63
-                          ; BI_binop T_i64 (Binop_i BOI_and)
+                          (* ; BI_const_num maxuint63 *)
+                          (* ; BI_binop T_i64 (Binop_i BOI_and) *)
                           ; BI_global_set tmp1
                         ]
                         [ ]
                   ] ++
-                  (* (instr_write_string "tmp1 = ") ++ [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
                   (* tmp1 <- let h = h + (hl >> 32) *)
                   [ BI_global_get tmp1
                     ; BI_global_get tmp3
@@ -902,13 +782,12 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                     ; BI_const_num maxuint63
                     ; BI_binop T_i64 (Binop_i BOI_and)
                     ; BI_global_set tmp1 ] ++
-                  (* (instr_write_string "tmp1 = ") ++ [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++ instr_write_newline ++ *)
-                  (load_local_i64 y1_var ++
+                  (load_local_i64 x ++
                      [ BI_const_num (nat_to_value64 62)
                        ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
                        ; BI_testop T_i64 TO_eqz
                      ] ++
-                     load_local_i64 y2_var ++
+                     load_local_i64 y ++
                      [ BI_const_num (nat_to_value64 62)
                        ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
                        ; BI_testop T_i64 TO_eqz
@@ -917,12 +796,10 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                            [ ]
                            [ (* tmp2 <- let l' := l + (x << 62) *)
                              BI_global_get tmp4
-                             ; BI_local_get y1_var
+                             ; BI_local_get x
                              ; BI_load T_i64 None 2%N 0%N
                              ; BI_const_num (nat_to_value64 62)
                              ; BI_binop T_i64 (Binop_i BOI_shl)
-                             (* ; BI_const_num maxuint63 *)
-                             (* ; BI_binop T_i64 (Binop_i BOI_and) *)
                              ; BI_binop T_i64 (Binop_i BOI_add)
                              ; BI_const_num maxuint63
                              ; BI_binop T_i64 (Binop_i BOI_and)
@@ -935,14 +812,14 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                                  [ BI_global_get tmp1
                                    ; BI_const_num (nat_to_value64 1)
                                    ; BI_binop T_i64 (Binop_i BOI_add)
-                                   ; BI_const_num maxuint63
-                                   ; BI_binop T_i64 (Binop_i BOI_and)
+                                   (* ; BI_const_num maxuint63 *)
+                                   (* ; BI_binop T_i64 (Binop_i BOI_and) *)
                                    ; BI_global_set tmp1
                                  ]
                                  [ ]
                              (* return (h + (x >> 1), l') *)
                              ; BI_global_get tmp1
-                             ; BI_local_get y1_var
+                             ; BI_local_get x
                              ; BI_load T_i64 None 2%N 0%N
                              ; BI_const_num (nat_to_value64 1)
                              ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
@@ -953,23 +830,10 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                              ; BI_global_get tmp2
                              ; BI_global_set tmp4
                            ]
-                     ] ++
-                     ((instr_write_string "Uint63.mulc ") ++
-                        load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ] ++
-                        (instr_write_string " ") ++
-                        load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ] ++
-                        (instr_write_string " = ") ++
-                        (instr_write_string " = (") ++
-                        [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++
-                        (instr_write_string ", ") ++
-                        [ BI_global_get tmp4 ; BI_call write_int64_function_idx ] ++
-                        (instr_write_string ")") ++
-                        instr_write_newline) ++                     
-                     make_product tmp1 tmp4))
+                     ] ++ make_product tmp1 tmp4))
 
-    else if Kername.eqb kname primInt63Diveucl then
-           (* Assumptions about constructor representation of prod: ordinal(pair) = 0. *)
-      Ret ([ BI_local_get y1_var
+    else if Kername.eqb op_name primInt63Diveucl then
+      Ret ([ BI_local_get x
             ; BI_load T_i64 None 2%N 0%N
             ; BI_testop T_i64 TO_eqz
             ; BI_if (BT_valtype None)
@@ -978,94 +842,59 @@ Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basi
                   ; BI_const_num (nat_to_value64 0)
                   ; BI_global_set tmp2
                 ]
-                [ BI_local_get y2_var
+                [ BI_local_get y
                   ; BI_load T_i64 None 2%N 0%N
                   ; BI_testop T_i64 TO_eqz
                   ; BI_if (BT_valtype None)
                       [ BI_const_num (nat_to_value64 0)
                         ; BI_global_set tmp1
-                        ; BI_local_get y1_var
+                        ; BI_local_get x
                         ; BI_load T_i64 None 2%N 0%N
                         ; BI_global_set tmp2
                       ]
-                      (load_local_i64 y1_var ++
-                         load_local_i64 y2_var ++
+                      (load_local_i64 x ++
+                         load_local_i64 y ++
                          [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ; BI_global_set tmp1 ] ++
-                         load_local_i64 y1_var ++
-                         load_local_i64 y2_var ++
+                         load_local_i64 x ++
+                         load_local_i64 y ++
                          [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ; BI_global_set tmp2 ])
                 ]
-          ]++
-             ((instr_write_string "Uint63.diveucl ") ++
-                load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ] ++
-                (instr_write_string " ") ++
-                load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ] ++
-                (instr_write_string " = ") ++
-                (instr_write_string " = (") ++
-                [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++
-                (instr_write_string ", ") ++
-                [ BI_global_get tmp2 ; BI_call write_int64_function_idx ] ++
-                (instr_write_string ")") ++
-                instr_write_newline) ++
-             make_product tmp1 tmp2)
+          ] ++ make_product tmp1 tmp2)
     else
-      Err ("Unknown primitive arithmetic operator: " ++ (Kernames.string_of_kername kname))%bs.
+      Err ("Unknown primitive arithmetic operator: " ++ (Kernames.string_of_kername op_name))%bs.
 
-Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (p : (kername * string * bool * nat)) (args : list var) : error (list basic_instruction) :=
-  let '(kname, _, _, _) := p in
-  match args with
-  | [ y ] =>
-      y_var <- translate_var nenv lenv y "translate primitive operands single operand";;
-      if Kername.eqb kname primInt63Head0 then
-        (* head0 y computes the leading number of zeros in y
+Definition translate_primitive_unary_op op_name x : error (list basic_instruction) :=
+      if Kername.eqb op_name primInt63Head0 then
+        (* head0 x computes the leading number of zeros in x
            OBS: need to subtract 1 since we're dealing with 63-bit integers *)
         Ret (BI_global_get global_mem_ptr ::
-                load_local_i64 y_var ++
+                load_local_i64 x ++
                 [ BI_unop T_i64 (Unop_i UOI_clz)
                   ; BI_const_num (nat_to_value64 1)
                   ; BI_binop T_i64 (Binop_i BOI_sub)
-                  ; BI_global_set tmp1
-                ] ++
-                ((instr_write_string "Uint63.head0 ") ++
-                   load_local_i64 y_var ++ [ BI_call write_int64_function_idx ] ++
-                   (instr_write_string " = ") ++
-                   [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++
-                   instr_write_newline) ++
-                [ BI_global_get tmp1
                   ; BI_store T_i64 None 2%N 0%N
                   ; BI_global_get global_mem_ptr
                 ] ++
                 increment_global_mem_ptr 8)
 
-      else if Kername.eqb kname primInt63Tail0 then
-             (* tail0 y computes the trailing number of zeros in y
-                OBS: if y is 0, then result is 63 (can't just use wasm ctz op) ) *)
+      else if Kername.eqb op_name primInt63Tail0 then
+             (* tail0 x computes the trailing number of zeros in x
+                OBS: if x is 0, then result is 63 (can't just use wasm ctz op) ) *)
              Ret (BI_global_get global_mem_ptr ::
-                    load_local_i64 y_var ++
+                    load_local_i64 x ++
                     [ BI_testop T_i64 TO_eqz
-                      ; BI_if (BT_valtype None)
-                          [ BI_const_num (nat_to_value64 63) ; BI_global_set tmp1 ]
-                          (load_local_i64 y_var ++ [ BI_unop T_i64 (Unop_i UOI_ctz) ; BI_global_set tmp1 ])
-                    ] ++
-                    ((instr_write_string "Uint63.tail0 ") ++
-                    load_local_i64 y_var ++ [ BI_call write_int64_function_idx ] ++
-                    (instr_write_string " = ") ++
-                    [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++
-                    instr_write_newline) ++
-                    [ BI_global_get tmp1
+                      ; BI_if (BT_valtype (Some (T_num T_i64)))
+                          [ BI_const_num (nat_to_value64 63) ]
+                          (load_local_i64 x ++ [ BI_unop T_i64 (Unop_i UOI_ctz) ])
                       ; BI_store T_i64 None 2%N 0%N
                       ; BI_global_get global_mem_ptr ] ++
                     increment_global_mem_ptr 8)
       else
-        Err ("Unknown primitive unary operator: " ++ (Kernames.string_of_kername kname))%bs
+        Err ("Unknown primitive unary operator: " ++ (Kernames.string_of_kername op_name))%bs.
 
-  | [ y1 ; y2 ] => translate_primitive_arith_op nenv lenv kname y1 y2
 
-  | [ y1 ; y2 ; y3 ] =>
-      y1_var <- translate_var nenv lenv y1 "translate primitive operands 1st operand" ;;
-      y2_var <- translate_var nenv lenv y2 "translate primitive operands 2nd operand" ;;
-      y3_var <- translate_var nenv lenv y3 "translate primitive operands 3rd operand" ;;
-      if Kername.eqb kname primInt63Diveucl_21 then
+Definition translate_primitive_ternary_op op_name x y z : error (list basic_instruction) :=
+    if Kername.eqb op_name primInt63Diveucl_21 then
         let loop_body :=
           (* tmp1 <- nh := (nh << 1) | (nl >> 62)  *)
           [ BI_global_get tmp1
@@ -1113,12 +942,12 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
           ]
         in
         Ret (
-            load_local_i64 y3_var ++
+            load_local_i64 z ++
               [ BI_const_num maxuint63
                 ; BI_binop T_i64 (Binop_i BOI_and)
                 ; BI_global_set tmp4
               ] ++
-              load_local_i64 y1_var ++
+              load_local_i64 x ++
               [ BI_const_num maxuint63
                 ; BI_binop T_i64 (Binop_i BOI_and)
                 ; BI_global_set tmp1
@@ -1129,7 +958,7 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
                  ; BI_if (BT_valtype (Some (T_num T_i32)))
                      ([ BI_const_num (nat_to_value64 0) ; BI_global_set tmp1 ] ++
                         make_product tmp1 tmp1)
-                     (load_local_i64 y2_var ++
+                     (load_local_i64 y ++
                         [ BI_global_set tmp2
                           ; BI_const_num (nat_to_value64 0)
                           ; BI_global_set tmp3
@@ -1139,61 +968,57 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
                           ; BI_binop T_i64 (Binop_i BOI_and)
                           ; BI_global_set tmp1
                         ] ++
-                        ((instr_write_string "Uint63.diveucl_21 ") ++
-                           load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ] ++
-                           (instr_write_string " ") ++
-                           load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ] ++
-                           (instr_write_string " ") ++
-                           load_local_i64 y3_var ++ [ BI_call write_int64_function_idx ] ++
-                           (instr_write_string " = (") ++
-                           [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++
-                           (instr_write_string ", ") ++
-                           [ BI_global_get tmp3 ; BI_call write_int64_function_idx ] ++
-                           (instr_write_string ")") ++
-                           instr_write_newline) ++
                         (make_product tmp3 tmp1))
           ])
 
-      else if Kername.eqb kname primInt63Addmuldiv then
+      else if Kername.eqb op_name primInt63Addmuldiv then
              Ret (BI_global_get global_mem_ptr ::
-
-                load_local_i64 y1_var ++
+                load_local_i64 x ++
                 [ BI_const_num (nat_to_value64 63)
                 ; BI_relop T_i64 (Relop_i (ROI_gt SX_U))
                 ; BI_if (BT_valtype (Some (T_num T_i64)))
                     [ BI_const_num (nat_to_value64 0) ]
-                    (* Compute x << p on the stack *)
-                    (load_local_i64 y2_var ++
-                     load_local_i64 y1_var ++
+                    (* Compute x << z on the stack *)
+                    (load_local_i64 y ++
+                     load_local_i64 x ++
                      [ BI_binop T_i64 (Binop_i BOI_shl)
                        ; BI_const_num maxuint63
                        ; BI_binop T_i64 (Binop_i BOI_and)
                      ] ++
                      (* Put y on the stack *)
-                     load_local_i64 y3_var ++
-                     (* Compute 63 - p on the stack *)
+                     load_local_i64 z ++
+                     (* Compute 63 - z on the stack *)
                      [ BI_const_num (nat_to_value64 63) ] ++
-                     load_local_i64 y1_var ++
+                     load_local_i64 x ++
                      [ BI_binop T_i64 (Binop_i BOI_sub)
-                     (* Compute y >> (63 - p) on the stack *)
+                     (* Compute y >> (63 - z) on the stack *)
                      ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-                     (* Finally, compute (x << p) | (y >> (63 - p)) on the stack *)
+                     (* Finally, compute (x << z) | (y >> (63 - z)) on the stack *)
                        ; BI_binop T_i64 (Binop_i BOI_or)
-                       ; BI_global_set tmp1 ] ++
-                     ((instr_write_string "Uint63.addmuldiv ") ++
-                    load_local_i64 y1_var ++ [ BI_call write_int64_function_idx ] ++
-                    (instr_write_string " ") ++
-                    load_local_i64 y2_var ++ [ BI_call write_int64_function_idx ] ++
-                    (instr_write_string " ") ++
-                    load_local_i64 y3_var ++ [ BI_call write_int64_function_idx ] ++
-                    (instr_write_string " = ") ++ [ BI_global_get tmp1 ; BI_call write_int64_function_idx ] ++
-                    instr_write_newline) ++
-                     [ BI_global_get tmp1 ])
+                      ])
                 ; BI_store T_i64 None 2%N 0%N
                 ; BI_global_get global_mem_ptr
                 ] ++ increment_global_mem_ptr 8)
          else
-           Err ("Unknown primitive arithmetic operator: " ++ (Kernames.string_of_kername kname))%bs
+           Err ("Unknown primitive arithmetic operator: " ++ (Kernames.string_of_kername op_name))%bs.
+
+Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (p : (kername * string * bool * nat)) (args : list var) : error (list basic_instruction) :=
+  let '(op_name, _, _, _) := p in
+  match args with
+  | [ x ] =>
+      x_var <- translate_var nenv lenv x "translate primitive unop operand";;
+      translate_primitive_unary_op op_name x_var
+
+  | [ x ; y ] =>
+      x_var <- translate_var nenv lenv x "translate primitive binary operator 1st operand";;
+      y_var <- translate_var nenv lenv y "translate primitive binary operator 2nd operand";;      
+      translate_primitive_binary_op op_name x_var y_var
+
+  | [ x ; y ; z ] =>
+      x_var <- translate_var nenv lenv x "translate primitive ternary operator 1st operand" ;;
+      y_var <- translate_var nenv lenv y "translate primitive ternary operator 2nd operand" ;;
+      z_var <- translate_var nenv lenv z "translate primitive ternary operator 3rd operand" ;;
+      translate_primitive_ternary_op op_name x_var y_var z_var
 
   | _ =>
       Err "Only primitive operations with 1, 2 or 3 arguments are supported"
