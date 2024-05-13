@@ -100,12 +100,14 @@ Ltac solve_bet Hcontext :=
   (* arithmetic *)
   | |- be_typing _ [:: BI_const_num _] (Tf [::] _) => apply bet_const_num
   | |- be_typing _ [:: BI_testop T_i32 _] (Tf [:: T_num T_i32] _) => apply bet_testop; by simpl
+  | |- be_typing _ [:: BI_testop T_i64 _] (Tf [:: T_num T_i64] _) => apply bet_testop; by simpl
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_binop; apply Binop_i32_agree
 (*   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
          apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_binop; apply Binop_i32_agree *)
   | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_binop; apply Binop_i64_agree
   | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_relop; apply Relop_i32_agree
-  (* memory *)
+  | |- be_typing _ [:: BI_relop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_relop; apply Relop_i64_agree
+(* memory *)
   | H: lookup_N (tc_mems _) 0 = Some _ |- be_typing _ [:: BI_memory_size] (Tf [::] _) => eapply bet_memory_size; apply H
   | H: lookup_N (tc_mems _) 0 = Some _ |- be_typing _ [:: BI_memory_grow] (Tf [:: T_num T_i32] _) => eapply bet_memory_grow; apply H
   | |- be_typing _ [:: BI_store _ None _ _] (Tf [:: T_num _; T_num _] _) => by eapply bet_store; first eassumption; cbn=>//
@@ -115,14 +117,20 @@ Ltac solve_bet Hcontext :=
   (* simple if statement *)
   | |- be_typing _ [:: BI_if (BT_valtype None) _ _] _ =>
          apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext
+  | |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i32))) [:: BI_const_num (nat_to_value _)] [:: BI_const_num (nat_to_value _)]] _ =>
+         apply bet_if_wasm with (tn:=[])=>//; try solve_bet Hcontext
   (* if above failed, try to frame the leading const *)
   | |- be_typing _ _ (Tf [:: T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32]); solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
          apply bet_weakening with (ts:=[::T_num T_i32; T_num T_i32]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32; T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32; T_num T_i64]); by solve_bet Hcontext
+  | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
+         apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_binop; apply Binop_i32_agree
   end.
 
 Ltac prepare_solve_bet :=
@@ -263,16 +271,15 @@ Proof.
       destruct (tc_mems c0) eqn:Hc; cbn; eauto. by apply Hcontext' in Hc. }
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
-  - (* Eprim *) {
+  - (* Eprim *)
     intros ???????? Hvar Hexpr' IH Hp' HprimOp ? Hcontext' Hrestr'.
     assert (exists m, lookup_N (tc_mems c0) 0 = Some m) as [m Hm]. {
       destruct (tc_mems c0) eqn:Hc; cbn; eauto. by apply Hcontext' in Hc. }
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv HprimOp.
     unfold apply_binop_and_store_i64.
-    prepare_solve_bet. all: try solve_bet Hcontext'.
-    all: admit. (* TODO Martin prim_ops_typing *)
-    (* inv Hrestr'. by apply IH. *) }
+    all: prepare_solve_bet; try solve_bet Hcontext'.
+    inv Hrestr'. by apply IH.
   - (* repr_branches nil *)
     intros ????? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
     inv Hboxed. inv Hunboxed. by split; solve_bet Hcontext'.
@@ -290,7 +297,7 @@ Proof.
     prepare_solve_bet; try solve_bet Hcontext'.
     + apply IH2=>//. inv Hrestr'. now inv H1.
     + eapply IH1 in H4; try apply Hunboxed; first (now destruct H4); eauto; try eassumption. inv Hrestr'. inv H1. by constructor.
-Admitted.
+Qed.
 End FUNCTION_BODY_TYPING.
 
 
