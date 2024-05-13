@@ -1499,8 +1499,8 @@ Definition INV_instantiation_table_empty s f num_funs :=
                     ; tableinst_elem := repeat (VAL_ref_null T_funcref) num_funs
                     |}].
 
-(* invariants that hold after initialisation, but before post-initialisation,
-   the table is initialised during post-initialisation, so INV_table_id doesn't yet hold here *)
+(* invariants that hold after instantiation, but before post-instantiation,
+   the table is initialised during post-instantiation, so INV_table_id doesn't yet hold here *)
 Definition INV_instantiation (s : store_record) (f : frame) (num_funs : nat) :=
 (* same as INV *)
     INV_result_var_writable s f
@@ -2052,7 +2052,7 @@ Lemma post_instantiation_reduce_aux : forall num_funs idx hs sr fr t,
   (* table initialised *)
   (forall i, idx <= N.to_nat i < num_funs + idx ->
      stab_elem sr' (f_inst fr) 0%N i = Some (VAL_ref_func i)) /\
-  (* TODO: necessary? *)
+  (* previous table entries preserved *)
   (forall i, N.to_nat i < idx ->
      stab_elem sr (f_inst fr) 0%N i = stab_elem sr' (f_inst fr) 0%N i) /\
   (* others preserved *)
@@ -2239,7 +2239,7 @@ Theorem post_instantiation_reduce {fenv} : forall hs sr fr fr' num_funs,
   f_inst fr = f_inst fr' ->
   exists sr',
     reduce_trans (hs, sr, fr', [seq AI_basic i | i <- concat
-                                 (mapi_aux (0, [::])
+                                 (mapi
                                    (fun n : nat => get_init_expr_elem n)
                                    (table_element_mapping num_funs 0))])
                  (hs, sr', fr', [::]) /\
