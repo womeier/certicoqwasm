@@ -64,6 +64,7 @@ const tests = [
     ["diveucl_21_3", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(0, 0)"],
     ["diveucl_21_4", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(0, 0)"],
     ["diveucl_21_5", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(17407905077428, 3068214991893055266)"],
+    ["addmuldiv1", print_i63, "12887523328"],
     ["unsigned1", print_i63, "0"],
     ["unsigned2", print_i63, "3"],
 ];
@@ -83,6 +84,7 @@ let importObject = {
     env: {
         write_char: write_char,
         write_int: write_int,
+	write_int64: write_int,
     }
 };
 

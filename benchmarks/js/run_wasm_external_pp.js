@@ -15,72 +15,6 @@ const pp_map = {
     "sm_gauss_nat": (val, dataView) => print_option(val, dataView, print_nat_sexp),
     "sm_gauss_N": (val, dataView) => print_option(val, dataView, print_N_sexp),
     "sm_gauss_PrimInt": (val, dataView) => print_option(val, dataView, print_i63),
-    "addition_primitive": print_bool,
-    "addition_primitive_overflow": print_bool,
-    "addc_primitive_C0": print_bool,
-    "addc_primitive_C1": print_bool,
-    "addc_primitive1": print_bool,
-    "addc_primitive2": print_bool,
-    "addcarryc_primitive_C0": print_bool,
-    "addcarryc_primitive_C1": print_bool,
-    "addcarryc_primitive1": print_bool,
-    "addcarryc_primitive2": print_bool,
-    "subtraction_primitive": print_bool,
-    "subtraction_primitive_underflow": print_bool,
-    "subc_primitive_C0": print_bool,
-    "subc_primitive_C1": print_bool,
-    "subc_primitive1": print_bool,
-    "subc_primitive2": print_bool,
-    "subcarryc_primitive_C0": print_bool,
-    "subcarryc_primitive_C1": print_bool,
-    "subcarryc_primitive1": print_bool,
-    "subcarryc_primitive2": print_bool,
-    "multiplication_primitive": print_bool,
-    "multiplication_primitive_overflow": print_bool,
-    "mulc_primitive": print_bool,
-    "mulc_primitive_overflow": print_bool,
-    "mulc_primitive_0": print_bool,
-    "division_primitive": print_bool,
-    "division_primitive_0": print_bool,
-    "modulo_primitive": print_bool,
-    "modulo_primitive_0": print_bool,
-    "diveucl_primitive1": print_bool,
-    "diveucl_primitive2": print_bool,
-    "diveucl_primitive_0": print_bool,
-    "diveucl_21_primitive1": print_bool,
-    "diveucl_21_primitive2": print_bool,
-    "diveucl_21_primitive3": print_bool,
-    "diveucl_21_primitive4": print_bool,
-    "addmuldiv": print_i63,
-    "div21": (val, dataView) => print_prod(val, dataView, print_i63, print_i63),
-    "addmuldiv_primitive1": print_bool,
-    "addmuldiv_primitive2": print_bool,
-    "addmuldiv_primitive3": print_bool,
-    "land_primitive": print_bool,
-    "lor_primitive": print_bool,
-    "lxor_primitive": print_bool,
-    "lsl_primitive": print_bool,
-    "lsl_primitive1": print_bool,
-    "lsl_primitive2": print_bool,
-    "lsl_primitive3": print_bool,
-    "lsl_primitive_overflow": print_bool,
-    "lsr_primitive": print_bool,
-    "eqb_true_primitive": print_bool,
-    "eqb_false_primitive": print_bool,
-    "ltb_true_primitive": print_bool,
-    "ltb_false_primitive": print_bool,
-    "leb_true_primitive": print_bool,
-    "leb_false_primitive": print_bool,
-    "compare_eq_primitive": print_bool,
-    "compare_lt_primitive": print_bool,
-    "compare_gt_primitive": print_bool,
-    "head0_primitive1": print_bool,
-    "head0_primitive2": print_bool,
-    "head0_primitive3": print_bool,
-    "tail0_primitive1": print_bool,
-    "tail0_primitive2": print_bool,
-    "tail0_primitive3": print_bool,
-    "prime": print_bool,
 };
 
 import { readFileSync } from 'fs';
@@ -125,7 +59,11 @@ let importObject = {
     const stop_startup = Date.now();
     const time_startup = stop_startup - start_startup;
 
+    const prime_pattern = /^prime.*$/;
+    const primitive_pattern = /.*_primitive.*$/;
+
     try {
+
 	const start_main = Date.now();
         obj.instance.exports.main_function();
         const stop_main = Date.now();
@@ -140,8 +78,11 @@ let importObject = {
             process.exit(1);
         } else {
 
-	    const prime_pattern = /^prime.*$/;
-	    const pp_fun = prime_pattern.test(program) ? pp_map["prime"] : pp_map[program];
+
+	    var pp_fun;
+	    if (prime_pattern.test(program)) { pp_fun = print_bool; }
+	    else if (primitive_pattern.test(program)) { pp_fun = print_bool; }
+	    else { pp_fun = pp_map[program]; }
 	    if (pp_fun) {
 		const memory = obj.instance.exports.memory;
 		const dataView = new DataView(memory.buffer);
@@ -159,8 +100,9 @@ let importObject = {
 		console.log(`No pretty function defined for program ${program}`);
 	    }
         }
-
-	// console.log(`Benchmark ${path}: {{"time_startup": "${time_startup}", "time_main": "${time_main}", "time_pp": "${time_pp}", "program": "${program}"}} (in ms)`);
+	if (!(primitive_pattern.test(program))) {
+	    console.log(`Benchmark ${path}: {{"time_startup": "${time_startup}", "time_main": "${time_main}", "time_pp": "${time_pp}", "program": "${program}"}} (in ms)`);
+	}
     } catch (error) {
 	console.log(error);
 	process.exit(1);

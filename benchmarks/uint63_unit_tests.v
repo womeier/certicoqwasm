@@ -7,62 +7,6 @@ Import ListNotations.
 
 Open Scope uint63_scope.
 
-Definition mulc1 := mulc 5357761869 5357761869.
-
-CertiCoq Compile Wasm -file "compute.mulc1" mulc1.
-
-Definition mulc2 := mulc 4119217344 4119217344.
-
-CertiCoq Compile Wasm -file "compute.mulc2" mulc2.
-
-Definition mulc3 := mulc 3233547968 3233547968.
-
-Compute mulc3.
-
-CertiCoq Compile Wasm -file "compute.mulc3" mulc3.
-
-Definition mulc4 := mulc 3707969149 3707969149.
-
-CertiCoq Compile Wasm -file "compute.mulc4" mulc4.
-
-Definition mulc5 := mulc 3588435989 3588435989.
-
-CertiCoq Compile Wasm -file "compute.mulc5" mulc5.
-
-Definition mulc6 := mulc 3833655472 3833655472.
-
-CertiCoq Compile Wasm -file "compute.mulc6" mulc6.
-
-Definition mulc7 := mulc 2530677307 2530677307.
-
-CertiCoq Compile Wasm -file "compute.mulc7" mulc7.
-
-Definition mulc8 := mulc 3817394099 3817394099.
-
-CertiCoq Compile Wasm -file "compute.mulc8" mulc8.
-
-Definition mulc9 := mulc 3692918037 3692918037.
-
-CertiCoq Compile Wasm -file "compute.mulc9" mulc9.
-
-Definition mulc10 := mulc 3244824223 3244824223.
-
-CertiCoq Compile Wasm -file "compute.mulc10" mulc10.
-
-Definition mulc11 := mulc 5270842249 5270842249.
-
-CertiCoq Compile Wasm -file "compute.mulc11" mulc11.
-
-Definition mulc12 := mulc 4201676260 2250457835.
-
-CertiCoq Compile Wasm -file "compute.mulc12" mulc12.
-
-Definition mulc13 := mulc 2250457836 2250457836.
-
-CertiCoq Compile Wasm -file "compute.mulc13" mulc13.
-
-                         
-
 (* Unit tests taken from https://github.com/coq/coq/tree/master/test-suite/primitive/uint63 *)
 
 Definition add1 := 2 + 3. (* = 5 *)
@@ -316,6 +260,10 @@ CertiCoq Compile Wasm diveucl_21_4.
 Definition diveucl_21_5 := diveucl_21 9305446873517 1793572051078448654 4930380657631323783. (* = (17407905077428, 3068214991893055266) *)
 
 CertiCoq Compile Wasm diveucl_21_5.
+
+Definition addmuldiv1 := addmuldiv 32 3 5629499534213120. (* = 12887523328 *)
+
+CertiCoq Compile Wasm addmuldiv1.
 
 Definition unsigned1 := 1/(0-1). (* = 0 *)
 
