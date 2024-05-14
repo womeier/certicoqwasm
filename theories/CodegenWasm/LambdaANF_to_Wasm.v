@@ -806,7 +806,7 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
              ; BI_global_get tmp2
              ; BI_global_set tmp4
              ]
-         ] ++ make_product tmp1 tmp4))
+         ] ++ make_product tmp1 tmp4)
 
   else if Kername.eqb op_name primInt63Diveucl then
     Ret ([ BI_local_get x
@@ -867,49 +867,48 @@ Definition translate_primitive_unary_op op_name x : error (list basic_instructio
   else
     Err ("Unknown primitive unary operator: " ++ (Kernames.string_of_kername op_name))%bs.
 
+Definition div21_loop_body :=
+  [ BI_global_get tmp1
+  ; BI_const_num (nat_to_value64 1)
+  ; BI_binop T_i64 (Binop_i BOI_shl)
+  ; BI_global_get tmp2
+  ; BI_const_num (nat_to_value64 62)
+  ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+  ; BI_binop T_i64 (Binop_i BOI_or)
+  ; BI_global_set tmp1
+
+  ; BI_global_get tmp2
+  ; BI_const_num (nat_to_value64 1)
+  ; BI_binop T_i64 (Binop_i BOI_shl)
+  ; BI_const_num maxuint63
+  ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
+  ; BI_global_set tmp2
+
+  ; BI_global_get tmp3
+  ; BI_const_num (nat_to_value64 1)
+  ; BI_binop T_i64 (Binop_i BOI_shl)
+  ; BI_const_num maxuint63
+  ; BI_binop T_i64 (Binop_i BOI_and)
+  ; BI_global_set tmp3
+
+  ; BI_global_get tmp1
+  ; BI_global_get tmp4
+  ; BI_relop T_i64 (Relop_i (ROI_ge SX_U))
+  ; BI_if (BT_valtype None)
+      [ BI_global_get tmp3
+      ; BI_const_num (nat_to_value64 1)
+      ; BI_binop T_i64 (Binop_i BOI_or)
+      ; BI_global_set tmp3
+      ; BI_global_get tmp1
+      ; BI_global_get tmp4
+      ; BI_binop T_i64 (Binop_i BOI_sub)
+      ; BI_global_set tmp1
+      ]
+      [ ]
+  ].
 
 Definition translate_primitive_ternary_op op_name x y z : error (list basic_instruction) :=
   if Kername.eqb op_name primInt63Diveucl_21 then
-    let loop_body :=
-      [ BI_global_get tmp1
-      ; BI_const_num (nat_to_value64 1)
-      ; BI_binop T_i64 (Binop_i BOI_shl)
-      ; BI_global_get tmp2
-      ; BI_const_num (nat_to_value64 62)
-      ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-      ; BI_binop T_i64 (Binop_i BOI_or)
-      ; BI_global_set tmp1
-
-      ; BI_global_get tmp2
-      ; BI_const_num (nat_to_value64 1)
-      ; BI_binop T_i64 (Binop_i BOI_shl)
-      ; BI_const_num maxuint63
-      ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-      ; BI_global_set tmp2
-
-      ; BI_global_get tmp3
-      ; BI_const_num (nat_to_value64 1)
-      ; BI_binop T_i64 (Binop_i BOI_shl)
-      ; BI_const_num maxuint63
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_global_set tmp3
-
-      ; BI_global_get tmp1
-      ; BI_global_get tmp4
-      ; BI_relop T_i64 (Relop_i (ROI_ge SX_U))
-      ; BI_if (BT_valtype None)
-          [ BI_global_get tmp3
-          ; BI_const_num (nat_to_value64 1)
-          ; BI_binop T_i64 (Binop_i BOI_or)
-          ; BI_global_set tmp3
-          ; BI_global_get tmp1
-          ; BI_global_get tmp4
-          ; BI_binop T_i64 (Binop_i BOI_sub)
-          ; BI_global_set tmp1
-          ]
-          [ ]
-      ]
-    in
     Ret (load_local_i64 z ++
          [ BI_const_num maxuint63
          ; BI_binop T_i64 (Binop_i BOI_and)
@@ -929,7 +928,7 @@ Definition translate_primitive_ternary_op op_name x y z : error (list basic_inst
               [ BI_global_set tmp2
               ; BI_const_num (nat_to_value64 0)
               ; BI_global_set tmp3
-              ] ++ (List.flat_map (fun x => x) (List.repeat loop_body 63)) ++
+              ] ++ (List.flat_map (fun x => x) (List.repeat div21_loop_body 63)) ++
               [ BI_global_get tmp1
               ; BI_const_num maxuint63
               ; BI_binop T_i64 (Binop_i BOI_and)
@@ -977,7 +976,7 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
 
   | [ x ; y ] =>
       x_var <- translate_var nenv lenv x "translate primitive binary operator 1st operand";;
-      y_var <- translate_var nenv lenv y "translate primitive binary operator 2nd operand";;      
+      y_var <- translate_var nenv lenv y "translate primitive binary operator 2nd operand";;
       translate_primitive_binary_op op_name x_var y_var
 
   | [ x ; y ; z ] =>
