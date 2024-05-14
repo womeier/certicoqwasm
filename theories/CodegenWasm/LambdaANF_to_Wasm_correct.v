@@ -3783,10 +3783,9 @@ Proof.
         destruct (IHxs _ _ _ _ _ Heqn H0 H1) as [k [Hk1 Hk2]]. exists (S k). now cbn.
 Qed.
 
-
-
 Import SigTNotations.
 
+(* TODO: Think of a better name *)
 Inductive bs_LambdaANF_prim_fun_extracted_prim_related :
   (Kernames.kername * string * bool * nat) -> (list val -> option val) -> Prop :=
 | Bstep_primInt_add : forall s b n (i1 i2 : Uint63.int),
@@ -3813,6 +3812,12 @@ Inductive bs_LambdaANF_prim_fun_extracted_prim_related :
       ( fun vs =>
           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.div i1 i2) ) ) | _ => None end)
 
+| Bstep_primInt_mod : forall s b n (i1 i2 : Uint63.int),
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Mod, s, b, n)
+      ( fun vs =>
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.mod i1 i2) ) ) | _ => None end)
+
 | Bstep_primInt_land : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Land, s, b, n)
@@ -3824,6 +3829,12 @@ Inductive bs_LambdaANF_prim_fun_extracted_prim_related :
       (primInt63Lor, s, b, n)
       ( fun vs =>
           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.lor i1 i2) ) ) | _ => None end)
+
+| Bstep_primInt_lxor : forall s b n (i1 i2 : Uint63.int),
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Lxor, s, b, n)
+      ( fun vs =>
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.lxor i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_lsl : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
@@ -3850,9 +3861,184 @@ Inductive bs_LambdaANF_prim_fun_extracted_prim_related :
               else
                 Some ( Vconstr t_false [] )
           | _ => None
+          end)
+
+| Bstep_primInt_ltb : forall s b n (i1 i2 : Uint63.int) t_true it_true t_false it_false,
+    M.get t_true cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_true 0%N 0) ->
+    M.get t_false cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_false 0%N 1) ->
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Ltb, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+              if Uint63.ltb i1 i2 then
+                Some ( Vconstr t_true [] )
+              else
+                Some ( Vconstr t_false [] )
+          | _ => None
+          end)
+
+| Bstep_primInt_leb : forall s b n (i1 i2 : Uint63.int) t_true it_true t_false it_false,
+    M.get t_true cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_true 0%N 0) ->
+    M.get t_false cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_false 0%N 1) ->
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Leb, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+              if Uint63.leb i1 i2 then
+                Some ( Vconstr t_true [] )
+              else
+                Some ( Vconstr t_false [] )
+          | _ => None
+          end)
+
+| Bstep_primInt_compare : forall s b n (i1 i2 : Uint63.int) t_Eq t_Lt t_Gt it_compare,
+    M.get t_Eq cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Eq") (Common.BasicAst.nNamed "compare") it_compare 0%N 0) ->
+    M.get t_Lt cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Lt") (Common.BasicAst.nNamed "compare") it_compare 0%N 1) ->
+    M.get t_Gt cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Gt") (Common.BasicAst.nNamed "compare") it_compare 0%N 2) ->
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Leb, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+              match Uint63.compare i1 i2 with
+              | Eq => Some ( Vconstr t_Eq [] )
+              | Lt => Some ( Vconstr t_Lt [] )
+              | Gt => Some ( Vconstr t_Gt [] )
+              end
+          | _ => None
+          end)
+
+| Bstep_primInt_addc : forall s b n (i1 i2 : Uint63.int) t_C0 t_C1 it_carry,
+    M.get t_C0 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N 0) ->
+    M.get t_C1 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N 1) ->
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Addc, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+              let r := Uint63.add i1 i2 in
+              if Uint63.ltb r i1 then
+                Some ( Vconstr t_C1 [ Vprim (AstCommon.primInt ; r) ] )
+              else
+                Some ( Vconstr t_C0 [ Vprim (AstCommon.primInt ; r) ] )
+          | _ => None
+          end)
+
+| Bstep_primInt_addcarryc : forall s b n (i1 i2 : Uint63.int) t_C0 t_C1 it_carry,
+    M.get t_C0 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N 0) ->
+    M.get t_C1 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N 1) ->
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Addcarryc, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+              let r := Uint63.add (Uint63.add i1 i2) 1%uint63 in
+              if Uint63.leb r i1 then
+                Some ( Vconstr t_C1 [ Vprim (AstCommon.primInt ; r) ] )
+              else
+                Some ( Vconstr t_C0 [ Vprim (AstCommon.primInt ; r) ] )
+          | _ => None
+          end)
+
+| Bstep_primInt_subc : forall s b n (i1 i2 : Uint63.int) t_C0 t_C1 it_carry,
+    M.get t_C0 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N 0) ->
+    M.get t_C1 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N 1) ->
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Subc, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+              if Uint63.leb i2 i1 then
+                Some ( Vconstr t_C0 [ Vprim (AstCommon.primInt ; Uint63.sub i1 i2) ] )
+              else
+                Some ( Vconstr t_C1 [ Vprim (AstCommon.primInt ; Uint63.sub i1 i2) ] )
+          | _ => None
+          end)
+
+| Bstep_primInt_subcarryc : forall s b n (i1 i2 : Uint63.int) t_C0 t_C1 it_carry,
+    M.get t_C0 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N 0) ->
+    M.get t_C1 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N 1) ->
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Subcarryc, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+              if Uint63.ltb i2 i1 then
+                Some ( Vconstr t_C0 [ Vprim (AstCommon.primInt ; Uint63.sub (Uint63.sub i1 i2) 1%uint63) ] )
+              else
+                Some ( Vconstr t_C1 [ Vprim (AstCommon.primInt ; Uint63.sub (Uint63.sub i1 i2) 1%uint63 ) ] )
+          | _ => None
+          end)
+
+| Bstep_primInt_mulc : forall s b n (i1 i2 : Uint63.int) t_pair it_prod,
+    M.get t_pair cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N 0) ->
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Mulc, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+              let '(h, l) := Uint63.mulc i1 i2 in
+              Some ( Vconstr t_pair [ Vprim (AstCommon.primInt ; h ) ; Vprim (AstCommon.primInt ; l) ] )
+          | _ => None
+          end)
+
+| Bstep_primInt_diveucl : forall s b n (i1 i2 : Uint63.int) t_pair it_prod,
+    M.get t_pair cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N 0) ->
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Diveucl, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+              let '(q, r) := Uint63.diveucl i1 i2 in
+              Some ( Vconstr t_pair [ Vprim (AstCommon.primInt ; q) ; Vprim (AstCommon.primInt ; r) ] )
+          | _ => None
+          end)
+
+| Bstep_primInt_diveucl_21 : forall s b n (i1 i2 i3 : Uint63.int) t_pair it_prod,
+    M.get t_pair cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N 0) ->
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Diveucl_21, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ; Vprim ( (AstCommon.primInt ; i3) ) ] =>
+              let '(q, r) := Uint63.diveucl_21 i1 i2 i3 in
+              Some ( Vconstr t_pair [ Vprim (AstCommon.primInt ; q) ; Vprim (AstCommon.primInt ; r) ] )
+          | _ => None
+          end)
+
+| Bstep_primInt_addmuldiv : forall s b n (i1 i2 i3 : Uint63.int),
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Addmuldiv, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ; Vprim ( (AstCommon.primInt ; i3) ) ] =>
+              Some ( Vprim ( (AstCommon.primInt ; Uint63.addmuldiv i1 i2 i3) ) )
+          | _ => None
+          end)
+
+| Bstep_primInt_head0 : forall s b n (i1 : Uint63.int),
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Head0, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ] =>
+              Some ( Vprim ( (AstCommon.primInt ; Uint63.head0 i1) ) )
+          | _ => None
+          end)
+
+| Bstep_primInt_tail0 : forall s b n (i1 : Uint63.int),
+    bs_LambdaANF_prim_fun_extracted_prim_related
+      (primInt63Tail0, s, b, n)
+      ( fun vs =>
+          match vs with
+          | [ Vprim ( (AstCommon.primInt ; i1) ) ] =>
+              Some ( Vprim ( (AstCommon.primInt ; Uint63.tail0 i1) ) )
+          | _ => None
           end).
 
-
+(* TODO: Think of better name *)
 Definition bs_LambdaANF_prim_fun_env_extracted_prim_env_related (penv : prim_env) (prim_funs : M.t (list val -> option val)) : Prop :=
   forall p p',
     M.get p penv = Some p' ->
