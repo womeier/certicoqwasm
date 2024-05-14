@@ -19,7 +19,7 @@ primint prim_int63_add(primint x, primint y)
 }
 
 primint prim_int63_sub(primint x, primint y)
-{ 
+{
   unsigned long long xr = Unsigned_long_val(x);
   unsigned long long yr = Unsigned_long_val(y);
   printf("%llu - %llu = %llu\n", Unsigned_long_val(x), Unsigned_long_val(y), Unsigned_long_val(x) - Unsigned_long_val(y));
@@ -28,28 +28,28 @@ primint prim_int63_sub(primint x, primint y)
 }
 
 primint prim_int63_mul(primint x, primint y)
-{ 
+{
   // trace("Calling prim_int63_mul\n");
   printf("%llu * %llu = %llu\n", Unsigned_long_val(x), Unsigned_long_val(y), Unsigned_long_val(x) * Unsigned_long_val(y));
   return (Val_long (Unsigned_long_val(x) * Unsigned_long_val(y)));
 }
 
 primint prim_int63_mod(primint x, primint y)
-{ 
+{
   // trace("Calling prim_int63_mod\n");
   printf("%llu mod %llu = %llu\n", Unsigned_long_val(x), Unsigned_long_val(y), Unsigned_long_val(x) % Unsigned_long_val(y));
   return (Val_long (Unsigned_long_val(x) % Unsigned_long_val(y)));
 }
 
 primint prim_int63_div(primint x, primint y)
-{ 
+{
   // trace("Calling prim_int63_div\n");
   printf("%llu / %llu = %llu\n", Unsigned_long_val(x), Unsigned_long_val(y), Unsigned_long_val(x) / Unsigned_long_val(y));
   return (Val_long (Unsigned_long_val(x) / Unsigned_long_val(y)));
 }
 
 primint prim_int63_land(primint x, primint y)
-{ 
+{
   unsigned long long xr = Unsigned_long_val(x);
   unsigned long long yr = Unsigned_long_val(y);
   printf("%llu land %llu = %llu\n", Unsigned_long_val(x), Unsigned_long_val(y), Unsigned_long_val(x) & Unsigned_long_val(y));
@@ -66,7 +66,7 @@ primint prim_int63_lsl(primint x, primint y)
 }
 
 primint prim_int63_lsr(primint x, primint y)
-{ 
+{
   unsigned long long xr = Unsigned_long_val(x);
   unsigned long long yr = Unsigned_long_val(y);
   trace("Calling prim_int63_lsr on %llu and %llu: %llu \n", xr, yr, xr >> yr);
@@ -75,7 +75,7 @@ primint prim_int63_lsr(primint x, primint y)
 }
 
 primint prim_int63_lor(primint x, primint y)
-{ 
+{
   trace("Calling prim_int63_lor\n");
   printf("%llu lor %llu = %llu\n", Unsigned_long_val(x), Unsigned_long_val(y), Unsigned_long_val(x) | Unsigned_long_val(y));
   return (Val_long (Unsigned_long_val(x) | Unsigned_long_val(y)));
@@ -130,7 +130,7 @@ primbool prim_int63_eqb(primint x, primint y)
   unsigned long long xr = Unsigned_long_val(x);
   unsigned long long yr = Unsigned_long_val(y);
   trace("Calling prim_int63_eqb on %llu and %llu: %i, %i \n", xr, yr, xr == yr, x == y);
-  if (xr == yr) 
+  if (xr == yr)
     printf("%llu =? %llu = true\n", xr, yr);
   else
     printf("%llu =? %llu = false\n", xr, yr);
@@ -138,11 +138,11 @@ primbool prim_int63_eqb(primint x, primint y)
   return (mk_bool (xr == yr));
 }
 primbool prim_int63_leb(primint x, primint y)
-{ 
+{
   unsigned long long xr = Unsigned_long_val(x);
   unsigned long long yr = Unsigned_long_val(y);
   trace("Calling prim_int63_leb\n");
-  if (xr <= yr) 
+  if (xr <= yr)
     printf("%llu <=? %llu = true\n", xr, yr);
   else
     printf("%llu <=? %llu = false\n", xr, yr);
@@ -154,11 +154,11 @@ primbool prim_int63_ltb(primint x, primint y)
   trace("Calling prim_int63_ltb\n");
   unsigned long long xr = Unsigned_long_val(x);
   unsigned long long yr = Unsigned_long_val(y);
-  if (xr < yr) 
+  if (xr < yr)
     printf("%llu <? %llu = true\n", xr, yr);
   else
     printf("%llu <? %llu = false\n", xr, yr);
-  
+
   return (mk_bool (x < y));
 }
 
@@ -170,15 +170,15 @@ value prim_int63_compare(primint x, primint y)
   trace("Calling prim_int63_compare\n");
   trace("Calling prim_int63_compare on %llu and %llu: %lli \n", xr, yr, result);
   if (result == 0) {
-    printf("compare %llu %llu = Eq\n");
+    printf("compare %llu %llu = Eq\n", xr, yr);
     return 1;
   }
   else if (result < 0) {
-    printf("compare %llu %llu = Lt\n");
+    printf("compare %llu %llu = Lt\n", xr, yr);
     return 3;
   }
   else {
-    printf("compare %llu %llu = Gt\n");
+    printf("compare %llu %llu = Gt\n", xr, yr);
     return 5;
   }
 }
@@ -301,12 +301,12 @@ primintcarry prim_int63_addcarryc(struct thread_info *ti, primint x, primint y)
 }
 
 primintcarry prim_int63_subc(struct thread_info *ti, primint x, primint y)
-{ 
+{
   unsigned long long xr = Unsigned_long_val(x);
   unsigned long long yr = Unsigned_long_val(y);
   register unsigned long long r = xr - yr;
   trace("Calling prim_int63_subc on %llu and %llu: %llu\n", xr, yr, r);
-  if (yr <= xr) {
+  if (y <= x) {
     printf("%llu -c %llu = C0 %llu\n", xr, yr, r);
     return mk_C0(ti, Val_long(r)); }
   else {
@@ -356,8 +356,8 @@ primintpair mulc_aux(struct thread_info *ti, unsigned long long x, unsigned long
 primintpair prim_int63_mulc (struct thread_info *ti, primint xp, primint yp) {
   unsigned long long x = Unsigned_long_val(xp);
   unsigned long long y = Unsigned_long_val(yp);
-  trace("Calling prim_int63_mulc on %llu (%p) and %llu (%p)\n", x, (void*)xp, y, (void*)yp);  
-  if (x >> 62 == 0 || y >> 62 == 0) 
+  trace("Calling prim_int63_mulc on %llu (%p) and %llu (%p)\n", x, (void*)xp, y, (void*)yp);
+  if (x >> 62 == 0 || y >> 62 == 0)
     return (mulc_aux(ti, x, y));
   else {
     unsigned long long yl = y ^ (1ULL << 62);
@@ -383,9 +383,9 @@ primintpair prim_int63_mulc (struct thread_info *ti, primint xp, primint yp) {
    precondition: xh < y *)
   outputs: q, r s.t. x = q * y + r, r < y */
 
-primintpair prim_int63_diveucl_21_long(struct thread_info *ti, unsigned long long xh, unsigned long long xl, 
+primintpair prim_int63_diveucl_21_long(struct thread_info *ti, unsigned long long xh, unsigned long long xl,
   unsigned long long y)
-{   
+{
   trace("Calling prim_int63_diveucl_21 with %llu, %llu and %llu\n", xh, xl, y);
   /* nh might temporarily grow as large as 2*y - 1 in the loop body,
      so we store it as a 64-bit unsigned integer */
@@ -416,7 +416,7 @@ primintpair prim_int63_diveucl_21(struct thread_info *ti, primint xh, primint xl
     printf("diveucl_21 %llu %llu %llu = (%llu, %llu)\n", xhl, xll, yl, 0, 0);
     return mk_pair (ti, Val_long(0), Val_long(0));
   }
-  else    
+  else
     return prim_int63_diveucl_21_long(ti, xhl, xll, yl);
 }
 

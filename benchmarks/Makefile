@@ -58,3 +58,15 @@ test_primitive_i63:
 $(PRIMITIVE_TESTS):
 	@ulimit -s unlimited
 	@node --stack-size=100000 js/run_wasm_external_pp.js ./ $@
+
+UNITTESTS=$(shell cat UNITTESTS)
+
+run_C_unit_tests: $(UNITTESTS)
+
+C_primitive_unit_tests:
+	@coqc -quiet -R ./ CertiCoq.Benchmarks uint63_unit_tests.v
+
+$(UNITTESTS):
+	@clang -o $@ 			-w -Wno-everything -O0 -fomit-frame-pointer -I../plugin/runtime certicoq_run_main.c ../plugin/runtime/gc_stack.c CertiCoq.Benchmarks.uint63_unit_tests.$@.c ../plugin/runtime/prim_int63.c
+	./$@ >> unitout
+
