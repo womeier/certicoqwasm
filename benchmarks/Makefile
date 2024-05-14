@@ -43,30 +43,7 @@ cleanlib:
 tests: tests.v
 	ulimit -s $(STACKSIZE) && coqc $(COQOPTS) tests.v
 
-PRIMITIVE_TESTS=$(shell cat PRIMITIVE_TESTS)
-
-primitives: test_primitive_i63 $(PRIMITIVE_TESTS)
-
 primitive_unit_tests:
 	@coqc -quiet -R ./ CertiCoq.Benchmarks uint63_unit_tests.v
 	@ulimit -s unlimited
 	@node --stack-size=100000 js/run_uint63_unit_tests.js
-
-test_primitive_i63:
-	coqc -R ./ CertiCoq.Benchmarks test_primitive_i63.v
-
-$(PRIMITIVE_TESTS):
-	@ulimit -s unlimited
-	@node --stack-size=100000 js/run_wasm_external_pp.js ./ $@
-
-UNITTESTS=$(shell cat UNITTESTS)
-
-run_C_unit_tests: $(UNITTESTS)
-
-C_primitive_unit_tests:
-	@coqc -quiet -R ./ CertiCoq.Benchmarks uint63_unit_tests.v
-
-$(UNITTESTS):
-	@clang -o $@ 			-w -Wno-everything -O0 -fomit-frame-pointer -I../plugin/runtime certicoq_run_main.c ../plugin/runtime/gc_stack.c CertiCoq.Benchmarks.uint63_unit_tests.$@.c ../plugin/runtime/prim_int63.c
-	./$@ >> unitout
-

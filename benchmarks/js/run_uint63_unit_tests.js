@@ -18,10 +18,14 @@ const tests = [
     ["mulc1", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(0, 6)"],
     ["mulc2", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(1, 9223372036854775806)"],
     ["mulc3", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(0, 0)"],
+    ["mulc4", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(16, 975826582703597072)"],
+    ["mulc5", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(7835138088720211561, 6616587037742705713)"],
     ["div1", print_i63, "2"],
     ["div2", print_i63, "1"],
+    ["div3", print_i63, "0"],
     ["mod1", print_i63, "0"],
     ["mod2", print_i63, "2"],
+    ["mod3", print_i63, "42"],
     ["land1", print_i63, "0"],
     ["land2", print_i63, "0"],
     ["land3", print_i63, "0"],
@@ -59,12 +63,15 @@ const tests = [
     ["tail0_3", print_i63, "63"],
     ["diveucl1", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(2, 0)"],
     ["diveucl2", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(1, 2)"],
+    ["diveucl3", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(0, 42)"],    
     ["diveucl_21_1", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(4611686018427387904, 1)"],
     ["diveucl_21_2", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(0, 0)"],
     ["diveucl_21_3", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(0, 0)"],
     ["diveucl_21_4", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(0, 0)"],
     ["diveucl_21_5", (val, dataView) => print_prod(val, dataView, print_i63, print_i63), "(17407905077428, 3068214991893055266)"],
     ["addmuldiv1", print_i63, "12887523328"],
+    ["addmuldiv2", print_i63, "0"],
+    ["addmuldiv3", print_i63, "9223372036854775807"],
     ["unsigned1", print_i63, "0"],
     ["unsigned2", print_i63, "3"],
 ];
@@ -113,13 +120,13 @@ async function run_test([test, pp_fun, expected]) {
     pp_fun(res_value, dataView);
 
     process.stdout.write = stdout;
-    
+
     return new Promise((resolve, reject) => {
 	if (!(result === expected)) {
 	    reject(`${test}: expected ${expected}, got ${result}`);
 	} else {
 	    resolve();
-	}	
+	}
     });
 
 };
@@ -133,4 +140,3 @@ Promise.allSettled(tests.map(run_test))
 	    console.log("Some tests failed:");
 	    errors.forEach((e) => console.log(e.reason));
 	}}).catch();
-

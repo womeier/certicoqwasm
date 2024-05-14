@@ -41,9 +41,6 @@ Definition demo3 := andb.
 
 Definition list_sum := List.fold_left plus (List.repeat 1 100) 0.
 
-(* Definition list_sum_primitive :=
-List.fold_left Uint63.add (List.repeat 1%uint63 100) 0%uint63. *)
-
 (* Veristar *)
 
 Definition vs_easy :=
