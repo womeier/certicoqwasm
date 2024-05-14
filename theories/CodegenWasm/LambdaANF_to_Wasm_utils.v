@@ -136,15 +136,68 @@ Proof.
   induction l; intros; cbn; auto. f_equal. now apply IHl.
 Qed.
 
-(* Lemma imap_aux_offset : forall l a a' b b',
-  a + a' = b + b' ->
-  imap_aux (fun i x : nat => i + a + x) l a' =
-  imap_aux (fun i x : nat => i + b + x) l b'.
+Lemma mapi_aux_acc_snoc {A B} : forall xs idx l a (f : nat -> A -> B),
+  mapi_aux (idx, l ++ [::a]) f xs = a :: mapi_aux (idx, l) f xs.
 Proof.
-  induction l; intros ???? Heq=>//.
-  cbn. replace (a' + a0 + a) with (b' + b + a) by lia.
-  f_equal. apply IHl. lia.
-Qed. *)
+  induction xs; intros.
+  - cbn. by rewrite rev_app_distr.
+  - cbn. by rewrite -IHxs.
+Qed.
+
+Lemma mapi_aux_nth_error {A B} : forall xs i x (f : nat -> A -> B) idx,
+  nth_error xs i = Some x ->
+  nth_error (mapi_aux (idx, []) f xs) i = Some (f (idx + i) x).
+Proof.
+  induction xs; intros. destruct i=>//.
+  cbn. rewrite (mapi_aux_acc_snoc _ _ []).
+  destruct i. injection H as <-. cbn. do 2 f_equal. lia.
+  replace (idx + S i) with (S idx + i) by lia.
+  rewrite -IHxs; auto. cbn.
+  do 4 f_equal. lia.
+Qed.
+
+Lemma mapi_nth_error {A B} : forall xs i x (f : nat -> A -> B),
+  nth_error xs i = Some x ->
+  nth_error (mapi f xs) i = Some (f i x).
+Proof.
+  intros.
+  by eapply mapi_aux_nth_error.
+Qed.
+
+Lemma mapi_aux_nth_error_None {A B} : forall xs i (f : nat -> A -> B) idx,
+  nth_error xs i = None ->
+  nth_error (mapi_aux (idx, []) f xs) i = None.
+Proof.
+  induction xs; intros. destruct i=>//.
+  cbn. rewrite (mapi_aux_acc_snoc _ _ []).
+  destruct i=>//.
+  cbn. erewrite <-IHxs; eauto.
+Qed.
+
+Lemma mapi_nth_error_None {A B} : forall xs i (f : nat -> A -> B),
+  nth_error xs i = None ->
+  nth_error (mapi f xs) i = None.
+Proof.
+  intros.
+  by eapply mapi_aux_nth_error_None.
+Qed.
+
+Lemma mapi_aux_length {A B} : forall xs idx l (f : nat -> A -> B) ys,
+  mapi_aux (idx, l) f xs = ys ->
+  length xs + length l = length ys.
+Proof.
+  induction xs; cbn; intros.
+  - subst ys. by rewrite rev_length.
+  - apply IHxs in H. cbn in H. lia.
+Qed.
+
+Lemma mapi_length {A B} : forall xs (f : nat -> A -> B) ys,
+  mapi f xs = ys ->
+  length xs = length ys.
+Proof.
+  intros.
+  apply mapi_aux_length in H. cbn in H. lia.
+Qed.
 
 Lemma drop_is_skipn {A} : forall l n, @drop A n l = List.skipn n l.
 Proof.
@@ -350,7 +403,7 @@ Proof.
   destruct (var_dec loc a).
   (* loc = a *) subst. cbn in Heqn. rewrite Maps.PTree.gss in Heqn. inv Heqn. cbn. lia.
   (* loc <> a *) cbn in Heqn. rewrite Maps.PTree.gso in Heqn; auto. cbn.
-  replace (S (Datatypes.length l + N.to_nat n)) with (Datatypes.length l + N.to_nat (1 + n)) by lia.
+  replace (S (Datatypes.length l + N.to_nat n)) with (Datatypes.length l + N.to_nat (N.succ n)) by lia.
   eapply IHl; eauto.
 Qed.
 
@@ -366,7 +419,7 @@ Lemma var_mapping_list_lt_length_nth_error_idx {nenv} : forall l i n x err,
   lookup_N l i = Some x ->
   translate_var nenv (create_var_mapping n l (M.empty _)) x err = Ret (n + i)%N.
 Proof.
-  (* induction l; intros.
+  induction l; intros.
   - unfold lookup_N in H0.
     destruct (N.to_nat i)=>//.
   - destruct (var_dec a x).
@@ -377,15 +430,15 @@ Proof.
       + cbn in H0. apply nth_error_In in H0.
         apply NoDup_cons_iff in H. now destruct H. }
     { (* x<> a *)
+      (* cbn. rewrite M.gso; auto. cbn. *)
+      unfold lookup_N in H0. destruct i; cbn in H0; first by inv H0.
+      destruct (Pos.to_nat p) eqn:Hp; try lia. cbn in H0.
+      replace (n + N.pos p)%N with (N.succ n + N.of_nat n1)%N by lia.
       cbn. unfold translate_var. rewrite M.gso; auto.
-      unfold lookup_N in H0. destruct (N.to_nat i) eqn:Hi; first by inv H0.
-      cbn in H0.
-      rewrite -Hi in H0.
-      eapply IHl with (err:=err) in H0.
-      replace (n + S i) with (S n + i) by lia. assumption.
-      now inv H. }
-Qed. *)
-Admitted.
+      inv H. apply IHl; auto.
+      rewrite -H0. unfold lookup_N. f_equal. lia.
+    }
+Qed.
 
 Lemma local_variable_mapping_gt_idx : forall l idx x x',
   (create_var_mapping idx l (M.empty u32)) ! x = Some x' -> (x' >= idx)%N.
@@ -395,7 +448,7 @@ Proof.
   destruct (Pos.eq_dec a x).
   { (* a=x *) subst a. rewrite M.gss in H. inv H. lia. }
   { (* a<>x *) rewrite M.gso in H; auto.
-    apply IHl in H. destruct idx; try lia. destruct p; try lia. }
+    apply IHl in H. lia. }
 Qed.
 
 Lemma variable_mapping_Some_In : forall l x v idx lenv,
@@ -450,7 +503,7 @@ Qed.
 Lemma create_local_variable_mapping_injective : forall l idx,
    NoDup l -> map_injective (create_var_mapping idx l (M.empty u32)).
 Proof.
-  (* induction l; intros. { cbn. intros ????? H1. inv H1. }
+  induction l; intros. { cbn. intros ????? H1. inv H1. }
   inv H. cbn. unfold map_injective in *. intros.
   destruct (Pos.eq_dec a x).
   { (* a=x *) subst a. intro. subst y'.
@@ -462,8 +515,7 @@ Proof.
     { (* a<>y *) rewrite M.gso in H0; auto.
                  rewrite M.gso in H1; auto.
                  have H' := IHl _ H3 _ _ _ _ H H0 H1. assumption. } }
-Qed. *)
-Admitted.
+Qed.
 
 End Vars.
 
@@ -1306,7 +1358,11 @@ Lemma smem_grow_peserves_globals : forall sr fr bytes sr' size var,
   smem_grow sr (f_inst fr) bytes = Some (sr', size) ->
   sglob_val sr (f_inst fr) var = sglob_val sr' (f_inst fr) var.
 Proof.
-Admitted.
+  intros. unfold smem_grow in H.
+  destruct (lookup_N (inst_mems (f_inst fr)) 0)=>//.
+  destruct (lookup_N (s_mems sr) m)=>//.
+  destruct (mem_grow m0 bytes)=>//. inv H. reflexivity.
+Qed.
 
 Lemma mem_grow_preserves_original_values : forall a m m' maxlim,
   (mem_max_opt m = Some maxlim)%N ->
