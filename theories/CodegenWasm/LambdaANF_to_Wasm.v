@@ -25,7 +25,8 @@ Definition max_num_functions := 1_000_000%Z. (* should be possible to vary witho
 Definition max_constr_args   := 50%Z.      (* should be possible to vary without breaking much *)
 
 (* base id of type struct: add number of elems *)
-Definition struct_type_base_id : N := (Z.to_N max_function_args + 1)%N.
+Definition struct_type_base_idx : N := (Z.to_N max_function_args + 2)%N.
+Definition struct_type_constr_idx : N := (struct_type_base_idx - 1)%N. (* {tag: i32, args: struct}*)
 
 Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes, don't change this *)
 
@@ -296,17 +297,17 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
       Err "Only primitive operations with two arguments are supported"
   end. *)
 
-Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N * list basic_instruction * nat)) : list basic_instruction :=
+Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N * list basic_instruction)) : list basic_instruction :=
   match es with
   | [] => [ BI_unreachable ]
-  | (ord, instrs, arity) :: tl =>
+  | (ord, instrs) :: tl =>
       (* if boxed (pointer), then load tag from memory;
          otherwise, the unboxed representation is (ord << 1) + 1 = 2 * ord + 1.
        *)
         (if boxed then
            [ BI_local_get v
-           ; BI_ref_cast (T_index (N.of_nat arity + struct_type_base_id)%N)
-           ; BI_struct_get (N.of_nat arity + struct_type_base_id)%N 0%N
+           ; BI_ref_cast (T_index struct_type_constr_idx)
+           ; BI_struct_get struct_type_constr_idx 0%N
            ; BI_const_num (N_to_value ord)]
          else
            [ BI_local_get v
@@ -338,13 +339,14 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
           instr_pass_args <- pass_function_args nenv lenv fenv ys;;
           Ret ([ BI_const_num (nat_to_value (N.to_nat ord))] ++ (* tag *)
                instr_pass_args ++
-               [ BI_struct_new (struct_type_base_id + N.of_nat (length ys))%N
+               [ BI_struct_new (struct_type_base_idx + N.of_nat (length ys))%N
+               ; BI_struct_new struct_type_constr_idx
                ; BI_local_set x_var
                ] ++ following_instr)
       end
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
-        : error (list (N * list basic_instruction * nat) * list (N  * list basic_instruction * nat)) :=
+        : error (list (N * list basic_instruction) * list (N  * list basic_instruction)) :=
         match arms with
         | [] => Ret ([], [])
         | (t, e)::tl =>
@@ -353,9 +355,9 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
             ord <- get_ctor_ord cenv t ;;
             arity <- get_ctor_arity cenv t ;;
             if arity =? 0 then
-              Ret (arms_boxed, (ord, instrs, arity) :: arms_unboxed)
+              Ret (arms_boxed, (ord, instrs) :: arms_unboxed)
             else
-              Ret ((ord, instrs, arity) :: arms_boxed, arms_unboxed)
+              Ret ((ord, instrs) :: arms_boxed, arms_unboxed)
         end
       in
       x_var <- translate_var nenv lenv x "translate_body case" ;;
@@ -372,11 +374,13 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
       y_var <- translate_var nenv lenv y "translate_body proj y";;
       x_var <- translate_var nenv lenv x "translate_body proj x";;
       arity <- get_ctor_arity cenv tg ;;
-      let tidx := (N.of_nat arity + struct_type_base_id)%N in
+      let tidx := (N.of_nat arity + struct_type_base_idx)%N in
 
       Ret ([ BI_local_get y_var
+           ; BI_ref_cast (T_index struct_type_constr_idx)
+           ; BI_struct_get struct_type_constr_idx 1%N
            ; BI_ref_cast (T_index tidx)
-           ; BI_struct_get tidx (n + 1)%N
+           ; BI_struct_get tidx n%N
            ; BI_local_set x_var
            ] ++ following_instr)
 
@@ -530,12 +534,11 @@ Fixpoint list_function_types (n : nat) : list function_type :=
 
 (* n: number of constr args, probably slow for bigger n *)
 Fixpoint list_struct_types (n : nat) : list struct_type :=
-  let t32 := Build_field_type MUT_const (T_num T_i32) in
   let teq := Build_field_type MUT_const (T_ref (T_heap (T_abs T_eqref))) in
   match n with
-  | 0 => [Ts [t32]]
-  | S n' => (Ts [t32]) :: map (fun t => match t with Ts ts => Ts (ts ++ [teq]) end)
-                                      (list_struct_types n')
+  | 0 => []
+  | S n' => (Ts []) :: map (fun t => match t with Ts ts => Ts (ts ++ [teq]) end)
+                           (list_struct_types n')
   end.
 
 (* for indirect calls maps fun ids to themselves *)
@@ -599,7 +602,8 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                                        |}) functions in
   let module :=
       {| mod_types := map CT_func (list_function_types (Z.to_nat max_function_args)) (* more than required, doesn't hurt*)
-                   ++ map CT_struct (list_struct_types (Z.to_nat max_constr_args))
+        ++ CT_struct (Ts [Build_field_type MUT_const (T_num T_i32); Build_field_type MUT_const (T_ref (T_heap (T_abs T_eqref)))]) (* tag + args *)
+        :: map CT_struct (list_struct_types (Z.to_nat max_constr_args))
 
        ; mod_funcs := functions_final
        ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length fns + num_custom_funs)
