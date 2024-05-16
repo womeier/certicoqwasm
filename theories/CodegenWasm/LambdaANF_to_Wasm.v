@@ -547,7 +547,7 @@ Fixpoint table_element_mapping (len : nat) (startidx : nat) : list module_elemen
   | 0 => []
   | S len' => {| modelem_mode := ME_active 0%N [BI_const_num (nat_to_value startidx)]
                ; modelem_init := [[ BI_ref_func (N.of_nat startidx) ]]
-               ; modelem_type := T_heap (T_abs T_funcref)
+               ; modelem_type := T_heap_null (T_abs T_funcref)
                |} :: (table_element_mapping len' (S startidx))
   end.
 
