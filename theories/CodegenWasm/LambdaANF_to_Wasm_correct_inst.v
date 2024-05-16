@@ -277,24 +277,24 @@ Proof.
       destruct (tc_mems c0) eqn:Hc; cbn; eauto. by apply Hcontext' in Hc. }
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv HprimOp.
-    { (* TODO: Unary operations *) admit. }
-    { (* TODO: Binary operations *)
+    { (* Unary operations *) admit. }
+    { (* Binary operations *)
       inv H2.
       all: unfold apply_binop_and_store_i64; unfold increment_global_mem_ptr.
-      4: admit.
-      4: admit.
-      7: admit.
-      7: admit.
-      11: admit.
-      11: admit.
-      11: admit.
-      11: admit.
-      11: admit.
-      11: admit.
+      4: admit. (* div *)
+      4: admit. (* mod *)
+      7: admit. (* lsl *)
+      7: admit. (* lsr *)
+      11: admit. (* addc *)
+      11: admit. (* addcarryc *)
+      11: admit. (* subc *)
+      11: admit. (* subcarryc *)
+      11: admit. (* mulc *)
+      11: admit. (* diveucl *)
+      10: admit. (* compare *)
       all: prepare_solve_bet; try solve_bet Hcontext'.
-      admit.
     }
-    { (* TODO: Ternary operations *) admit. }
+    { (* Ternary operations *) admit. }
     solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
   - (* repr_branches nil *)
