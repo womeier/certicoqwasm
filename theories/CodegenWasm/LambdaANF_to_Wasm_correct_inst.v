@@ -1527,7 +1527,7 @@ Definition INV_instantiation (s : store_record) (f : frame) (num_funs : nat) :=
  /\ INV_result_var_out_of_mem_is_zero s f
  /\ INV_global_mem_ptr_writable s f
  /\ INV_constr_alloc_ptr_writable s f
- /\ INV_globals_all_mut_i32 s
+ /\ INV_globals_all_mut_i32 s f
  /\ INV_linear_memory s f
  /\ INV_global_mem_ptr_in_linear_memory s f
  /\ INV_locals_all_i32 f
@@ -1673,13 +1673,21 @@ Proof.
   split. (* gmp_w *) eexists. rewrite -E3. reflexivity.
   split. (* cap_w *) eexists. rewrite -E3. reflexivity.
   (* globals mut i32 *)
-  split. unfold INV_globals_all_mut_i32, globals_all_mut_i32. intros. unfold lookup_N in H.
-  { rewrite -E3 in H. cbn in H. (* TODO *) admit.
-    (* destruct (N.to_nat g). inv H. eexists. reflexivity. *)
-    (* destruct n. inv H. eexists. reflexivity. *)
-    (* destruct n. inv H. eexists. reflexivity. *)
-    (* destruct n. inv H. eexists. reflexivity. *)
-    (* destruct n; inv H. } *)
+  split. unfold INV_globals_all_mut_i32, globals_all_mut_i32. intros. unfold lookup_N in H1.
+  {
+    unfold result_var, result_out_of_mem, global_mem_ptr, constr_alloc_ptr in *.
+    cbn in H0; try subst gidx; try rewrite F2 in H0; unfold lookup_N in H0.
+    rewrite -E3 in H1. cbn in H1.
+    destruct (N.to_nat gidx) eqn:Hgidx. cbn in H0.
+    replace g with 0%N in * by congruence. inv H1. now eexists.
+    destruct n. cbn in H0.
+    replace g with 1%N in * by congruence. inv H1. now eexists.
+    destruct n. cbn in H0.
+    replace g with 2%N in * by congruence. inv H1. now eexists.
+    destruct n. cbn in H0.
+    replace g with 3%N in * by congruence. inv H1. now eexists.
+    repeat (try destruct H;[now subst gidx|]).
+    now inv H.
   }
   split. (* linmem *)
   { unfold INV_linear_memory. unfold smem. cbn. rewrite F3.
@@ -2316,13 +2324,13 @@ Proof.
   (* INV holds now *)
   unfold INV.
   split. (* result_var writable *)
-    intro. destruct (H val) as [s Hs].
+    intro. intros. destruct (H val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
     destruct (lookup_N (inst_globals (f_inst fr)) result_var)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
   split. (* result_out_of_mem writable *)
-    intro. destruct (H0 val) as [s Hs].
+    intro. intros. destruct (H0 val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
     destruct (lookup_N (inst_globals (f_inst fr)) result_out_of_mem)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
@@ -2331,13 +2339,13 @@ Proof.
   unfold INV_result_var_out_of_mem_is_zero, sglob_val, sglob, sglob_ind in *.
     by repeat rewrite <- Hglobals in *.
   split. (* global_mem_ptr writable *)
-    intro. destruct (H2 val) as [s Hs].
+    intro. intros. destruct (H2 val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
     destruct (lookup_N (inst_globals (f_inst fr)) global_mem_ptr)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
   split. (* constr_alloc_ptr writable *)
-    intro. destruct (H3 val) as [s Hs].
+    intro. intros. destruct (H3 val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
     destruct (lookup_N (inst_globals (f_inst fr)) constr_alloc_ptr)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
