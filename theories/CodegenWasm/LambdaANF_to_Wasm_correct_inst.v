@@ -58,6 +58,9 @@ Definition context_restr (lenv: localvar_env) (c: t_context) :=
   (* globals i32, mut *)
   (forall var, In var [global_mem_ptr; constr_alloc_ptr; result_var; result_out_of_mem] ->
     lookup_N (tc_globals c) var = Some {| tg_mut:= MUT_var; tg_t:= T_num T_i32|}) /\
+  (* globals i64, mut *)
+  (forall var, In var [glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4] ->
+    lookup_N (tc_globals c) var = Some {| tg_mut:= MUT_var; tg_t:= T_num T_i64|}) /\
   (* no return value *)
   (tc_return c = Some []) /\
   (* mem exists *)
@@ -91,6 +94,27 @@ Ltac solve_bet Hcontext :=
   | |- be_typing ?context [:: BI_global_set ?var] _ =>
          assert (lookup_N (tc_globals context) var = Some {| tg_mut:= MUT_var; tg_t := T_num T_i32 |}) as Hglob by
           (apply Hcontext; now cbn); eapply bet_global_set with (t:=T_num T_i32); [eassumption | now cbn | now cbn]
+  | |- be_typing ?context [:: BI_global_get ?var] (Tf ?tin _) =>
+         assert (lookup_N (tc_globals context) var = Some {| tg_mut:= MUT_var; tg_t := T_num T_i64 |}) as Hglob by
+        (apply Hcontext; now cbn);
+         (match tin with
+          | [:: ] => idtac
+          | [:: T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64; T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64; T_num T_i64; T_num T_i64])
+          end);
+         eapply bet_global_get with (t:=T_num T_i64); [eassumption | now cbn]
+  | |- be_typing ?context [:: BI_global_set ?var] (Tf ?tin _) =>
+         assert (lookup_N (tc_globals context) var = Some {| tg_mut:= MUT_var; tg_t := T_num T_i64 |}) as Hglob by
+        (apply Hcontext; now cbn);
+         (match tin with
+          | [:: T_num T_i64 ] => idtac
+          | [:: T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64; T_num T_i64])
+          end);
+         eapply bet_global_set with (t:=T_num T_i64); [eassumption | now cbn | now cbn]
   (* locals with mapping *)
   | H: repr_var _ _ ?x' |- be_typing _ [:: BI_local_get ?x'] (Tf [::] _) => apply bet_local_get; eapply Hcontext; eassumption
   | H: repr_var _ _ ?x' |- be_typing _ [:: BI_local_set ?x'] (Tf [::_] _) => apply bet_local_set; eapply Hcontext; eassumption
@@ -100,11 +124,22 @@ Ltac solve_bet Hcontext :=
   (* arithmetic *)
   | |- be_typing _ [:: BI_const_num _] (Tf [::] _) => apply bet_const_num
   | |- be_typing _ [:: BI_testop T_i32 _] (Tf [:: T_num T_i32] _) => apply bet_testop; by simpl
-  | |- be_typing _ [:: BI_testop T_i64 _] (Tf [:: T_num T_i64] _) => apply bet_testop; by simpl
+  | |- be_typing _ [:: BI_testop T_i64 _] (Tf ([:: T_num T_i32; T_num T_i64]) _) => apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_testop; by simpl
+  | |- be_typing _ [:: BI_testop T_i64 _] (Tf ([:: T_num T_i64]) _) => apply bet_testop; by simpl
+  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i32; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_unop; apply Unop_i64_agree
+  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i64] _) => apply bet_unop; apply Unop_i64_agree
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_binop; apply Binop_i32_agree
 (*   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
          apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_binop; apply Binop_i32_agree *)
-  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_binop; apply Binop_i64_agree
+  | |- be_typing _ [:: BI_binop T_i64 _] (Tf ?tin _) =>
+         (match tin with
+          | [:: T_num T_i64; T_num T_i64 ] => idtac
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64; T_num T_i64])
+          end);
+         apply bet_binop; apply Binop_i64_agree
+  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); apply bet_binop; apply Binop_i64_agree
   | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_relop; apply Relop_i32_agree
   | |- be_typing _ [:: BI_relop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_relop; apply Relop_i64_agree
 (* memory *)
@@ -119,9 +154,26 @@ Ltac solve_bet Hcontext :=
          apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext
   | |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i32))) [:: BI_const_num (nat_to_value _)] [:: BI_const_num (nat_to_value _)]] _ =>
          apply bet_if_wasm with (tn:=[])=>//; try solve_bet Hcontext
+  | H: context_restr ?lenv ?context |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i32))) _ _] (Tf [:: T_num T_i32] _) =>
+      let Hcontext' := fresh "Hcontext" in
+      (assert (Hcontext': context_restr lenv (upd_label context ([:: [:: T_num T_i32]] ++ tc_labels context))) by now inv Hcontext);
+         apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext'
+  | H: context_restr ?lenv ?context |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i64))) _ _] (Tf ?tin _) =>      
+      let Hcontext' := fresh "Hcontext" in
+      (match tin with
+       | [:: T_num T_i32] => idtac
+       | [:: T_num T_i32; T_num T_i32 ] => apply bet_weakening with (ts:=[::T_num T_i32])
+       end);
+      (assert (Hcontext': context_restr lenv (upd_label context ([:: [:: T_num T_i64]] ++ tc_labels context))) by now inv Hcontext);
+         apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext'
+  (* | |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i64))) _ _] (Tf [:: T_num T_i32; T_num T_i32] _) => *)
+  (*        apply bet_weakening with (ts:=[::T_num T_i32]);  *)
+  (*        apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext *)
   (* if above failed, try to frame the leading const *)
-  | |- be_typing _ _ (Tf [:: T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32]); solve_bet Hcontext
-  | |- be_typing _ _ (Tf [:: T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
@@ -131,6 +183,7 @@ Ltac solve_bet Hcontext :=
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32; T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
          apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_binop; apply Binop_i32_agree
+  | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by solve_bet Hcontext
   end.
 
 Ltac prepare_solve_bet :=
@@ -277,24 +330,16 @@ Proof.
       destruct (tc_mems c0) eqn:Hc; cbn; eauto. by apply Hcontext' in Hc. }
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv HprimOp.
-    { (* Unary operations *) admit. }
+    { (* Unary operations *)
+      inv H1; unfold increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
     { (* Binary operations *)
-      inv H2.
-      all: unfold apply_binop_and_store_i64; unfold increment_global_mem_ptr.
-      4: admit. (* div *)
-      4: admit. (* mod *)
-      7: admit. (* lsl *)
-      7: admit. (* lsr *)
-      11: admit. (* addc *)
-      11: admit. (* addcarryc *)
-      11: admit. (* subc *)
-      11: admit. (* subcarryc *)
-      11: admit. (* mulc *)
-      11: admit. (* diveucl *)
-      10: admit. (* compare *)
-      all: prepare_solve_bet; try solve_bet Hcontext'.
-    }
-    { (* Ternary operations *) admit. }
+      inv H2; unfold make_product; unfold make_carry; unfold apply_binop_and_store_i64; unfold increment_global_mem_ptr; unfold load_local_i64; prepare_solve_bet; try solve_bet Hcontext'. }
+    { (* Ternary operations *)
+      inv H3; unfold load_local_i64; unfold make_product; unfold increment_global_mem_ptr.
+      { admit. }
+      { prepare_solve_bet; try solve_bet Hcontext'.
+        apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64]).
+        all: solve_bet Hcontext0. } }
     solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
   - (* repr_branches nil *)
