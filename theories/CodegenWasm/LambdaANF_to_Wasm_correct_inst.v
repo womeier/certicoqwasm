@@ -84,7 +84,7 @@ Ltac solve_bet Hcontext :=
   let Hglob := fresh "Hglob" in
   simpl; try rewrite List.app_nil_r;
   match goal with
-  | |- be_typing _ [::] (Tf [::] [::]) => by apply bet_empty
+  | |- be_typing _ [::] (Tf [::] _) => by apply bet_empty
   | |- be_typing _ [:: BI_return] _ => apply bet_return with (t1s:=[::]); by apply Hcontext
   | |- be_typing _ [:: BI_unreachable] _ => by apply bet_unreachable
   (* globals *)
@@ -158,7 +158,7 @@ Ltac solve_bet Hcontext :=
       let Hcontext' := fresh "Hcontext" in
       (assert (Hcontext': context_restr lenv (upd_label context ([:: [:: T_num T_i32]] ++ tc_labels context))) by now inv Hcontext);
          apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext'
-  | H: context_restr ?lenv ?context |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i64))) _ _] (Tf ?tin _) =>      
+  | H: context_restr ?lenv ?context |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i64))) _ _] (Tf ?tin _) =>
       let Hcontext' := fresh "Hcontext" in
       (match tin with
        | [:: T_num T_i32] => idtac
@@ -172,6 +172,7 @@ Ltac solve_bet Hcontext :=
   (* if above failed, try to frame the leading const *)
   | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
@@ -335,11 +336,27 @@ Proof.
     { (* Binary operations *)
       inv H2; unfold make_product; unfold make_carry; unfold apply_binop_and_store_i64; unfold increment_global_mem_ptr; unfold load_local_i64; prepare_solve_bet; try solve_bet Hcontext'. }
     { (* Ternary operations *)
-      inv H3; unfold load_local_i64; unfold make_product; unfold increment_global_mem_ptr.
-      { admit. }
-      { prepare_solve_bet; try solve_bet Hcontext'.
-        apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64]).
-        all: solve_bet Hcontext0. } }
+      inv H3; unfold load_local_i64 ; unfold make_product; unfold increment_global_mem_ptr.
+      { (* diveucl_21 *)
+        assert (Hcontext'': context_restr lenv (upd_label c0 ([:: [:: T_num T_i32]] ++ tc_labels c0))) by now inv Hcontext'.
+        assert(Hloop: be_typing (upd_label c0 ([:: [:: T_num T_i32] ++ [::]] ++ tc_labels c0)) div21_loop_body (Tf [::] [::])) by (unfold div21_loop_body; prepare_solve_bet; try solve_bet Hcontext'').
+        (* Avoid unfolding too much too avoid slowdonw *)
+        repeat match goal with
+               | |- context C [?x :: ?l] =>
+                   lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+               end;
+          repeat rewrite catA; repeat eapply bet_composition'.
+        14: { apply bet_if_wasm with (tn:=[])=>//.
+              prepare_solve_bet; try solve_bet Hcontext''.
+              (* Avoid unfolding too much to avoid slowdown *)
+              repeat match goal with
+                     | |- context C [?x :: ?l] =>
+                         lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+                     end;
+                repeat rewrite catA; repeat eapply bet_composition'; eauto; try solve_bet Hcontext''.
+        }
+        all: try solve_bet Hcontext''. }
+      prepare_solve_bet; try solve_bet Hcontext'. }
     solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
   - (* repr_branches nil *)
@@ -1261,7 +1278,10 @@ Proof.
           destruct (nth_error _ (N.to_nat x')) eqn:Hcontra =>//.
           inv Hvar. apply var_mapping_list_lt_length in H.
           by apply nth_error_Some in H.
-        * (* globals *)
+        * (* i32 globals *)
+          intros var Hin. cbn.
+          by repeat destruct Hin as [|Hin]; subst =>//.
+        * (* i64 globals *)
           intros var Hin. cbn.
           by repeat destruct Hin as [|Hin]; subst =>//.
         * (* table *)
@@ -1327,7 +1347,9 @@ Proof.
             rewrite Hlocs Htype Nat2N.id. unfold lookup_N. cbn.
             rewrite <-repeat_app, <-app_length.
             apply nth_error_repeat. inv Hvar'. now eapply var_mapping_list_lt_length.
-          * (* globals *)
+          * (* i32 globals *)
+            intros ? Hin'. cbn. by repeat destruct Hin' as [|Hin']; subst =>//.
+          * (* i64 globals *)
             intros ? Hin'. cbn. by repeat destruct Hin' as [|Hin']; subst =>//.
           * (* table *)
             eexists. cbn. unfold lookup_N. split; reflexivity.
@@ -2460,7 +2482,7 @@ Proof.
   subst vars.
 
   assert (Hnodup: NoDup (collect_function_vars e)) by now eapply NoDup_app_remove_l in HvarsNodup.
-  have Hinst := module_instantiate cenv funenv nenv penv hfn _ _ _ _ hs Hcenv Hnodup LANF2Wasm.
+  have Hinst := module_instantiate cenv nenv penv hfn _ _ _ _ hs Hcenv Hnodup LANF2Wasm.
   destruct Hinst as [sr [fr [es_post Hinst]]]. clear Hnodup.
   exists sr, fr, es_post.
 
