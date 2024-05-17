@@ -1538,7 +1538,10 @@ Definition rel_env_LambdaANF_Wasm {lenv} (e : exp) (rho : LambdaANF.eval.env)
 
 (* INVARIANT *)
 
-Definition globals_all_mut_i32 s f := forall gidx g g0,
+
+(* TODO: Adapt for temporary i64 globals when verifying
+   primitive operations that utilize these *)
+Definition globals_all_mut s f := forall gidx g g0,
     In gidx [ result_var ; result_out_of_mem ; global_mem_ptr ; constr_alloc_ptr ] ->
     lookup_N (inst_globals (f_inst f)) gidx = Some g ->
     lookup_N (s_globals s) g = Some g0 ->
@@ -1556,7 +1559,7 @@ Definition INV_result_var_writable := global_var_w result_var.
 Definition INV_result_var_out_of_mem_writable := global_var_w result_out_of_mem.
 Definition INV_global_mem_ptr_writable := global_var_w global_mem_ptr.
 Definition INV_constr_alloc_ptr_writable := global_var_w constr_alloc_ptr.
-Definition INV_globals_all_mut_i32 := globals_all_mut_i32.
+Definition INV_globals_all_mut := globals_all_mut.
 
 (* indicates all good *)
 Definition INV_result_var_out_of_mem_is_zero s f :=
@@ -1629,7 +1632,7 @@ Definition INV (s : store_record) (f : frame) :=
  /\ INV_result_var_out_of_mem_is_zero s f
  /\ INV_global_mem_ptr_writable s f
  /\ INV_constr_alloc_ptr_writable s f
- /\ INV_globals_all_mut_i32 s f
+ /\ INV_globals_all_mut s f
  /\ INV_linear_memory s f
  /\ INV_global_mem_ptr_in_linear_memory s f
  /\ INV_locals_all_i32 f
@@ -1641,13 +1644,13 @@ Definition INV (s : store_record) (f : frame) :=
  /\ INV_exists_func_grow_mem s f
  /\ INV_inst_funcs_id s f.
 
-Lemma update_global_preserves_globals_all_mut_i32 : forall sr sr' i f num,
+Lemma update_global_preserves_globals_all_mut : forall sr sr' i f num,
     In i [ result_var ; result_out_of_mem ; global_mem_ptr ; constr_alloc_ptr ] ->
-  globals_all_mut_i32 sr f ->
+  globals_all_mut sr f ->
   supdate_glob sr (f_inst f) i (VAL_num (VAL_int32 num)) = Some sr' ->
-  globals_all_mut_i32 sr' f.
+  globals_all_mut sr' f.
 Proof.
-  intros ????? Hi ????. unfold globals_all_mut_i32 in *. intros.
+  intros ????? Hi ????. unfold globals_all_mut in *. intros.
   unfold supdate_glob, supdate_glob_s, sglob_ind in H0.
   destruct (lookup_N (inst_globals (f_inst f)) i) eqn:Heqn. 2: inv H0. cbn in H0.
   destruct (lookup_N (s_globals sr) g1) eqn:Heqn'. 2: inv H0. inv H0. cbn in H3.
@@ -1876,7 +1879,7 @@ Proof with eassumption.
   split. eapply update_global_preserves_result_var_out_of_mem_is_zero...
   split. eapply update_global_preserves_global_var_w...
   split. eapply update_global_preserves_global_var_w...
-  split. eapply update_global_preserves_globals_all_mut_i32...
+  split. eapply update_global_preserves_globals_all_mut...
   split. eapply update_global_preserves_linear_memory...
   split. eapply update_global_preserves_global_mem_ptr_in_linear_memory...
   split. assumption.
@@ -1953,7 +1956,7 @@ Qed.
 (* writable implies readable *)
 Lemma global_var_w_implies_global_var_r : forall (s : store_record) fr var,
     In var [ result_var ; result_out_of_mem ; global_mem_ptr ; constr_alloc_ptr ] ->
-    globals_all_mut_i32 s fr ->
+    globals_all_mut s fr ->
     global_var_w var s fr ->
     global_var_r var s fr.
 Proof.
@@ -1964,7 +1967,7 @@ Proof.
   destruct ((lookup_N (inst_globals (f_inst fr)) i)) eqn:Hv. 2: inv H.
   cbn in H. cbn. unfold supdate_glob_s in H.
   destruct (lookup_N (s_globals s) g) eqn:Hg. 2: inv H. cbn.
-  unfold globals_all_mut_i32 in *.
+  unfold globals_all_mut in *.
   apply (Hmut32 i g g0 Hi Hv) in Hg.
   destruct Hg.
   inv H. eexists.
@@ -1996,11 +1999,11 @@ Proof.
 Qed.
 
 Lemma update_mem_preserves_all_mut_i32 : forall s s' f m vd,
-   globals_all_mut_i32 s f ->
+   globals_all_mut s f ->
    upd_s_mem s (set_nth vd (s_mems s) 0 m) = s' ->
-   globals_all_mut_i32 s' f.
+   globals_all_mut s' f.
 Proof.
-  unfold globals_all_mut_i32. intros.
+  unfold globals_all_mut. intros.
   unfold upd_s_mem in H0. assert (s_globals s = s_globals s') as Hglob. {
    subst. destruct s. reflexivity. }
   rewrite Hglob in H.
@@ -2027,7 +2030,7 @@ Qed.
 Lemma update_mem_preserves_global_mem_ptr_in_linear_memory : forall s s' f m m',
    INV_global_mem_ptr_in_linear_memory s f ->
    INV_global_mem_ptr_writable s f ->
-   INV_globals_all_mut_i32 s f ->
+   INV_globals_all_mut s f ->
    smem s (f_inst f) = Some m ->
    inst_mems (f_inst f) = [0%N] ->
    (mem_length m' >= mem_length m)%N ->
@@ -2051,7 +2054,7 @@ Qed.
 Lemma update_mem_preserves_global_constr_alloc_ptr_in_linear_memory : forall s s' f m m' vd,
    INV_constr_alloc_ptr_in_linear_memory s f  ->
    INV_constr_alloc_ptr_writable s f ->
-   INV_globals_all_mut_i32 s f ->
+   INV_globals_all_mut s f ->
    smem s (f_inst f) = Some m ->
    (mem_length m' >= mem_length m)%N ->
    upd_s_mem s (set_nth vd (s_mems s) 0 m') = s' ->

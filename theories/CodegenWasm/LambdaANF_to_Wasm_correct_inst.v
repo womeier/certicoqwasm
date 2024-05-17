@@ -1527,7 +1527,7 @@ Definition INV_instantiation (s : store_record) (f : frame) (num_funs : nat) :=
  /\ INV_result_var_out_of_mem_is_zero s f
  /\ INV_global_mem_ptr_writable s f
  /\ INV_constr_alloc_ptr_writable s f
- /\ INV_globals_all_mut_i32 s f
+ /\ INV_globals_all_mut s f
  /\ INV_linear_memory s f
  /\ INV_global_mem_ptr_in_linear_memory s f
  /\ INV_locals_all_i32 f
@@ -1673,7 +1673,7 @@ Proof.
   split. (* gmp_w *) eexists. rewrite -E3. reflexivity.
   split. (* cap_w *) eexists. rewrite -E3. reflexivity.
   (* globals mut i32 *)
-  split. unfold INV_globals_all_mut_i32, globals_all_mut_i32. intros. unfold lookup_N in H1.
+  split. unfold INV_globals_all_mut, globals_all_mut. intros. unfold lookup_N in H1.
   {
     unfold result_var, result_out_of_mem, global_mem_ptr, constr_alloc_ptr in *.
     cbn in H0; try subst gidx; try rewrite F2 in H0; unfold lookup_N in H0.
@@ -2351,7 +2351,7 @@ Proof.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
   split. (* globals all mut i32s *)
-    unfold INV_globals_all_mut_i32, globals_all_mut_i32. rewrite -Hglobals. assumption.
+    unfold INV_globals_all_mut, globals_all_mut. rewrite -Hglobals. assumption.
   split. (* linear memory *)
     unfold INV_linear_memory, smem. by rewrite -Hmems.
   split. (* global_mem_ptr in linear mem *)
