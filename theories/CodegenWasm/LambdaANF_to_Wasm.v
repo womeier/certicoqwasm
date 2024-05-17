@@ -112,10 +112,10 @@ Definition global_mem_ptr    : globalidx := 0%N. (* ptr to free memory, increase
 Definition constr_alloc_ptr  : globalidx := 1%N. (* ptr to beginning of constr alloc in linear mem *)
 Definition result_var        : globalidx := 2%N. (* final result *)
 Definition result_out_of_mem : globalidx := 3%N.
-Definition tmp1              : globalidx := 4%N.
-Definition tmp2              : globalidx := 5%N.
-Definition tmp3              : globalidx := 6%N.
-Definition tmp4              : globalidx := 7%N.
+Definition glob_tmp1         : globalidx := 4%N.
+Definition glob_tmp2         : globalidx := 5%N.
+Definition glob_tmp3         : globalidx := 6%N.
+Definition glob_tmp4         : globalidx := 7%N.
 
 (* ***** MAPPINGS ****** *)
 Definition localvar_env := M.tree localidx. (* maps variables to their id (id=index in list of local vars) *)
@@ -588,14 +588,14 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
         [ BI_binop T_i64 (Binop_i BOI_add)
         ; BI_const_num maxuint63
         ; BI_binop T_i64 (Binop_i BOI_and)
-        ; BI_global_set tmp1
-        ; BI_global_get tmp1
+        ; BI_global_set glob_tmp1
+        ; BI_global_get glob_tmp1
         ] ++
         load_local_i64 x ++
         [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
         ; BI_if (BT_valtype (Some (T_num T_i32)))
-            (make_carry 1 tmp1)
-            (make_carry 0 tmp1)
+            (make_carry 1 glob_tmp1)
+            (make_carry 0 glob_tmp1)
         ])
 
   else if Kername.eqb op_name primInt63Addcarryc then
@@ -606,14 +606,14 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
         ; BI_binop T_i64 (Binop_i BOI_add)
         ; BI_const_num maxuint63
         ; BI_binop T_i64 (Binop_i BOI_and)
-        ; BI_global_set tmp1
-        ; BI_global_get tmp1
+        ; BI_global_set glob_tmp1
+        ; BI_global_get glob_tmp1
         ] ++
         load_local_i64 x ++
         [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
         ; BI_if (BT_valtype (Some (T_num T_i32)))
-            (make_carry 1 tmp1)
-            (make_carry 0 tmp1)
+            (make_carry 1 glob_tmp1)
+            (make_carry 0 glob_tmp1)
         ])
 
   else if Kername.eqb op_name primInt63Subc then
@@ -622,14 +622,14 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
         [ BI_binop T_i64 (Binop_i BOI_sub)
         ; BI_const_num maxuint63
         ; BI_binop T_i64 (Binop_i BOI_and)
-        ; BI_global_set tmp1
+        ; BI_global_set glob_tmp1
         ] ++
         load_local_i64 y ++
         load_local_i64 x ++
         [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
         ; BI_if (BT_valtype (Some (T_num T_i32)))
-            (make_carry 0 tmp1)
-            (make_carry 1 tmp1)
+            (make_carry 0 glob_tmp1)
+            (make_carry 1 glob_tmp1)
         ])
 
   else if Kername.eqb op_name primInt63Subcarryc then
@@ -640,14 +640,14 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
         ; BI_binop T_i64 (Binop_i BOI_sub)
         ; BI_const_num maxuint63
         ; BI_binop T_i64 (Binop_i BOI_and)
-        ; BI_global_set tmp1
+        ; BI_global_set glob_tmp1
         ] ++
         load_local_i64 y ++
         load_local_i64 x ++
         [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
         ; BI_if (BT_valtype (Some (T_num T_i32)))
-            (make_carry 0 tmp1)
-            (make_carry 1 tmp1)
+            (make_carry 0 glob_tmp1)
+            (make_carry 1 glob_tmp1)
         ])
 
   else if Kername.eqb op_name primInt63Mulc then
@@ -657,109 +657,109 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
          [ BI_const_num (nat_to_value64 62) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_testop T_i64 TO_eqz ] ++
          [ BI_binop T_i32 (Binop_i BOI_or)
          ; BI_if (BT_valtype None)
-             (load_local_i64 y ++ [ BI_global_set tmp3 ])
+             (load_local_i64 y ++ [ BI_global_set glob_tmp3 ])
              (load_local_i64 y ++
               [ BI_const_num (VAL_int64 (Wasm_int.Int64.repr 4611686018427387904%Z))
               ; BI_binop T_i64 (Binop_i BOI_xor)
-              ; BI_global_set tmp3
+              ; BI_global_set glob_tmp3
               ])
          ] ++
-         (* tmp1 <- let hx = x >> 31 *)
+         (* glob_tmp1 <- let hx = x >> 31 *)
          load_local_i64 x ++
-         [ BI_const_num (nat_to_value64 31) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_global_set tmp1 ] ++
-         (* tmp2 <- let lx = x & ((1 << 31) - 1) *)
+         [ BI_const_num (nat_to_value64 31) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_global_set glob_tmp1 ] ++
+         (* glob_tmp2 <- let lx = x & ((1 << 31) - 1) *)
          load_local_i64 x ++
-         [ BI_const_num maxuint31 ; BI_binop T_i64 (Binop_i BOI_and) ; BI_global_set tmp2 ] ++
-         (* tmp4 <- let hy =  y >> 31 *)
-         [ BI_global_get tmp3 ; BI_const_num (nat_to_value64 31) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_global_set tmp4 ] ++
-         (* tmp3 <- let ly = y & ((1 << 31) - 1) *)
-         [ BI_global_get tmp3 ; BI_const_num maxuint31 ; BI_binop T_i64 (Binop_i BOI_and) ; BI_global_set tmp3 ] ++
-         [ BI_global_get tmp1 ; BI_global_get tmp4 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++
-         [ BI_global_get tmp1 ; BI_global_get tmp3 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++
-         [ BI_global_get tmp2 ; BI_global_get tmp4 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++
-         [ BI_global_get tmp2 ; BI_global_get tmp3 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++
-         (* tmp4 <- let lxy = lx * ly
-            tmp3 <- let lxhy = lx * hy
-            tmp2 <- let hxly = hx * ly
-            tmp1 <- let hxy  = hx * hy *)
-         [ BI_global_set tmp4
-         ; BI_global_set tmp3
-         ; BI_global_set tmp2
-         ; BI_global_set tmp1
+         [ BI_const_num maxuint31 ; BI_binop T_i64 (Binop_i BOI_and) ; BI_global_set glob_tmp2 ] ++
+         (* glob_tmp4 <- let hy =  y >> 31 *)
+         [ BI_global_get glob_tmp3 ; BI_const_num (nat_to_value64 31) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_global_set glob_tmp4 ] ++
+         (* glob_tmp3 <- let ly = y & ((1 << 31) - 1) *)
+         [ BI_global_get glob_tmp3 ; BI_const_num maxuint31 ; BI_binop T_i64 (Binop_i BOI_and) ; BI_global_set glob_tmp3 ] ++
+         [ BI_global_get glob_tmp1 ; BI_global_get glob_tmp4 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++
+         [ BI_global_get glob_tmp1 ; BI_global_get glob_tmp3 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++
+         [ BI_global_get glob_tmp2 ; BI_global_get glob_tmp4 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++
+         [ BI_global_get glob_tmp2 ; BI_global_get glob_tmp3 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++
+         (* glob_tmp4 <- let lxy = lx * ly
+            glob_tmp3 <- let lxhy = lx * hy
+            glob_tmp2 <- let hxly = hx * ly
+            glob_tmp1 <- let hxy  = hx * hy *)
+         [ BI_global_set glob_tmp4
+         ; BI_global_set glob_tmp3
+         ; BI_global_set glob_tmp2
+         ; BI_global_set glob_tmp1
          ]  ++
-         (* tmp4 <- let l = lxy | (hxy << 62) = tmp4 | (tmp1 << 62) *)
-         [ BI_global_get tmp4
-         ; BI_global_get tmp1
+         (* glob_tmp4 <- let l = lxy | (hxy << 62) = glob_tmp4 | (glob_tmp1 << 62) *)
+         [ BI_global_get glob_tmp4
+         ; BI_global_get glob_tmp1
          ; BI_const_num (nat_to_value64 62)
          ; BI_binop T_i64 (Binop_i BOI_shl)
          ; BI_const_num maxuint63
          ; BI_binop T_i64 (Binop_i BOI_and)
          ; BI_binop T_i64 (Binop_i BOI_or)
-         ; BI_global_set tmp4
+         ; BI_global_set glob_tmp4
          ] ++
-         (* tmp1 <- let h = hxy >> 1 = tmp1 >> 1 *)
-         [ BI_global_get tmp1
+         (* glob_tmp1 <- let h = hxy >> 1 = glob_tmp1 >> 1 *)
+         [ BI_global_get glob_tmp1
          ; BI_const_num (nat_to_value64 1)
          ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-         ; BI_global_set tmp1
+         ; BI_global_set glob_tmp1
          ] ++
-         (* tmp3 <- let hl = hxly + lxhy = tmp2 + tmp3 *)
-         [ BI_global_get tmp2
-         ; BI_global_get tmp3
+         (* glob_tmp3 <- let hl = hxly + lxhy = glob_tmp2 + glob_tmp3 *)
+         [ BI_global_get glob_tmp2
+         ; BI_global_get glob_tmp3
          ; BI_binop T_i64 (Binop_i BOI_add)
          ; BI_const_num maxuint63
          ; BI_binop T_i64 (Binop_i BOI_and)
-         ; BI_global_set tmp3
+         ; BI_global_set glob_tmp3
          ] ++
-         (* tmp1 <- let h = if hl < hxly then h + (1 << 31) else h *)
-         [ BI_global_get tmp3
-         ; BI_global_get tmp2
+         (* glob_tmp1 <- let h = if hl < hxly then h + (1 << 31) else h *)
+         [ BI_global_get glob_tmp3
+         ; BI_global_get glob_tmp2
          ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
          ; BI_if (BT_valtype None)
-             [ BI_global_get tmp1
+             [ BI_global_get glob_tmp1
              ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr 2147483648%Z))
              ; BI_binop T_i64 (Binop_i BOI_add)
-             ; BI_global_set tmp1
+             ; BI_global_set glob_tmp1
              ]
              [ ]
          ] ++
-         (* tmp2 <- let hl' = hl << 31 *)
-         [ BI_global_get tmp3
+         (* glob_tmp2 <- let hl' = hl << 31 *)
+         [ BI_global_get glob_tmp3
          ; BI_const_num (nat_to_value64 31)
          ; BI_binop T_i64 (Binop_i BOI_shl)
          ; BI_const_num maxuint63
          ; BI_binop T_i64 (Binop_i BOI_and)
-         ; BI_global_set tmp2
+         ; BI_global_set glob_tmp2
          ] ++
-         (* tmp4 <- let l = l + hl' *)
-         [ BI_global_get tmp4
-         ; BI_global_get tmp2
+         (* glob_tmp4 <- let l = l + hl' *)
+         [ BI_global_get glob_tmp4
+         ; BI_global_get glob_tmp2
          ; BI_binop T_i64 (Binop_i BOI_add)
          ; BI_const_num maxuint63
          ; BI_binop T_i64 (Binop_i BOI_and)
-         ; BI_global_set tmp4
+         ; BI_global_set glob_tmp4
          ] ++
-         (* tmp1 <- let h = if l < hl' then h + 1 else h *)
-         [ BI_global_get tmp4
-         ; BI_global_get tmp2
+         (* glob_tmp1 <- let h = if l < hl' then h + 1 else h *)
+         [ BI_global_get glob_tmp4
+         ; BI_global_get glob_tmp2
          ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
          ; BI_if (BT_valtype None)
-             [ BI_global_get tmp1
+             [ BI_global_get glob_tmp1
              ; BI_const_num (nat_to_value64 1)
              ; BI_binop T_i64 (Binop_i BOI_add)
-             ; BI_global_set tmp1
+             ; BI_global_set glob_tmp1
              ]
              [ ]
          ] ++
-         (* tmp1 <- let h = h + (hl >> 32) *)
-         [ BI_global_get tmp1
-         ; BI_global_get tmp3
+         (* glob_tmp1 <- let h = h + (hl >> 32) *)
+         [ BI_global_get glob_tmp1
+         ; BI_global_get glob_tmp3
          ; BI_const_num (nat_to_value64 32)
          ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
          ; BI_binop T_i64 (Binop_i BOI_add)
          ; BI_const_num maxuint63
          ; BI_binop T_i64 (Binop_i BOI_and)
-         ; BI_global_set tmp1
+         ; BI_global_set glob_tmp1
          ] ++
          load_local_i64 x ++
          [ BI_const_num (nat_to_value64 62)
@@ -773,8 +773,8 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
          ; BI_binop T_i32 (Binop_i BOI_or)
          ; BI_if (BT_valtype None)
              [ ]
-             [ (* tmp2 <- let l' := l + (x << 62) *)
-             BI_global_get tmp4
+             [ (* glob_tmp2 <- let l' := l + (x << 62) *)
+             BI_global_get glob_tmp4
              ; BI_local_get x
              ; BI_load T_i64 None 2%N 0%N
              ; BI_const_num (nat_to_value64 62)
@@ -782,20 +782,20 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
              ; BI_binop T_i64 (Binop_i BOI_add)
              ; BI_const_num maxuint63
              ; BI_binop T_i64 (Binop_i BOI_and)
-             ; BI_global_set tmp2
-             (* tmp1 <- let h := if l' < l then h + 1 else h *)
-             ; BI_global_get tmp2
-             ; BI_global_get tmp4
+             ; BI_global_set glob_tmp2
+             (* glob_tmp1 <- let h := if l' < l then h + 1 else h *)
+             ; BI_global_get glob_tmp2
+             ; BI_global_get glob_tmp4
              ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
              ; BI_if (BT_valtype None)
-                 [ BI_global_get tmp1
+                 [ BI_global_get glob_tmp1
                  ; BI_const_num (nat_to_value64 1)
                  ; BI_binop T_i64 (Binop_i BOI_add)
-                 ; BI_global_set tmp1
+                 ; BI_global_set glob_tmp1
                  ]
                  [ ]
              (* return (h + (x >> 1), l') *)
-             ; BI_global_get tmp1
+             ; BI_global_get glob_tmp1
              ; BI_local_get x
              ; BI_load T_i64 None 2%N 0%N
              ; BI_const_num (nat_to_value64 1)
@@ -803,11 +803,11 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
              ; BI_binop T_i64 (Binop_i BOI_add)
              ; BI_const_num maxuint63
              ; BI_binop T_i64 (Binop_i BOI_and)
-             ; BI_global_set tmp1
-             ; BI_global_get tmp2
-             ; BI_global_set tmp4
+             ; BI_global_set glob_tmp1
+             ; BI_global_get glob_tmp2
+             ; BI_global_set glob_tmp4
              ]
-         ] ++ make_product tmp1 tmp4)
+         ] ++ make_product glob_tmp1 glob_tmp4)
 
   else if Kername.eqb op_name primInt63Diveucl then
     Ret ([ BI_local_get x
@@ -815,28 +815,28 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
          ; BI_testop T_i64 TO_eqz
          ; BI_if (BT_valtype None)
              [ BI_const_num (nat_to_value64 0)
-             ; BI_global_set tmp1
+             ; BI_global_set glob_tmp1
              ; BI_const_num (nat_to_value64 0)
-             ; BI_global_set tmp2
+             ; BI_global_set glob_tmp2
              ]
              [ BI_local_get y
              ; BI_load T_i64 None 2%N 0%N
              ; BI_testop T_i64 TO_eqz
              ; BI_if (BT_valtype None)
                  [ BI_const_num (nat_to_value64 0)
-                 ; BI_global_set tmp1
+                 ; BI_global_set glob_tmp1
                  ; BI_local_get x
                  ; BI_load T_i64 None 2%N 0%N
-                 ; BI_global_set tmp2
+                 ; BI_global_set glob_tmp2
                  ]
                  (load_local_i64 x ++
                   load_local_i64 y ++
-                  [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ; BI_global_set tmp1 ] ++
+                  [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ; BI_global_set glob_tmp1 ] ++
                   load_local_i64 x ++
                   load_local_i64 y ++
-                  [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ; BI_global_set tmp2 ])
+                  [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ; BI_global_set glob_tmp2 ])
              ]
-         ] ++ make_product tmp1 tmp2)
+         ] ++ make_product glob_tmp1 glob_tmp2)
   else
     Err ("Unknown primitive arithmetic operator: " ++ (Kernames.string_of_kername op_name))%bs.
 
@@ -869,41 +869,41 @@ Definition translate_primitive_unary_op op_name x : error (list basic_instructio
     Err ("Unknown primitive unary operator: " ++ (Kernames.string_of_kername op_name))%bs.
 
 Definition div21_loop_body :=
-  [ BI_global_get tmp1
+  [ BI_global_get glob_tmp1
   ; BI_const_num (nat_to_value64 1)
   ; BI_binop T_i64 (Binop_i BOI_shl)
-  ; BI_global_get tmp2
+  ; BI_global_get glob_tmp2
   ; BI_const_num (nat_to_value64 62)
   ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
   ; BI_binop T_i64 (Binop_i BOI_or)
-  ; BI_global_set tmp1
+  ; BI_global_set glob_tmp1
 
-  ; BI_global_get tmp2
+  ; BI_global_get glob_tmp2
   ; BI_const_num (nat_to_value64 1)
   ; BI_binop T_i64 (Binop_i BOI_shl)
   ; BI_const_num maxuint63
   ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-  ; BI_global_set tmp2
+  ; BI_global_set glob_tmp2
 
-  ; BI_global_get tmp3
+  ; BI_global_get glob_tmp3
   ; BI_const_num (nat_to_value64 1)
   ; BI_binop T_i64 (Binop_i BOI_shl)
   ; BI_const_num maxuint63
   ; BI_binop T_i64 (Binop_i BOI_and)
-  ; BI_global_set tmp3
+  ; BI_global_set glob_tmp3
 
-  ; BI_global_get tmp1
-  ; BI_global_get tmp4
+  ; BI_global_get glob_tmp1
+  ; BI_global_get glob_tmp4
   ; BI_relop T_i64 (Relop_i (ROI_ge SX_U))
   ; BI_if (BT_valtype None)
-      [ BI_global_get tmp3
+      [ BI_global_get glob_tmp3
       ; BI_const_num (nat_to_value64 1)
       ; BI_binop T_i64 (Binop_i BOI_or)
-      ; BI_global_set tmp3
-      ; BI_global_get tmp1
-      ; BI_global_get tmp4
+      ; BI_global_set glob_tmp3
+      ; BI_global_get glob_tmp1
+      ; BI_global_get glob_tmp4
       ; BI_binop T_i64 (Binop_i BOI_sub)
-      ; BI_global_set tmp1
+      ; BI_global_set glob_tmp1
       ]
       [ ]
   ].
@@ -913,28 +913,28 @@ Definition translate_primitive_ternary_op op_name x y z : error (list basic_inst
     Ret (load_local_i64 z ++
          [ BI_const_num maxuint63
          ; BI_binop T_i64 (Binop_i BOI_and)
-         ; BI_global_set tmp4
+         ; BI_global_set glob_tmp4
          ] ++
          load_local_i64 x ++
          [ BI_const_num maxuint63
          ; BI_binop T_i64 (Binop_i BOI_and)
-         ; BI_global_set tmp1
+         ; BI_global_set glob_tmp1
          ] ++
-         [ BI_global_get tmp4
-         ; BI_global_get tmp1
+         [ BI_global_get glob_tmp4
+         ; BI_global_get glob_tmp1
          ; BI_relop T_i64 (Relop_i (ROI_le SX_U))
          ; BI_if (BT_valtype (Some (T_num T_i32)))
-             ([ BI_const_num (nat_to_value64 0) ; BI_global_set tmp1 ] ++ make_product tmp1 tmp1)
+             ([ BI_const_num (nat_to_value64 0) ; BI_global_set glob_tmp1 ] ++ make_product glob_tmp1 glob_tmp1)
              (load_local_i64 y ++
-              [ BI_global_set tmp2
+              [ BI_global_set glob_tmp2
               ; BI_const_num (nat_to_value64 0)
-              ; BI_global_set tmp3
+              ; BI_global_set glob_tmp3
               ] ++ (List.flat_map (fun x => x) (List.repeat div21_loop_body 63)) ++
-              [ BI_global_get tmp1
+              [ BI_global_get glob_tmp1
               ; BI_const_num maxuint63
               ; BI_binop T_i64 (Binop_i BOI_and)
-              ; BI_global_set tmp1
-              ] ++ (make_product tmp3 tmp1))
+              ; BI_global_set glob_tmp1
+              ] ++ (make_product glob_tmp3 glob_tmp1))
          ])
 
   else if Kername.eqb op_name primInt63Addmuldiv then
@@ -1326,16 +1326,16 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                         {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* out of memory indicator *)
                          ; modglob_init := [BI_const_num (nat_to_value 0)]
                          |} ::
-                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* tmp1 *)
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* glob_tmp1 *)
                          ; modglob_init := [BI_const_num (nat_to_value64 0)]
                          |} ::
-                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* tmp2 *)
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* glob_tmp2 *)
                          ; modglob_init := [BI_const_num (nat_to_value64 0)]
                          |} ::
-                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* tmp3 *)
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* glob_tmp3 *)
                          ; modglob_init := [BI_const_num (nat_to_value64 0)]
                          |} ::
-                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* tmp4 *)
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* glob_tmp4 *)
                          ; modglob_init := [BI_const_num (nat_to_value64 0)]
                          |} :: nil
 
