@@ -2336,6 +2336,9 @@ Ltac dostep' :=
 Ltac dostep_nary n :=
   dostep; first elimr_nary_instr n.
 
+Ltac dostep_nary_eliml n n' :=
+  dostep; first ((do n'! (apply r_eliml; auto)); elimr_nary_instr n).
+
 Ltac dostep_nary' n :=
   dostep'; first elimr_nary_instr n.
 
@@ -5003,6 +5006,20 @@ Proof.
   - discriminate.
 Qed.
 
+Lemma wasm_zero_implies_uint63_zero : forall i,
+    wasm_i64_prim_related Wasm_int.Int64.zero (AstCommon.primInt ; i%uint63) ->
+    i = 0%uint63.
+Proof.
+  intros.
+  destruct H as [n [i' [Hn [Hn' [Hi Heq]]]]].
+  cbn in Hn.
+  replace n with 0%Z in * by (apply Wasm_int.Int64.repr_inv; try (simpl_modulus; now simpl)).
+  replace i with i' in * by now apply inj_pair2 in Hi.
+  apply Z.eqb_eq in Heq.
+  rewrite -to_Z_0 in  Heq.
+  now apply to_Z_inj.
+Qed.
+
 Lemma primitive_operation_reduces : forall lenv pfs state s f m fds f' (x : var) (x' : localidx) (p : prim) p'
                                            (ys : list var) (e : exp) (vs : list val) (rho : env) (v : val) (gmp_v : u32) instrs,
     bs_LambdaANF_prim_fun_env_extracted_prim_env_related penv pfs ->
@@ -5525,7 +5542,44 @@ Proof.
     }
     destruct Hrv2 as [w2 [addr2 [Heq2 [Hload2 Hprim_eq2]]]].
 
-    assert (HloadStep: forall es,
+
+    assert (HloadStep1: forall es,
+               reduce_trans
+                 (state, s, f, ([:: AI_basic (BI_local_get x')] ++
+                                  [:: AI_basic (BI_load T_i64 None 2%N 0%N)] ++
+                                  es))
+                 (state, s, f, ([:: $V VAL_num (VAL_int64 w1) ] ++ es))). {
+      intros.
+      subst wal1.
+      unfold load_i64 in Hload1.
+      destruct (load m addr1 0%N 8) eqn:Hload1'. 2: discriminate.
+      assert (addr1 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr1)))). {
+        cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
+        inv Hval_x; try discriminate. now inv H12. }
+      dostep_nary 0. apply r_local_get. eassumption.
+      dostep_nary 1. eapply r_load_success; try eassumption. rewrite -H5. apply Hload1'.
+      replace (wasm_deserialise b0 T_i64) with (VAL_int64 w1) by congruence.
+      now apply rt_refl. }
+
+    assert (HloadStep2: forall es,
+               reduce_trans
+                 (state, s, f, ([:: AI_basic (BI_local_get y')] ++
+                                  [:: AI_basic (BI_load T_i64 None 2%N 0%N)] ++
+                                  es))
+                 (state, s, f, ([:: $V VAL_num (VAL_int64 w2) ] ++ es))). {
+      intros.
+      subst wal2.
+      unfold load_i64 in Hload2.
+      destruct (load m addr2 0%N 8) eqn:Hload2'. 2: discriminate.
+      assert (addr2 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr2)))). {
+        cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
+        inv Hval_y; try discriminate. now inv H12. }
+      dostep_nary 0. apply r_local_get. eassumption.
+      dostep_nary 1. eapply r_load_success; try eassumption. rewrite -H5. apply Hload2'.
+      replace (wasm_deserialise b0 T_i64) with (VAL_int64 w2) by congruence.
+      now apply rt_refl. }
+
+    assert (HloadStep': forall es,
                reduce_trans
                  (state, s, f, ([:: AI_basic (BI_local_get x')] ++
                                   [:: AI_basic (BI_load T_i64 None 2%N 0%N)] ++
@@ -5534,41 +5588,22 @@ Proof.
                                   es))
                  (state, s, f, ([:: $V VAL_num (VAL_int64 w1) ; $V VAL_num (VAL_int64 w2) ] ++ es))). {
       intros.
-      subst wal1 wal2.
-      unfold load_i64 in Hload1.
-      destruct (load m addr1 0%N 8) eqn:Hload1'. 2: discriminate.
-      assert (addr1 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr1)))). {
-        cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
-        inv Hval_x; try discriminate. now inv H12. }
-      unfold load_i64 in Hload2.
-      destruct (load m addr2 0%N 8) eqn:Hload2'. 2: discriminate.
-      assert (addr2 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr2)))). {
-        cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
-        inv Hval_y; try discriminate. now inv H12. }
-      dostep_nary 0. apply r_local_get. eassumption.
-      dostep_nary 1. eapply r_load_success; try eassumption. rewrite -H5. apply Hload1'.
-      replace (wasm_deserialise b0 T_i64) with (VAL_int64 w1) by congruence.
-      dostep.
-      apply r_eliml; auto.
-      apply r_elimr.
-      apply r_local_get. eassumption.
-      dostep.
-      apply r_eliml; auto.
-      elimr_nary_instr 1.
-      eapply r_load_success; try eassumption. rewrite -H6. apply Hload2'.
-      replace (wasm_deserialise b1 T_i64) with (VAL_int64 w2) by congruence.
-      now apply rt_refl. }
-
+      eapply rt_trans.
+      apply HloadStep1.
+      eapply rt_trans.
+      apply app_trans_const; auto.
+      now apply rt_refl.
+    }
     unfold load_i64 in Hload1.
     destruct (load m addr1 0%N 8) eqn:Hload1'. 2: discriminate.
-    assert (addr1 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr1)))). {
+    assert (Haddr1: addr1 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr1)))). {
       cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
       inv Hval_x; try discriminate. now inv H15. }
     unfold load_i64 in Hload2.
     destruct (load m addr2 0%N 8) eqn:Hload2'. 2: discriminate.
-    assert (addr2 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr2)))). {
+    assert (Haddr2: addr2 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr2)))). {
       cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
-      inv Hval_y; try discriminate. now inv H16. }
+      inv Hval_y; try discriminate. now inv H15. }
     have Hreserve1 := Hprim_eq1.
     destruct Hprim_eq1 as [n1 [i1' [Hn1 [Hw1 [Hi1 Heq_p1']]]]]. subst p1.
     assert (i1 = i1') by now apply inj_pair2 in Hi1. subst i1'.
@@ -5596,15 +5631,12 @@ Proof.
       by rewrite Z.eqb_eq in Heqtru. }
     assert (2 ^ 63 = 9223372036854775808)%Z by lia.
     assert (Z.ones 63 = 9223372036854775807)%Z by now cbn.
-    assert (Hmod : forall n0,
-               (Z.land n0 9223372036854775807 = n0 mod Wasm_int.Int64.half_modulus)%Z).
-    {
+    assert (Hmod : forall n0, (Z.land n0 9223372036854775807 = n0 mod Wasm_int.Int64.half_modulus)%Z). {
       intros.
-      rewrite -H8.
+      rewrite -H6.
       rewrite Z.land_ones. 2: lia.
-      rewrite H7.
-      now replace 9223372036854775808%Z with Wasm_int.Int64.half_modulus by simpl_modulus.
-    }
+      rewrite H5.
+      now replace 9223372036854775808%Z with Wasm_int.Int64.half_modulus by simpl_modulus. }
     assert (Hrewr: forall w',
                Wasm_int.Int64.and w'
                  (Wasm_int.Int64.repr 9223372036854775807%Z) =
@@ -5614,8 +5646,7 @@ Proof.
       unfold Wasm_int.Int64.and.
       rewrite Hmod.
       unfold Wasm_int.Int64.modu.
-      now cbn.
-      }
+      now cbn. }
     inversion H3; subst k.
     { (* add *)
       inversion Hprimrel. subst vs f' v1 v2.
@@ -5632,18 +5663,15 @@ Proof.
           now rewrite Hmod.
         - rewrite Hmod Uint63.add_spec. now apply Z.eqb_eq. }
       assert (v = Vprim (AstCommon.primInt; (i1 + i2)%uint63)) by congruence.
-      destruct (H2 _ _ H16 H9) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+      destruct (H2 _ _ H14 H7) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
       exists s_final, fr.
       split. {
-        dostep_nary 0. apply r_global_get. eassumption.
-        eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
-        apply app_trans_const; auto.
-        dostep. apply r_eliml. auto.
-        elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-        dostep. apply r_eliml. auto.
-        elimr_nary_instr 2. constructor. apply rs_binop_success. cbn.  reflexivity.
-        dostep.
-        elimr_nary_instr 2. eapply r_store_success.
+        dostep_nary 0. apply r_global_get; eassumption.
+        eapply rt_trans.
+        apply app_trans_const. auto. apply HloadStep'.
+        dostep_nary_eliml 2 1. constructor; apply rs_binop_success; reflexivity.
+        dostep_nary_eliml 2 1. constructor; apply rs_binop_success; reflexivity.
+        dostep_nary 2. eapply r_store_success.
         unfold Wasm_int.Int64.iand. now rewrite -Heqw. cbn.
         cbn in Hstep.
         eassumption. }
@@ -5663,19 +5691,15 @@ Proof.
           now rewrite Hmod.
         - rewrite Hmod Uint63.sub_spec. now apply Z.eqb_eq. }
       assert (v = Vprim (AstCommon.primInt; (i1 - i2)%uint63)) by congruence.
-      destruct (H2 _ _ H16 H9) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+      destruct (H2 _ _ H14 H7) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
       exists s_final, fr.
       split. {
         dostep_nary 0. apply r_global_get. eassumption.
         eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
-        apply app_trans_const; auto.
-        dostep. apply r_eliml. auto.
-        elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-        dostep. apply r_eliml. auto.
-        elimr_nary_instr 2. constructor. apply rs_binop_success. cbn.  reflexivity.
-        dostep.
-        elimr_nary_instr 2. eapply r_store_success.
-        unfold Wasm_int.Int64.iand. now rewrite -Heqw. cbn.
+        apply app_trans_const. auto. apply HloadStep'.
+        dostep_nary_eliml 2 1. constructor; apply rs_binop_success; reflexivity.
+        dostep_nary_eliml 2 1. constructor; apply rs_binop_success; reflexivity.
+        dostep_nary 2. eapply r_store_success. unfold Wasm_int.Int64.iand. now rewrite -Heqw.
         eassumption. }
       assumption. }
     { (* mul *)
@@ -5693,135 +5717,69 @@ Proof.
           now rewrite Hmod.
         - rewrite Hmod Uint63.mul_spec. now apply Z.eqb_eq. }
       assert (v = Vprim (AstCommon.primInt; (i1 * i2)%uint63)) by congruence.
-      destruct (H2 _ _ H16 H9) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+      destruct (H2 _ _ H14 H7) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
       exists s_final, fr.
       split. {
         dostep_nary 0. apply r_global_get. eassumption.
         eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
-        apply app_trans_const; auto.
-        dostep. apply r_eliml. auto.
-        elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-        dostep. apply r_eliml. auto.
-        elimr_nary_instr 2. constructor. apply rs_binop_success. cbn.  reflexivity.
-        dostep.
-        elimr_nary_instr 2. eapply r_store_success.
-        unfold Wasm_int.Int64.iand. now rewrite -Heqw. cbn.
+        apply app_trans_const. auto. apply HloadStep'.
+        dostep_nary_eliml 2 1. constructor; apply rs_binop_success; reflexivity.
+        dostep_nary_eliml 2 1. constructor; apply rs_binop_success; reflexivity.
+        dostep_nary 2. eapply r_store_success. unfold Wasm_int.Int64.iand. now rewrite -Heqw.
         eassumption. }
       assumption. }
     { (* div *)
       inversion Hprimrel. subst vs f' v1 v2.
-      destruct (Wasm_int.Int64.eq_dec w2 Wasm_int.Int64.zero) eqn:Hzero. {
+      destruct (Wasm_int.Int64.eq Wasm_int.Int64.zero w2) eqn:Hzero. {
         (* w2 = 0 *)
         assert (wasm_i64_prim_related Wasm_int.Int64.zero (AstCommon.primInt; (i1 / i2)%uint63)). {
           exists 0%Z, 0%uint63.
-          assert (n2 = 0)%Z. {
-            unfold Wasm_int.Int64.zero in e0. rewrite e0 in Hw2.
-            apply Wasm_int.Int64.repr_inv in Hw2. symmetry. assumption.
-            - simpl_modulus. now cbn.
-            - simpl_modulus. now cbn. }
-          assert (Uint63.to_Z 0 = 0%Z)%uint63 by now simpl.
-          assert (i2 = 0)%uint63. {
-
-            rewrite H9 in Hid2.
-            rewrite -H16 in Hid2.
-            now apply Uint63.to_Z_inj in Hid2. } subst i2.
-          assert (i1 / 0 = of_Z (to_Z (i1 / 0)))%uint63 by now rewrite Uint63.of_to_Z.
-          assert (to_Z (i1 / 0) = 0%Z). {
-            rewrite Uint63.div_spec.
-            rewrite H16. unfold Z.div. unfold Z.div_eucl.
-            destruct (Uint63.to_Z i1); reflexivity. }
-          assert (i1 / 0 = 0)%uint63. {
-            rewrite H17.
-            rewrite Uint63.div_spec.
-            rewrite Uint63.div_spec in H18.
-            rewrite H18. reflexivity. }
-          try repeat split.
-          - lia.
-          - now rewrite H19. }
+          apply Wasm_int.Int64.same_if_eq in Hzero.
+          rewrite -Hzero in Hreserve2.
+          replace i2 with 0%uint63 in * by now apply wasm_zero_implies_uint63_zero in Hreserve2.
+          replace (i1 / 0)%uint63 with (of_Z (to_Z (i1 / 0)))%uint63 in * by now rewrite Uint63.of_to_Z.
+          replace (to_Z (i1 / 0)) with 0%Z in * by (rewrite Uint63.div_spec; unfold Z.div; unfold Z.div_eucl; now destruct (Uint63.to_Z i1)).
+          now repeat split; auto. }
         assert (v = Vprim (AstCommon.primInt; (i1 / i2)%uint63)) by congruence.
-        destruct (H2 _ _ H16 H9) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+        destruct (H2 _ _ H14 H7) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
         exists s_final, fr.
-        unfold load_i64 in Hload2.
-        assert (addr2 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr2)))). {
-          cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
-          inv Hval_y; try discriminate. now inv H27. }
         split. {
           dostep_nary 0. eapply r_global_get; eassumption.
-          dostep.
-          apply r_eliml; auto.
-          apply r_elimr.
-          eapply r_local_get; eassumption.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1.
-          eapply r_load_success; try eassumption. rewrite Heq2. rewrite -H17.
-          apply Hload2'.
-          replace (wasm_deserialise b1 T_i64) with (VAL_int64 w2) by congruence.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1. constructor. apply rs_testop_i64.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1.
-          constructor.
-          apply rs_if_true. unfold wasm_bool. cbn. unfold Wasm_int.Int64.zero. rewrite e0. cbn. discriminate.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 0.
-          eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto. cbn.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 0.
-          constructor.
-          apply rs_label_const; auto.
-          dostep.
-          (* apply r_eliml; auto. *)
-          elimr_nary_instr 2.
-          eapply r_store_success.
-          unfold nat_to_value64, nat_to_i64, Z.of_nat. unfold Wasm_int.Int64.zero in Hstore. eassumption. cbn.
-          apply Hstep. }
+          eapply rt_trans.
+          apply app_trans_const; auto.
+          dostep_nary_eliml 1 1. constructor; apply rs_testop_i64.
+          dostep_nary_eliml 1 1. constructor; apply rs_if_true; unfold wasm_bool; cbn; unfold Wasm_int.Int64.zero.
+          now rewrite Hzero.
+          dostep_nary_eliml 0 1. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto.
+          dostep_nary_eliml 0 1. constructor; apply rs_label_const; auto.
+          dostep_nary 2. eapply r_store_success.
+          unfold nat_to_value64, nat_to_i64, Z.of_nat. unfold Wasm_int.Int64.zero in Hstore. eassumption.
+          now apply Hstep. }
         assumption. }
       { (* w2 <> 0 *)
         assert (wasm_i64_prim_related (Wasm_int.Int64.divu w1 w2) (AstCommon.primInt; (i1 / i2)%uint63)). {
           exists (n1 / n2)%Z, (Uint63.div i1 i2).
           assert (n2 <> 0)%Z. {
-            intro Hcontra.
-            subst w2.
-            unfold Wasm_int.Int64.zero in n3.
-            now unfold "<>" in n3. }
-          try repeat split.
-          - apply Z.div_pos; lia.
-          - apply Z.div_lt_upper_bound; lia.
+            have H' := Wasm_int.Int64.eq_spec Wasm_int.Int64.zero w2.
+            rewrite Hzero in H'.
+            subst w2. now unfold Wasm_int.Int64.zero in H'. }
+          try repeat split; auto.
+          - apply Z.div_pos. lia. lia.
+          - apply Z.div_lt_upper_bound; auto. lia. lia.
           - unfold Wasm_int.Int64.divu. now rewrite Hunsigned1 Hunsigned2.
           - rewrite Uint63.div_spec.
             now apply Z.eqb_eq. }
         assert (v = Vprim (AstCommon.primInt; (i1 / i2)%uint63)) by congruence.
-        destruct (H2 _ _ H16 H9) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+        destruct (H2 _ _ H14 H7) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
         exists s_final, fr.
         split. {
           dostep_nary 0. eapply r_global_get; eassumption.
-          dostep.
-          apply r_eliml; auto.
-          apply r_elimr.
-          eapply r_local_get; eassumption.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1.
-          eapply r_load_success; try eassumption. rewrite Heq2. rewrite -H6. apply Hload2'.
-          replace (wasm_deserialise b1 T_i64) with (VAL_int64 w2) by congruence.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1. constructor. apply rs_testop_i64.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1.
-          constructor.
-          apply rs_if_false. unfold wasm_bool. cbn.
-          assert (Wasm_int.Int64.eq Wasm_int.Int64.zero w2 = false) by now apply Wasm_int.Int64.eq_false. now rewrite H17.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 0.
-          eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto. cbn.
+          eapply rt_trans.
+          apply app_trans_const; auto.
+          dostep_nary_eliml 1 1. constructor; apply rs_testop_i64.
+          dostep_nary_eliml 1 1. constructor; apply rs_if_false; unfold wasm_bool; cbn; unfold Wasm_int.Int64.zero.
+          now rewrite Hzero.
+          dostep_nary_eliml 0 1. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto.
           separate_instr.
           eapply rt_trans.
           rewrite catA.
@@ -5829,161 +5787,75 @@ Proof.
           apply app_trans_const; auto.
           eapply rt_trans.
           eapply reduce_trans_label1.
-          apply HloadStep.
+          apply HloadStep'.
           eapply reduce_trans_label1.
-          apply rt_step.
-          constructor.
-          apply rs_binop_success.
-          cbn.
-          unfold Wasm_int.Int64.idiv_u.
-          assert (Wasm_int.Int64.eq w2 Wasm_int.Int64.zero = false) by now apply Wasm_int.Int64.eq_false.
-          now rewrite H17.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 0.
-          constructor.
-          apply rs_label_const; auto.
-          dostep.
-          elimr_nary_instr 2.
-          eapply r_store_success.
-          unfold nat_to_value64, nat_to_i64, Z.of_nat. unfold Wasm_int.Int64.zero in Hstore. eassumption. cbn.
+          apply rt_step. constructor; apply rs_binop_success; cbn.
+          unfold Wasm_int.Int64.idiv_u; rewrite Wasm_int.Int64.eq_sym in Hzero; now rewrite Hzero.
+          dostep_nary_eliml 0 1. constructor; apply rs_label_const; auto.
+          dostep_nary 2. eapply r_store_success.
+          unfold nat_to_value64, nat_to_i64, Z.of_nat. unfold Wasm_int.Int64.zero in Hstore. eassumption.
           apply Hstep. }
         assumption. } }
     { (* mod *)
       inversion Hprimrel. subst vs f' v1 v2.
-      destruct (Wasm_int.Int64.eq_dec w2 Wasm_int.Int64.zero) eqn:Hzero. {
+      destruct (Wasm_int.Int64.eq Wasm_int.Int64.zero w2) eqn:Hzero. {
         (* w2 = 0 *)
         assert (wasm_i64_prim_related w1 (AstCommon.primInt; (i1 mod i2)%uint63)). {
-          exists n1, i1%uint63.
-          assert (n2 = 0)%Z. {
-            unfold Wasm_int.Int64.zero in e0. rewrite e0 in Hw2.
-            apply Wasm_int.Int64.repr_inv in Hw2. symmetry. assumption.
-            - simpl_modulus. now cbn.
-            - simpl_modulus. now cbn. }
-          assert (Uint63.to_Z 0 = 0%Z)%uint63 by now simpl.
-          assert (i2 = 0)%uint63. {
-            rewrite H9 in Hid2.
-            rewrite -H16 in Hid2.
-            now apply Uint63.to_Z_inj in Hid2. } subst i2.
-          assert (i1 mod 0 = of_Z (to_Z (i1 mod 0)))%uint63 by now rewrite Uint63.of_to_Z.
-          assert (to_Z (i1 mod 0) = n1). {
-            rewrite Uint63.mod_spec.
-            rewrite H16. unfold Z.modulo. unfold Z.div_eucl.
-            rewrite Hid1.
-            destruct (Uint63.to_Z i1); reflexivity. }
-          assert (i1 mod 0 = i1)%uint63. {
-            rewrite H17.
-            rewrite Uint63.mod_spec.
-            rewrite Uint63.mod_spec in H18.
-            rewrite H18.
-            rewrite Hid1.
-            now rewrite Uint63.of_to_Z. }
-          try repeat split.
-          - lia.
-          - lia.
-          - assumption.
-          - now rewrite H19.
-          - assumption. }
+          exists n1, i1.
+          apply Wasm_int.Int64.same_if_eq in Hzero.
+          rewrite -Hzero in Hreserve2.
+          replace i2 with 0%uint63 in * by now apply wasm_zero_implies_uint63_zero in Hreserve2.
+          replace (i1 mod 0)%uint63 with (of_Z (to_Z (i1 mod 0)))%uint63 in * by now rewrite Uint63.of_to_Z.
+          replace (to_Z (i1 mod 0)) with n1 in * by (rewrite Uint63.mod_spec; unfold Z.modulo; unfold Z.div_eucl; now destruct (Uint63.to_Z i1)).
+          repeat split; auto; try lia.
+          rewrite Hid1; now rewrite Uint63.of_to_Z.
+        }
         assert (v = Vprim (AstCommon.primInt; (i1 mod i2)%uint63)) by congruence.
-        destruct (H2 _ _ H16 H9) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+        destruct (H2 _ _ H14 H7) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
         exists s_final, fr.
-        unfold load_i64 in Hload2.
-        assert (addr2 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr2)))). {
-          cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
-          inv Hval_y; try discriminate. now inv H27. }
-        unfold load_i64 in Hload1.
-        assert (addr1 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr1)))). {
-          cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
-          inv Hval_x; try discriminate. now inv H28. }
         split. {
           dostep_nary 0. eapply r_global_get; eassumption.
-          dostep.
-          apply r_eliml; auto.
-          apply r_elimr.
-          eapply r_local_get; eassumption.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1.
-          eapply r_load_success; try eassumption. rewrite Heq2. rewrite -H17.
-          apply Hload2'.
-          replace (wasm_deserialise b1 T_i64) with (VAL_int64 w2) by congruence.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1. constructor. apply rs_testop_i64.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1.
-          constructor.
-          apply rs_if_true. unfold wasm_bool. cbn. unfold Wasm_int.Int64.zero. rewrite e0. cbn. discriminate.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 0.
-          eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto. cbn.
+          eapply rt_trans.
+          apply app_trans_const; auto.
+          dostep_nary_eliml 1 1. constructor; apply rs_testop_i64.
+          dostep_nary_eliml 1 1. constructor; apply rs_if_true; unfold wasm_bool; cbn; unfold Wasm_int.Int64.zero.
+          now rewrite Hzero.
+          dostep_nary_eliml 0 1. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto.
           eapply rt_trans.
           separate_instr.
           rewrite catA.
           apply app_trans.
           apply app_trans_const; auto.
-          eapply rt_trans.
           eapply reduce_trans_label1.
-          dostep.
-          elimr_nary_instr 0.
-          eapply r_local_get; eassumption.
-          apply rt_step.
-          eapply r_load_success; try eassumption. rewrite Heq1. rewrite -H18.
-          replace (wasm_deserialise b0 T_i64) with (VAL_int64 w1) by congruence.
-          apply Hload1'.
-          replace (wasm_deserialise b0 T_i64) with (VAL_int64 w1) by congruence.
-          apply rt_step.
-          constructor.
-          apply rs_label_const; auto.
-          dostep.
-          (* apply r_eliml; auto. *)
-          elimr_nary_instr 2.
-          eapply r_store_success. eassumption.
+          apply HloadStep1.
+          dostep_nary_eliml 0 1. constructor. apply rs_label_const; auto.
+          dostep_nary 2. eapply r_store_success; eassumption.
           apply Hstep. }
         assumption. }
       { (* w2 <> 0 *)
         assert (wasm_i64_prim_related (Wasm_int.Int64.modu w1 w2) (AstCommon.primInt; (i1 mod i2)%uint63)). {
           exists (n1 mod n2)%Z, (Uint63.mod i1 i2).
           assert (n2 <> 0)%Z. {
-            intro Hcontra.
-            subst w2.
-            unfold Wasm_int.Int64.zero in n3.
-            now unfold "<>" in n3. }
-          try repeat split.
+            have H' := Wasm_int.Int64.eq_spec Wasm_int.Int64.zero w2.
+            rewrite Hzero in H'.
+            subst w2. now unfold Wasm_int.Int64.zero in H'. }
+          try repeat split; auto.
           - apply Z.mod_pos_bound. lia.
             assert (n1 mod n2 < n2)%Z by now apply Z.mod_pos_bound. lia.
           - unfold Wasm_int.Int64.modu. now rewrite Hunsigned1 Hunsigned2.
           - rewrite Uint63.mod_spec.
             now apply Z.eqb_eq. }
         assert (v = Vprim (AstCommon.primInt; (i1 mod i2)%uint63)) by congruence.
-        destruct (H2 _ _ H16 H9) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+        destruct (H2 _ _ H14 H7) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
         exists s_final, fr.
         split. {
           dostep_nary 0. eapply r_global_get; eassumption.
-          dostep.
-          apply r_eliml; auto.
-          apply r_elimr.
-          eapply r_local_get; eassumption.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1.
-          eapply r_load_success; try eassumption. rewrite Heq2. rewrite -H6. apply Hload2'.
-          replace (wasm_deserialise b1 T_i64) with (VAL_int64 w2) by congruence.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1. constructor. apply rs_testop_i64.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 1.
-          constructor.
-          apply rs_if_false. unfold wasm_bool. cbn.
-          assert (Wasm_int.Int64.eq Wasm_int.Int64.zero w2 = false) by now apply Wasm_int.Int64.eq_false. now rewrite H17.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 0.
-          eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto. cbn.
+          eapply rt_trans.
+          apply app_trans_const; auto.
+          dostep_nary_eliml 1 1. constructor; apply rs_testop_i64.
+          dostep_nary_eliml 1 1. constructor; apply rs_if_false; unfold wasm_bool; cbn; unfold Wasm_int.Int64.zero.
+          now rewrite Hzero.
+          dostep_nary_eliml 0 1. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto.
           separate_instr.
           eapply rt_trans.
           rewrite catA.
@@ -5991,24 +5863,13 @@ Proof.
           apply app_trans_const; auto.
           eapply rt_trans.
           eapply reduce_trans_label1.
-          apply HloadStep.
+          apply HloadStep'.
           eapply reduce_trans_label1.
-          apply rt_step.
-          constructor.
-          apply rs_binop_success.
-          cbn.
-          unfold Wasm_int.Int64.irem_u.
-          assert (Wasm_int.Int64.eq w2 Wasm_int.Int64.zero = false) by now apply Wasm_int.Int64.eq_false.
-          now rewrite H17.
-          dostep.
-          apply r_eliml; auto.
-          elimr_nary_instr 0.
-          constructor.
-          apply rs_label_const; auto.
-          dostep.
-          elimr_nary_instr 2.
-          eapply r_store_success.
-          unfold nat_to_value64, nat_to_i64, Z.of_nat. unfold Wasm_int.Int64.zero in Hstore. eassumption. cbn.
+          apply rt_step. constructor. apply rs_binop_success; cbn.
+          unfold Wasm_int.Int64.irem_u; rewrite Wasm_int.Int64.eq_sym in Hzero; now rewrite Hzero.
+          dostep_nary_eliml 0 1. constructor; apply rs_label_const; auto.
+          dostep_nary 2. eapply r_store_success.
+          unfold nat_to_value64, nat_to_i64, Z.of_nat. unfold Wasm_int.Int64.zero in Hstore. eassumption.
           apply Hstep. }
         assumption. } }
     { (* land *) inversion Hprimrel. subst vs f' v1 v2.
@@ -6019,21 +5880,19 @@ Proof.
         exists (Z.land n1 n2)%Z, (Uint63.land i1 i2).
         try repeat split.
         - now apply Z.land_nonneg.
-        - rewrite H9. now apply Uint63.to_Z_bounded.
+        - rewrite H7. now apply Uint63.to_Z_bounded.
         - subst w. unfold Wasm_int.Int64.iand, Wasm_int.Int64.and.
           now rewrite Hunsigned1 Hunsigned2.
         - now apply Z.eqb_eq. }
       assert (v = Vprim (AstCommon.primInt; (i1 land i2)%uint63)) by congruence.
-      destruct (H2 _ _ H16 H9) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+      destruct (H2 _ _ H14 H7) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
       exists s_final, fr.
       split. {
         dostep_nary 0. apply r_global_get. eassumption.
         eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
-        apply app_trans_const; auto.
-        dostep. apply r_eliml. auto.
-        elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-        dostep.
-        elimr_nary_instr 2. eapply r_store_success. cbn in Heqw. now rewrite -Heqw. eassumption. }
+        apply app_trans_const. auto. apply HloadStep'.
+        dostep_nary_eliml 2 1. constructor; now apply rs_binop_success.
+        dostep_nary 2. eapply r_store_success; cbn in Heqw; now rewrite -Heqw. eassumption. }
       assumption. }
     { (* lor *)
       inversion Hprimrel. subst vs f' v1 v2.
@@ -6044,21 +5903,19 @@ Proof.
         exists (Z.lor n1 n2)%Z, (Uint63.lor i1 i2).
         try repeat split.
         - now apply Z.lor_nonneg; lia.
-        - rewrite H9. now apply Uint63.to_Z_bounded.
+        - rewrite H7. now apply Uint63.to_Z_bounded.
         - subst w. unfold Wasm_int.Int64.ior, Wasm_int.Int64.or.
           now rewrite Hunsigned1 Hunsigned2.
         - now apply Z.eqb_eq. }
       assert (v = Vprim (AstCommon.primInt; (i1 lor i2)%uint63)) by congruence.
-      destruct (H2 _ _ H16 H9) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+      destruct (H2 _ _ H14 H7) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
       exists s_final, fr.
       split. {
         dostep_nary 0. apply r_global_get. eassumption.
         eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
-        apply app_trans_const; auto.
-        dostep. apply r_eliml. auto.
-        elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-        dostep.
-        elimr_nary_instr 2. eapply r_store_success. cbn in Heqw. now rewrite -Heqw. eassumption. }
+        apply app_trans_const. auto. apply HloadStep'.
+        dostep_nary_eliml 2 1. constructor; now apply rs_binop_success.
+        dostep_nary 2. eapply r_store_success; cbn in Heqw; now rewrite -Heqw. eassumption. }
       assumption. }
     { (* lxor *)
       inversion Hprimrel. subst vs f' v1 v2.
@@ -6069,21 +5926,19 @@ Proof.
         exists (Z.lxor n1 n2)%Z, (Uint63.lxor i1 i2).
         try repeat split.
         - now apply Z.lxor_nonneg; lia.
-        - rewrite H9. now apply Uint63.to_Z_bounded.
+        - rewrite H7. now apply Uint63.to_Z_bounded.
         - subst w. unfold Wasm_int.Int64.ixor, Wasm_int.Int64.xor.
           now rewrite Hunsigned1 Hunsigned2.
         - now apply Z.eqb_eq. }
       assert (v = Vprim (AstCommon.primInt; (i1 lxor i2)%uint63)) by congruence.
-      destruct (H2 _ _ H16 H9) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+      destruct (H2 _ _ H14 H7) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
       exists s_final, fr.
       split. {
         dostep_nary 0. apply r_global_get. eassumption.
         eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
-        apply app_trans_const; auto.
-        dostep. apply r_eliml. auto.
-        elimr_nary_instr 2. constructor. apply rs_binop_success. reflexivity.
-        dostep.
-        elimr_nary_instr 2. eapply r_store_success. cbn in Heqw. now rewrite -Heqw. eassumption. }
+        apply app_trans_const. auto. apply HloadStep'.
+        dostep_nary_eliml 2 1. constructor; now apply rs_binop_success.
+        dostep_nary 2. eapply r_store_success; cbn in Heqw; now rewrite -Heqw. eassumption. }
       assumption. }
     { (* lsl *) admit.
     (* TODO: Needs to be adapted to the new translation which takes the Wasm semantics
@@ -6154,69 +6009,65 @@ Proof.
     }
     { (* eqb *)
       inversion Hprimrel. subst vs f' v1 v2.
-      destruct (Wasm_int.Int64.eq_dec w1 w2) eqn:Heq. {
+      destruct (Wasm_int.Int64.eq w1 w2) eqn:Heq. {
         (* w1 = w2 *)
         assert ((i1 =? i2)%uint63 = true). {
-          rewrite -e0 in Hreserve2.
+          apply Wasm_int.Int64.same_if_eq in Heq.
+          rewrite -Heq in Hreserve2.
           assert ((AstCommon.primInt ; i1) = (AstCommon.primInt ; i2)) by now apply prim_rel_inv with (w:=w1).
-          apply inj_pair2 in H14. subst i2. now apply Uint63.eqb_spec. }
-        rewrite H14 in HprimResSome.
+          apply inj_pair2 in H12. subst i2. now apply Uint63.eqb_spec. }
+        rewrite H12 in HprimResSome.
         assert (v = Vconstr t_true []) by congruence.
-        assert (get_ctor_ord cenv t_true = Ret 0%N). { unfold get_ctor_ord. now rewrite H16. }
-        assert (get_ctor_arity cenv t_true = Ret 0). { unfold get_ctor_arity. now rewrite H16. }
-        destruct (H4 _ _ H18 H20 H19) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+        assert (get_ctor_ord cenv t_true = Ret 0%N) by (unfold get_ctor_ord; now rewrite H14).
+        assert (get_ctor_arity cenv t_true = Ret 0) by (unfold get_ctor_arity; now rewrite H14).
+        destruct (H4 _ _ H16 H18 H17) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
         simpl_modulus. simpl_modulus. cbn. lia.
         exists s, fr.
         split. {
           separate_instr.
-          eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
-          apply HloadStep.
-          dostep. elimr_nary_instr 2. constructor. apply rs_relop.
-          dostep_nary 1. constructor. apply rs_if_true.
-          rewrite e0. unfold wasm_bool.
-          assert (Wasm_int.Int64.eq w2 w2 = true) by now apply Wasm_int.Int64.eq_true. now rewrite H21.
+          eapply rt_trans.
+          apply HloadStep'.
+          dostep_nary 2. constructor. apply rs_relop.
+          dostep_nary 1. constructor. apply rs_if_true. unfold wasm_bool; cbn; unfold Wasm_int.Int64.zero.
+          now rewrite Heq.
           dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
           dostep_nary 0. constructor. apply rs_label_const; auto.
-          assert ([:: $VN nat_to_value 1] = [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]). {
-            assert (wal = Val_unboxed 1%N). { inv HreprVal; try discriminate. now replace ord with 0%N by congruence. inv H32. now replace arity with 0 in * by congruence. }
-            now rewrite H21. }
-          rewrite H21.
-          now apply Hstep. }
+          replace [:: $VN nat_to_value 1] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))].
+          now apply Hstep.
+          inv HreprVal; try discriminate.
+          now replace ord with 0%N by congruence.
+          inv H30. now replace arity with 0 in * by congruence.
+        }
         try repeat (split; auto). all: subst fr; auto.
         now exists wal. }
       { (* w1 <> w2 *)
         assert ((i1 =? i2)%uint63 = false). {
-          rewrite Uint63.eqb_false_spec.
-          assert (n1 <> n2). {
-            intro Hcontra. unfold not in n3.
-            subst w1 w2. apply n3. now subst n1. }
-          rewrite Hid1 in H14. rewrite Hid2 in H14.
-          unfold not in H14.
-          intro Hcontra.
-          assert (to_Z i1 = to_Z i2) by congruence. now apply H14 in H18. }
-        rewrite H14 in HprimResSome.
+          rewrite eqb_false_spec.
+          have H' := Wasm_int.Int64.eq_spec w1 w2.
+          rewrite Heq in H'.
+          now subst w1 w2. }
+        rewrite H12 in HprimResSome.
         assert (v = Vconstr t_false []) by congruence.
-        assert (get_ctor_ord cenv t_false = Ret 1%N). { unfold get_ctor_ord. now rewrite H17. }
-        assert (get_ctor_arity cenv t_false = Ret 0). { unfold get_ctor_arity. now rewrite H17. }
-        destruct (H4 _ _ H18 H20 H19) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+        assert (get_ctor_ord cenv t_false = Ret 1%N) by (unfold get_ctor_ord; now rewrite H15).
+        assert (get_ctor_arity cenv t_false = Ret 0) by (unfold get_ctor_arity; now rewrite H15).
+        destruct (H4 _ _ H16 H18 H17) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
         simpl_modulus. cbn. lia.
         exists s, fr.
         split. {
           separate_instr.
-          eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
-          apply HloadStep.
-          dostep. elimr_nary_instr 2. constructor. apply rs_relop.
-          dostep_nary 1. constructor. apply rs_if_false.
-          unfold wasm_bool.
-          assert (Wasm_int.Int64.eq w1 w2 = false) by now apply Wasm_int.Int64.eq_false.
-          now rewrite H21.
+          eapply rt_trans.
+          apply HloadStep'.
+          dostep_nary 2. constructor. apply rs_relop.
+          dostep_nary 1. constructor. apply rs_if_false. unfold wasm_bool; cbn.
+          now rewrite Heq.
           dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
           dostep_nary 0. constructor. apply rs_label_const; auto.
-          assert ([:: $VN nat_to_value 3] = [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]). {
-            assert (wal = Val_unboxed 3%N). { inv HreprVal; try discriminate. now replace ord with 1%N by congruence. now replace arity with 0 in * by congruence. }
-            now rewrite H21. }
-          rewrite H21.
-          now apply Hstep. }
+          replace [:: $VN nat_to_value 3] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))].
+          now apply Hstep.
+          inv HreprVal; try discriminate.
+          now replace ord with 1%N by congruence.
+          inv H30. now replace arity with 0 in * by congruence.
+        }
         try repeat (split; auto). all: subst fr; auto.
         now exists wal. } }
     { (* ltb *) admit. }

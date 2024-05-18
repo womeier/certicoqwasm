@@ -129,8 +129,6 @@ Ltac solve_bet Hcontext :=
   | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i32; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_unop; apply Unop_i64_agree
   | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i64] _) => apply bet_unop; apply Unop_i64_agree
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_binop; apply Binop_i32_agree
-(*   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
-         apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_binop; apply Binop_i32_agree *)
   | |- be_typing _ [:: BI_binop T_i64 _] (Tf ?tin _) =>
          (match tin with
           | [:: T_num T_i64; T_num T_i64 ] => idtac
@@ -166,9 +164,6 @@ Ltac solve_bet Hcontext :=
        end);
       (assert (Hcontext': context_restr lenv (upd_label context ([:: [:: T_num T_i64]] ++ tc_labels context))) by now inv Hcontext);
          apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext'
-  (* | |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i64))) _ _] (Tf [:: T_num T_i32; T_num T_i32] _) => *)
-  (*        apply bet_weakening with (ts:=[::T_num T_i32]);  *)
-  (*        apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext *)
   (* if above failed, try to frame the leading const *)
   | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64]); by solve_bet Hcontext
@@ -332,15 +327,15 @@ Proof.
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv HprimOp.
     { (* Unary operations *)
-      inv H1; unfold increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
+      inv H1; cbv delta; prepare_solve_bet; try solve_bet Hcontext'. }
     { (* Binary operations *)
-      inv H2; unfold make_product; unfold make_carry; unfold apply_binop_and_store_i64; unfold increment_global_mem_ptr; unfold load_local_i64; prepare_solve_bet; try solve_bet Hcontext'. }
+      inv H2; cbv delta; prepare_solve_bet; try solve_bet Hcontext'. }
     { (* Ternary operations *)
       inv H3; unfold load_local_i64 ; unfold make_product; unfold increment_global_mem_ptr.
       { (* diveucl_21 *)
         assert (Hcontext'': context_restr lenv (upd_label c0 ([:: [:: T_num T_i32]] ++ tc_labels c0))) by now inv Hcontext'.
         assert(Hloop: be_typing (upd_label c0 ([:: [:: T_num T_i32] ++ [::]] ++ tc_labels c0)) div21_loop_body (Tf [::] [::])) by (unfold div21_loop_body; prepare_solve_bet; try solve_bet Hcontext'').
-        (* Avoid unfolding too much too avoid slowdonw *)
+        (* Avoid unfolding too much too avoid slowdown *)
         repeat match goal with
                | |- context C [?x :: ?l] =>
                    lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
