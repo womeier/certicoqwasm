@@ -15,7 +15,7 @@ STACKSIZE=$(if $(filter Linux,$(OS)),unlimited,65532)
 
 SED=$(if $(filter Linux,$(OS)),sed,gsed)
 
-all: lib tests runwasm
+all: lib tests
 
 .PHONY: all default clean lib cleanlib tests $(TESTS)
 
