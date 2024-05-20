@@ -327,9 +327,9 @@ Proof.
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv HprimOp.
     { (* Unary operations *)
-      inv H1; cbv delta; prepare_solve_bet; try solve_bet Hcontext'. }
+      inv H1; unfold increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
     { (* Binary operations *)
-      inv H2; cbv delta; prepare_solve_bet; try solve_bet Hcontext'. }
+      inv H2; unfold apply_binop_and_store_i64, make_boolean_valued_comparison, make_product, apply_carry_operation, make_carry, load_local_i64, increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
     { (* Ternary operations *)
       inv H3; unfold load_local_i64 ; unfold make_product; unfold increment_global_mem_ptr.
       { (* diveucl_21 *)
@@ -371,7 +371,7 @@ Proof.
     prepare_solve_bet; try solve_bet Hcontext'.
     + apply IH2=>//. inv Hrestr'. now inv H1.
     + eapply IH1 in H4; try apply Hunboxed; first (now destruct H4); eauto; try eassumption. inv Hrestr'. inv H1. by constructor.
-Admitted. (* Qed. *)
+Qed.
 
 End FUNCTION_BODY_TYPING.
 

@@ -497,39 +497,15 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
 
 | Rprim_eqb : forall x y,
     repr_primitive_binary_operation primInt63Eqb x y
-      [ BI_local_get x
-      ; BI_load T_i64 None 2%N 0%N
-      ; BI_local_get y
-      ; BI_load T_i64 None 2%N 0%N
-      ; BI_relop T_i64 (Relop_i ROI_eq)
-      ; BI_if (BT_valtype (Some (T_num T_i32)))
-          [ BI_const_num (nat_to_value 1) ] (* 2 * ordinal(true) + 1 *)
-          [ BI_const_num (nat_to_value 3) ] (* 2 * ordinal(false) + 1 *)
-      ]
+      (make_boolean_valued_comparison x y ROI_eq)
 
 | Rprim_ltb : forall x y,
     repr_primitive_binary_operation primInt63Ltb x y
-      [ BI_local_get x
-      ; BI_load T_i64 None 2%N 0%N
-      ; BI_local_get y
-      ; BI_load T_i64 None 2%N 0%N
-      ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-      ; BI_if (BT_valtype (Some (T_num T_i32)))
-          [ BI_const_num (nat_to_value 1) ] (* 2 * ordinal(true) + 1 *)
-          [ BI_const_num (nat_to_value 3) ] (* 2 * ordinal(false) + 1 *)
-      ]
+      (make_boolean_valued_comparison x y (ROI_lt SX_U))
 
 | Rprim_leb : forall x y,
     repr_primitive_binary_operation primInt63Leb x y
-      [ BI_local_get x
-      ; BI_load T_i64 None 2%N 0%N
-      ; BI_local_get y
-      ; BI_load T_i64 None 2%N 0%N
-      ; BI_relop T_i64 (Relop_i (ROI_le SX_U))
-      ; BI_if (BT_valtype (Some (T_num T_i32)))
-          [ BI_const_num (nat_to_value 1) ] (* 2 * ordinal(true) + 1 *)
-          [ BI_const_num (nat_to_value 3) ] (* 2 * ordinal(false) + 1 *)
-      ]
+      (make_boolean_valued_comparison x y (ROI_le SX_U))
 
 | Rprim_compare : forall x y,
     repr_primitive_binary_operation primInt63Compare x y
@@ -551,75 +527,39 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
 
 | Rprim_addc : forall x y,
     repr_primitive_binary_operation primInt63Addc x y
-      (load_local_i64 x ++
-       load_local_i64 y ++
-       [ BI_binop T_i64 (Binop_i BOI_add)
-       ; BI_const_num maxuint63
-       ; BI_binop T_i64 (Binop_i BOI_and)
-       ; BI_global_set glob_tmp1
-       ; BI_global_get glob_tmp1
-       ] ++
-       load_local_i64 x ++
-       [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-       ; BI_if (BT_valtype (Some (T_num T_i32)))
-           (make_carry 1 glob_tmp1)
-           (make_carry 0 glob_tmp1)
-       ])
+      (apply_carry_operation x y 1 0
+         [ BI_binop T_i64 (Binop_i BOI_add) ]
+         ([ BI_global_get glob_tmp1 ] ++
+            load_local_i64 x ++
+            [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))]))
 
 | Rprim_addcarryc : forall x y,
     repr_primitive_binary_operation primInt63Addcarryc x y
-      (load_local_i64 x ++
-       load_local_i64 y ++
-       [ BI_binop T_i64 (Binop_i BOI_add)
-       ; BI_const_num (nat_to_value64 1)
-       ; BI_binop T_i64 (Binop_i BOI_add)
-       ; BI_const_num maxuint63
-       ; BI_binop T_i64 (Binop_i BOI_and)
-       ; BI_global_set glob_tmp1
-       ; BI_global_get glob_tmp1
-       ] ++
-       load_local_i64 x ++
-       [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
-       ; BI_if (BT_valtype (Some (T_num T_i32)))
-           (make_carry 1 glob_tmp1)
-           (make_carry 0 glob_tmp1)
-      ])
+      (apply_carry_operation x y 1 0
+         [ BI_binop T_i64 (Binop_i BOI_add)
+         ; BI_const_num (nat_to_value64 1)
+         ; BI_binop T_i64 (Binop_i BOI_add) ]
+         ([ BI_global_get glob_tmp1 ] ++
+            load_local_i64 x ++
+            [ BI_relop T_i64 (Relop_i (ROI_le SX_U))]))
 
 | Rprim_subc : forall x y,
     repr_primitive_binary_operation primInt63Subc x y
-      (load_local_i64 x ++
-      load_local_i64 y ++
-      [ BI_binop T_i64 (Binop_i BOI_sub)
-      ; BI_const_num maxuint63
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_global_set glob_tmp1
-      ] ++
-      load_local_i64 y ++
-      load_local_i64 x ++
-      [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
-      ; BI_if (BT_valtype (Some (T_num T_i32)))
-          (make_carry 0 glob_tmp1)
-          (make_carry 1 glob_tmp1)
-      ])
+      (apply_carry_operation x y 0 1
+         [ BI_binop T_i64 (Binop_i BOI_add) ]
+         (load_local_i64 y ++
+            load_local_i64 x ++
+            [ BI_relop T_i64 (Relop_i (ROI_le SX_U))]))
 
 | Rprim_subcarryc : forall x y,
     repr_primitive_binary_operation primInt63Subcarryc x y
-      (load_local_i64 x ++
-      load_local_i64 y ++
-      [ BI_binop T_i64 (Binop_i BOI_sub)
-      ; BI_const_num (nat_to_value64 1)
-      ; BI_binop T_i64 (Binop_i BOI_sub)
-      ; BI_const_num maxuint63
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_global_set glob_tmp1
-      ] ++
-      load_local_i64 y ++
-      load_local_i64 x ++
-      [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-      ; BI_if (BT_valtype (Some (T_num T_i32)))
-          (make_carry 0 glob_tmp1)
-          (make_carry 1 glob_tmp1)
-      ])
+      (apply_carry_operation x y 0 1
+         [ BI_binop T_i64 (Binop_i BOI_add)
+         ; BI_const_num (nat_to_value64 1)
+         ; BI_binop T_i64 (Binop_i BOI_sub) ]
+         (load_local_i64 y ++
+            load_local_i64 x ++
+            [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))]))
 
 | Rprim_mulc : forall x y,
     repr_primitive_binary_operation primInt63Mulc x y
@@ -5942,7 +5882,10 @@ Proof.
       assumption. }
     { (* lsl *) admit.
     (* TODO: Needs to be adapted to the new translation which takes the Wasm semantics
-       for shifts into account (the second operand is taken modulo 64) *)
+       for shifts into account (the second operand is taken modulo 64).
+       BLOCKED: The WasmCert formalization does not currently take this into account
+       in the definition of left shift, and so this is pending the outcome of
+       https://github.com/WasmCert/WasmCert-Coq/issues/44 *)
       (* inversion Hprimrel. subst vs f' v1 v2. *)
       (* remember (Wasm_int.Int64.and (Wasm_int.Int64.ishl w1 w2) *)
       (*             (Wasm_int.Int64.repr 9223372036854775807)) as w. *)
@@ -5978,7 +5921,10 @@ Proof.
       }
     { (* lsr *) admit.
     (* TODO: Needs to be adapted to the new translation which takes the Wasm semantics
-       for shifts into account (the second operand is taken modulo 64) *)
+       for shifts into account (the second operand is taken modulo 64)
+       BLOCKED: The WasmCert formalization does not currently take this into account
+       in the definition of right shift, and so this is pending the outcome of
+       https://github.com/WasmCert/WasmCert-Coq/issues/44 *)
       (* inversion Hprimrel. subst vs f' v1 v2. *)
       (* remember (Wasm_int.Int64.ishr_u w1 w2) as w. *)
       (* assert (wasm_i64_prim_related w (AstCommon.primInt; (i1 >> i2)%uint63)). { *)
