@@ -15,20 +15,6 @@ const pp_map = {
     "sm_gauss_nat": (val, dataView) => print_option(val, dataView, print_nat_sexp),
     "sm_gauss_N": (val, dataView) => print_option(val, dataView, print_N_sexp),
     "sm_gauss_PrimInt": (val, dataView) => print_option(val, dataView, print_i63),
-    "addition_primitive": print_bool,
-    "addition_primitive_overflow": print_bool,
-    "subtraction_primitive": print_bool,
-    "subtraction_primitive_underflow": print_bool,
-    "multiplication_primitive": print_bool,
-    "multiplication_primitive_overflow": print_bool,
-    "division_primitive": print_bool,
-    "division_primitive_0": print_bool,
-    "land_primitive": print_bool,
-    "lor_primitive": print_bool,
-    "lsl_primitive": print_bool,
-    "lsr_primitive": print_bool,
-    "eqb_true_primitive": print_bool,
-    "eqb_false_primitive": print_bool,
 };
 
 import { readFileSync } from 'fs';
@@ -59,6 +45,7 @@ let importObject = {
     env: {
         write_char: write_char,
         write_int: write_int,
+	write_int64: write_int,
     }
 };
 
@@ -72,7 +59,11 @@ let importObject = {
     const stop_startup = Date.now();
     const time_startup = stop_startup - start_startup;
 
+    const prime_pattern = /^prime.*$/;
+    const primitive_pattern = /.*_primitive.*$/;
+
     try {
+
 	const start_main = Date.now();
         obj.instance.exports.main_function();
         const stop_main = Date.now();
@@ -86,25 +77,32 @@ let importObject = {
             console.log(`Benchmark ${path}: {{"time_startup": "${time_startup}", "time_main": "${time_main}", "program": "${program}"}} (in ms)`);
             process.exit(1);
         } else {
-	    const pp_fun = pp_map[program];
+
+
+	    var pp_fun;
+	    if (prime_pattern.test(program)) { pp_fun = print_bool; }
+	    else if (primitive_pattern.test(program)) { pp_fun = print_bool; }
+	    else { pp_fun = pp_map[program]; }
 	    if (pp_fun) {
 		const memory = obj.instance.exports.memory;
 		const dataView = new DataView(memory.buffer);
 		const res_value = obj.instance.exports.result.value;
-		process.stdout.write("====>");
+		process.stdout.write(`${program} ====> `);
 
 		const start_pp = Date.now();
 		pp_fun(res_value, dataView);
 		const stop_pp = Date.now();
 		time_pp = stop_pp - start_pp;
 		process.stdout.write("\n");
+
 	    }
 	    else {
 		console.log(`No pretty function defined for program ${program}`);
 	    }
         }
-
-	console.log(`Benchmark ${path}: {{"time_startup": "${time_startup}", "time_main": "${time_main}", "time_pp": "${time_pp}", "program": "${program}"}} (in ms)`);
+	if (!(primitive_pattern.test(program))) {
+	    console.log(`Benchmark ${path}: {{"time_startup": "${time_startup}", "time_main": "${time_main}", "time_pp": "${time_pp}", "program": "${program}"}} (in ms)`);
+	}
     } catch (error) {
 	console.log(error);
 	process.exit(1);

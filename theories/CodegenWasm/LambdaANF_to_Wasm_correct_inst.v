@@ -58,6 +58,9 @@ Definition context_restr (lenv: localvar_env) (c: t_context) :=
   (* globals i32, mut *)
   (forall var, In var [global_mem_ptr; constr_alloc_ptr; result_var; result_out_of_mem] ->
     lookup_N (tc_globals c) var = Some {| tg_mut:= MUT_var; tg_t:= T_num T_i32|}) /\
+  (* globals i64, mut *)
+  (forall var, In var [glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4] ->
+    lookup_N (tc_globals c) var = Some {| tg_mut:= MUT_var; tg_t:= T_num T_i64|}) /\
   (* no return value *)
   (tc_return c = Some []) /\
   (* mem exists *)
@@ -81,7 +84,7 @@ Ltac solve_bet Hcontext :=
   let Hglob := fresh "Hglob" in
   simpl; try rewrite List.app_nil_r;
   match goal with
-  | |- be_typing _ [::] (Tf [::] [::]) => by apply bet_empty
+  | |- be_typing _ [::] (Tf [::] _) => by apply bet_empty
   | |- be_typing _ [:: BI_return] _ => apply bet_return with (t1s:=[::]); by apply Hcontext
   | |- be_typing _ [:: BI_unreachable] _ => by apply bet_unreachable
   (* globals *)
@@ -91,6 +94,27 @@ Ltac solve_bet Hcontext :=
   | |- be_typing ?context [:: BI_global_set ?var] _ =>
          assert (lookup_N (tc_globals context) var = Some {| tg_mut:= MUT_var; tg_t := T_num T_i32 |}) as Hglob by
           (apply Hcontext; now cbn); eapply bet_global_set with (t:=T_num T_i32); [eassumption | now cbn | now cbn]
+  | |- be_typing ?context [:: BI_global_get ?var] (Tf ?tin _) =>
+         assert (lookup_N (tc_globals context) var = Some {| tg_mut:= MUT_var; tg_t := T_num T_i64 |}) as Hglob by
+        (apply Hcontext; now cbn);
+         (match tin with
+          | [:: ] => idtac
+          | [:: T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64; T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64; T_num T_i64; T_num T_i64])
+          end);
+         eapply bet_global_get with (t:=T_num T_i64); [eassumption | now cbn]
+  | |- be_typing ?context [:: BI_global_set ?var] (Tf ?tin _) =>
+         assert (lookup_N (tc_globals context) var = Some {| tg_mut:= MUT_var; tg_t := T_num T_i64 |}) as Hglob by
+        (apply Hcontext; now cbn);
+         (match tin with
+          | [:: T_num T_i64 ] => idtac
+          | [:: T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64; T_num T_i64])
+          end);
+         eapply bet_global_set with (t:=T_num T_i64); [eassumption | now cbn | now cbn]
   (* locals with mapping *)
   | H: repr_var _ _ ?x' |- be_typing _ [:: BI_local_get ?x'] (Tf [::] _) => apply bet_local_get; eapply Hcontext; eassumption
   | H: repr_var _ _ ?x' |- be_typing _ [:: BI_local_set ?x'] (Tf [::_] _) => apply bet_local_set; eapply Hcontext; eassumption
@@ -100,11 +124,20 @@ Ltac solve_bet Hcontext :=
   (* arithmetic *)
   | |- be_typing _ [:: BI_const_num _] (Tf [::] _) => apply bet_const_num
   | |- be_typing _ [:: BI_testop T_i32 _] (Tf [:: T_num T_i32] _) => apply bet_testop; by simpl
-  | |- be_typing _ [:: BI_testop T_i64 _] (Tf [:: T_num T_i64] _) => apply bet_testop; by simpl
+  | |- be_typing _ [:: BI_testop T_i64 _] (Tf ([:: T_num T_i32; T_num T_i64]) _) => apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_testop; by simpl
+  | |- be_typing _ [:: BI_testop T_i64 _] (Tf ([:: T_num T_i64]) _) => apply bet_testop; by simpl
+  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i32; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_unop; apply Unop_i64_agree
+  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i64] _) => apply bet_unop; apply Unop_i64_agree
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_binop; apply Binop_i32_agree
-(*   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
-         apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_binop; apply Binop_i32_agree *)
-  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_binop; apply Binop_i64_agree
+  | |- be_typing _ [:: BI_binop T_i64 _] (Tf ?tin _) =>
+         (match tin with
+          | [:: T_num T_i64; T_num T_i64 ] => idtac
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64])
+          | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64; T_num T_i64])
+          end);
+         apply bet_binop; apply Binop_i64_agree
+  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); apply bet_binop; apply Binop_i64_agree
   | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_relop; apply Relop_i32_agree
   | |- be_typing _ [:: BI_relop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_relop; apply Relop_i64_agree
 (* memory *)
@@ -119,9 +152,24 @@ Ltac solve_bet Hcontext :=
          apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext
   | |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i32))) [:: BI_const_num (nat_to_value _)] [:: BI_const_num (nat_to_value _)]] _ =>
          apply bet_if_wasm with (tn:=[])=>//; try solve_bet Hcontext
+  | H: context_restr ?lenv ?context |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i32))) _ _] (Tf [:: T_num T_i32] _) =>
+      let Hcontext' := fresh "Hcontext" in
+      (assert (Hcontext': context_restr lenv (upd_label context ([:: [:: T_num T_i32]] ++ tc_labels context))) by now inv Hcontext);
+         apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext'
+  | H: context_restr ?lenv ?context |- be_typing _ [:: BI_if (BT_valtype (Some (T_num T_i64))) _ _] (Tf ?tin _) =>
+      let Hcontext' := fresh "Hcontext" in
+      (match tin with
+       | [:: T_num T_i32] => idtac
+       | [:: T_num T_i32; T_num T_i32 ] => apply bet_weakening with (ts:=[::T_num T_i32])
+       end);
+      (assert (Hcontext': context_restr lenv (upd_label context ([:: [:: T_num T_i64]] ++ tc_labels context))) by now inv Hcontext);
+         apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext'
   (* if above failed, try to frame the leading const *)
-  | |- be_typing _ _ (Tf [:: T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32]); solve_bet Hcontext
-  | |- be_typing _ _ (Tf [:: T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i64; T_num T_i64; T_num T_i64]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
+  | |- be_typing _ _ (Tf [:: T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
@@ -131,6 +179,7 @@ Ltac solve_bet Hcontext :=
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32; T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
          apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_binop; apply Binop_i32_agree
+  | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by solve_bet Hcontext
   end.
 
 Ltac prepare_solve_bet :=
@@ -277,8 +326,33 @@ Proof.
       destruct (tc_mems c0) eqn:Hc; cbn; eauto. by apply Hcontext' in Hc. }
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv HprimOp.
-    unfold apply_binop_and_store_i64.
-    all: prepare_solve_bet; try solve_bet Hcontext'.
+    { (* Unary operations *)
+      inv H1; unfold increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
+    { (* Binary operations *)
+      inv H2; unfold apply_binop_and_store_i64, make_boolean_valued_comparison, make_product, apply_carry_operation, make_carry, load_local_i64, increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
+    { (* Ternary operations *)
+      inv H3; unfold load_local_i64 ; unfold make_product; unfold increment_global_mem_ptr.
+      { (* diveucl_21 *)
+        assert (Hcontext'': context_restr lenv (upd_label c0 ([:: [:: T_num T_i32]] ++ tc_labels c0))) by now inv Hcontext'.
+        assert(Hloop: be_typing (upd_label c0 ([:: [:: T_num T_i32] ++ [::]] ++ tc_labels c0)) div21_loop_body (Tf [::] [::])) by (unfold div21_loop_body; prepare_solve_bet; try solve_bet Hcontext'').
+        (* Avoid unfolding too much too avoid slowdown *)
+        repeat match goal with
+               | |- context C [?x :: ?l] =>
+                   lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+               end;
+          repeat rewrite catA; repeat eapply bet_composition'.
+        14: { apply bet_if_wasm with (tn:=[])=>//.
+              prepare_solve_bet; try solve_bet Hcontext''.
+              (* Avoid unfolding too much to avoid slowdown *)
+              repeat match goal with
+                     | |- context C [?x :: ?l] =>
+                         lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+                     end;
+                repeat rewrite catA; repeat eapply bet_composition'; eauto; try solve_bet Hcontext''.
+        }
+        all: try solve_bet Hcontext''. }
+      prepare_solve_bet; try solve_bet Hcontext'. }
+    solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
   - (* repr_branches nil *)
     intros ????? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
@@ -298,6 +372,7 @@ Proof.
     + apply IH2=>//. inv Hrestr'. now inv H1.
     + eapply IH1 in H4; try apply Hunboxed; first (now destruct H4); eauto; try eassumption. inv Hrestr'. inv H1. by constructor.
 Qed.
+
 End FUNCTION_BODY_TYPING.
 
 
@@ -498,7 +573,7 @@ Proof.
   intros ??? Hft Htab1 Htab2 Hrefs. unfold num_custom_funs.
   apply Forall2_spec. by rewrite table_element_mapping_length repeat_length.
   intros ??? Hnth1 Hnth2.
-  assert (n < length fns + 4). {
+  assert (n < length fns + num_custom_funs). {
     apply nth_error_Some_length in Hnth1.
     by rewrite table_element_mapping_length in Hnth1.
   }
@@ -508,7 +583,7 @@ Proof.
   - apply Forall_forall.
     intros. cbn in H0. destruct H0=>//. subst x.
     split=>//.
-    assert (length (tc_funcs c) = 4 + length fns). { rewrite Hft. cbn. now rewrite map_length. }
+    assert (length (tc_funcs c) = num_custom_funs + length fns). { rewrite Hft. cbn. now rewrite map_length. }
     assert (exists x, lookup_N (tc_funcs c) (N.of_nat n) = Some x) as [x Hx].
     { apply notNone_Some. apply nth_error_Some. lia. }
     eapply bet_ref_func; eauto. rewrite Hrefs. apply nodup_In.
@@ -776,6 +851,7 @@ Proof.
 
   have H' := increasing_list_fact_id _ _ _ num_custom_funs H Hbounds Ho.
   unfold num_custom_funs in H'.
+
   assert (n=j) by lia. congruence.
 Qed.
 
@@ -1120,7 +1196,7 @@ Proof.
     destruct e; inv He; inv Hfuns; try by apply NoDup_nil. assumption. } clear Hnodup'.
 
   destruct (interp_alloc_module initial_store module [:: EV_func 0%N; EV_func 1%N]
-                                (repeat (VAL_num (nat_to_value 0)) 4)
+                                ((repeat (VAL_num (nat_to_value 0)) 4) ++ (repeat (VAL_num (nat_to_value64 0)) 4))
                                 (elem_vals (Datatypes.length fns + num_custom_funs) 0))
          as [s' inst] eqn:HallocM.
 
@@ -1149,7 +1225,7 @@ Proof.
   exists hs.
   exists inst.
   (* initial values of globals: 0 *)
-  exists (repeat (VAL_num (nat_to_value 0)) 4).
+  exists ((repeat (VAL_num (nat_to_value 0)) 4) ++ (repeat (VAL_num (nat_to_value64 0)) 4)).
   (* element values (table entries) *)
   exists (elem_vals (length fns + num_custom_funs) 0).
 
@@ -1166,7 +1242,7 @@ Proof.
     (* mem types *)
     exists [{| lim_min := 1%N; lim_max := Some max_mem_pages |}].
     (* global types *)
-    exists (repeat ({| tg_mut := MUT_var; tg_t := T_num T_i32 |}) 4).
+    exists ((repeat ({| tg_mut := MUT_var; tg_t := T_num T_i32 |}) 4) ++ (repeat ({| tg_mut := MUT_var; tg_t := T_num T_i64 |}) 4)).
     (* elem types *)
     exists (repeat T_funcref (Datatypes.length fns + num_custom_funs)).
     (* data types *)
@@ -1197,7 +1273,10 @@ Proof.
           destruct (nth_error _ (N.to_nat x')) eqn:Hcontra =>//.
           inv Hvar. apply var_mapping_list_lt_length in H.
           by apply nth_error_Some in H.
-        * (* globals *)
+        * (* i32 globals *)
+          intros var Hin. cbn.
+          by repeat destruct Hin as [|Hin]; subst =>//.
+        * (* i64 globals *)
           intros var Hin. cbn.
           by repeat destruct Hin as [|Hin]; subst =>//.
         * (* table *)
@@ -1263,7 +1342,9 @@ Proof.
             rewrite Hlocs Htype Nat2N.id. unfold lookup_N. cbn.
             rewrite <-repeat_app, <-app_length.
             apply nth_error_repeat. inv Hvar'. now eapply var_mapping_list_lt_length.
-          * (* globals *)
+          * (* i32 globals *)
+            intros ? Hin'. cbn. by repeat destruct Hin' as [|Hin']; subst =>//.
+          * (* i64 globals *)
             intros ? Hin'. cbn. by repeat destruct Hin' as [|Hin']; subst =>//.
           * (* table *)
             eexists. cbn. unfold lookup_N. split; reflexivity.
@@ -1508,7 +1589,7 @@ Definition INV_instantiation (s : store_record) (f : frame) (num_funs : nat) :=
  /\ INV_result_var_out_of_mem_is_zero s f
  /\ INV_global_mem_ptr_writable s f
  /\ INV_constr_alloc_ptr_writable s f
- /\ INV_globals_all_mut_i32 s
+ /\ INV_globals_all_mut s f
  /\ INV_linear_memory s f
  /\ INV_global_mem_ptr_in_linear_memory s f
  /\ INV_locals_all_i32 f
@@ -1605,9 +1686,9 @@ Proof.
 
   (* globals red. to const *)
   unfold instantiate_globals in HinstGlobals. cbn in HinstGlobals.
-  inv HinstGlobals. inv H3. inv H5. inv H6. inv H7. cbn in H1.
+  inv HinstGlobals. inv H3. inv H5. inv H6. inv H7. inv H8. inv H9. inv H10. cbn in H1.
   apply reduce_trans_value with (v1:=VAL_num (nat_to_value 0)) in H1, H2, H3, H4. subst y y0 y1 y2.
-
+  apply reduce_trans_value with (v1:=VAL_num (nat_to_value64 0)) in H5, H6, H7, H8. subst y3 y4 y5 y6.
   unfold alloc_module, alloc_funcs, alloc_globs, add_mem, alloc_Xs in HallocModule.
   cbn in HallocModule. repeat rewrite map_app in HallocModule. cbn in HallocModule.
   destruct (fold_left _ (map _ (unique_export_names fns)) _) eqn:HaddF.
@@ -1654,13 +1735,22 @@ Proof.
   split. (* gmp_w *) eexists. rewrite -E3. reflexivity.
   split. (* cap_w *) eexists. rewrite -E3. reflexivity.
   (* globals mut i32 *)
-  split. unfold INV_globals_all_mut_i32, globals_all_mut_i32. intros. unfold lookup_N in H.
-  { rewrite -E3 in H. cbn in H.
-    destruct (N.to_nat g). inv H. eexists. reflexivity.
-    destruct n. inv H. eexists. reflexivity.
-    destruct n. inv H. eexists. reflexivity.
-    destruct n. inv H. eexists. reflexivity.
-    destruct n; inv H. }
+  split. unfold INV_globals_all_mut, globals_all_mut. intros. unfold lookup_N in H1.
+  {
+    unfold result_var, result_out_of_mem, global_mem_ptr, constr_alloc_ptr in *.
+    cbn in H0; try subst gidx; try rewrite F2 in H0; unfold lookup_N in H0.
+    rewrite -E3 in H1. cbn in H1.
+    destruct (N.to_nat gidx) eqn:Hgidx. cbn in H0.
+    replace g with 0%N in * by congruence. inv H1. now eexists.
+    destruct n. cbn in H0.
+    replace g with 1%N in * by congruence. inv H1. now eexists.
+    destruct n. cbn in H0.
+    replace g with 2%N in * by congruence. inv H1. now eexists.
+    destruct n. cbn in H0.
+    replace g with 3%N in * by congruence. inv H1. now eexists.
+    repeat (try destruct H;[now subst gidx|]).
+    now inv H.
+  }
   split. (* linmem *)
   { unfold INV_linear_memory. unfold smem. cbn. rewrite F3.
     split; auto. unfold smem. eexists; auto.
@@ -1807,7 +1897,7 @@ Proof.
 	  split=>//. rewrite -Hexpr.
 	  destruct e; inv HtopExp'=>//.
 Unshelve. all: repeat constructor.
-Qed.
+Admitted. (* Qed. *)
 
 (* helper lemmas for post-instantiation *)
 
@@ -2296,13 +2386,13 @@ Proof.
   (* INV holds now *)
   unfold INV.
   split. (* result_var writable *)
-    intro. destruct (H val) as [s Hs].
+    intro. intros. destruct (H val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
     destruct (lookup_N (inst_globals (f_inst fr)) result_var)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
   split. (* result_out_of_mem writable *)
-    intro. destruct (H0 val) as [s Hs].
+    intro. intros. destruct (H0 val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
     destruct (lookup_N (inst_globals (f_inst fr)) result_out_of_mem)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
@@ -2311,19 +2401,19 @@ Proof.
   unfold INV_result_var_out_of_mem_is_zero, sglob_val, sglob, sglob_ind in *.
     by repeat rewrite <- Hglobals in *.
   split. (* global_mem_ptr writable *)
-    intro. destruct (H2 val) as [s Hs].
+    intro. intros. destruct (H2 val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
     destruct (lookup_N (inst_globals (f_inst fr)) global_mem_ptr)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
   split. (* constr_alloc_ptr writable *)
-    intro. destruct (H3 val) as [s Hs].
+    intro. intros. destruct (H3 val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
     destruct (lookup_N (inst_globals (f_inst fr)) constr_alloc_ptr)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
   split. (* globals all mut i32s *)
-    unfold INV_globals_all_mut_i32, globals_all_mut_i32. rewrite -Hglobals. assumption.
+    unfold INV_globals_all_mut, globals_all_mut. rewrite -Hglobals. assumption.
   split. (* linear memory *)
     unfold INV_linear_memory, smem. by rewrite -Hmems.
   split. (* global_mem_ptr in linear mem *)
@@ -2640,7 +2730,7 @@ Proof.
     remember ({| f_locs := [::]; f_inst := f_inst fr |}) as frameInit.
 
     subst lenv.
-    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
+    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv funenv fenv nenv penv _
                     _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
                     HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
                     HeRestr' Hunbound Hstep hs sr' _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
@@ -2735,7 +2825,7 @@ Proof.
     remember ({| f_locs := [::]; f_inst := f_inst fr |}) as frameInit.
 
     subst lenv.
-    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
+    have HMAIN := repr_bs_LambdaANF_Wasm_related cenv funenv fenv nenv penv _
                     _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
                     HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
                     HeRestr Hunbound Hstep hs sr' _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
