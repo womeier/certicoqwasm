@@ -951,7 +951,7 @@ Definition store_i64 mem addr (v : value_num) : option meminst :=
 Definition tag_to_i32 (t : ctor_tag) :=
   Wasm_int.Int32.repr (BinInt.Z.of_nat (Pos.to_nat t)).
 
-(* TODO use ref types (WasmGC) instead *)
+(* TODO use u32 instead *)
 Inductive wasm_value :=
   | Val_unboxed : u32 -> wasm_value
   | Val_ptr     : u32 -> wasm_value
@@ -968,18 +968,6 @@ Definition wasm_value_to_i32 (v : wasm_value) :=
   Wasm_int.Int32.repr (BinInt.Z.of_N (wasm_value_to_u32 v)).
 
 (* memory *)
-
-Lemma load_store_i32 : forall m addr v b1 b2 b3 b4,
-load_i32 m addr = Some v ->
-exists m', store m addr 0%N [b1;b2;b3;b4] 4 = Some m'.
-Proof.
-  intros. unfold load_i32 in H.
-  destruct (load m addr 0%N 4) eqn:Heqn; inv H.
-  unfold load in Heqn.
-  apply enough_space_to_store. cbn.
-  destruct ((addr + (0 + N.of_nat 4) <=? mem_length m)%N) eqn:Harith. 2: inv Heqn.
-  apply N.leb_le in Harith. cbn in Harith. lia.
-Qed.
 
 Lemma store_load_i32 : forall m m' addr v,
 length v = 4 ->
@@ -1775,17 +1763,6 @@ Proof.
     lia.
 Qed.
 
-(* TODO get rid of, shouldn't be needed *)
-Lemma update_global_preserves_memory' : forall sr sr' fr v j,
-  supdate_glob sr (f_inst fr) j v = Some sr' ->
-  sr.(s_mems) = sr'.(s_mems).
-Proof.
-  intros.
-  unfold supdate_glob, supdate_glob_s, sglob_ind in H. cbn in H.
-  destruct (lookup_N (inst_globals (f_inst fr)) j). 2: inv H. cbn in H.
-  destruct (lookup_N (s_globals sr) g). inv H. reflexivity. inv H.
-Qed.
-
 Lemma update_global_preserves_memory : forall sr sr' fr v j,
   supdate_glob sr (f_inst fr) j v = Some sr' ->
   smem sr (f_inst fr) = smem sr' (f_inst fr).
@@ -1828,32 +1805,6 @@ Qed.
 Lemma N_div_ge0 : forall a b, (b > 0)%N -> (a >= 0)%N -> (a / b >= 0)%N.
 Proof.
   intros. assert (Z.of_N a / Z.of_N b >= 0)%Z. apply Z_div_ge0; lia. lia.
-Qed.
-
-(* taken from iriswasm *)
-Lemma N_nat_bin n:
-  n = N.of_nat (ssrnat.nat_of_bin n).
-Proof.
-  destruct n => //=.
-  replace (ssrnat.nat_of_pos p) with (Pos.to_nat p); first by rewrite positive_nat_N.
-  induction p => //=.
-  - rewrite Pos2Nat.inj_xI.
-    f_equal.
-    rewrite IHp.
-    rewrite ssrnat.NatTrec.doubleE.
-    rewrite - ssrnat.mul2n.
-    by lias.
-  - rewrite Pos2Nat.inj_xO.
-    rewrite IHp.
-    rewrite ssrnat.NatTrec.doubleE.
-    rewrite - ssrnat.mul2n.
-    by lias.
-Qed.
-
-Lemma Z_nat_bin : forall x, Z.of_nat (ssrnat.nat_of_bin x) = Z.of_N x.
-Proof.
-  intros.
-  have H := N_nat_bin x. lia.
 Qed.
 
 Lemma small_signed_repr_n_n : forall n,
