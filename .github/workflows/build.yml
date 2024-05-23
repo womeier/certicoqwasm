@@ -5,6 +5,7 @@ on:
     branches:
       - master
       - 8.17
+      - ci
   pull_request:
     branches:
       - "**"
@@ -37,6 +38,15 @@ jobs:
           #     opam pin -n -y submodules/metacoq
           #   endGroup
           before_script: |
+            startGroup "Install more dependencies"
+              sudo apt-get install --yes wabt
+              # install node via https://github.com/nvm-sh/nvm
+              curl https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
+              export NVM_DIR="$HOME/.nvm"
+              [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+              nvm install 22.1.0
+              node --version
+            endGroup
             startGroup "fix permission issues"
               sudo chown -R coq:coq .
             endGroup
@@ -71,7 +81,6 @@ jobs:
               opam list
             endGroup
             startGroup "Run benchmarks"
-              sudo apt-get install --yes wabt nodejs python3-tqdm
               ulimit -s unlimited
               make -C ~/repo/benchmarks all
             endGroup
