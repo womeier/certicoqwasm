@@ -1896,8 +1896,8 @@ Proof.
 	  split; first by rewrite cats0.
 	  split=>//. rewrite -Hexpr.
 	  destruct e; inv HtopExp'=>//.
-Unshelve. all: repeat constructor.
-Admitted. (* Qed. *)
+Unshelve. all: by repeat constructor.
+Qed.
 
 (* helper lemmas for post-instantiation *)
 
