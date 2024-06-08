@@ -2445,9 +2445,12 @@ Theorem LambdaANF_Wasm_related :
   forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var)
          (hs : host_state) module fenv lenv (pfs : M.t (list val -> option val)),
   (* evaluation of LambdaANF expression *)
-    bstep_e pfs cenv (M.empty _) e v n ->
-        bstep_prim_funs_no_fun_return_values pfs ->
-  bs_LambdaANF_prim_fun_env_extracted_prim_env_related cenv penv pfs ->
+  bstep_e pfs cenv (M.empty _) e v n ->
+
+  (* pfs well-formed *)
+  prim_funs_env_returns_no_funvalues pfs ->
+  prim_funs_env_wellformed cenv penv pfs ->
+
   (* compilation function *)
   LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, lenv) ->
   (* constructors wellformed *)

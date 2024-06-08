@@ -3774,68 +3774,77 @@ Qed.
 
 Import SigTNotations.
 
-(* TODO: Think of a better name *)
 Inductive bs_LambdaANF_prim_fun_extracted_prim_related :
   (Kernames.kername * string * bool * nat) -> (list val -> option val) -> Prop :=
 | Bstep_primInt_add : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Add, s, b, n)
       ( fun vs =>
-          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.add i1 i2) ) ) | _ => None end)
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+            Some ( Vprim (AstCommon.primInt ; (Uint63.add i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_sub : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Sub, s, b, n)
       ( fun vs =>
-          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.sub i1 i2) ) ) | _ => None end)
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+            Some ( Vprim (AstCommon.primInt ; (Uint63.sub i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_mul : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Mul, s, b, n)
       ( fun vs =>
-          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.mul i1 i2) ) ) | _ => None end)
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+            Some ( Vprim (AstCommon.primInt ; (Uint63.mul i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_div : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Div, s, b, n)
       ( fun vs =>
-          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.div i1 i2) ) ) | _ => None end)
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+            Some ( Vprim (AstCommon.primInt ; (Uint63.div i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_mod : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Mod, s, b, n)
       ( fun vs =>
-          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.mod i1 i2) ) ) | _ => None end)
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+            Some ( Vprim (AstCommon.primInt ; (Uint63.mod i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_land : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Land, s, b, n)
       ( fun vs =>
-          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.land i1 i2) ) ) | _ => None end)
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+            Some ( Vprim (AstCommon.primInt ; (Uint63.land i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_lor : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Lor, s, b, n)
       ( fun vs =>
-          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.lor i1 i2) ) ) | _ => None end)
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+            Some ( Vprim (AstCommon.primInt ; (Uint63.lor i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_lxor : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Lxor, s, b, n)
       ( fun vs =>
-          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.lxor i1 i2) ) ) | _ => None end)
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+            Some ( Vprim (AstCommon.primInt ; (Uint63.lxor i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_lsl : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Lsl, s, b, n)
       ( fun vs =>
-          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.lsl i1 i2) ) ) | _ => None end)
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+            Some ( Vprim (AstCommon.primInt ; (Uint63.lsl i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_lsr : forall s b n (i1 i2 : Uint63.int),
     bs_LambdaANF_prim_fun_extracted_prim_related
       (primInt63Lsr, s, b, n)
       ( fun vs =>
-          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => Some ( Vprim (AstCommon.primInt ; (Uint63.lsr i1 i2) ) ) | _ => None end)
+          match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] =>
+            Some ( Vprim (AstCommon.primInt ; (Uint63.lsr i1 i2) ) ) | _ => None end)
 
 | Bstep_primInt_eqb : forall s b n (i1 i2 : Uint63.int) t_true it_true t_false it_false,
     M.get t_true cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_true 0%N 0) ->
@@ -4027,15 +4036,16 @@ Inductive bs_LambdaANF_prim_fun_extracted_prim_related :
           | _ => None
           end).
 
-(* TODO: Think of better name *)
-Definition bs_LambdaANF_prim_fun_env_extracted_prim_env_related (penv : prim_env) (prim_funs : M.t (list val -> option val)) : Prop :=
+
+(* prim_funs_wellformed *)
+Definition prim_funs_env_wellformed (penv : prim_env) (prim_funs : M.t (list val -> option val)) : Prop :=
   forall p p',
     M.get p penv = Some p' ->
     exists f',
       M.get p prim_funs = Some f' /\ bs_LambdaANF_prim_fun_extracted_prim_related p' f'.
 
 (* Supported primitive functions do not return functions *)
-Definition bstep_prim_funs_no_fun_return_values (prim_funs : M.t (list val -> option val)) : Prop :=
+Definition prim_funs_env_returns_no_funvalues (prim_funs : M.t (list val -> option val)) : Prop :=
   forall rho fds f f' f0 vs v,
     M.get f prim_funs = Some f' ->
     f' vs = Some v ->
@@ -4050,7 +4060,7 @@ Lemma step_preserves_empty_env_fds : forall rho e v c fds rho' fds' f'  (pfs : M
 	(forall e' e'' eAny fdsAny,
 	  (subterm_or_eq e' e \/ (subterm_or_eq e' e'' /\ dsubterm_fds_e e'' fds))
 	  -> e' <> Efun fdsAny eAny) ->
-        bstep_prim_funs_no_fun_return_values pfs ->
+        prim_funs_env_returns_no_funvalues pfs ->
   bstep_e pfs cenv rho e v c ->
   subval_or_eq (Vfun rho' fds' f') v ->
   fds' = fds /\ rho' = M.empty val /\ name_in_fundefs fds f'.
@@ -4962,7 +4972,7 @@ Qed.
 
 Lemma primitive_operation_reduces : forall lenv pfs state s f m fds f' (x : var) (x' : localidx) (p : prim) p'
                                            (ys : list var) (e : exp) (vs : list val) (rho : env) (v : val) (gmp_v : u32) instrs,
-    bs_LambdaANF_prim_fun_env_extracted_prim_env_related penv pfs ->
+    prim_funs_env_wellformed penv pfs ->
     M.get p pfs = Some f' ->
     M.get p penv = Some p' ->
     map_injective lenv ->
@@ -6037,8 +6047,9 @@ Theorem repr_bs_LambdaANF_Wasm_related :
   forall lenv pfs (rho : eval.env) (v : cps.val) (e : exp) (n : nat) (vars : list cps.var) (fds : fundefs)
                                fAny k (lh : lholed k),
     cenv_restricted cenv ->
-    bstep_prim_funs_no_fun_return_values pfs ->
-    bs_LambdaANF_prim_fun_env_extracted_prim_env_related penv pfs ->
+    (* restrictions on prim_funs env *)
+    prim_funs_env_returns_no_funvalues pfs ->
+    prim_funs_env_wellformed penv pfs ->
     (* restrictions on lenv, fenv *)
     map_injective lenv ->
     domains_disjoint lenv fenv ->
