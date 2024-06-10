@@ -6086,7 +6086,7 @@ Theorem repr_bs_LambdaANF_Wasm_related :
 
       (* relates a LambdaANF evaluation environment [rho] to a Wasm environment [store/frame] (free variables in e) *)
       @rel_env_LambdaANF_Wasm lenv e rho sr f fds ->
-      exists (sr' : store_record) (f' : frame) k (lh' : lholed k),
+      exists (sr' : store_record) (f' : frame) k' (lh' : lholed k'),
         reduce_trans (hs, sr,  fAny, [AI_frame 0 f (lfill lh (map AI_basic e'))])
                      (hs, sr', fAny, [AI_frame 0 f' (lfill lh' [::AI_basic BI_return])]) /\
         (* value sr'.res points to value related to v *)
