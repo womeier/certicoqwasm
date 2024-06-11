@@ -546,7 +546,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
 | Rprim_subc : forall x y,
     repr_primitive_binary_operation primInt63Subc x y
       (apply_carry_operation x y 0 1
-         [ BI_binop T_i64 (Binop_i BOI_add) ]
+         [ BI_binop T_i64 (Binop_i BOI_sub) ]
          (load_local_i64 y ++
             load_local_i64 x ++
             [ BI_relop T_i64 (Relop_i (ROI_le SX_U))]))
@@ -554,7 +554,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
 | Rprim_subcarryc : forall x y,
     repr_primitive_binary_operation primInt63Subcarryc x y
       (apply_carry_operation x y 0 1
-         [ BI_binop T_i64 (Binop_i BOI_add)
+         [ BI_binop T_i64 (Binop_i BOI_sub)
          ; BI_const_num (nat_to_value64 1)
          ; BI_binop T_i64 (Binop_i BOI_sub) ]
          (load_local_i64 y ++

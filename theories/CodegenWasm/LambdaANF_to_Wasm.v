@@ -600,14 +600,14 @@ Definition translate_primitive_binary_op op_name x y : error (list basic_instruc
 
   else if Kername.eqb op_name primInt63Subc then
     Ret (apply_carry_operation x y 0 1
-           [ BI_binop T_i64 (Binop_i BOI_add) ]
+           [ BI_binop T_i64 (Binop_i BOI_sub) ]
            (load_local_i64 y ++
               load_local_i64 x ++
               [ BI_relop T_i64 (Relop_i (ROI_le SX_U))]))
 
   else if Kername.eqb op_name primInt63Subcarryc then
     Ret (apply_carry_operation x y 0 1
-           [ BI_binop T_i64 (Binop_i BOI_add)
+           [ BI_binop T_i64 (Binop_i BOI_sub)
            ; BI_const_num (nat_to_value64 1)
            ; BI_binop T_i64 (Binop_i BOI_sub) ]
            (load_local_i64 y ++
