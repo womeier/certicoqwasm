@@ -6069,6 +6069,7 @@ Theorem repr_bs_LambdaANF_Wasm_related :
     bstep_e pfs cenv rho e v n ->  (* e n-steps to v *)
     forall (hs : host_state) (sr : store_record) (f : frame) (e' : list basic_instruction),
 
+      (* translated fds in sr, TODO consider including in INV *)
       (forall a t ys e errMsg, find_def a fds = Some (t, ys, e) ->
           expression_restricted cenv e /\ (forall x, occurs_free e x -> In x ys \/ find_def x fds <> None) /\
           NoDup (ys ++ collect_local_variables e ++ collect_function_vars (Efun fds e)) /\
