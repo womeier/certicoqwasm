@@ -84,19 +84,44 @@ Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :
  *  The names of translated lANF functions are prefixed with an underscore, others should not to avoid name clashes.
  *)
 
-(* imported, print char/int to stdout *)
-Definition write_char_function_idx : funcidx := 0%N.
-Definition write_char_function_name := "write_char".
-Definition write_int_function_idx : funcidx := 1%N.
-Definition write_int_function_name := "write_int".
+(* imported, concordium api *)
+Definition conc_get_parameter_size := "get_parameter_size".
+Definition conc_get_parameter_section := "get_parameter_section".
+Definition conc_invoke := "invoke".
+Definition conc_write_output := "write_output".
+Definition conc_state_lookup_entry := "state_lookup_entry".
+Definition conc_state_create_entry := "state_create_entry".
+Definition conc_state_entry_read := "state_entry_read".
+Definition conc_state_entry_write := "state_entry_write".
+
+Definition conc_types :=
+[ Tf [T_num T_i32] [T_num T_i32]
+; Tf (repeat (T_num T_i32) 4) [T_num T_i32]
+; Tf (repeat (T_num T_i32) 3) [T_num T_i64]
+; Tf (repeat (T_num T_i32) 3) [T_num T_i32]
+
+; Tf (repeat (T_num T_i32) 2) [T_num T_i64]
+; Tf (repeat (T_num T_i32) 2) [T_num T_i64]
+; Tf (T_num T_i64 :: repeat (T_num T_i32) 3) [T_num T_i32]
+; Tf (T_num T_i64 :: repeat (T_num T_i32) 3) [T_num T_i32]
+].
+
+Definition conc_get_parameter_size_type    := MID_func (Z.to_N max_function_args + 1 + 0)%N.
+Definition conc_get_parameter_section_type := MID_func (Z.to_N max_function_args + 1 + 1)%N.
+Definition conc_invoke_type                := MID_func (Z.to_N max_function_args + 1 + 2)%N.
+Definition conc_write_output_type          := MID_func (Z.to_N max_function_args + 1 + 3)%N.
+Definition conc_state_lookup_entry_type    := MID_func (Z.to_N max_function_args + 1 + 4)%N.
+Definition conc_state_create_entry_type    := MID_func (Z.to_N max_function_args + 1 + 5)%N.
+Definition conc_state_entry_read_type      := MID_func (Z.to_N max_function_args + 1 + 6)%N.
+Definition conc_state_entry_write_type     := MID_func (Z.to_N max_function_args + 1 + 7)%N.
 
 (* grow_mem: grow linear mem by number of bytes if necessary *)
 Definition grow_mem_function_name := "grow_mem_if_necessary".
-Definition grow_mem_function_idx : funcidx := 2%N.
+Definition grow_mem_function_idx : funcidx := 8%N.
 
 (* main function: contains the translated main expression *)
 Definition main_function_name := "main_function".
-Definition main_function_idx : funcidx := 3%N.
+Definition main_function_idx : funcidx := 9%N.
 
 (* then follow the translated functions,
    index of first translated lANF fun, a custom fun should be added before, and this var increased by 1
@@ -204,14 +229,6 @@ Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
 
 Definition collect_constr_tags (e : exp) : list ctor_tag :=
   S_pos.elements (collect_constr_tags' e).
-
-Definition instr_write_string (s : string) : list basic_instruction :=
-  let fix to_ascii_list s' :=
-    match s' with
-    | String.EmptyString => []
-    | String.String b s'' => Byte.to_nat b :: to_ascii_list s''
-    end in
-  flat_map (fun c => [BI_const_num (nat_to_value c); BI_call write_char_function_idx]) (to_ascii_list s).
 
 Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
   match M.get t cenv with
@@ -757,6 +774,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                                        |}) functions in
   let module :=
       {| mod_types := (list_function_types (Z.to_nat max_function_args)) (* more than required, doesn't hurt*)
+                       ++ conc_types
 
        ; mod_funcs := functions_final
        ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length fns + num_custom_funs)
@@ -788,14 +806,51 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
        ; mod_datas := []
        ; mod_start := None
 
-       ; mod_imports := {| imp_module := String.print "env"
-                         ; imp_name := String.print write_char_function_name
-                         ; imp_desc := MID_func 1%N
-                         |} ::
-                        {| imp_module := String.print "env"
-                         ; imp_name := String.print write_int_function_name
-                         ; imp_desc := MID_func 1%N
-                         |} :: nil
+
+       (*
+Definition conc_get_parameter_size_type := MID_func (N.of_Z max_function_args + 1 + 0)%N.
+Definition conc_get_parameter_section_type := MID_func (N.of_Z max_function_args + 1 + 1)%N.
+Definition conc_invoke_type := MID_func (N.of_Z max_function_args + 1 + 2)%N.
+Definition conc_write_output_type := MID_func (N.of_Z max_function_args + 1 + 3)%N.
+Definition conc_state_lookup_entry_type := MID_func (N.of_Z max_function_args + 1 + 4)%N.
+Definition conc_state_create_entry_type := MID_func (N.of_Z max_function_args + 1 + 5)%N.
+Definition conc_state_entry_read_type := MID_func (N.of_Z max_function_args + 1 + 6)%N.
+Definition conc_state_entry_write_type := MID_func (N.of_Z max_function_args + 1 + 7)%N.
+       *)
+
+       ; mod_imports :=
+{| imp_module := String.print "concordium"
+; imp_name := String.print conc_get_parameter_size
+; imp_desc := conc_get_parameter_size_type
+|}::
+{| imp_module := String.print "concordium"
+; imp_name := String.print conc_get_parameter_section
+; imp_desc := conc_get_parameter_section_type
+|} ::
+{| imp_module := String.print "concordium"
+; imp_name := String.print conc_invoke
+; imp_desc := conc_invoke_type
+|} ::
+{| imp_module := String.print "concordium"
+; imp_name := String.print conc_write_output
+; imp_desc := conc_write_output_type
+|} ::
+{| imp_module := String.print "concordium"
+; imp_name := String.print conc_state_lookup_entry
+; imp_desc := conc_state_lookup_entry_type
+|} ::
+{| imp_module := String.print "concordium"
+; imp_name := String.print conc_state_create_entry
+; imp_desc := conc_state_create_entry_type
+|} ::
+{| imp_module := String.print "concordium"
+; imp_name := String.print conc_state_entry_read
+; imp_desc := conc_state_entry_read_type
+|} ::
+{| imp_module := String.print "concordium"
+; imp_name := String.print conc_state_entry_write
+; imp_desc := conc_state_entry_write_type
+|}                        :: nil
        ; mod_exports := exports
        |}
        in
