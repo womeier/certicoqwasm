@@ -248,7 +248,7 @@ fn Coq_ZArith_BinIntDef_Z_odd__curried(&'a self) -> &'a dyn Fn(i64) -> bool {
   })
 }
 
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_odd(&'a self) -> &'a dyn Fn(i64) -> bool {
+fn RustExtraction_Test_BernsteinYangTermination_odd(&'a self) -> &'a dyn Fn(i64) -> bool {
   self.Coq_ZArith_BinIntDef_Z_odd__curried()
 }
 
@@ -271,251 +271,23 @@ fn Coq_ZArith_BinIntDef_Z_sub__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn F
   })
 }
 
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftr(&'a self, a: i64, b: i64) -> i64 {
-  __Z_elim!(
-    {
-      a
-    },
-    p, {
-      hint_app(hint_app({ let iter_fix = self.alloc(std::cell::Cell::new(None));
-                          iter_fix.set(Some(
-                            self.closure(move |x:i64| {
-                              self.closure(move |n| {
-                                __pos_elim!(
-                                  n2, {
-                                    __Z_elim!(
-                                      {
-                                        0
-                                      },
-                                      y, {
-                                        __Z_frompos(
-                                          __pos_zerobit(
-                                            y))
-                                      },
-                                      y, {
-                                        __Z_fromneg(
-                                          __pos_zerobit(
-                                            y))
-                                      },
-                                      hint_app(hint_app(iter_fix.get().unwrap())(hint_app(hint_app(iter_fix.get().unwrap())(x))(n2)))(n2))
-                                  },
-                                  n2, {
-                                    hint_app(hint_app(iter_fix.get().unwrap())(hint_app(hint_app(iter_fix.get().unwrap())(x))(n2)))(n2)
-                                  },
-                                  {
-                                    __Z_elim!(
-                                      {
-                                        0
-                                      },
-                                      y, {
-                                        __Z_frompos(
-                                          __pos_zerobit(
-                                            y))
-                                      },
-                                      y, {
-                                        __Z_fromneg(
-                                          __pos_zerobit(
-                                            y))
-                                      },
-                                      x)
-                                  },
-                                  n)
-                              })
-                            })));
-                          iter_fix.get().unwrap() })(a))(p)
-    },
-    p, {
-      hint_app(hint_app({ let iter_fix2 = self.alloc(std::cell::Cell::new(None));
-                          iter_fix2.set(Some(
-                            self.closure(move |x : i64| {
-                              self.closure(move |n| {
-                                __pos_elim!(
-                                  n2, {
-                                    __Z_elim!(
-                                      {
-                                        0
-                                      },
-                                      p2, {
-                                        __pos_elim!(
-                                          p0, {
-                                            __Z_frompos(
-                                              __pos_elim!(
-                                                p3, {
-                                                  p3
-                                                },
-                                                p3, {
-                                                  p3
-                                                },
-                                                {
-                                                  1
-                                                },
-                                                p2))
-                                          },
-                                          p0, {
-                                            __Z_frompos(
-                                              __pos_elim!(
-                                                p3, {
-                                                  p3
-                                                },
-                                                p3, {
-                                                  p3
-                                                },
-                                                {
-                                                  1
-                                                },
-                                                p2))
-                                          },
-                                          {
-                                            0
-                                          },
-                                          p2)
-                                      },
-                                      p2, {
-                                        __Z_fromneg(
-                                          __pos_elim!(
-                                            p3, {
-                                              hint_app({ let succ = self.alloc(std::cell::Cell::new(None));
-                                                         succ.set(Some(
-                                                           self.closure(move |x2| {
-                                                             __pos_elim!(
-                                                               p4, {
-                                                                 __pos_zerobit(
-                                                                   hint_app(succ.get().unwrap())(p4))
-                                                               },
-                                                               p4, {
-                                                                 __pos_onebit(
-                                                                   p4)
-                                                               },
-                                                               {
-                                                                 __pos_zerobit(
-                                                                   1)
-                                                               },
-                                                               x2)
-                                                           })));
-                                                         succ.get().unwrap() })(p3)
-                                            },
-                                            p3, {
-                                              p3
-                                            },
-                                            {
-                                              1
-                                            },
-                                            p2))
-                                      },
-                                      hint_app(hint_app(iter_fix2.get().unwrap())(hint_app(hint_app(iter_fix2.get().unwrap())(x))(n2)))(n2))
-                                  },
-                                  n2, {
-                                    hint_app(hint_app(iter_fix2.get().unwrap())(hint_app(hint_app(iter_fix2.get().unwrap())(x))(n2)))(n2)
-                                  },
-                                  {
-                                    __Z_elim!(
-                                      {
-                                        0
-                                      },
-                                      p2, {
-                                        __pos_elim!(
-                                          p0, {
-                                            __Z_frompos(
-                                              __pos_elim!(
-                                                p3, {
-                                                  p3
-                                                },
-                                                p3, {
-                                                  p3
-                                                },
-                                                {
-                                                  1
-                                                },
-                                                p2))
-                                          },
-                                          p0, {
-                                            __Z_frompos(
-                                              __pos_elim!(
-                                                p3, {
-                                                  p3
-                                                },
-                                                p3, {
-                                                  p3
-                                                },
-                                                {
-                                                  1
-                                                },
-                                                p2))
-                                          },
-                                          {
-                                            0
-                                          },
-                                          p2)
-                                      },
-                                      p2, {
-                                        __Z_fromneg(
-                                          __pos_elim!(
-                                            p3, {
-                                              hint_app({ let succ2 = self.alloc(std::cell::Cell::new(None));
-                                                         succ2.set(Some(
-                                                           self.closure(move |x2| {
-                                                             __pos_elim!(
-                                                               p4, {
-                                                                 __pos_zerobit(
-                                                                   hint_app(succ2.get().unwrap())(p4))
-                                                               },
-                                                               p4, {
-                                                                 __pos_onebit(
-                                                                   p4)
-                                                               },
-                                                               {
-                                                                 __pos_zerobit(
-                                                                   1)
-                                                               },
-                                                               x2)
-                                                           })));
-                                                         succ2.get().unwrap() })(p3)
-                                            },
-                                            p3, {
-                                              p3
-                                            },
-                                            {
-                                              1
-                                            },
-                                            p2))
-                                      },
-                                      x)
-                                  },
-                                  n)
-                              })
-                            })));
-                          iter_fix2.get().unwrap() })(a))(p)
-    },
-    __Z_elim!(
-      {
-        0
-      },
-      x, {
-        __Z_fromneg(
-          x)
-      },
-      x, {
-        __Z_frompos(
-          x)
-      },
-      b))
-}
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftr__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> i64 {
+fn RustExtraction_Test_BernsteinYangTermination_shiftr(&'a self, a: i64, b: i64) -> i64 { a >> b }
+fn RustExtraction_Test_BernsteinYangTermination_shiftr__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> i64 {
   self.closure(move |a| {
     self.closure(move |b| {
-      self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftr(
+      self.RustExtraction_Test_BernsteinYangTermination_shiftr(
         a,
         b)
     })
   })
 }
 
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_divstep(&'a self, d: i64, f: i64, g: i64) -> __pair<__pair<i64, i64>, i64> {
+fn RustExtraction_Test_BernsteinYangTermination_divstep(&'a self, d: i64, f: i64, g: i64) -> __pair<__pair<i64, i64>, i64> {
   match __andb!(
           self.Coq_ZArith_BinIntDef_Z_ltb(
             0,
             d),
-          self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_odd()(
+          self.RustExtraction_Test_BernsteinYangTermination_odd()(
             g)) {
     true => {
       __mk_pair(
@@ -525,7 +297,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_divstep(&'a self, d: i64, f:
               1),
             d),
           g),
-        self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftr(
+        self.RustExtraction_Test_BernsteinYangTermination_shiftr(
           self.Coq_ZArith_BinIntDef_Z_sub(
             g,
             f),
@@ -540,11 +312,11 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_divstep(&'a self, d: i64, f:
               1),
             d),
           f),
-        self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftr(
+        self.RustExtraction_Test_BernsteinYangTermination_shiftr(
           self.Coq_ZArith_BinIntDef_Z_add(
             g,
             self.Coq_ZArith_BinIntDef_Z_mul(
-              match self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_odd()(
+              match self.RustExtraction_Test_BernsteinYangTermination_odd()(
                       g) {
                 true => {
                   __Z_frompos(
@@ -560,11 +332,11 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_divstep(&'a self, d: i64, f:
     },
   }
 }
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_divstep__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> __pair<__pair<i64, i64>, i64> {
+fn RustExtraction_Test_BernsteinYangTermination_divstep__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> __pair<__pair<i64, i64>, i64> {
   self.closure(move |d| {
     self.closure(move |f| {
       self.closure(move |g| {
-        self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_divstep(
+        self.RustExtraction_Test_BernsteinYangTermination_divstep(
           d,
           f,
           g)
@@ -573,7 +345,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_divstep__curried(&'a self) -
   })
 }
 
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_needs_n_steps(&'a self, d: i64, a: i64, b: i64, n: u64) -> bool {
+fn RustExtraction_Test_BernsteinYangTermination_needs_n_steps(&'a self, d: i64, a: i64, b: i64, n: u64) -> bool {
   __nat_elim!(
     {
       true
@@ -590,7 +362,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_needs_n_steps(&'a self, d: i
             b2, p, {
               __pair_elim!(
                 a2, d2, {
-                  self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_needs_n_steps(
+                  self.RustExtraction_Test_BernsteinYangTermination_needs_n_steps(
                     a2,
                     d2,
                     p,
@@ -598,7 +370,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_needs_n_steps(&'a self, d: i
                 },
                 b2)
             },
-            self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_divstep(
+            self.RustExtraction_Test_BernsteinYangTermination_divstep(
               d,
               a,
               b))
@@ -607,12 +379,12 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_needs_n_steps(&'a self, d: i
     },
     n)
 }
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_needs_n_steps__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> &'a dyn Fn(u64) -> bool {
+fn RustExtraction_Test_BernsteinYangTermination_needs_n_steps__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> &'a dyn Fn(u64) -> bool {
   self.closure(move |d| {
     self.closure(move |a| {
       self.closure(move |b| {
         self.closure(move |n| {
-          self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_needs_n_steps(
+          self.RustExtraction_Test_BernsteinYangTermination_needs_n_steps(
             d,
             a,
             b,
@@ -634,7 +406,7 @@ fn Coq_ZArith_BinIntDef_Z_min__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn F
   })
 }
 
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat(&'a self, a: i64, b: i64, n: u64, acc: i64, fuel: u64) -> i64 {
+fn RustExtraction_Test_BernsteinYangTermination_min_needs_n_steps_nat(&'a self, a: i64, b: i64, n: u64, acc: i64, fuel: u64) -> i64 {
   __nat_elim!(
     {
       0
@@ -661,7 +433,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat(&'a se
                   acc,
                   length) {
             true => {
-              self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat(
+              self.RustExtraction_Test_BernsteinYangTermination_min_needs_n_steps_nat(
                 self.Coq_ZArith_BinIntDef_Z_add(
                   a,
                   __Z_frompos(
@@ -674,27 +446,27 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat(&'a se
             },
             false => {
               match __orb!(
-                      self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_needs_n_steps(
+                      self.RustExtraction_Test_BernsteinYangTermination_needs_n_steps(
                         __Z_frompos(
                           1),
                         a,
-                        self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftr(
+                        self.RustExtraction_Test_BernsteinYangTermination_shiftr(
                           b,
                           __Z_frompos(
                             1)),
                         n),
-                      self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_needs_n_steps(
+                      self.RustExtraction_Test_BernsteinYangTermination_needs_n_steps(
                         __Z_frompos(
                           1),
                         a,
                         self.Coq_ZArith_BinIntDef_Z_opp(
-                          self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftr(
+                          self.RustExtraction_Test_BernsteinYangTermination_shiftr(
                             b,
                             __Z_frompos(
                               1))),
                         n)) {
                 true => {
-                  self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat(
+                  self.RustExtraction_Test_BernsteinYangTermination_min_needs_n_steps_nat(
                     self.Coq_ZArith_BinIntDef_Z_add(
                       a,
                       __Z_frompos(
@@ -708,7 +480,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat(&'a se
                     fuel2)
                 },
                 false => {
-                  self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat(
+                  self.RustExtraction_Test_BernsteinYangTermination_min_needs_n_steps_nat(
                     a,
                     self.Coq_ZArith_BinIntDef_Z_add(
                       b,
@@ -727,13 +499,13 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat(&'a se
     },
     fuel)
 }
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> &'a dyn Fn(u64) -> &'a dyn Fn(i64) -> &'a dyn Fn(u64) -> i64 {
+fn RustExtraction_Test_BernsteinYangTermination_min_needs_n_steps_nat__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> &'a dyn Fn(u64) -> &'a dyn Fn(i64) -> &'a dyn Fn(u64) -> i64 {
   self.closure(move |a| {
     self.closure(move |b| {
       self.closure(move |n| {
         self.closure(move |acc| {
           self.closure(move |fuel| {
-            self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat(
+            self.RustExtraction_Test_BernsteinYangTermination_min_needs_n_steps_nat(
               a,
               b,
               n,
@@ -746,279 +518,35 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat__curri
   })
 }
 
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftl(&'a self, a: i64, b: i64) -> i64 {
-  __Z_elim!(
-    {
-      a
-    },
-    p, {
-      hint_app(hint_app({ let iter_fix3 = self.alloc(std::cell::Cell::new(None));
-                          iter_fix3.set(Some(
-                            self.closure(move |x:i64| {
-                              self.closure(move |n| {
-                                __pos_elim!(
-                                  n2, {
-                                    __Z_elim!(
-                                      {
-                                        0
-                                      },
-                                      y, {
-                                        __Z_frompos(
-                                          __pos_zerobit(
-                                            y))
-                                      },
-                                      y, {
-                                        __Z_fromneg(
-                                          __pos_zerobit(
-                                            y))
-                                      },
-                                      hint_app(hint_app(iter_fix3.get().unwrap())(hint_app(hint_app(iter_fix3.get().unwrap())(x))(n2)))(n2))
-                                  },
-                                  n2, {
-                                    hint_app(hint_app(iter_fix3.get().unwrap())(hint_app(hint_app(iter_fix3.get().unwrap())(x))(n2)))(n2)
-                                  },
-                                  {
-                                    __Z_elim!(
-                                      {
-                                        0
-                                      },
-                                      y, {
-                                        __Z_frompos(
-                                          __pos_zerobit(
-                                            y))
-                                      },
-                                      y, {
-                                        __Z_fromneg(
-                                          __pos_zerobit(
-                                            y))
-                                      },
-                                      x)
-                                  },
-                                  n)
-                              })
-                            })));
-                          iter_fix3.get().unwrap() })(a))(p)
-    },
-    p, {
-      hint_app(hint_app({ let iter_fix4 = self.alloc(std::cell::Cell::new(None));
-                          iter_fix4.set(Some(
-                            self.closure(move |x:i64| {
-                              self.closure(move |n| {
-                                __pos_elim!(
-                                  n2, {
-                                    __Z_elim!(
-                                      {
-                                        0
-                                      },
-                                      p2, {
-                                        __pos_elim!(
-                                          p0, {
-                                            __Z_frompos(
-                                              __pos_elim!(
-                                                p3, {
-                                                  p3
-                                                },
-                                                p3, {
-                                                  p3
-                                                },
-                                                {
-                                                  1
-                                                },
-                                                p2))
-                                          },
-                                          p0, {
-                                            __Z_frompos(
-                                              __pos_elim!(
-                                                p3, {
-                                                  p3
-                                                },
-                                                p3, {
-                                                  p3
-                                                },
-                                                {
-                                                  1
-                                                },
-                                                p2))
-                                          },
-                                          {
-                                            0
-                                          },
-                                          p2)
-                                      },
-                                      p2, {
-                                        __Z_fromneg(
-                                          __pos_elim!(
-                                            p3, {
-                                              hint_app({ let succ3 = self.alloc(std::cell::Cell::new(None));
-                                                         succ3.set(Some(
-                                                           self.closure(move |x2| {
-                                                             __pos_elim!(
-                                                               p4, {
-                                                                 __pos_zerobit(
-                                                                   hint_app(succ3.get().unwrap())(p4))
-                                                               },
-                                                               p4, {
-                                                                 __pos_onebit(
-                                                                   p4)
-                                                               },
-                                                               {
-                                                                 __pos_zerobit(
-                                                                   1)
-                                                               },
-                                                               x2)
-                                                           })));
-                                                         succ3.get().unwrap() })(p3)
-                                            },
-                                            p3, {
-                                              p3
-                                            },
-                                            {
-                                              1
-                                            },
-                                            p2))
-                                      },
-                                      hint_app(hint_app(iter_fix4.get().unwrap())(hint_app(hint_app(iter_fix4.get().unwrap())(x))(n2)))(n2))
-                                  },
-                                  n2, {
-                                    hint_app(hint_app(iter_fix4.get().unwrap())(hint_app(hint_app(iter_fix4.get().unwrap())(x))(n2)))(n2)
-                                  },
-                                  {
-                                    __Z_elim!(
-                                      {
-                                        0
-                                      },
-                                      p2, {
-                                        __pos_elim!(
-                                          p0, {
-                                            __Z_frompos(
-                                              __pos_elim!(
-                                                p3, {
-                                                  p3
-                                                },
-                                                p3, {
-                                                  p3
-                                                },
-                                                {
-                                                  1
-                                                },
-                                                p2))
-                                          },
-                                          p0, {
-                                            __Z_frompos(
-                                              __pos_elim!(
-                                                p3, {
-                                                  p3
-                                                },
-                                                p3, {
-                                                  p3
-                                                },
-                                                {
-                                                  1
-                                                },
-                                                p2))
-                                          },
-                                          {
-                                            0
-                                          },
-                                          p2)
-                                      },
-                                      p2, {
-                                        __Z_fromneg(
-                                          __pos_elim!(
-                                            p3, {
-                                              hint_app({ let succ4 = self.alloc(std::cell::Cell::new(None));
-                                                         succ4.set(Some(
-                                                           self.closure(move |x2| {
-                                                             __pos_elim!(
-                                                               p4, {
-                                                                 __pos_zerobit(
-                                                                   hint_app(succ4.get().unwrap())(p4))
-                                                               },
-                                                               p4, {
-                                                                 __pos_onebit(
-                                                                   p4)
-                                                               },
-                                                               {
-                                                                 __pos_zerobit(
-                                                                   1)
-                                                               },
-                                                               x2)
-                                                           })));
-                                                         succ4.get().unwrap() })(p3)
-                                            },
-                                            p3, {
-                                              p3
-                                            },
-                                            {
-                                              1
-                                            },
-                                            p2))
-                                      },
-                                      x)
-                                  },
-                                  n)
-                              })
-                            })));
-                          iter_fix4.get().unwrap() })(a))(p)
-    },
-    b)
-}
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftl__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> i64 {
+fn RustExtraction_Test_BernsteinYangTermination_shiftl(&'a self, a: i64, b: i64) -> i64 { a << b }
+fn RustExtraction_Test_BernsteinYangTermination_shiftl__curried(&'a self) -> &'a dyn Fn(i64) -> &'a dyn Fn(i64) -> i64 {
   self.closure(move |a| {
     self.closure(move |b| {
-      self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftl(
+      self.RustExtraction_Test_BernsteinYangTermination_shiftl(
         a,
         b)
     })
   })
 }
 
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_nat_shiftl(&'a self, a: u64, n: u64) -> u64 {
-  __nat_elim!(
-    {
-      a
-    },
-    n2, {
-      hint_app(hint_app({ let add = self.alloc(std::cell::Cell::new(None));
-                          add.set(Some(
-                            self.closure(move |n3| {
-                              self.closure(move |m| {
-                                __nat_elim!(
-                                  {
-                                    m
-                                  },
-                                  p, {
-                                    __nat_succ(
-                                      hint_app(hint_app(add.get().unwrap())(p))(m))
-                                  },
-                                  n3)
-                              })
-                            })));
-                          add.get().unwrap() })(self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_nat_shiftl(
-                                                  a,
-                                                  n2)))(self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_nat_shiftl(
-                                                          a,
-                                                          n2))
-    },
-    n)
-}
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_nat_shiftl__curried(&'a self) -> &'a dyn Fn(u64) -> &'a dyn Fn(u64) -> u64 {
+fn RustExtraction_Test_BernsteinYangTermination_nat_shiftl(&'a self, a: u64, b: u64) -> u64 { a << b }
+fn RustExtraction_Test_BernsteinYangTermination_nat_shiftl__curried(&'a self) -> &'a dyn Fn(u64) -> &'a dyn Fn(u64) -> u64 {
   self.closure(move |a| {
     self.closure(move |n| {
-      self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_nat_shiftl(
+      self.RustExtraction_Test_BernsteinYangTermination_nat_shiftl(
         a,
         n)
     })
   })
 }
 
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_W(&'a self, n: u64) -> i64 {
-  self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_min_needs_n_steps_nat(
+fn RustExtraction_Test_BernsteinYangTermination_W(&'a self, n: u64) -> i64 {
+  self.RustExtraction_Test_BernsteinYangTermination_min_needs_n_steps_nat(
     __Z_frompos(
       1),
     0,
     n,
-    self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftl(
+    self.RustExtraction_Test_BernsteinYangTermination_shiftl(
       __Z_frompos(
         1),
       __Z_frompos(
@@ -1028,7 +556,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_W(&'a self, n: u64) -> i64 {
               __pos_onebit(
                 __pos_onebit(
                   1))))))),
-    self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_nat_shiftl(
+    self.RustExtraction_Test_BernsteinYangTermination_nat_shiftl(
       __nat_succ(
         0),
       __nat_succ(
@@ -1077,28 +605,13 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_W(&'a self, n: u64) -> i64 {
                                                                                             __nat_succ(
                                                                                               0))))))))))))))))))))))))))))))))))))))))))))))
 }
-fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_W__curried(&'a self) -> &'a dyn Fn(u64) -> i64 {
+fn RustExtraction_Test_BernsteinYangTermination_W__curried(&'a self) -> &'a dyn Fn(u64) -> i64 {
   self.closure(move |n| {
-    self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_W(
+    self.RustExtraction_Test_BernsteinYangTermination_W(
       n)
   })
 }
-
-fn CertiCoq_Benchmarks_tests_bernstein_yang(&'a self) -> i64 {
-  self.CertiCoq_Benchmarks_lib_BernsteinYangTermination_W(
-    __nat_succ(
-      __nat_succ(
-        __nat_succ(
-          __nat_succ(
-            __nat_succ(
-              __nat_succ(
-                __nat_succ(
-                  __nat_succ(
-                    __nat_succ(
-                      __nat_succ(
-                        0)))))))))))
 }
-}
-pub fn main() {
-  Program::new().CertiCoq_Benchmarks_tests_bernstein_yang();
+fn main() {
+  Program::new().RustExtraction_Test_BernsteinYangTermination_W(10)
 }
