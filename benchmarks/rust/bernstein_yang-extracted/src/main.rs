@@ -279,7 +279,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftr(&'a self, a: i64, b: 
     p, {
       hint_app(hint_app({ let iter_fix = self.alloc(std::cell::Cell::new(None));
                           iter_fix.set(Some(
-                            self.closure(move |x| {
+                            self.closure(move |x:i64| {
                               self.closure(move |n| {
                                 __pos_elim!(
                                   n2, {
@@ -327,7 +327,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftr(&'a self, a: i64, b: 
     p, {
       hint_app(hint_app({ let iter_fix2 = self.alloc(std::cell::Cell::new(None));
                           iter_fix2.set(Some(
-                            self.closure(move |x| {
+                            self.closure(move |x : i64| {
                               self.closure(move |n| {
                                 __pos_elim!(
                                   n2, {
@@ -754,7 +754,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftl(&'a self, a: i64, b: 
     p, {
       hint_app(hint_app({ let iter_fix3 = self.alloc(std::cell::Cell::new(None));
                           iter_fix3.set(Some(
-                            self.closure(move |x| {
+                            self.closure(move |x:i64| {
                               self.closure(move |n| {
                                 __pos_elim!(
                                   n2, {
@@ -802,7 +802,7 @@ fn CertiCoq_Benchmarks_lib_BernsteinYangTermination_shiftl(&'a self, a: i64, b: 
     p, {
       hint_app(hint_app({ let iter_fix4 = self.alloc(std::cell::Cell::new(None));
                           iter_fix4.set(Some(
-                            self.closure(move |x| {
+                            self.closure(move |x:i64| {
                               self.closure(move |n| {
                                 __pos_elim!(
                                   n2, {

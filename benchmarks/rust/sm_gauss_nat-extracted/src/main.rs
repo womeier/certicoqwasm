@@ -98,7 +98,7 @@ fn hint_app<TArg, TRet>(f: &dyn Fn(TArg) -> TRet) -> &dyn Fn(TArg) -> TRet {
   f
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum CertiCoq_Benchmarks_lib_stack_machine_Numeric<'a, A> {
   Build_Numeric(PhantomData<&'a A>, &'a dyn Fn(A) -> &'a dyn Fn(A) -> A, &'a dyn Fn(A) -> &'a dyn Fn(A) -> A, &'a dyn Fn(A) -> &'a dyn Fn(A) -> A, A)
 }
