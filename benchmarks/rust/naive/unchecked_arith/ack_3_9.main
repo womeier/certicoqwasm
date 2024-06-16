@@ -1,0 +1,3 @@
+pub fn main() {
+  Program::new().CertiCoq_Benchmarks_tests_ack_3_9();
+}

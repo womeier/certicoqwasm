@@ -1,0 +1,11 @@
+[package]
+name = "color"
+version = "0.1.0"
+authors = ["Cobra"]
+edition = "2018"
+
+[dependencies]
+bumpalo = "3.5.0"
+
+[profile.release]
+opt-level = 3
