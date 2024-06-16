@@ -613,5 +613,5 @@ fn RustExtraction_Test_BernsteinYangTermination_W__curried(&'a self) -> &'a dyn 
 }
 }
 fn main() {
-  Program::new().RustExtraction_Test_BernsteinYangTermination_W(10)
+  Program::new().RustExtraction_Test_BernsteinYangTermination_W(10);
 }
