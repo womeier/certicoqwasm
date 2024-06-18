@@ -84,10 +84,10 @@ Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :
  *)
 
 (* imported, print char/int to stdout *)
-Definition write_char_function_idx : funcidx := 0%N.
-Definition write_char_function_name := "write_char".
-Definition write_int_function_idx : funcidx := 1%N.
-Definition write_int_function_name := "write_int".
+(* Definition write_char_function_idx : funcidx := 0%N. *)
+(* Definition write_char_function_name := "write_char". *)
+(* Definition write_int_function_idx : funcidx := 1%N. *)
+(* Definition write_int_function_name := "write_int". *)
 
 (* Definition write_int64_function_idx : funcidx := 2%N. *)
 (* Definition write_int64_function_name := "write_int64". *)
@@ -95,17 +95,17 @@ Definition write_int_function_name := "write_int".
 
 (* grow_mem: grow linear mem by number of bytes if necessary *)
 Definition grow_mem_function_name := "grow_mem_if_necessary".
-Definition grow_mem_function_idx : funcidx := 2%N.
+Definition grow_mem_function_idx : funcidx := 0%N.
 
 (* main function: contains the translated main expression *)
 Definition main_function_name := "main_function".
-Definition main_function_idx : funcidx := 3%N.
+Definition main_function_idx : funcidx := 1%N.
 
 
 (* then follow the translated functions,
    index of first translated lANF fun, a custom fun should be added before, and this var increased by 1
    (the proof will still break at various places)  *)
-Definition num_custom_funs := 4.
+Definition num_custom_funs := 2.
 
 (* global vars *)
 Definition global_mem_ptr    : globalidx := 0%N. (* ptr to free memory, increased when new 'objects' are allocated, there is no GC *)
@@ -213,16 +213,16 @@ Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
 Definition collect_constr_tags (e : exp) : list ctor_tag :=
   S_pos.elements (collect_constr_tags' e).
 
-Definition instr_write_newline : list basic_instruction :=
-  [ BI_const_num (nat_to_value 10) ; BI_call write_char_function_idx ].
+(* Definition instr_write_newline : list basic_instruction := *)
+(*   [ BI_const_num (nat_to_value 10) ; BI_call write_char_function_idx ]. *)
 
-Definition instr_write_string (s : string) : list basic_instruction :=
-  let fix to_ascii_list s' :=
-    match s' with
-    | String.EmptyString => []
-    | String.String b s'' => Byte.to_nat b :: to_ascii_list s''
-    end in
-  flat_map (fun c => [BI_const_num (nat_to_value c); BI_call write_char_function_idx]) (to_ascii_list s).
+(* Definition instr_write_string (s : string) : list basic_instruction := *)
+(*   let fix to_ascii_list s' := *)
+(*     match s' with *)
+(*     | String.EmptyString => [] *)
+(*     | String.String b s'' => Byte.to_nat b :: to_ascii_list s'' *)
+(*     end in *)
+(*   flat_map (fun c => [BI_const_num (nat_to_value c); BI_call write_char_function_idx]) (to_ascii_list s). *)
 
 Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
   match M.get t cenv with
@@ -1308,14 +1308,15 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
        ; mod_datas := []
        ; mod_start := None
 
-       ; mod_imports := {| imp_module := String.print "env"
-                         ; imp_name := String.print write_char_function_name
-                         ; imp_desc := MID_func 1%N
-                         |} ::
-                        {| imp_module := String.print "env"
-                         ; imp_name := String.print write_int_function_name
-                         ; imp_desc := MID_func 1%N
-                        |} :: nil
+       ; mod_imports := nil
+       (* {| imp_module := String.print "env" *)
+       (*                   ; imp_name := String.print write_char_function_name *)
+       (*                   ; imp_desc := MID_func 1%N *)
+       (*                   |} :: *)
+       (*                  {| imp_module := String.print "env" *)
+       (*                   ; imp_name := String.print write_int_function_name *)
+       (*                   ; imp_desc := MID_func 1%N *)
+       (*                  |} *)
                         (* {| imp_module := String.print "env" *)
                         (*  ; imp_name := String.print write_int64_function_name *)
                         (*  ; imp_desc := MID_func (N.of_nat write_int64_fty_idx) *)
