@@ -4358,7 +4358,7 @@ Proof.
   apply Hr' in Hord. simpl_modulus_in Hord. destruct ord; lia.
 Qed.
 
-Theorem cases_same_ind_tag :
+Lemma cases_same_ind_tag :
   forall cl t t' e' cinfo cinfo',
     caseConsistent cenv cl t ->
     findtag cl t' = Some e' ->
@@ -4381,7 +4381,7 @@ Proof.
   now apply (IHcl t t' e' cinfo cinfo' H9 H3 H1 H2).
 Qed.
 
-Theorem nullary_ctor_ords_in_case_disjoint:
+Lemma nullary_ctor_ords_in_case_disjoint:
   forall cl t t' e e' ord ord',
     cenv_restricted cenv ->
     caseConsistent cenv cl t ->
@@ -4460,7 +4460,7 @@ Proof.
   apply H''. exists ctor_name0, ctor_ind_name0. subst. reflexivity.
 Qed.
 
-Theorem nonnullary_ctor_ords_in_case_disjoint:
+Lemma nonnullary_ctor_ords_in_case_disjoint:
   forall cl t t' e e' a a' ord ord',
     cenv_restricted cenv ->
     caseConsistent cenv cl t ->
@@ -6537,7 +6537,7 @@ Proof with eauto.
       subst f_before_IH.
       by repeat (split; auto).
     }
-  - (* Eproj ctor_tag t, let x := proj_n y in e *)
+  - (* Eproj: let x := proj_n y in e *)
     { inv Hrepr_e.
       rename H8 into Hx', H9 into Hy'.
 
