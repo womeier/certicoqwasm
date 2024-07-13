@@ -6,6 +6,7 @@ vs_hard
 binom
 color
 sha_fast
+lazy_factorial
 even_10000
 ack_3_9
 sm_gauss_nat
