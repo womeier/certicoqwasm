@@ -385,7 +385,7 @@ module CompileFunctor (CI : CompilerInterface) = struct
     Buffer.add_string buf line; 
     Buffer.add_string buf "\n"
   
-  let string_of_buffer buf = Bytes.to_string (Buffer.to_bytes buf)
+  let string_of_buffer buf = Stdlib.Bytes.to_string (Buffer.to_bytes buf)
     
   let execute cmd =
     debug Pp.(fun () -> str "Executing: " ++ str cmd ++ str " in environemt: " ++ 
