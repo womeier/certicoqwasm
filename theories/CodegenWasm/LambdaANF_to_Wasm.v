@@ -35,7 +35,7 @@ Definition get_ctor_ord (cenv : ctor_env) (t : ctor_tag) : error N:=
   end.
 
 
-(* enforces predicate expression_restricted in the proof file *)
+(* enforces size restrictions on the lambdaANF expression (see the predicate expression_restricted) *)
 Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :=
   match e with
   | Econstr _ t ys e' =>
@@ -83,35 +83,26 @@ Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :
  *  The names of translated lANF functions are prefixed with an underscore, others should not to avoid name clashes.
  *)
 
-(* imported, print char/int to stdout *)
-Definition write_char_function_idx : funcidx := 0%N.
-Definition write_char_function_name := "write_char".
-Definition write_int_function_idx : funcidx := 1%N.
-Definition write_int_function_name := "write_int".
-
-(* Definition write_int64_function_idx : funcidx := 2%N. *)
-(* Definition write_int64_function_name := "write_int64". *)
-
-
 (* grow_mem: grow linear mem by number of bytes if necessary *)
 Definition grow_mem_function_name := "grow_mem_if_necessary".
-Definition grow_mem_function_idx : funcidx := 2%N.
+Definition grow_mem_function_idx : funcidx := 0%N.
 
 (* main function: contains the translated main expression *)
 Definition main_function_name := "main_function".
-Definition main_function_idx : funcidx := 3%N.
+Definition main_function_idx : funcidx := 1%N.
 
 
 (* then follow the translated functions,
    index of first translated lANF fun, a custom fun should be added before, and this var increased by 1
    (the proof will still break at various places)  *)
-Definition num_custom_funs := 4.
+Definition num_custom_funs := 2.
 
 (* global vars *)
-Definition global_mem_ptr    : globalidx := 0%N. (* ptr to free memory, increased when new 'objects' are allocated, there is no GC *)
+Definition global_mem_ptr    : globalidx := 0%N. (* ptr to next free memory, increased after allocation, there is no GC *)
 Definition constr_alloc_ptr  : globalidx := 1%N. (* ptr to beginning of constr alloc in linear mem *)
 Definition result_var        : globalidx := 2%N. (* final result *)
-Definition result_out_of_mem : globalidx := 3%N.
+Definition result_out_of_mem : globalidx := 3%N. (* ran out of memory *)
+(* globals used for primitive ops *)
 Definition glob_tmp1         : globalidx := 4%N.
 Definition glob_tmp2         : globalidx := 5%N.
 Definition glob_tmp3         : globalidx := 6%N.
@@ -119,7 +110,7 @@ Definition glob_tmp4         : globalidx := 7%N.
 
 (* ***** MAPPINGS ****** *)
 Definition localvar_env := M.tree localidx. (* maps variables to their id (id=index in list of local vars) *)
-Definition fname_env    := M.tree funcidx. (* maps function variables to their id (id=index in list of functions) *)
+Definition fname_env    := M.tree funcidx.  (* maps function variables to their id (id=index in list of functions) *)
 
 
 (* ***** UTILS and BASIC TRANSLATIONS ****** *)
@@ -184,45 +175,6 @@ Definition instr_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : 
 
     else var <- translate_var nenv lenv v "instr_local_var_read: normal var";;
          Ret (BI_local_get var).
-
-
-
-(* ***** GENERATE PRETTY PRINTER FUNCTION FOR CONSTRUCTOR-S-EXPRESSIONS ****** *)
-
-Module S_pos := MSetAVL.Make Positive_as_OT.
-
-Fixpoint collect_constr_tags' (e : exp) {struct e} : S_pos.t :=
-  match e with
-  | Efun fds e' => S_pos.union (collect_constr_tags' e')
-          ((fix iter (fds : fundefs) : S_pos.t :=
-            match fds with
-            | Fnil => S_pos.empty
-            | Fcons _ _ _ e'' fds' =>
-                S_pos.union (collect_constr_tags' e'') (iter fds')
-            end) fds)
-  | Econstr _ tg _ e' => S_pos.add tg (collect_constr_tags' e')
-  | Ecase _ arms => fold_left (fun _s a => S_pos.union _s (S_pos.add (fst a) (collect_constr_tags' (snd a)))) arms S_pos.empty
-  | Eproj _ _ _ _ e' => collect_constr_tags' e'
-  | Eletapp _ _ _ _ e' => collect_constr_tags' e'
-  | Eprim _ _ _ e' => collect_constr_tags' e'
-  | Eprim_val _ _ e' => collect_constr_tags' e'
-  | Eapp _ _ _ => S_pos.empty
-  | Ehalt _ => S_pos.empty
-  end.
-
-Definition collect_constr_tags (e : exp) : list ctor_tag :=
-  S_pos.elements (collect_constr_tags' e).
-
-Definition instr_write_newline : list basic_instruction :=
-  [ BI_const_num (nat_to_value 10) ; BI_call write_char_function_idx ].
-
-Definition instr_write_string (s : string) : list basic_instruction :=
-  let fix to_ascii_list s' :=
-    match s' with
-    | String.EmptyString => []
-    | String.String b s'' => Byte.to_nat b :: to_ascii_list s''
-    end in
-  flat_map (fun c => [BI_const_num (nat_to_value c); BI_call write_char_function_idx]) (to_ascii_list s).
 
 Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
   match M.get t cenv with
@@ -1260,14 +1212,11 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                                        |}) functions in
 
   let ftys := (list_function_types (Z.to_nat max_function_args)) in
-  (* let write_int64_fty := Tf [(T_num T_i64)] [] in *)
-  (* let write_int64_fty_idx := List.length ftys in *)
   let module :=
-      {| mod_types := ftys (* ++ [ write_int64_fty ] *) (* more than required, doesn't hurt*)
+      {| mod_types := ftys (* more than required, doesn't hurt*)
 
        ; mod_funcs := functions_final
        ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length fns + num_custom_funs)
-
                                                             ; lim_max := None |}
                                             ; tt_elem_type := T_funcref
                                             |} |}]
@@ -1307,20 +1256,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
        ; mod_elems := elements
        ; mod_datas := []
        ; mod_start := None
-
-       ; mod_imports := {| imp_module := String.print "env"
-                         ; imp_name := String.print write_char_function_name
-                         ; imp_desc := MID_func 1%N
-                         |} ::
-                        {| imp_module := String.print "env"
-                         ; imp_name := String.print write_int_function_name
-                         ; imp_desc := MID_func 1%N
-                        |} :: nil
-                        (* {| imp_module := String.print "env" *)
-                        (*  ; imp_name := String.print write_int64_function_name *)
-                        (*  ; imp_desc := MID_func (N.of_nat write_int64_fty_idx) *)
-                        (* |} *)
-                        (* :: nil *)
+       ; mod_imports := []
        ; mod_exports := exports
        |}
        in
