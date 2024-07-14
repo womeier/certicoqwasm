@@ -385,16 +385,14 @@ Variable penv   : prim_env.
 Context `{ho : host}.
 Variable hfn : host_function.
 
-Definition initial_store  := {|
-    (* imported funcs write_int and write_char, they are not called
-       but need to be present *)
-    s_funcs := [FC_func_host (Tf [T_num T_i32] []) hfn; FC_func_host (Tf [T_num T_i32] []) hfn];
-    s_tables := nil;
-    s_mems := nil;
-    s_datas := nil;
-    s_elems := [];
-    s_globals := nil;
-  |}.
+Definition initial_store := 
+{| s_funcs   := nil
+ ; s_tables  := nil
+ ; s_mems    := nil
+ ; s_datas   := nil
+ ; s_elems   := nil
+ ; s_globals := nil
+ |}.
 
 Lemma inductive_eq_dec : forall e, {exists fds e', e = Efun fds e'} + {~exists fds e', e = Efun fds e'}.
 Proof.
@@ -561,8 +559,8 @@ Proof.
 Qed.
 
 Lemma module_typing_module_elem_typing : forall fns c t,
-  (* types of print_char, print_int, grow_mem, main, fns *)
-  tc_funcs c = [:: Tf [:: T_num T_i32] [::], Tf [:: T_num T_i32] [::], Tf [:: T_num T_i32] [::], Tf [::] [::] &
+  (* types of grow_mem, main, fns *)
+  tc_funcs c = [:: Tf [:: T_num T_i32] [::], Tf [::] [::] &
                 [seq Tf (repeat (T_num T_i32) (N.to_nat (type f))) [::] | f <- fns]] ->
   lookup_N (tc_tables c) 0%N = Some t ->
   tt_elem_type t = T_funcref ->
@@ -836,8 +834,8 @@ Proof.
   assert (Hin: In func fns). { eapply nth_error_In. eassumption. }
   apply in_map with (f:=fidx) in Hin.
   apply H0 in Hin.
-  destruct (N.to_nat (fidx func)) eqn:Hfi. lia. do 3! (destruct n; try lia). cbn.
-  replace (N.to_nat (fidx func - 4)) with n by lia.
+  destruct (N.to_nat (fidx func)) eqn:Hfi. lia. destruct n; try lia. cbn.
+  replace (N.to_nat (fidx func - _)) with n by lia.
   assert (Hlen: n < length fns) by lia.
 
   assert (Ho: option_map fidx (nth_error fns j) = option_map fidx (Some func)) by congruence.
@@ -1175,7 +1173,7 @@ Theorem module_instantiate : forall e module fenv venv (hs : host_state),
   NoDup (collect_function_vars e) ->
   LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, venv) ->
   exists sr fr es_post,
-  instantiate initial_store module [EV_func 0%N; EV_func 1%N] (sr, fr, es_post).
+  instantiate initial_store module [] (sr, fr, es_post).
 Proof.
   intros ????? Hcenv Hnodup' H. unfold LambdaANF_to_Wasm in H.
   destruct (check_restrictions cenv e) eqn:Hrestr. inv H. destruct u.
@@ -1195,7 +1193,7 @@ Proof.
   assert (Hnodup: NoDup (collect_function_vars (Efun fds e))). {
     destruct e; inv He; inv Hfuns; try by apply NoDup_nil. assumption. } clear Hnodup'.
 
-  destruct (interp_alloc_module initial_store module [:: EV_func 0%N; EV_func 1%N]
+  destruct (interp_alloc_module initial_store module []
                                 ((repeat (VAL_num (nat_to_value 0)) 4) ++ (repeat (VAL_num (nat_to_value64 0)) 4))
                                 (elem_vals (Datatypes.length fns + num_custom_funs) 0))
          as [s' inst] eqn:HallocM.
@@ -1211,8 +1209,7 @@ Proof.
   exists (concat (mapi_aux (0, [::]) (fun n : nat => get_init_expr_elem n)
                                      (table_element_mapping (length fns + num_custom_funs) 0))).
   (* import types *)
-  exists [:: ET_func (Tf [::T_num T_i32] [::]); ET_func (Tf [::T_num T_i32] [::])].
-  exists [:: ET_func (Tf [::T_num T_i32] [::]); ET_func (Tf [::T_num T_i32] [::])].
+  exists []. exists [].
 
   (* export types *)
   exists ([:: ET_func (Tf [::T_num T_i32] [::]); (* grow_mem *)
@@ -1375,14 +1372,6 @@ Proof.
       by apply Forall2_nil.
     + (* module_elem_typing *)
       simpl. by eapply module_typing_module_elem_typing.
-    + (* module_import_typing *)
-      apply Forall2_cons. subst ts. unfold module_import_typing. cbn.
-        erewrite nth_error_nth'. 2: { rewrite length_list_function_types. lia. }
-        rewrite nth_list_function_types; last lia. cbn. by apply /eqextern_typeP.
-      apply Forall2_cons. subst ts. unfold module_import_typing. cbn.
-        erewrite nth_error_nth'. 2: { rewrite length_list_function_types. lia. }
-        rewrite nth_list_function_types; last lia. cbn. by apply /eqextern_typeP.
-      by apply Forall2_nil.
     + (* module_export_typing *)
       apply Forall2_cons.
       { (* grow_mem func *)
@@ -1416,7 +1405,7 @@ Proof.
         }
         unfold num_custom_funs in *. unfold lookup_N.
         destruct (N.to_nat (fidx w)) eqn:Hidx; first by lia.
-        do 3! (destruct n; first by lia). cbn in Hnth.
+        destruct n; first by lia. cbn in Hnth.
         rewrite Nat.sub_0_r in Hnth. cbn.
         rewrite nth_error_map. rewrite Hnth. by apply /eqfunction_typeP.
       }
@@ -1439,11 +1428,9 @@ Proof.
       assumption.
     }
   - (* imports typing *)
-    apply Forall2_cons=>//.
-    apply Forall2_cons=>//.
+    by apply Forall2_nil.
   - (* imports subtyping *)
-    apply Forall2_cons=>//.
-    apply Forall2_cons=>//.
+    by apply Forall2_nil.
   - (* alloc_module is true *) { cbn.
     unfold interp_alloc_module, initial_store in HallocM.
     destruct (alloc_funcs _ _ _) eqn:Hfuncs.
@@ -1471,10 +1458,8 @@ Proof.
     + by apply /eqseqP. (* TODO types shouldn't be unfolded here, slow *)
     + subst l. by apply /eqseqP.
     + subst l0. by apply /eqseqP.
-    + by apply /eqexportinstP.
-    + by apply /eqexportinstP.
     + by apply /eqseqP.
-    + rewrite table_element_mapping_length elem_vals_length. reflexivity.  }
+    + rewrite table_element_mapping_length elem_vals_length. reflexivity. }
   - (* instantiate globals *)
     unfold instantiate_globals. cbn.
     repeat (apply Forall2_cons; first by apply rt_refl).
@@ -1507,8 +1492,6 @@ Variable nenv : LambdaANF.cps_show.name_env.
 Variable penv : LambdaANF.toplevel.prim_env.
 
 Context `{ho : host}.
-Variable hfn : host_function.
-Let initial_store := initial_store hfn.
 
 Ltac simpl_modulus := unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat.
 
@@ -1615,11 +1598,11 @@ forall e eAny topExp fds num_funs module fenv main_lenv sr f es_post,
   (Z.of_nat num_funs <= max_num_functions)%Z ->
   LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, main_lenv) ->
   (* instantiate with the two imported functions *)
-  instantiate initial_store module [EV_func 0%N; EV_func 1%N] (sr, f, es_post) ->
+  instantiate initial_store module [] (sr, f, es_post) ->
 
   (* invariants hold initially *)
   INV_instantiation sr f (num_funs + num_custom_funs) /\
-  inst_funcs (f_inst f) = [:: 0%N, 1%N, 2%N, 3%N & (funcidcs num_funs (N.of_nat num_custom_funs))] /\
+  inst_funcs (f_inst f) = [:: 0%N, 1%N & (funcidcs num_funs (N.of_nat num_custom_funs))] /\
   (* value relation holds for all funcs in fds *)
   (forall a errMsg, find_def a fds <> None ->
 	exists fidx : funcidx,
@@ -1637,9 +1620,7 @@ forall e eAny topExp fds num_funs module fenv main_lenv sr f es_post,
                ; modfunc_body := e'
                |} /\
     s_funcs sr =
-    [:: FC_func_host (Tf [T_num T_i32] [::]) hfn,
-        FC_func_host (Tf [T_num T_i32] [::]) hfn,
-        FC_func_native (Tf [::T_num T_i32] [::]) (f_inst f) grow_mem_fn,
+    [:: FC_func_native (Tf [::T_num T_i32] [::]) (f_inst f) grow_mem_fn,
         FC_func_native (Tf [::] [::]) (f_inst f) main_fn
     &   map (fun f0 : wasm_function =>
              FC_func_native (Tf (repeat (T_num T_i32) (N.to_nat (type f0))) [::]) (f_inst f)
@@ -1799,11 +1780,11 @@ Proof.
   split. (* inst_funcs_id *)
   { unfold INV_inst_funcs_id. intros ? Hbound. cbn. rewrite F5. unfold lookup_N.
     remember (N.to_nat i) as i'.
-    destruct (Nat.leb_spec i' 3).
-    { (* n <= 3 *)
-      do 4 (destruct i'; cbn; f_equal; try lia). }
-    { (* 3 < n *)
-      separate_instr. do 3 rewrite catA.
+    destruct (Nat.leb_spec i' 1).
+    { (* n <= 1 *)
+      do 2 (destruct i'; cbn; f_equal; try lia). }
+    { (* 1 < n *)
+      separate_instr. rewrite catA.
       erewrite nth_error_app2=>//. cbn.
       erewrite nth_error_funcidcs; eauto.
       f_equal. lia. unfold num_custom_funs in *.
@@ -1865,7 +1846,7 @@ Proof.
       now eapply NoDup_map_inv.
     }
 
-    destruct (N.to_nat (fidx func)). lia. do 3! (destruct n; first lia). cbn.
+    destruct (N.to_nat (fidx func)). lia. destruct n; first lia. cbn.
     replace (_ - _) with n in H2 by lia.
 
     do 2! rewrite nth_error_map.
@@ -2465,7 +2446,7 @@ Theorem LambdaANF_Wasm_related :
 
   (* instantiation with the two imported functions *)
   exists sr fr es_post sr',
-    instantiate initial_store module [EV_func 0%N; EV_func 1%N] (sr, fr, es_post) /\
+    instantiate initial_store module [] (sr, fr, es_post) /\
     (* perform post_instantiation: initialises table for indirect calls *)
          reduce_trans (hs, sr,  (Build_frame [] (f_inst fr)), map AI_basic es_post)
                       (hs, sr', (Build_frame [] (f_inst fr)), [])    /\
@@ -2480,7 +2461,7 @@ Proof.
   subst vars.
 
   assert (Hnodup: NoDup (collect_function_vars e)) by now eapply NoDup_app_remove_l in HvarsNodup.
-  have Hinst := module_instantiate cenv nenv penv hfn _ _ _ _ hs Hcenv Hnodup LANF2Wasm.
+  have Hinst := module_instantiate cenv nenv penv _ _ _ _ hs Hcenv Hnodup LANF2Wasm.
   destruct Hinst as [sr [fr [es_post Hinst]]]. clear Hnodup.
   exists sr, fr, es_post.
 
