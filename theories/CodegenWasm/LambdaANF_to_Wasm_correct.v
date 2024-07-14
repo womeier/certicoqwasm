@@ -5584,9 +5584,7 @@ Proof.
     assert (Hmod : forall n0, (Z.land n0 9223372036854775807 = n0 mod Wasm_int.Int64.half_modulus)%Z). {
       intros.
       rewrite -H6.
-      rewrite Z.land_ones. 2: lia.
-      rewrite H5.
-      now replace 9223372036854775808%Z with Wasm_int.Int64.half_modulus by simpl_modulus. }
+      by rewrite Z.land_ones =>//. }
     assert (Hrewr: forall w',
                Wasm_int.Int64.and w'
                  (Wasm_int.Int64.repr 9223372036854775807%Z) =
@@ -6039,7 +6037,7 @@ Proof.
   { (* Ternary operations *) admit. }
 Admitted. (* Qed. *)
 
-Close Scope bs_scope.
+
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Wasm_related :

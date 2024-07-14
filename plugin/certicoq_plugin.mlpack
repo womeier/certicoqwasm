@@ -4,11 +4,13 @@ Tm_util
 
 Datatypes
 Caml_nat
+DecidableClass
 Bool
 Equalities
 Decimal
 Hexadecimal
 Nat0
+Wf
 List0
 PeanoNat
 Specif
@@ -288,8 +290,8 @@ Leb128
 Datatypes0
 Datatypes_properties
 Operations
-Binary_format_printer
 List_extra
+Binary_format_printer
 LambdaANF_to_Wasm
 Toplevel3
 

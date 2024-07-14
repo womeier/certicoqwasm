@@ -575,11 +575,11 @@ forall v l e',
   forall a, subterm_e e' (Ecase v (a:: l)).
 Proof.
   intros. remember (Ecase v l) as y.
-  revert dependent v. revert l. induction H.
+  generalize dependent v. revert l. induction H.
   - intros. subst. constructor.
     eapply dsubterm_case_cons; eauto.
   - intros. apply IHclos_trans2 in Heqy.
-    eapply t_trans. apply H. eauto.
+    now eapply t_trans.
 Qed.
 
 Lemma subval_fun: forall v rho fl x,
