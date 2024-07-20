@@ -310,30 +310,30 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 Definition primInt63ModPath : Kernames.modpath :=
   Kernames.MPfile [ "PrimInt63"%bs ; "Int63"%bs ; "Cyclic"%bs ; "Numbers"%bs ; "Coq"%bs ].
 
-Definition primInt63Add       : Kernames.kername := (primInt63ModPath, "add"%bs).
-Definition primInt63Addc      : Kernames.kername := (primInt63ModPath, "addc"%bs).
-Definition primInt63Addcarryc : Kernames.kername := (primInt63ModPath, "addcarryc"%bs).
-Definition primInt63Sub       : Kernames.kername := (primInt63ModPath, "sub"%bs).
-Definition primInt63Subc      : Kernames.kername := (primInt63ModPath, "subc"%bs).
-Definition primInt63Subcarryc : Kernames.kername := (primInt63ModPath, "subcarryc"%bs).
-Definition primInt63Mul       : Kernames.kername := (primInt63ModPath, "mul"%bs).
-Definition primInt63Mulc      : Kernames.kername := (primInt63ModPath, "mulc"%bs).
-Definition primInt63Div       : Kernames.kername := (primInt63ModPath, "div"%bs).
-Definition primInt63Mod       : Kernames.kername := (primInt63ModPath, "mod"%bs).
-Definition primInt63Land      : Kernames.kername := (primInt63ModPath, "land"%bs).
-Definition primInt63Lor       : Kernames.kername := (primInt63ModPath, "lor"%bs).
-Definition primInt63Lxor      : Kernames.kername := (primInt63ModPath, "lxor"%bs).
-Definition primInt63Lsl       : Kernames.kername := (primInt63ModPath, "lsl"%bs).
-Definition primInt63Lsr       : Kernames.kername := (primInt63ModPath, "lsr"%bs).
-Definition primInt63Compare   : Kernames.kername := (primInt63ModPath, "compare"%bs).
-Definition primInt63Eqb       : Kernames.kername := (primInt63ModPath, "eqb"%bs).
-Definition primInt63Ltb       : Kernames.kername := (primInt63ModPath, "ltb"%bs).
-Definition primInt63Leb       : Kernames.kername := (primInt63ModPath, "leb"%bs).
-Definition primInt63Head0 : Kernames.kername := (primInt63ModPath, "head0"%bs).
-Definition primInt63Tail0 : Kernames.kername := (primInt63ModPath, "tail0"%bs).
-Definition primInt63Addmuldiv : Kernames.kername := (primInt63ModPath, "addmuldiv"%bs).
-Definition primInt63Diveucl   : Kernames.kername := (primInt63ModPath, "diveucl"%bs).
-Definition primInt63Diveucl_21   : Kernames.kername := (primInt63ModPath, "diveucl_21"%bs).
+Definition primInt63Add        : Kernames.kername := (primInt63ModPath, "add"%bs).
+Definition primInt63Addc       : Kernames.kername := (primInt63ModPath, "addc"%bs).
+Definition primInt63Addcarryc  : Kernames.kername := (primInt63ModPath, "addcarryc"%bs).
+Definition primInt63Sub        : Kernames.kername := (primInt63ModPath, "sub"%bs).
+Definition primInt63Subc       : Kernames.kername := (primInt63ModPath, "subc"%bs).
+Definition primInt63Subcarryc  : Kernames.kername := (primInt63ModPath, "subcarryc"%bs).
+Definition primInt63Mul        : Kernames.kername := (primInt63ModPath, "mul"%bs).
+Definition primInt63Mulc       : Kernames.kername := (primInt63ModPath, "mulc"%bs).
+Definition primInt63Div        : Kernames.kername := (primInt63ModPath, "div"%bs).
+Definition primInt63Mod        : Kernames.kername := (primInt63ModPath, "mod"%bs).
+Definition primInt63Land       : Kernames.kername := (primInt63ModPath, "land"%bs).
+Definition primInt63Lor        : Kernames.kername := (primInt63ModPath, "lor"%bs).
+Definition primInt63Lxor       : Kernames.kername := (primInt63ModPath, "lxor"%bs).
+Definition primInt63Lsl        : Kernames.kername := (primInt63ModPath, "lsl"%bs).
+Definition primInt63Lsr        : Kernames.kername := (primInt63ModPath, "lsr"%bs).
+Definition primInt63Compare    : Kernames.kername := (primInt63ModPath, "compare"%bs).
+Definition primInt63Eqb        : Kernames.kername := (primInt63ModPath, "eqb"%bs).
+Definition primInt63Ltb        : Kernames.kername := (primInt63ModPath, "ltb"%bs).
+Definition primInt63Leb        : Kernames.kername := (primInt63ModPath, "leb"%bs).
+Definition primInt63Head0      : Kernames.kername := (primInt63ModPath, "head0"%bs).
+Definition primInt63Tail0      : Kernames.kername := (primInt63ModPath, "tail0"%bs).
+Definition primInt63Addmuldiv  : Kernames.kername := (primInt63ModPath, "addmuldiv"%bs).
+Definition primInt63Diveucl    : Kernames.kername := (primInt63ModPath, "diveucl"%bs).
+Definition primInt63Diveucl_21 : Kernames.kername := (primInt63ModPath, "diveucl_21"%bs).
 
 Definition maxuint31 := VAL_int64 (Wasm_int.Int64.repr 2147483647%Z).
 Definition maxuint63 := VAL_int64 (Wasm_int.Int64.repr 9223372036854775807%Z).
@@ -354,7 +354,7 @@ Definition apply_binop_and_store_i64 (op : list basic_instruction) x y :=
   load_local_i64 y ++
   op ++
   [ BI_store T_i64 None 2%N 0%N (* Store the result *)
-    ; BI_global_get global_mem_ptr (* Put the address where the result was stored on the stack *)
+  ; BI_global_get global_mem_ptr (* Put the address where the result was stored on the stack *)
   ] ++
   increment_global_mem_ptr 8.
 
@@ -397,36 +397,36 @@ Definition apply_carry_operation x y  (ord1 ord2 : nat) (ops relops : list basic
    - ordinal(pair) = 0 *)
 Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
   [ BI_global_get global_mem_ptr
-    ; BI_global_get gidx1
-    ; BI_store T_i64 None 2%N 0%N
-    ; BI_global_get global_mem_ptr
-    ; BI_const_num (nat_to_value 8)
-    ; BI_binop T_i32 (Binop_i BOI_add)
-    ; BI_global_get gidx2
-    ; BI_store T_i64 None 2%N 0%N
-    ; BI_global_get global_mem_ptr
-    ; BI_const_num (nat_to_value 16)
-    ; BI_binop T_i32 (Binop_i BOI_add)
-    ; BI_global_set constr_alloc_ptr
-    ; BI_global_get constr_alloc_ptr
-    ; BI_const_num (nat_to_value 0)
-    ; BI_store T_i32 None 2%N 0%N
+  ; BI_global_get gidx1
+  ; BI_store T_i64 None 2%N 0%N
+  ; BI_global_get global_mem_ptr
+  ; BI_const_num (nat_to_value 8)
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_global_get gidx2
+  ; BI_store T_i64 None 2%N 0%N
+  ; BI_global_get global_mem_ptr
+  ; BI_const_num (nat_to_value 16)
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_global_set constr_alloc_ptr
+  ; BI_global_get constr_alloc_ptr
+  ; BI_const_num (nat_to_value 0)
+  ; BI_store T_i32 None 2%N 0%N
 
-    ; BI_global_get global_mem_ptr
-    ; BI_const_num (nat_to_value 20)
-    ; BI_binop T_i32 (Binop_i BOI_add)
-    ; BI_global_get global_mem_ptr
-    ; BI_store T_i32 None 2%N 0%N
+  ; BI_global_get global_mem_ptr
+  ; BI_const_num (nat_to_value 20)
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_global_get global_mem_ptr
+  ; BI_store T_i32 None 2%N 0%N
 
-    ; BI_global_get global_mem_ptr
-    ; BI_const_num (nat_to_value 24)
-    ; BI_binop T_i32 (Binop_i BOI_add)
-    ; BI_global_get global_mem_ptr
-    ; BI_const_num (nat_to_value 8)
-    ; BI_binop T_i32 (Binop_i BOI_add)
-    ; BI_store T_i32 None 2%N 0%N
+  ; BI_global_get global_mem_ptr
+  ; BI_const_num (nat_to_value 24)
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_global_get global_mem_ptr
+  ; BI_const_num (nat_to_value 8)
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_store T_i32 None 2%N 0%N
 
-    ; BI_global_get constr_alloc_ptr
+  ; BI_global_get constr_alloc_ptr
   ] ++ increment_global_mem_ptr 28.
 
 (* Assumptions about constructor environment for primitive operations that return bools:
