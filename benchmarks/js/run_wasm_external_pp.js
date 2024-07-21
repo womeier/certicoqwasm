@@ -65,7 +65,7 @@ let importObject = {
     try {
 
 	const start_main = Date.now();
-        obj.instance.exports.main_function();
+        const res_value = obj.instance.exports.main_function();
         const stop_main = Date.now();
         const time_main = stop_main - start_main;
 
@@ -86,7 +86,7 @@ let importObject = {
 	    if (pp_fun) {
 		const memory = obj.instance.exports.memory;
 		const dataView = new DataView(memory.buffer);
-		const res_value = obj.instance.exports.result.value;
+//		const res_value = obj.instance.exports.result.value;
 		process.stdout.write(`${program} ====> `);
 
 		const start_pp = Date.now();

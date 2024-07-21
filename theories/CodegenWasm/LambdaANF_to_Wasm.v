@@ -212,7 +212,7 @@ Definition grow_memory_if_necessary : list basic_instruction :=
 Definition generate_grow_mem_function : wasm_function :=
   {| fidx := grow_mem_function_idx
    ; export_name := grow_mem_function_name
-   ; type := 1%N (* [i32] -> [] *)
+   ; type := (Z.to_N max_function_args + 1)%N (* [i32] -> [] *)
    ; locals := []
    ; body := grow_memory_if_necessary
    |}.
@@ -943,7 +943,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
                ; BI_const_num (nat_to_value 1)
                ; BI_relop T_i32 (Relop_i ROI_eq)
                ; BI_if (BT_valtype None)
-                 [ BI_return ]
+                 [ BI_const_num (Z_to_value (-1)); BI_return ]
                  []
                ] ++ store_constr ++
                [ BI_global_get constr_alloc_ptr
@@ -994,12 +994,11 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
       following_instr <- translate_body nenv cenv lenv fenv penv e' ;;
       instr_call <- translate_call nenv lenv fenv f ys false;;
 
-      Ret (instr_call ++ [ BI_global_get result_out_of_mem
+      Ret (instr_call ++ [ BI_local_set x_var
+                         ; BI_global_get result_out_of_mem
                          ; BI_if (BT_valtype None)
-                            [ BI_return ]
+                            [ BI_const_num (Z_to_value (-1)); BI_return ]
                             []
-                         ; BI_global_get result_var
-                         ; BI_local_set x_var
                          ] ++ following_instr)
 
    | Eapp f ft ys => translate_call nenv lenv fenv f ys true
@@ -1014,7 +1013,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
             ; BI_const_num (nat_to_value 1)
             ; BI_relop T_i32 (Relop_i ROI_eq)
             ; BI_if (BT_valtype None)
-                [ BI_return ]
+                [ BI_const_num (Z_to_value (-1)); BI_return ]
                 []
             ; BI_global_get global_mem_ptr
             ; BI_const_num (VAL_int64 val)
@@ -1040,13 +1039,13 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
                  ; BI_const_num (nat_to_value 1)
                  ; BI_relop T_i32 (Relop_i ROI_eq)
                  ; BI_if (BT_valtype None)
-                     [ BI_return ]
+                     [ BI_const_num (Z_to_value (-1)); BI_return ]
                      []
                  ] ++ prim_op_instrs ++ [ BI_local_set x_var ])  ++ following_instrs)
        end
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_body halt";;
-     Ret [ BI_local_get x_var; BI_global_set result_var; BI_return ]
+     Ret [ BI_local_get x_var; BI_return ]
    end.
 
 
@@ -1088,7 +1087,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
        ; export_name := show_tree (show_var nenv f)
        ; type := N.of_nat (length args)
        ; locals := map (fun _ => T_num T_i32) locals
-       ; body := body_res
+       ; body := body_res ++ [BI_const_num (Z_to_value (-1)); BI_return]
        |}.
 
 Fixpoint translate_functions (nenv : name_env) (cenv : ctor_env) (fenv : fname_env) (penv : prim_env)
@@ -1138,8 +1137,8 @@ Definition create_fname_mapping (e : exp) : fname_env :=
 
 Fixpoint list_function_types (n : nat) : list function_type :=
   match n with
-  | 0 => [Tf [] []]
-  | S n' => (Tf [] []) :: map (fun t => match t with Tf args rt => Tf (T_num T_i32 :: args) rt end) (list_function_types n')
+  | 0 => [Tf [] [T_num T_i32]]
+  | S n' => (Tf [] [T_num T_i32]) :: map (fun t => match t with Tf args rt => Tf (T_num T_i32 :: args) rt end) (list_function_types n')
   end.
 
 (* for indirect calls maps fun ids to themselves *)
@@ -1180,7 +1179,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
   let main_function := {| fidx := main_function_idx
                         ; export_name := main_function_name
-                        ; type := 0%N (* [] -> [] *)
+                        ; type := 0%N (* [] -> [i32] *)
                         ; locals := map (fun _ => T_num T_i32) main_vars
                         ; body := main_instr
                         |}
@@ -1213,7 +1212,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
   let ftys := (list_function_types (Z.to_nat max_function_args)) in
   let module :=
-      {| mod_types := ftys (* more than required, doesn't hurt*)
+      {| mod_types := ftys ++ [Tf [T_num T_i32] []] (* more than required, doesn't hurt*)
 
        ; mod_funcs := functions_final
        ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length fns + num_custom_funs)
