@@ -29,7 +29,7 @@ Require Import Coq.Program.Program Coq.Sets.Ensembles
 
 Require Import compcert.lib.Integers compcert.common.Memory.
 
-From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm LambdaANF_to_Wasm_utils.
+From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm LambdaANF_to_Wasm_utils LambdaANF_to_Wasm_primitives.
 
 From Wasm Require Import datatypes operations host memory_list opsem
                          type_preservation instantiation_spec
