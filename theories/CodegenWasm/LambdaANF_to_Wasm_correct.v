@@ -29,7 +29,7 @@ Require Import Coq.Program.Program Coq.Sets.Ensembles
 
 Require Import compcert.lib.Integers compcert.common.Memory.
 
-From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm LambdaANF_to_Wasm_utils.
+From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm_primitives LambdaANF_to_Wasm LambdaANF_to_Wasm_utils.
 
 From Wasm Require Import datatypes operations host memory_list opsem
                          type_preservation instantiation_spec
@@ -403,7 +403,7 @@ Inductive repr_primitive_unary_operation : Kernames.kername -> localidx -> list 
        ; BI_binop T_i64 (Binop_i BOI_sub)
        ; BI_store T_i64 None 2%N 0%N
        ; BI_global_get global_mem_ptr
-       ] ++ increment_global_mem_ptr 8)
+       ] ++ increment_global_mem_ptr global_mem_ptr 8)
 
 | Rprim_tail0: forall x,
     repr_primitive_unary_operation primInt63Tail0 x
@@ -415,21 +415,21 @@ Inductive repr_primitive_unary_operation : Kernames.kername -> localidx -> list 
            (load_local_i64 x ++ [ BI_unop T_i64 (Unop_i UOI_ctz) ])
        ; BI_store T_i64 None 2%N 0%N
        ; BI_global_get global_mem_ptr
-       ] ++ increment_global_mem_ptr 8).
+       ] ++ increment_global_mem_ptr global_mem_ptr 8).
 
 
 Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> localidx -> list basic_instruction -> Prop :=
 | Rprim_add : forall x y,
     repr_primitive_binary_operation primInt63Add x y
-      (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_add) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ] x y)
+      (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_add) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ] x y)
 
 | Rprim_sub : forall x y,
     repr_primitive_binary_operation primInt63Sub x y
-      (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_sub) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ] x y)
+      (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_sub) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ] x y)
 
 | Rprim_mul : forall x y,
     repr_primitive_binary_operation primInt63Mul x y
-      (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_mul) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ] x y)
+      (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_mul) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ] x y)
 
 | Rprim_div : forall x y,
     repr_primitive_binary_operation primInt63Div x y
@@ -441,7 +441,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
            (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ])
        ; BI_store T_i64 None 2%N 0%N
        ; BI_global_get global_mem_ptr
-       ] ++ increment_global_mem_ptr 8)
+       ] ++ increment_global_mem_ptr global_mem_ptr 8)
 
 | Rprim_mod : forall x y,
     repr_primitive_binary_operation primInt63Mod x y
@@ -453,19 +453,19 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
            (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ])
        ; BI_store T_i64 None 2%N 0%N
        ; BI_global_get global_mem_ptr
-       ] ++ increment_global_mem_ptr 8)
+       ] ++ increment_global_mem_ptr global_mem_ptr 8)
 
 | Rprim_land : forall x y,
     repr_primitive_binary_operation primInt63Land x y
-      (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_and) ] x y)
+      (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_and) ] x y)
 
 | Rprim_lor : forall x y,
     repr_primitive_binary_operation primInt63Lor x y
-      (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_or) ] x y)
+      (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_or) ] x y)
 
 | Rprim_lxor : forall x y,
     repr_primitive_binary_operation primInt63Lxor x y
-      (apply_binop_and_store_i64 [ BI_binop T_i64 (Binop_i BOI_xor) ] x y)
+      (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_xor) ] x y)
 
 | Rprim_lsl : forall x y,
     repr_primitive_binary_operation primInt63Lsl x y
@@ -480,7 +480,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
              [ BI_const_num (nat_to_value64 0) ]
          ; BI_store T_i64 None 2%N 0%N
          ; BI_global_get global_mem_ptr
-         ] ++ increment_global_mem_ptr 8)
+         ] ++ increment_global_mem_ptr global_mem_ptr 8)
 
 | Rprim_lsr : forall x y,
     repr_primitive_binary_operation primInt63Lsr x y
@@ -493,7 +493,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
              [ BI_const_num (nat_to_value64 0) ]
          ; BI_store T_i64 None 2%N 0%N
          ; BI_global_get global_mem_ptr
-         ] ++ increment_global_mem_ptr 8)
+         ] ++ increment_global_mem_ptr global_mem_ptr 8)
 
 | Rprim_eqb : forall x y,
     repr_primitive_binary_operation primInt63Eqb x y
@@ -527,7 +527,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
 
 | Rprim_addc : forall x y,
     repr_primitive_binary_operation primInt63Addc x y
-      (apply_carry_operation x y 1 0
+      (apply_carry_operation global_mem_ptr glob_tmp1 x y 1 0
          [ BI_binop T_i64 (Binop_i BOI_add) ]
          ([ BI_global_get glob_tmp1 ] ++
             load_local_i64 x ++
@@ -535,7 +535,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
 
 | Rprim_addcarryc : forall x y,
     repr_primitive_binary_operation primInt63Addcarryc x y
-      (apply_carry_operation x y 1 0
+      (apply_carry_operation global_mem_ptr glob_tmp1 x y 1 0
          [ BI_binop T_i64 (Binop_i BOI_add)
          ; BI_const_num (nat_to_value64 1)
          ; BI_binop T_i64 (Binop_i BOI_add) ]
@@ -545,7 +545,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
 
 | Rprim_subc : forall x y,
     repr_primitive_binary_operation primInt63Subc x y
-      (apply_carry_operation x y 0 1
+      (apply_carry_operation global_mem_ptr glob_tmp1 x y 0 1
          [ BI_binop T_i64 (Binop_i BOI_sub) ]
          (load_local_i64 y ++
             load_local_i64 x ++
@@ -553,7 +553,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
 
 | Rprim_subcarryc : forall x y,
     repr_primitive_binary_operation primInt63Subcarryc x y
-      (apply_carry_operation x y 0 1
+      (apply_carry_operation global_mem_ptr glob_tmp1 x y 0 1
          [ BI_binop T_i64 (Binop_i BOI_sub)
          ; BI_const_num (nat_to_value64 1)
          ; BI_binop T_i64 (Binop_i BOI_sub) ]
@@ -719,7 +719,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
            ; BI_global_get glob_tmp2
            ; BI_global_set glob_tmp4
            ]
-       ] ++ make_product glob_tmp1 glob_tmp4)
+       ] ++ make_product global_mem_ptr glob_tmp1 glob_tmp4)
 
 | Rprim_diveucl : forall x y,
     repr_primitive_binary_operation primInt63Diveucl x y
@@ -749,7 +749,7 @@ Inductive repr_primitive_binary_operation : Kernames.kername -> localidx -> loca
                 load_local_i64 y ++
                 [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ; BI_global_set glob_tmp2 ])
            ]
-       ] ++ make_product glob_tmp1 glob_tmp2).
+       ] ++ make_product global_mem_ptr glob_tmp1 glob_tmp2).
 
 Inductive repr_primitive_ternary_operation : Kernames.kername -> localidx -> localidx -> localidx -> list basic_instruction -> Prop :=
 | Rprim_diveucl_21 : forall x y z,
@@ -768,17 +768,17 @@ Inductive repr_primitive_ternary_operation : Kernames.kername -> localidx -> loc
        ; BI_global_get glob_tmp1
        ; BI_relop T_i64 (Relop_i (ROI_le SX_U))
        ; BI_if (BT_valtype (Some (T_num T_i32)))
-           ([ BI_const_num (nat_to_value64 0) ; BI_global_set glob_tmp1 ] ++ make_product glob_tmp1 glob_tmp1)
+           ([ BI_const_num (nat_to_value64 0) ; BI_global_set glob_tmp1 ] ++ make_product global_mem_ptr glob_tmp1 glob_tmp1)
            (load_local_i64 y ++
             [ BI_global_set glob_tmp2
             ; BI_const_num (nat_to_value64 0)
             ; BI_global_set glob_tmp3
-            ] ++ (List.flat_map (fun x => x) (List.repeat div21_loop_body 63)) ++
+            ] ++ (List.flat_map (fun x => x) (List.repeat (div21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) 63)) ++
             [ BI_global_get glob_tmp1
             ; BI_const_num maxuint63
             ; BI_binop T_i64 (Binop_i BOI_and)
             ; BI_global_set glob_tmp1
-            ] ++ (make_product glob_tmp3 glob_tmp1))
+            ] ++ (make_product global_mem_ptr glob_tmp3 glob_tmp1))
        ])
 
 | Rprim_addmuldiv : forall x y z,
@@ -809,7 +809,7 @@ Inductive repr_primitive_ternary_operation : Kernames.kername -> localidx -> loc
             ])
        ; BI_store T_i64 None 2%N 0%N
        ; BI_global_get global_mem_ptr
-       ] ++ increment_global_mem_ptr 8).
+       ] ++ increment_global_mem_ptr global_mem_ptr 8).
 
 Inductive repr_primitive_operation {lenv} : (Kernames.kername * string * bool * nat) -> list positive  -> list basic_instruction -> Prop :=
 | Rprim_unop :
@@ -5986,7 +5986,7 @@ Proof.
           now rewrite Heq.
           dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
           dostep_nary 0. constructor. apply rs_label_const; auto.
-          replace [:: $VN nat_to_value 1] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))].
+          replace [:: $VN nat_to_i32val 1] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))].
           now apply Hstep.
           inv HreprVal; try discriminate.
           now replace ord with 0%N by congruence.
@@ -6016,7 +6016,7 @@ Proof.
           now rewrite Heq.
           dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
           dostep_nary 0. constructor. apply rs_label_const; auto.
-          replace [:: $VN nat_to_value 3] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))].
+          replace [:: $VN nat_to_i32val 3] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))].
           now apply Hstep.
           inv HreprVal; try discriminate.
           now replace ord with 1%N by congruence.

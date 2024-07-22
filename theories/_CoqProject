@@ -132,6 +132,7 @@ CodegenWasm/LambdaANF_to_Wasm.v
 CodegenWasm/LambdaANF_to_Wasm_correct.v
 CodegenWasm/LambdaANF_to_Wasm_utils.v
 CodegenWasm/LambdaANF_to_Wasm_correct_inst.v
+CodegenWasm/LambdaANF_to_Wasm_primitives.v
 
 # Glue
 Glue/glue_utils.v
