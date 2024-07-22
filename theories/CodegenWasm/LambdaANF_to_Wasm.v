@@ -183,7 +183,7 @@ Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
   | _ => Err "found constructor without ctor_arity set"
   end.
 
-(* ***** GENERATE FUNCTION TO GROW LINEAR MEMORY ****** *)
+(* ***** FUNCTION TO GROW LINEAR MEMORY ****** *)
 
 (* a page is 2^16 bytes, expected num of required bytes in local 0 *)
 Definition grow_memory_if_necessary : list basic_instruction :=
@@ -219,7 +219,7 @@ Definition generate_grow_mem_function : wasm_function :=
    |}.
 
 
-(* ***** TRANSLATE FUNCTION CALLS ****** *)
+(* ***** FUNCTION CALLS ****** *)
 
 (* every function has type: T_i32^{#args} -> [] *)
 
@@ -241,20 +241,18 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
   Ret (instr_pass_params ++ [instr_fidx] ++ [call (length args)]).
   (* all fns return nothing, type = num args *)
 
-(* ***** TRANSLATE CONSTRUCTOR ALLOCATION ****** *)
+(* ***** CONSTRUCTOR ALLOCATION ****** *)
 
 (* Example placement of constructors in the linear memory:
      data Bintree := Leaf | Node Bintree Value Bintree
 
-     Leaf: --> +---+
-               |T_l|
-               +---+
+     Leaf: 0ary constructory with ordinal 0, thus 2*ord(Leaf) + 1 = 1
 
      Node: --> +---+---+---+---+
                |T_n| L | V | R |
                +---+---+---+---+
-    T_l, T_n unique constructor tags
-    L, V, R pointers to linear memory
+    T_l, T_n constructor ordinals
+    L, V, R constructors
 *)
 
 (* store argument pointers in memory *)
@@ -298,6 +296,23 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 
        ] ++ set_constr_args).
 
+Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N * list basic_instruction)) : list basic_instruction :=
+  match es with
+  | [] => [ BI_unreachable ]
+  | (ord, instrs) :: tl =>
+      (* if boxed (pointer), then load tag from memory;
+         otherwise, the unboxed representation is (ord << 1) + 1 = 2 * ord + 1.
+       *)
+      BI_local_get v ::
+        (if boxed then
+           [ BI_load T_i32 None 2%N 0%N ; BI_const_num (nat_to_value (N.to_nat ord)) ]
+         else
+           [ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N)) ]) ++
+        [ BI_relop T_i32 (Relop_i ROI_eq)
+        ; BI_if (BT_valtype None) instrs (create_case_nested_if_chain boxed v tl) ]
+  end.
+
+
 Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (p : (kername * string * bool * nat)) (args : list var) : error (list basic_instruction) :=
   let '(op_name, _, _, _) := p in
   match args with
@@ -320,23 +335,7 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
       Err "Only primitive operations with 1, 2 or 3 arguments are supported"
   end.
 
-Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N * list basic_instruction)) : list basic_instruction :=
-  match es with
-  | [] => [ BI_unreachable ]
-  | (ord, instrs) :: tl =>
-      (* if boxed (pointer), then load tag from memory;
-         otherwise, the unboxed representation is (ord << 1) + 1 = 2 * ord + 1.
-       *)
-      BI_local_get v ::
-        (if boxed then
-           [ BI_load T_i32 None 2%N 0%N ; BI_const_num (nat_to_value (N.to_nat ord)) ]
-         else
-           [ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N)) ]) ++
-        [ BI_relop T_i32 (Relop_i ROI_eq)
-        ; BI_if (BT_valtype None) instrs (create_case_nested_if_chain boxed v tl) ]
-  end.
-
-(* ***** TRANSLATE EXPRESSIONS (except fundefs) ****** *)
+(* ***** EXPRESSIONS (except fundefs) ****** *)
 
 Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (penv : prim_env) (e : exp) : error (list basic_instruction) :=
    match e with
@@ -464,7 +463,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
    end.
 
 
-(* ***** TRANSLATE FUNCTIONS ****** *)
+(* ***** FUNCTIONS ****** *)
 
 (* unique, vars are only assigned once *)
 Fixpoint collect_local_variables (e : exp) : list cps.var :=
