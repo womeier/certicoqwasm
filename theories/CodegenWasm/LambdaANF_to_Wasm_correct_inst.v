@@ -20,7 +20,7 @@ Require Import compcert.lib.Integers compcert.common.Memory.
 
 From MetaCoq Require Import EWcbvEvalNamed. (* for string_of_nat_inj *)
 
-From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm LambdaANF_to_Wasm_utils LambdaANF_to_Wasm_correct LambdaANF_to_Wasm_primitives.
+From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm LambdaANF_to_Wasm_utils LambdaANF_to_Wasm_correct LambdaANF_to_Wasm_primitives LambdaANF_to_Wasm_common.
 
 From Wasm Require Import datatypes operations host
                          type_preservation instantiation_spec instantiation_properties

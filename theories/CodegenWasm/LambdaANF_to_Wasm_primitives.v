@@ -11,28 +11,9 @@ From Coq Require Import FMapAVL.
 Require Import POrderedType.
 
 Require Import LambdaANF.cps LambdaANF.cps_show.
+From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm_common.
 Import MonadNotation.
 
-(* From Coq Require Import ZArith BinNat List Lia. *)
-(* From Wasm Require Import datatypes operations. *)
-(* From CertiCoq Require Import LambdaANF.toplevel LambdaANF.cps_util Common.Common Common.compM Common.Pipeline_utils LambdaANF.cps LambdaANF.cps_show. *)
-(* From MetaCoq.Utils Require Import bytestring MCString. *)
-
-(* Require Import ExtLib.Structures.Monad. *)
-(* Require Import MSets.MSetAVL. *)
-(* From Coq Require Import FMapAVL. *)
-(* Require Import POrderedType. *)
-(* Import MonadNotation. *)
-(* Import ListNotations. *)
-
-(* NOTE: These are the same global definitions as in LambdaANF_to_Wasm.v! Changes here should also be made in LambdaANF_to_Wasm.v and vice versa. *)
-Definition global_mem_ptr    : globalidx := 0%N. (* ptr to next free memory, increased after allocation, there is no GC *)
-Definition constr_alloc_ptr  : globalidx := 1%N. (* ptr to beginning of constr alloc in linear mem *)
-(* globals used for primitive ops *)
-Definition glob_tmp1         : globalidx := 4%N.
-Definition glob_tmp2         : globalidx := 5%N.
-Definition glob_tmp3         : globalidx := 6%N.
-Definition glob_tmp4         : globalidx := 7%N.
 
 (* **** TRANSLATE PRIMITIVE VALUES **** *)
 
@@ -41,19 +22,9 @@ Definition translate_primitive_value (p : AstCommon.primitive) : error Wasm_int.
   | AstCommon.primInt => fun i => Ret (Wasm_int.Int64.repr (Uint63.to_Z i))
   | AstCommon.primFloat => fun f => Err "Extraction of floats to Wasm not yet supported"
   end (projT2 p).
-
-Definition nat_to_i32 (n : nat) :=
-  Wasm_int.Int32.repr (BinInt.Z.of_nat n).
-
-Definition nat_to_i64 (n : nat) :=
-  Wasm_int.Int64.repr (BinInt.Z.of_nat n).
-
-Definition nat_to_value (n : nat) :=
-  VAL_int32 (nat_to_i32 n).
-
-Definition nat_to_value64 (n : nat) :=
-  VAL_int64 (nat_to_i64 n).
   
+(* **** TRANSLATE PRIMITIVE OPERATIONS **** *)
+
 Definition primInt63ModPath : Kernames.modpath :=
   Kernames.MPfile [ "PrimInt63"%bs ; "Int63"%bs ; "Cyclic"%bs ; "Numbers"%bs ; "Coq"%bs ].
 

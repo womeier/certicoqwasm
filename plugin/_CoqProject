@@ -281,6 +281,8 @@ extraction/binary_format_printer.ml
 extraction/binary_format_printer.mli
 extraction/list_extra.ml
 extraction/list_extra.mli
+extraction/lambdaANF_to_Wasm_common.ml
+extraction/lambdaANF_to_Wasm_common.mli
 extraction/lambdaANF_to_Wasm_primitives.ml
 extraction/lambdaANF_to_Wasm_primitives.mli
 extraction/lambdaANF_to_Wasm.ml
