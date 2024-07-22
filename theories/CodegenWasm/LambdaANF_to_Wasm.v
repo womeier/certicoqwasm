@@ -667,7 +667,8 @@ Definition sanitize_function_name (s : string) (prefix_id : nat) : string :=
   let prefix_bytes := String.print (string_of_nat prefix_id) ++ ["_"%byte; "_"%byte] in
   let s_bytes := String.print s in
   let s_bytes' := map (fun b => match b with | "."%byte => "_"%byte |_ => b end) s_bytes in
-  let bytes'' := "_"%byte :: prefix_bytes ++ s_bytes' in
+  let s_bytes'' := List.rev (List.firstn 90 (List.rev s_bytes')) in (* trim to max length ~100*)
+  let bytes'' := "_"%byte :: prefix_bytes ++ s_bytes'' in
   String.parse bytes''.
 
 (* prefix function names with unique number *)
