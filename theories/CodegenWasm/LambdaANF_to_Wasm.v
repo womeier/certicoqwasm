@@ -126,7 +126,7 @@ Definition main_function_idx : funcidx := 9%N.
 (* then follow the translated functions,
    index of first translated lANF fun, a custom fun should be added before, and this var increased by 1
    (the proof will still break at various places)  *)
-Definition num_custom_funs := 4.
+Definition num_custom_funs := 10.
 
 (* global vars *)
 Definition global_mem_ptr    : globalidx := 0%N. (* ptr to free memory, increased when new 'objects' are allocated, there is no GC *)
