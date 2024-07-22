@@ -20,7 +20,7 @@ Require Import compcert.lib.Integers compcert.common.Memory.
 
 From MetaCoq Require Import EWcbvEvalNamed. (* for string_of_nat_inj *)
 
-From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm LambdaANF_to_Wasm_utils LambdaANF_to_Wasm_correct LambdaANF_to_Wasm_primitives LambdaANF_to_Wasm_common.
+From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm LambdaANF_to_Wasm_utils LambdaANF_to_Wasm_correct LambdaANF_to_Wasm_primitives.
 
 From Wasm Require Import datatypes operations host
                          type_preservation instantiation_spec instantiation_properties
@@ -334,7 +334,7 @@ Proof.
       inv H3; unfold load_local_i64 ; unfold make_product; unfold increment_global_mem_ptr.
       { (* diveucl_21 *)
         assert (Hcontext'': context_restr lenv (upd_label c0 ([:: [:: T_num T_i32]] ++ tc_labels c0))) by now inv Hcontext'.
-        assert(Hloop: be_typing (upd_label c0 ([:: [:: T_num T_i32] ++ [::]] ++ tc_labels c0)) div21_loop_body (Tf [::] [::])) by (unfold div21_loop_body; prepare_solve_bet; try solve_bet Hcontext'').
+        assert(Hloop: be_typing (upd_label c0 ([:: [:: T_num T_i32] ++ [::]] ++ tc_labels c0)) (div21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) (Tf [::] [::])) by (unfold div21_loop_body; prepare_solve_bet; try solve_bet Hcontext'').
         (* Avoid unfolding too much too avoid slowdown *)
         repeat match goal with
                | |- context C [?x :: ?l] =>

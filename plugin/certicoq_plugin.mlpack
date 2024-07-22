@@ -292,7 +292,6 @@ Datatypes_properties
 Operations
 List_extra
 Binary_format_printer
-LambdaANF_to_Wasm_common
 LambdaANF_to_Wasm_primitives
 LambdaANF_to_Wasm
 Toplevel3

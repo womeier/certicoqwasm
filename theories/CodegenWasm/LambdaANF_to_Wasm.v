@@ -11,7 +11,7 @@ From Coq Require Import FMapAVL.
 Require Import POrderedType.
 
 Require Import LambdaANF.cps LambdaANF.cps_show.
-Require Import CodegenWasm.LambdaANF_to_Wasm_common CodegenWasm.LambdaANF_to_Wasm_primitives.
+Require Import CodegenWasm.LambdaANF_to_Wasm_primitives.
 Import MonadNotation.
 
 (* Main file for compiler backend targeting Wasm. *)
@@ -98,17 +98,16 @@ Definition main_function_idx : funcidx := 1%N.
    (the proof will still break at various places)  *)
 Definition num_custom_funs := 2.
 
-(* NOTE: These are the same global definitions as in LambdaANF_to_Wasm_primitives.v! Changes here should also be made in LambdaANF_to_Wasm_primitives.v and vice versa. *)
 (* global vars *)
-(* Definition global_mem_ptr    : globalidx := 0%N. *) (* ptr to next free memory, increased after allocation, there is no GC *)
-(* Definition constr_alloc_ptr  : globalidx := 1%N. *) (* ptr to beginning of constr alloc in linear mem *)
-(* Definition result_var        : globalidx := 2%N. (* final result *) *)
-(* Definition result_out_of_mem : globalidx := 3%N. (* ran out of memory *) *)
+Definition global_mem_ptr    : globalidx := 0%N. (* ptr to next free memory, increased after allocation, there is no GC *)
+Definition constr_alloc_ptr  : globalidx := 1%N. (* ptr to beginning of constr alloc in linear mem *)
+Definition result_var        : globalidx := 2%N. (* final result *)
+Definition result_out_of_mem : globalidx := 3%N. (* ran out of memory *)
 (* globals used for primitive ops *)
-(* Definition glob_tmp1         : globalidx := 4%N. *)
-(* Definition glob_tmp2         : globalidx := 5%N. *)
-(* Definition glob_tmp3         : globalidx := 6%N. *)
-(* Definition glob_tmp4         : globalidx := 7%N. *)
+Definition glob_tmp1         : globalidx := 4%N.
+Definition glob_tmp2         : globalidx := 5%N.
+Definition glob_tmp3         : globalidx := 6%N.
+Definition glob_tmp4         : globalidx := 7%N.
 
 (* ***** MAPPINGS ****** *)
 Definition localvar_env := M.tree localidx. (* maps variables to their id (id=index in list of local vars) *)
@@ -135,20 +134,20 @@ Fixpoint arg_list (n : nat) : list (localidx * value_type) :=
   | S n' => arg_list n' ++ [(N.of_nat n', T_num T_i32)]
   end.
 
-(* Definition nat_to_i32 (n : nat) := *)
-(*   Wasm_int.Int32.repr (BinInt.Z.of_nat n). *)
+Definition nat_to_i32 (n : nat) :=
+  Wasm_int.Int32.repr (BinInt.Z.of_nat n).
 
-(* Definition nat_to_i64 (n : nat) := *)
-(*   Wasm_int.Int64.repr (BinInt.Z.of_nat n). *)
+Definition nat_to_i64 (n : nat) :=
+  Wasm_int.Int64.repr (BinInt.Z.of_nat n).
 
 Definition N_to_i32 (n : N) :=
   Wasm_int.Int32.repr (Z.of_N n).
 
-(* Definition nat_to_value (n : nat) := *)
-(*   VAL_int32 (nat_to_i32 n). *)
+Definition nat_to_value (n : nat) :=
+  VAL_int32 (nat_to_i32 n).
 
-(* Definition nat_to_value64 (n : nat) := *)
-(*   VAL_int64 (nat_to_i64 n). *)
+Definition nat_to_value64 (n : nat) :=
+  VAL_int64 (nat_to_i64 n).
 
 Definition Z_to_value (z : Z) :=
   VAL_int32 (Wasm_int.Int32.repr z).
@@ -299,24 +298,23 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
 
        ] ++ set_constr_args).
 
-
 Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (p : (kername * string * bool * nat)) (args : list var) : error (list basic_instruction) :=
   let '(op_name, _, _, _) := p in
   match args with
   | [ x ] =>
       x_var <- translate_var nenv lenv x "translate primitive unop operand";;
-      translate_primitive_unary_op op_name x_var
+      translate_primitive_unary_op global_mem_ptr op_name x_var
 
   | [ x ; y ] =>
       x_var <- translate_var nenv lenv x "translate primitive binary operator 1st operand";;
       y_var <- translate_var nenv lenv y "translate primitive binary operator 2nd operand";;
-      translate_primitive_binary_op op_name x_var y_var
+      translate_primitive_binary_op global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 op_name x_var y_var
 
   | [ x ; y ; z ] =>
       x_var <- translate_var nenv lenv x "translate primitive ternary operator 1st operand" ;;
       y_var <- translate_var nenv lenv y "translate primitive ternary operator 2nd operand" ;;
       z_var <- translate_var nenv lenv z "translate primitive ternary operator 3rd operand" ;;
-      translate_primitive_ternary_op op_name x_var y_var z_var
+      translate_primitive_ternary_op global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 op_name x_var y_var z_var
 
   | _ =>
       Err "Only primitive operations with 1, 2 or 3 arguments are supported"
