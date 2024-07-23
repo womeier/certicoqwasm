@@ -152,14 +152,14 @@ CertiCoq Compile Wasm list_sum.
 
 (* Eval compute in "Compiling list_sum_primitive".
 CertiCoq Compile Wasm -debug list_sum_primitive. *)
-Eval compute in "Compiling lazy factorial (using unsafe passes)".
+(* Eval compute in "Compiling lazy factorial (using unsafe passes)". *)
 
-CertiCoq Compile -unsafe-erasure -O 1 lazy_factorial.
-CertiCoq Compile -unsafe-erasure -ext "_opt" lazy_factorial.
-CertiCoq Compile -unsafe-erasure -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. 
-(* CertiCoq Compile -O 0 -cps -ext "_cps" demo1. *)
-(* CertiCoq Compile -cps -ext "_cps_opt" demo1. *)
-CertiCoq Generate Glue -file "glue_lazy_factorial" [ ].
+(* CertiCoq Compile -unsafe-erasure -O 1 lazy_factorial. *)
+(* CertiCoq Compile -unsafe-erasure -ext "_opt" lazy_factorial. *)
+(* CertiCoq Compile -unsafe-erasure -args 1000 -config 9 -O 1 -ext "_opt_ll" lazy_factorial. *) 
+(* (1* CertiCoq Compile -O 0 -cps -ext "_cps" demo1. *1) *)
+(* (1* CertiCoq Compile -cps -ext "_cps_opt" demo1. *1) *)
+(* CertiCoq Generate Glue -file "glue_lazy_factorial" [ ]. *)
 
 Eval compute in "Compiling vs_easy".
 CertiCoq Compile Wasm vs_easy.
