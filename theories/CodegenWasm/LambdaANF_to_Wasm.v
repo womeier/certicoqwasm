@@ -340,31 +340,34 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
 
 (* ***** EXPRESSIONS (except fundefs) ****** *)
 
-Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (penv : prim_env) (e : exp) : error (list basic_instruction) :=
+Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (penv : prim_env) (e : exp) (mem : N) : error (list basic_instruction) :=
    match e with
    | Efun fundefs e' => Err "unexpected nested function definition"
    | Econstr x tg ys e' =>
-      following_instr <- translate_body nenv cenv lenv fenv penv e' ;;
       x_var <- translate_var nenv lenv x "translate_body constr";;
       match ys with
       | [] =>
           ord <- get_ctor_ord cenv tg ;;
+          following_instr <- translate_body nenv cenv lenv fenv penv e' mem ;;
           Ret ([ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N)) ; BI_local_set x_var ] ++ following_instr)
       | _ => (* n > 0 ary constructor  *)
           (* Boxed representation *)
           store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
-          Ret ([ BI_const_num (N_to_value page_size)
-               ; BI_call grow_mem_function_idx
-               ; BI_global_get result_out_of_mem
-               ; BI_const_num (nat_to_value 1)
-               ; BI_relop T_i32 (Relop_i ROI_eq)
-               ; BI_if (BT_valtype None)
-                 [ BI_return ]
-                 []
-               ] ++ store_constr ++
-               [ BI_global_get constr_alloc_ptr
-               ; BI_local_set x_var
-               ] ++ following_instr)
+          if (4 * (1 + N.of_nat (List.length ys)) <=? mem)%N then
+            following_instr <- translate_body nenv cenv lenv fenv penv e' (mem - (4 * (1 + N.of_nat (List.length ys))))%N ;;
+            Ret (store_constr ++ [ BI_global_get constr_alloc_ptr ; BI_local_set x_var ] ++ following_instr)
+          else
+            following_instr <- translate_body nenv cenv lenv fenv penv e' (65536 - 4 * (1 + N.of_nat (List.length ys)))%N ;;
+            Ret ([ BI_const_num (N_to_value page_size)
+                   ; BI_call grow_mem_function_idx
+                   ; BI_global_get result_out_of_mem
+                   ; BI_if (BT_valtype None)
+                       [ BI_return ]
+                       []
+                ] ++ store_constr ++
+                   [ BI_global_get constr_alloc_ptr
+                     ; BI_local_set x_var
+                   ] ++ following_instr)
       end
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
@@ -372,7 +375,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
         match arms with
         | [] => Ret ([], [])
         | (t, e)::tl =>
-            instrs <- translate_body nenv cenv lenv fenv penv e ;;
+            instrs <- translate_body nenv cenv lenv fenv penv e mem;;
             '(arms_boxed, arms_unboxed) <- translate_case_branch_expressions tl ;;
             ord <- get_ctor_ord cenv t ;;
             arity <- get_ctor_arity cenv t ;;
@@ -394,7 +397,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
            ])
 
    | Eproj x tg n y e' =>
-      following_instr <- translate_body nenv cenv lenv fenv penv e' ;;
+      following_instr <- translate_body nenv cenv lenv fenv penv e' mem;;
       y_var <- translate_var nenv lenv y "translate_body proj y";;
       x_var <- translate_var nenv lenv x "translate_body proj x";;
 
@@ -407,13 +410,12 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
 
    | Eletapp x f ft ys e' =>
       x_var <- translate_var nenv lenv x "translate_body proj x";;
-      following_instr <- translate_body nenv cenv lenv fenv penv e' ;;
+      following_instr <- translate_body nenv cenv lenv fenv penv e' 0%N;;
       instr_call <- translate_call nenv lenv fenv f ys false;;
-
       Ret (instr_call ++ [ BI_global_get result_out_of_mem
                          ; BI_if (BT_valtype None)
-                            [ BI_return ]
-                            []
+                             [ BI_return ]
+                             []
                          ; BI_global_get result_var
                          ; BI_local_set x_var
                          ] ++ following_instr)
@@ -421,18 +423,10 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
    | Eapp f ft ys => translate_call nenv lenv fenv f ys true
 
    | Eprim_val x p e' =>
-       following_instrs <- translate_body nenv cenv lenv fenv penv e' ;;
        x_var <- translate_var nenv lenv x "translate_body prim val" ;;
        val <- translate_primitive_value p ;;
-       Ret ([ BI_const_num (N_to_value page_size)
-            ; BI_call grow_mem_function_idx
-            ; BI_global_get result_out_of_mem
-            ; BI_const_num (nat_to_value 1)
-            ; BI_relop T_i32 (Relop_i ROI_eq)
-            ; BI_if (BT_valtype None)
-                [ BI_return ]
-                []
-            ; BI_global_get global_mem_ptr
+       let instrs :=
+            [ BI_global_get global_mem_ptr
             ; BI_const_num (VAL_int64 val)
             ; BI_store T_i64 None 2%N 0%N
             ; BI_global_get global_mem_ptr
@@ -441,30 +435,43 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
             ; BI_const_num (nat_to_value 8)
             ; BI_binop T_i32 (Binop_i BOI_add)
             ; BI_global_set global_mem_ptr
-            ] ++ following_instrs)
-
-   | Eprim x p ys e' => (* Err "temp" *)
+            ]
+       in
+       if (8 <=? mem)%N then
+         following_instr <- translate_body nenv cenv lenv fenv penv e' (mem - 8)%N ;;
+         Ret (instrs ++ following_instr)
+       else
+         following_instr <- translate_body nenv cenv lenv fenv penv e' 65536%N ;;
+         Ret ([ BI_const_num (N_to_value page_size)
+                ; BI_call grow_mem_function_idx
+                ; BI_global_get result_out_of_mem
+                ; BI_if (BT_valtype None)
+                    [ BI_return ]
+                    []
+                ] ++ instrs ++ following_instr)
+   | Eprim x p ys e' =>
        match M.get p penv with
        | None => Err "Primitive operation not found in prim_env"
        | Some p' =>
-           following_instrs <- translate_body nenv cenv lenv fenv penv e';;
            x_var <- translate_var nenv lenv x "translate_exp prim op" ;;
            prim_op_instrs <- translate_primitive_operation nenv lenv p' ys ;;
-           Ret (([ BI_const_num (N_to_value page_size)
-                 ; BI_call grow_mem_function_idx
-                 ; BI_global_get result_out_of_mem
-                 ; BI_const_num (nat_to_value 1)
-                 ; BI_relop T_i32 (Relop_i ROI_eq)
-                 ; BI_if (BT_valtype None)
-                     [ BI_return ]
-                     []
-                 ] ++ prim_op_instrs ++ [ BI_local_set x_var ])  ++ following_instrs)
+           if (28 <=? mem)%N then
+             following_instr <- translate_body nenv cenv lenv fenv penv e' (mem - 28)%N ;;
+             Ret (prim_op_instrs ++ [ BI_local_set x_var ]  ++ following_instr)
+           else
+             following_instr <- translate_body nenv cenv lenv fenv penv e' (65536 - 28)%N ;;
+             Ret ([ BI_const_num (N_to_value page_size)
+                    ; BI_call grow_mem_function_idx
+                    ; BI_global_get result_out_of_mem
+                    ; BI_if (BT_valtype None)
+                        [ BI_return ]
+                        []
+                 ] ++ prim_op_instrs ++ [ BI_local_set x_var ]  ++ following_instr)
        end
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_body halt";;
      Ret [ BI_local_get x_var; BI_global_set result_var; BI_return ]
    end.
-
 
 (* ***** FUNCTIONS ****** *)
 
@@ -499,7 +506,7 @@ Definition translate_function (nenv : name_env) (cenv : ctor_env) (fenv : fname_
   let lenv := create_local_variable_mapping (args ++ locals) in
 
   fn_idx <- translate_var nenv fenv f "translate function" ;;
-  body_res <- translate_body nenv cenv lenv fenv penv body ;;
+  body_res <- translate_body nenv cenv lenv fenv penv body 0%N ;;
   Ret {| fidx := fn_idx
        ; export_name := show_tree (show_var nenv f)
        ; type := N.of_nat (length args)
@@ -587,7 +594,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
   let main_vars := collect_local_variables main_expr in
   let main_lenv := create_local_variable_mapping main_vars in
-  main_instr <- translate_body nenv cenv main_lenv fname_mapping penv main_expr ;;
+  main_instr <- translate_body nenv cenv main_lenv fname_mapping penv main_expr 65536%N;;
 
   let main_function := {| fidx := main_function_idx
                         ; export_name := main_function_name
