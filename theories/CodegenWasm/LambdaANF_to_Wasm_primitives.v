@@ -11,16 +11,18 @@ From Coq Require Import FMapAVL.
 Require Import POrderedType.
 
 Require Import LambdaANF.cps LambdaANF.cps_show.
-Import MonadNotation.
+Import MonadNotation SigTNotations.
 
+Notation uint63 := Uint63.int.
 
-Import SigTNotations.
+Definition Z_to_i64 z := Wasm_int.Int64.repr z.
+Definition Z_to_VAL_int64 z := VAL_int64 (Wasm_int.Int64.repr z).
+Definition to_i64 n := Wasm_int.Int64.repr (to_Z n).
 
-Notation int63 := Uint63.int.
+Local Coercion Z_to_i64 : Z >-> Wasm_int.Int64.int.
+Local Coercion Z_to_VAL_int64 : Z >-> value_num. 
 
-(* Notation "k1 =? k2" := (Kername.eqb k1 k2). *)
-
-Notation "( 'primInt' x )" := (AstCommon.primInt ; x).
+Notation "'primInt' x" := (AstCommon.primInt ; x) (at level 0).
 
 (* **** TRANSLATE PRIMITIVE VALUES **** *)
 
@@ -100,8 +102,8 @@ Definition nat_to_i32val n :=
 Definition nat_to_i64val n :=
   VAL_int64 (Wasm_int.Int64.repr (BinInt.Z.of_nat n)).
 
-Definition maxuint31 := VAL_int64 (Wasm_int.Int64.repr 2147483647%Z).
-Definition maxuint63 := VAL_int64 (Wasm_int.Int64.repr 9223372036854775807%Z).
+Definition maxuint31 := 2147483647%Z.
+Definition maxuint63 := 9223372036854775807%Z.
 
 Definition load_local_i64 (i : localidx) : list basic_instruction :=
   [ BI_local_get i ; BI_load T_i64 None 2%N 0%N ].
@@ -609,67 +611,38 @@ Definition translate_primitive_ternary_op op (x y z : localidx) : error (list ba
 
 
 
-Definition LambdaANF_primInt_arith_fun (f : int63 -> int63 -> int63) (x y : int63) := Vprim (primInt (f x y)).
+Definition LambdaANF_primInt_arith_fun (f : uint63 -> uint63 -> uint63) (x y : uint63) := Vprim (primInt (f x y)).
   
-Definition LambdaANF_primInt_bool_fun (f : int63 -> int63 -> bool) x y :=
+Definition LambdaANF_primInt_bool_fun (f : uint63 -> uint63 -> bool) x y :=
   if f x y then
     Vconstr true_tag []
   else
     Vconstr false_tag [].
 
-Definition LambdaANF_primInt_compare_fun (f : int63 -> int63 -> comparison) x y :=
+Definition LambdaANF_primInt_compare_fun (f : uint63 -> uint63 -> comparison) x y :=
   match f x y with
   | Datatypes.Eq => Vconstr eq_tag []
   | Datatypes.Lt => Vconstr lt_tag []
   | Datatypes.Gt => Vconstr gt_tag []
   end.
 
-Definition LambdaANF_primInt_carry_fun (f : int63 -> int63 -> carry int63) x y :=
+Definition LambdaANF_primInt_carry_fun (f : uint63 -> uint63 -> carry uint63) x y :=
   match f x y with
   | C0 z => Vconstr c0_tag [ Vprim (primInt z) ]
   | C1 z => Vconstr c1_tag [ Vprim (primInt z) ]
   end.
 
-Definition LambdaANF_primInt_prod_fun (f : int63 -> int63 -> prod int63 int63) x y :=
+Definition LambdaANF_primInt_prod_fun (f : uint63 -> uint63 -> prod uint63 uint63) x y :=
   let p := f x y in
   Vconstr pair_tag [ Vprim (primInt (fst p)) ; Vprim (primInt (snd p)) ].
 
-Definition LambdaANF_primInt_unop_fun (f : int63 -> int63) x := Vprim (primInt (f x)).
+Definition LambdaANF_primInt_unop_fun (f : uint63 -> uint63) x := Vprim (primInt (f x)).
   
 Definition LambdaANF_primInt_diveucl_21 xh xl y := 
   let (q, r) := diveucl_21 xh xl y in
   Vconstr pair_tag [ Vprim (primInt q) ; Vprim (primInt r) ].
 
 Definition LambdaANF_primInt_addmuldiv p x y := Vprim (primInt (addmuldiv p x y)).
-
-(* Definition map_op_to_coq_def (op : primop) := *)
-(*   match op with *)
-(*   | PrimInt63add => Uint63.add *)
-(*   | PrimInt63sub => Uint63.sub *)
-(*   | PrimInt63mul => Uint63.mul *)
-(*   | PrimInt63div => Uint63.div *)
-(*   | PrimInt63mod => Uint63.mod *)
-(*   | PrimInt63lsl => Uint63.lsl *)
-(*   | PrimInt63lsr => Uint63.lsr *)
-(*   | PrimInt63land => Uint63.land *)
-(*   | PrimInt63lor => Uint63.lor *)
-(*   | PrimInt63lxor => Uint63.lxor *)
-(*   | PrimInt63eqb => Uint63.eqb *)
-(*   | PrimInt63ltb => Uint63.ltb *)
-(*   | PrimInt63leb => Uint63.leb *)
-(*   | PrimInt63compare => Uint63.compare *)
-(*   | PrimInt63addc => Uint63.addc *)
-(*   | PrimInt63addcarryc => Uint63.addcarryc *)
-(*   | PrimInt63subc => Uint63.subc *)
-(*   | PrimInt63subcarryc => Uint63.subcarryc *)
-(*   | PrimInt63mulc => Uint63.mulc *)
-(*   | PrimInt63head0 => Uint63.head0 *)
-(*   | PrimInt63tail0 => tail0 *)
-(*   | PrimInt63diveucl => diveucl *)
-(*   | PrimInt63Diveucl_21 => diveucl_21 *)
-(*   | PrimInt63addmuldiv => addmuldiv *)
-(*   end. *)
-
 
 Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
   match vs with
@@ -711,5 +684,132 @@ Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
       end
   | _ => None 
   end.
+
+Lemma Z_bitmask_modulo_equivalent :
+  forall (n : Z),
+    Z.land n maxuint63 = Z.modulo n wB.
+Proof.
+  intros.
+  replace maxuint63 with (Z.ones 63) by now cbn.
+  now rewrite Z.land_ones.
+Qed.
+
+Lemma int64_modulo_irrelevant :
+  forall (n : uint63),
+    Wasm_int.Int64.Z_mod_modulus (to_Z n) = to_Z n.
+Proof.
+  intros.
+  rewrite Wasm_int.Int64.Z_mod_modulus_id. reflexivity.
+  assert (0 <= to_Z n < wB)%Z by now apply to_Z_bounded.
+  assert (wB < Wasm_int.Int64.modulus)%Z. unfold Wasm_int.Int64.modulus, Wasm_int.Int64.half_modulus, two_power_nat. cbn. lia. lia.
+Qed.
+
+Lemma int64_bitmask_modulo :
+  forall (n : Z),    
+    Wasm_int.Int64.iand n maxuint63 = Z.modulo n wB.
+Proof.
+  intros.
+  unfold Wasm_int.Int64.iand, Wasm_int.Int64.and. simpl.
+  rewrite Wasm_int.Int64.Z_mod_modulus_eq.
+  rewrite Wasm_int.Int64.modulus_twice_half_modulus.
+  replace (Z.land (n mod (2 * Wasm_int.Int64.half_modulus)) 9223372036854775807) with (Z.modulo (n mod (2 * Wasm_int.Int64.half_modulus)) Wasm_int.Int64.half_modulus) by now rewrite Z_bitmask_modulo_equivalent.
+  now rewrite Zaux.Zmod_mod_mult. 
+Qed.
+
+(* Lemma int64_bitmask_modulo' : *)
+(*   forall (n : uint63),     *)
+(*     Wasm_int.Int64.iand (to_Z n) maxuint63 = Z.modulo (to_Z n) wB. *)
+
+(*   Z.land n maxuint63 *)
+
+Lemma int64_add : forall n1 n2, Wasm_int.Int64.iand (Wasm_int.Int64.iadd (to_Z n1) (to_Z n2)) maxuint63 = to_Z (n1 + n2).
+Proof.
+  intros; unfold Wasm_int.Int64.iadd, Wasm_int.Int64.add; simpl;
+    do 2 rewrite int64_modulo_irrelevant; rewrite int64_bitmask_modulo; now rewrite add_spec.
+Qed.
+
+Lemma int64_sub : forall n1 n2, Wasm_int.Int64.iand (Wasm_int.Int64.isub (to_Z n1) (to_Z n2)) maxuint63 = to_Z (n1 - n2).
+Proof.
+  intros; unfold Wasm_int.Int64.isub, Wasm_int.Int64.sub; simpl.  
+  do 2 rewrite int64_modulo_irrelevant; rewrite int64_bitmask_modulo; now rewrite sub_spec.
+Qed.
+
+Lemma int64_mul : forall n1 n2, Wasm_int.Int64.iand (Wasm_int.Int64.imul (to_Z n1) (to_Z n2)) maxuint63 = to_Z (n1 * n2).
+Proof.
+  intros; unfold Wasm_int.Int64.imul, Wasm_int.Int64.mul; simpl.  
+  do 2 rewrite int64_modulo_irrelevant; rewrite int64_bitmask_modulo; now rewrite mul_spec.
+Qed.
+
+Lemma to_Z_neq : forall n1 n2,
+    n1 <> n2 -> to_Z n1 <> to_Z n2.
+Proof.
+  intros. intro Hcontra. now apply to_Z_inj in Hcontra.
+Qed.
+
+Lemma to_i64_neq : forall n1 n2,
+    n1 <> n2 -> Wasm_int.Int64.eq (to_Z n1) (to_Z n2) = false.
+Proof.
+  intros.
+  apply to_Z_neq in H.
+  unfold Wasm_int.Int64.eq.
+  unfold Coqlib.zeq. simpl.
+  do 2 rewrite int64_modulo_irrelevant.
+  now destruct (Z.eq_dec (to_Z n1) (to_Z n2)).
+Qed.
+
+Lemma to_i64_eq : forall n1 n2,
+    n1 = n2 -> Wasm_int.Int64.eq (to_Z n1) (to_Z n2) = true.
+Proof.
+  intros.
+  rewrite <-H.
+  unfold Wasm_int.Int64.eq.
+  unfold Coqlib.zeq. simpl.
+  rewrite int64_modulo_irrelevant.
+  now destruct (Z.eq_dec (to_Z n1) (to_Z n1)).
+Qed. 
+
+Lemma int64_div : forall n1 n2,
+    n2 <> 0%uint63 ->
+    Wasm_int.Int64.idiv_u (to_Z n1) (to_Z n2) = Some (Wasm_int.Int64.repr (to_Z (n1 / n2))).
+Proof.
+  intros.
+  unfold Wasm_int.Int64.idiv_u.
+  replace Wasm_int.Int64.zero with (Wasm_int.Int64.repr (to_Z 0)) by now unfold Wasm_int.Int64.zero.
+  rewrite to_i64_neq; auto.
+  unfold Wasm_int.Int64.divu. simpl.
+  do 2 rewrite int64_modulo_irrelevant.
+  now rewrite div_spec.
+Qed.
+
+Lemma int64_mod : forall n1 n2,
+    n2 <> 0%uint63 ->
+    Wasm_int.Int64.irem_u (to_Z n1) (to_Z n2) = Some (Wasm_int.Int64.repr (to_Z (n1 mod n2))).
+Proof.
+  intros.
+  unfold Wasm_int.Int64.irem_u.
+  replace Wasm_int.Int64.zero with (Wasm_int.Int64.repr (to_Z 0)) by now unfold Wasm_int.Int64.zero.
+  rewrite to_i64_neq; auto.
+  unfold Wasm_int.Int64.modu. simpl.
+  do 2 rewrite int64_modulo_irrelevant.
+  now rewrite mod_spec.
+Qed.
+
+Lemma int64_and : forall n1 n2, Wasm_int.Int64.iand (to_Z n1) (to_Z n2) = to_Z (n1 land n2).
+Proof.
+  intros; unfold Wasm_int.Int64.iand, Wasm_int.Int64.and; simpl.
+  do 2 rewrite int64_modulo_irrelevant; now rewrite land_spec'.
+Qed.
+
+Lemma int64_or : forall n1 n2, Wasm_int.Int64.ior (to_Z n1) (to_Z n2) = to_Z (n1 lor n2).
+Proof.
+  intros; unfold Wasm_int.Int64.ior, Wasm_int.Int64.or; simpl.
+  do 2 rewrite int64_modulo_irrelevant; now rewrite lor_spec'.
+Qed.
+
+Lemma int64_xor : forall n1 n2, Wasm_int.Int64.ixor (to_Z n1) (to_Z n2) = to_Z (n1 lxor n2).
+Proof.
+  intros; unfold Wasm_int.Int64.ixor, Wasm_int.Int64.xor; simpl.
+  do 2 rewrite int64_modulo_irrelevant; now rewrite lxor_spec'.
+Qed.
 
 End Primitives.
