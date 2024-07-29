@@ -4064,12 +4064,14 @@ Qed.
 (* prim_funs_wellformed *)
 Definition prim_funs_env_wellformed (penv : prim_env) (prim_funs : M.t (list val -> option val)) : Prop :=
   forall p op_name s b n op f vs v,
-    M.get p penv = Some (op_name, s, b, n) ->
-    KernameMap.find op_name primop_map = Some op ->
-    M.get p prim_funs = Some f ->
+    M.get p penv = Some (op_name, s, b, n) ->       (* penv = primitive environment obtained from previous pipeline stage *)
+    KernameMap.find op_name primop_map = Some op -> (* primop_map = environment of supported primitive operations *)
+    M.get p prim_funs = Some f ->                   (* from lambdaANF operational semantics *)
     f vs = Some v ->
-    exists true_tag false_tag it_bool eq_tag lt_tag gt_tag it_comparison c0_tag c1_tag it_carry pair_tag it_prod, 
+    exists true_tag false_tag it_bool eq_tag lt_tag gt_tag it_comparison c0_tag c1_tag it_carry pair_tag it_prod,
+      (* This links operational semantics to primitive operators in penv *)
       apply_LambdaANF_primInt_operator true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag op vs = Some v
+      (* Constructor tags (bools, comparison, carry and prod) used by prim ops *)
       /\ M.get true_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_bool 0%N 0) 
       /\ M.get false_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_bool 0%N 1)
       /\ M.get eq_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Eq") (Common.BasicAst.nNamed "comparison") it_comparison 0%N 0)
@@ -5641,12 +5643,14 @@ Proof.
             rewrite uint63_eq_int64_eq. discriminate. now rewrite e0.
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor. apply rs_label_const; auto.
-            replace [:: $VN nat_to_i32val 1] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))].
-            now apply Hstep.
-            inv HreprVal. now replace ord with 0%N by congruence.
-            replace t with true_tag in * by congruence. rewrite Htrue_arr in H8. inv H8. lia.
-            discriminate.
-            discriminate.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            (* by now inv HreprVal; replace ord with 0%N by congruence. *)
+            (* now apply Hstep. *)
+            inv HreprVal.
+            - now replace ord with 0%N by congruence.
+            - replace t with true_tag in * by congruence. rewrite Htrue_arr in H8. inv H8. lia.
+            - discriminate.
+            - discriminate.
           }
           try repeat (split; auto). all: subst fr; auto.
           exists wal; auto. }
@@ -5666,12 +5670,12 @@ Proof.
             rewrite uint63_neq_int64_neq. reflexivity. assumption.
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor. apply rs_label_const; auto.
-            replace [:: $VN nat_to_i32val 3] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))].
-            now apply Hstep.
-            inv HreprVal. now replace ord with 1%N by congruence.
-            replace t with false_tag in * by congruence. rewrite Hfalse_arr in H8. inv H8. lia.
-            discriminate.
-            discriminate.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            inv HreprVal.
+            - now replace ord with 1%N by congruence.
+            - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H8. inv H8. lia.
+            - discriminate.
+            - discriminate.
           }
           try repeat (split; auto). all: subst fr; auto.
           exists wal; auto. } }

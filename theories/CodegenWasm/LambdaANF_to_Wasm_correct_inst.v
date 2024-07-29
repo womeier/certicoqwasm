@@ -321,39 +321,40 @@ Proof.
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
   - (* Eprim *)
-    intros ???????? Hvar Hexpr' IH Hp' HprimOp ? Hcontext' Hrestr'.
+    intros ???????????? Hvar Hexpr' IH Hp Hop HprimOp ? Hcontext' Hrestr'.
+    clear Hop.
     assert (exists m, lookup_N (tc_mems c0) 0 = Some m) as [m Hm]. {
       destruct (tc_mems c0) eqn:Hc; cbn; eauto. by apply Hcontext' in Hc. }
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv HprimOp.
     { (* Unary operations *)
-      inv H1; unfold increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
+      inv H0; unfold head0_instrs, tail0_instrs,increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
     { (* Binary operations *)
-      inv H2; unfold apply_binop_and_store_i64, make_boolean_valued_comparison, make_product, apply_carry_operation, make_carry, load_local_i64, increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
+      inv H1; unfold apply_binop_and_store_i64, div_instrs, mod_instrs, shift_instrs, make_boolean_valued_comparison, compare_instrs, apply_exact_add_operation, apply_exact_sub_operation, make_carry, diveucl_instrs, mulc_instrs, make_product, load_local_i64, increment_global_mem_ptr, bitmask_instrs; prepare_solve_bet; try solve_bet Hcontext'. }
     { (* Ternary operations *)
-      inv H3; unfold load_local_i64 ; unfold make_product; unfold increment_global_mem_ptr.
-      { (* diveucl_21 *)
-        assert (Hcontext'': context_restr lenv (upd_label c0 ([:: [:: T_num T_i32]] ++ tc_labels c0))) by now inv Hcontext'.
-        assert(Hloop: be_typing (upd_label c0 ([:: [:: T_num T_i32] ++ [::]] ++ tc_labels c0)) (div21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) (Tf [::] [::])) by (unfold div21_loop_body; prepare_solve_bet; try solve_bet Hcontext'').
-        (* Avoid unfolding too much too avoid slowdown *)
-        repeat match goal with
-               | |- context C [?x :: ?l] =>
-                   lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-               end;
-          repeat rewrite catA; repeat eapply bet_composition'.
-        14: { apply bet_if_wasm with (tn:=[])=>//.
-              prepare_solve_bet; try solve_bet Hcontext''.
-              (* Avoid unfolding too much to avoid slowdown *)
-              repeat match goal with
-                     | |- context C [?x :: ?l] =>
-                         lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-                     end;
-                repeat rewrite catA; repeat eapply bet_composition'; eauto; try solve_bet Hcontext''.
-        }
-        all: try solve_bet Hcontext''. }
-      prepare_solve_bet; try solve_bet Hcontext'. }
+      inv H2; unfold addmuldiv_instrs, diveucl_21_instrs, make_product, load_local_i64, increment_global_mem_ptr.
+      - { (* diveucl_21 *)
+          assert (Hcontext'': context_restr lenv (upd_label c0 ([:: [:: T_num T_i32]] ++ tc_labels c0))) by now inv Hcontext'.
+          assert(Hloop: be_typing (upd_label c0 ([:: [:: T_num T_i32] ++ [::]] ++ tc_labels c0)) (diveucl_21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) (Tf [::] [::])) by (unfold diveucl_21_loop_body; prepare_solve_bet; try solve_bet Hcontext'').
+          (* Avoid unfolding too much too avoid slowdown *)
+          repeat match goal with
+                 | |- context C [?x :: ?l] =>
+                     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+                 end;
+            repeat rewrite catA; repeat eapply bet_composition'.
+          10: { apply bet_if_wasm with (tn:=[])=>//.
+                prepare_solve_bet; try solve_bet Hcontext''.
+                (* Avoid unfolding too much to avoid slowdown *)
+                repeat match goal with
+                       | |- context C [?x :: ?l] =>
+                           lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+                       end;
+                  repeat rewrite catA; repeat eapply bet_composition'; eauto; try solve_bet Hcontext''. }
+          all: try solve_bet Hcontext''. }
+      - (* addmuldiv *) prepare_solve_bet; try solve_bet Hcontext'.
+    }
     solve_bet Hcontext'.
-    inv Hrestr'. by apply IH.
+    inv Hrestr'; by apply IH.
   - (* repr_branches nil *)
     intros ????? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
     inv Hboxed. inv Hunboxed. by split; solve_bet Hcontext'.
