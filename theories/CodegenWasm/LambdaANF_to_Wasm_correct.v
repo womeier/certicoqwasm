@@ -398,113 +398,46 @@ Inductive repr_case_unboxed: localidx -> list (N * list basic_instruction) -> li
 Inductive repr_primitive_unary_operation : primop -> localidx -> list basic_instruction -> Prop :=
 | Rprim_head0: forall x,
     repr_primitive_unary_operation PrimInt63head0 x (head0_instrs global_mem_ptr x)
-      (* (BI_global_get global_mem_ptr :: *)
-      (*  load_local_i64 x ++ *)
-      (*  [ BI_unop T_i64 (Unop_i UOI_clz) *)
-      (*  ; BI_const_num (nat_to_value64 1) *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_sub) *)
-      (*  ; BI_store T_i64 None 2%N 0%N *)
-      (*  ; BI_global_get global_mem_ptr *)
-      (*  ] ++ increment_global_mem_ptr global_mem_ptr 8) *)
 
 | Rprim_tail0: forall x,
     repr_primitive_unary_operation PrimInt63tail0 x (tail0_instrs global_mem_ptr x).
-      (* (BI_global_get global_mem_ptr :: *)
-      (*  load_local_i64 x ++ *)
-      (*  [ BI_testop T_i64 TO_eqz *)
-      (*  ; BI_if (BT_valtype (Some (T_num T_i64))) *)
-      (*      [ BI_const_num (nat_to_value64 63) ] *)
-      (*      (load_local_i64 x ++ [ BI_unop T_i64 (Unop_i UOI_ctz) ]) *)
-      (*  ; BI_store T_i64 None 2%N 0%N *)
-      (*  ; BI_global_get global_mem_ptr *)
-      (*  ] ++ increment_global_mem_ptr global_mem_ptr 8). *)
-
 
 Inductive repr_primitive_binary_operation : primop -> localidx -> localidx -> list basic_instruction -> Prop :=
 | Rprim_add : forall x y,
     repr_primitive_binary_operation PrimInt63add x y
       (apply_binop_and_store_i64 global_mem_ptr BOI_add x y true)
-                                    
-      (* (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_add) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ] x y) *)
 
 | Rprim_sub : forall x y,
     repr_primitive_binary_operation PrimInt63sub x y
       (apply_binop_and_store_i64 global_mem_ptr BOI_sub x y true)
-      (* (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_sub) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ] x y) *)
 
 | Rprim_mul : forall x y,
     repr_primitive_binary_operation PrimInt63mul x y
       (apply_binop_and_store_i64 global_mem_ptr BOI_mul x y true)
-      (* (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_mul) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ] x y) *)
 
 | Rprim_div : forall x y,
     repr_primitive_binary_operation PrimInt63div x y (div_instrs global_mem_ptr x y)
-      (* (BI_global_get global_mem_ptr :: *)
-      (*  load_local_i64 y ++ *)
-      (*  [ BI_testop T_i64 TO_eqz *)
-      (*  ; BI_if (BT_valtype (Some (T_num T_i64))) *)
-      (*      [ BI_const_num (nat_to_value64 0) ] *)
-      (*      (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ]) *)
-      (*  ; BI_store T_i64 None 2%N 0%N *)
-      (*  ; BI_global_get global_mem_ptr *)
-      (*  ] ++ increment_global_mem_ptr global_mem_ptr 8) *)
 
 | Rprim_mod : forall x y,
     repr_primitive_binary_operation PrimInt63mod x y (mod_instrs global_mem_ptr x y)
-      (* (BI_global_get global_mem_ptr :: *)
-      (*  load_local_i64 y ++ *)
-      (*  [ BI_testop T_i64 TO_eqz *)
-      (*  ; BI_if (BT_valtype (Some (T_num T_i64))) *)
-      (*      (load_local_i64 x) *)
-      (*      (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ]) *)
-      (*  ; BI_store T_i64 None 2%N 0%N *)
-      (*  ; BI_global_get global_mem_ptr *)
-      (*  ] ++ increment_global_mem_ptr global_mem_ptr 8) *)
 
 | Rprim_land : forall x y,
     repr_primitive_binary_operation PrimInt63land x y
       (apply_binop_and_store_i64 global_mem_ptr BOI_and x y false)
-      (* (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_and) ] x y) *)
 
 | Rprim_lor : forall x y,
     repr_primitive_binary_operation PrimInt63lor x y
       (apply_binop_and_store_i64 global_mem_ptr BOI_or x y false)
-      (* (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_or) ] x y) *)
 
 | Rprim_lxor : forall x y,
     repr_primitive_binary_operation PrimInt63lxor x y
       (apply_binop_and_store_i64 global_mem_ptr BOI_xor x y false)
-      (* (apply_binop_and_store_i64 global_mem_ptr [ BI_binop T_i64 (Binop_i BOI_xor) ] x y) *)
 
 | Rprim_lsl : forall x y,
     repr_primitive_binary_operation PrimInt63lsl x y (shift_instrs global_mem_ptr x y BOI_shl true)
-      (* (apply_binop_and_store_i64 global_mem_ptr BOI_xor x y false) *)
-      (* (BI_global_get global_mem_ptr :: *)
-      (*    load_local_i64 y ++ *)
-      (*    [ BI_const_num (nat_to_value64 63) *)
-      (*    ; BI_relop T_i64 (Relop_i (ROI_lt SX_U)) *)
-      (*    ; BI_if (BT_valtype (Some (T_num T_i64))) *)
-      (*        (load_local_i64 x ++ *)
-      (*         load_local_i64 y ++ *)
-      (*         [ BI_binop T_i64 (Binop_i BOI_shl) ; BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ]) *)
-      (*        [ BI_const_num (nat_to_value64 0) ] *)
-      (*    ; BI_store T_i64 None 2%N 0%N *)
-      (*    ; BI_global_get global_mem_ptr *)
-      (*    ] ++ increment_global_mem_ptr global_mem_ptr 8) *)
 
 | Rprim_lsr : forall x y,
     repr_primitive_binary_operation PrimInt63lsr x y (shift_instrs global_mem_ptr x y (BOI_shr SX_U) false)
-    (* repr_primitive_binary_operation primInt63Lsr x y *)
-    (*   (BI_global_get global_mem_ptr :: *)
-    (*      load_local_i64 y ++ *)
-    (*      [ BI_const_num (nat_to_value64 63) *)
-    (*      ; BI_relop T_i64 (Relop_i (ROI_lt SX_U)) *)
-    (*      ; BI_if (BT_valtype (Some (T_num T_i64))) *)
-    (*          (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ]) *)
-    (*          [ BI_const_num (nat_to_value64 0) ] *)
-    (*      ; BI_store T_i64 None 2%N 0%N *)
-    (*      ; BI_global_get global_mem_ptr *)
-    (*      ] ++ increment_global_mem_ptr global_mem_ptr 8) *)
 
 | Rprim_eqb : forall x y,
     repr_primitive_binary_operation PrimInt63eqb x y
@@ -520,315 +453,39 @@ Inductive repr_primitive_binary_operation : primop -> localidx -> localidx -> li
 
 | Rprim_compare : forall x y,
     repr_primitive_binary_operation PrimInt63compare x y (compare_instrs x y)
-      (* [ BI_local_get x *)
-      (* ; BI_load T_i64 None 2%N 0%N *)
-      (* ; BI_local_get y *)
-      (* ; BI_load T_i64 None 2%N 0%N *)
-      (* ; BI_relop T_i64 (Relop_i (ROI_lt SX_U)) *)
-      (* ; BI_if (BT_valtype (Some (T_num T_i32))) *)
-      (*     [ BI_const_num (nat_to_value 3) ] (* 2 * ordinal(Lt) + 1 *) *)
-      (*     (load_local_i64 x ++ *)
-      (*      load_local_i64 y ++ *)
-      (*      [ BI_relop T_i64 (Relop_i ROI_eq) *)
-      (*      ; BI_if (BT_valtype (Some (T_num T_i32))) *)
-      (*          [ BI_const_num (nat_to_value 1) ] (* 2 * ordinal(Eq) *) *)
-      (*          [ BI_const_num (nat_to_value 5) ] (* 2 * ordinal(Gt) *) *)
-      (*      ]) *)
-      (* ] *)
 
 | Rprim_addc : forall x y,
     repr_primitive_binary_operation PrimInt63addc x y
       (apply_exact_add_operation global_mem_ptr glob_tmp1 x y false)
-      (* (apply_carry_operation global_mem_ptr glob_tmp1 x y 1 0 *)
-      (*    [ BI_binop T_i64 (Binop_i BOI_add) ] *)
-      (*    ([ BI_global_get glob_tmp1 ] ++ *)
-      (*       load_local_i64 x ++ *)
-      (*       [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))])) *)
 
 | Rprim_addcarryc : forall x y,
     repr_primitive_binary_operation PrimInt63addcarryc x y
       (apply_exact_add_operation global_mem_ptr glob_tmp1 x y true)
-      (* (apply_carry_operation global_mem_ptr glob_tmp1 x y 1 0 *)
-      (*    [ BI_binop T_i64 (Binop_i BOI_add) *)
-      (*    ; BI_const_num (nat_to_value64 1) *)
-      (*    ; BI_binop T_i64 (Binop_i BOI_add) ] *)
-      (*    ([ BI_global_get glob_tmp1 ] ++ *)
-      (*       load_local_i64 x ++ *)
-      (*       [ BI_relop T_i64 (Relop_i (ROI_le SX_U))])) *)
 
 | Rprim_subc : forall x y,
     repr_primitive_binary_operation PrimInt63subc x y
       (apply_exact_sub_operation global_mem_ptr glob_tmp1 x y false)
-      (* (apply_carry_operation global_mem_ptr glob_tmp1 x y 0 1 *)
-      (*    [ BI_binop T_i64 (Binop_i BOI_sub) ] *)
-      (*    (load_local_i64 y ++ *)
-      (*       load_local_i64 x ++ *)
-      (*       [ BI_relop T_i64 (Relop_i (ROI_le SX_U))])) *)
 
 | Rprim_subcarryc : forall x y,
     repr_primitive_binary_operation PrimInt63subcarryc x y
       (apply_exact_sub_operation global_mem_ptr glob_tmp1 x y true)
-      (* (apply_carry_operation global_mem_ptr glob_tmp1 x y 0 1 *)
-      (*    [ BI_binop T_i64 (Binop_i BOI_sub) *)
-      (*    ; BI_const_num (nat_to_value64 1) *)
-      (*    ; BI_binop T_i64 (Binop_i BOI_sub) ] *)
-      (*    (load_local_i64 y ++ *)
-      (*       load_local_i64 x ++ *)
-      (*       [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))])) *)
 
 | Rprim_mulc : forall x y,
     repr_primitive_binary_operation PrimInt63mulc x y
       (mulc_instrs global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 x y)
-      (* (load_local_i64 x ++ *)
-      (*  [ BI_const_num (nat_to_value64 62) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_testop T_i64 TO_eqz ] ++ *)
-      (*  load_local_i64 y ++ *)
-      (*  [ BI_const_num (nat_to_value64 62) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_testop T_i64 TO_eqz ] ++ *)
-      (*  [ BI_binop T_i32 (Binop_i BOI_or) *)
-      (*  ; BI_if (BT_valtype None) *)
-      (*      (load_local_i64 y ++ [ BI_global_set glob_tmp3 ]) *)
-      (*      (load_local_i64 y ++ *)
-      (*       [ BI_const_num (VAL_int64 (Wasm_int.Int64.repr 4611686018427387904%Z)) *)
-      (*       ; BI_binop T_i64 (Binop_i BOI_xor) *)
-      (*       ; BI_global_set glob_tmp3 *)
-      (*       ]) *)
-      (*  ] ++ *)
-      (*  (* glob_tmp1 <- let hx = x >> 31 *) *)
-      (*  load_local_i64 x ++ *)
-      (*  [ BI_const_num (nat_to_value64 31) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_global_set glob_tmp1 ] ++ *)
-      (*  (* glob_tmp2 <- let lx = x & ((1 << 31) - 1) *) *)
-      (*  load_local_i64 x ++ *)
-      (*  [ BI_const_num maxuint31 ; BI_binop T_i64 (Binop_i BOI_and) ; BI_global_set glob_tmp2 ] ++ *)
-      (*  (* glob_tmp4 <- let hy =  y >> 31 *) *)
-      (*  [ BI_global_get glob_tmp3 ; BI_const_num (nat_to_value64 31) ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_global_set glob_tmp4 ] ++ *)
-      (*  (* glob_tmp3 <- let ly = y & ((1 << 31) - 1) *) *)
-      (*  [ BI_global_get glob_tmp3 ; BI_const_num maxuint31 ; BI_binop T_i64 (Binop_i BOI_and) ; BI_global_set glob_tmp3 ] ++ *)
-      (*  [ BI_global_get glob_tmp1 ; BI_global_get glob_tmp4 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++ *)
-      (*  [ BI_global_get glob_tmp1 ; BI_global_get glob_tmp3 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++ *)
-      (*  [ BI_global_get glob_tmp2 ; BI_global_get glob_tmp4 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++ *)
-      (*  [ BI_global_get glob_tmp2 ; BI_global_get glob_tmp3 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++ *)
-      (*  (* glob_tmp4 <- let lxy = lx * ly *)
-      (*     glob_tmp3 <- let lxhy = lx * hy *)
-      (*     glob_tmp2 <- let hxly = hx * ly *)
-      (*     glob_tmp1 <- let hxy  = hx * hy *) *)
-      (*  [ BI_global_set glob_tmp4 *)
-      (*  ; BI_global_set glob_tmp3 *)
-      (*  ; BI_global_set glob_tmp2 *)
-      (*  ; BI_global_set glob_tmp1 *)
-      (*  ]  ++ *)
-      (*  (* glob_tmp4 <- let l = lxy | (hxy << 62) = glob_tmp4 | (glob_tmp1 << 62) *) *)
-      (*  [ BI_global_get glob_tmp4 *)
-      (*  ; BI_global_get glob_tmp1 *)
-      (*  ; BI_const_num (nat_to_value64 62) *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_shl) *)
-      (*  ; BI_const_num maxuint63 *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_or) *)
-      (*  ; BI_global_set glob_tmp4 *)
-      (*  ] ++ *)
-      (*  (* glob_tmp1 <- let h = hxy >> 1 = glob_tmp1 >> 1 *) *)
-      (*  [ BI_global_get glob_tmp1 *)
-      (*  ; BI_const_num (nat_to_value64 1) *)
-      (*  ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) *)
-      (*  ; BI_global_set glob_tmp1 *)
-      (*  ] ++ *)
-      (*  (* glob_tmp3 <- let hl = hxly + lxhy = glob_tmp2 + glob_tmp3 *) *)
-      (*  [ BI_global_get glob_tmp2 *)
-      (*  ; BI_global_get glob_tmp3 *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_add) *)
-      (*  ; BI_const_num maxuint63 *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*  ; BI_global_set glob_tmp3 *)
-      (*  ] ++ *)
-      (*  (* glob_tmp1 <- let h = if hl < hxly then h + (1 << 31) else h *) *)
-      (*  [ BI_global_get glob_tmp3 *)
-      (*  ; BI_global_get glob_tmp2 *)
-      (*  ; BI_relop T_i64 (Relop_i (ROI_lt SX_U)) *)
-      (*  ; BI_if (BT_valtype None) *)
-      (*      [ BI_global_get glob_tmp1 *)
-      (*      ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr 2147483648%Z)) *)
-      (*      ; BI_binop T_i64 (Binop_i BOI_add) *)
-      (*      ; BI_global_set glob_tmp1 *)
-      (*      ] *)
-      (*      [ ] *)
-      (*  ] ++ *)
-      (*  (* glob_tmp2 <- let hl' = hl << 31 *) *)
-      (*  [ BI_global_get glob_tmp3 *)
-      (*  ; BI_const_num (nat_to_value64 31) *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_shl) *)
-      (*  ; BI_const_num maxuint63 *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*  ; BI_global_set glob_tmp2 *)
-      (*  ] ++ *)
-      (*  (* glob_tmp4 <- let l = l + hl' *) *)
-      (*  [ BI_global_get glob_tmp4 *)
-      (*  ; BI_global_get glob_tmp2 *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_add) *)
-      (*  ; BI_const_num maxuint63 *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*  ; BI_global_set glob_tmp4 *)
-      (*  ] ++ *)
-      (*  (* glob_tmp1 <- let h = if l < hl' then h + 1 else h *) *)
-      (*  [ BI_global_get glob_tmp4 *)
-      (*  ; BI_global_get glob_tmp2 *)
-      (*  ; BI_relop T_i64 (Relop_i (ROI_lt SX_U)) *)
-      (*  ; BI_if (BT_valtype None) *)
-      (*      [ BI_global_get glob_tmp1 *)
-      (*      ; BI_const_num (nat_to_value64 1) *)
-      (*      ; BI_binop T_i64 (Binop_i BOI_add) *)
-      (*      ; BI_global_set glob_tmp1 *)
-      (*      ] *)
-      (*      [ ] *)
-      (*  ] ++ *)
-      (*  (* glob_tmp1 <- let h = h + (hl >> 32) *) *)
-      (*  [ BI_global_get glob_tmp1 *)
-      (*  ; BI_global_get glob_tmp3 *)
-      (*  ; BI_const_num (nat_to_value64 32) *)
-      (*  ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_add) *)
-      (*  ; BI_const_num maxuint63 *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*  ; BI_global_set glob_tmp1 *)
-      (*  ] ++ *)
-      (*  load_local_i64 x ++ *)
-      (*  [ BI_const_num (nat_to_value64 62) *)
-      (*  ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) *)
-      (*  ; BI_testop T_i64 TO_eqz *)
-      (*  ] ++ *)
-      (*  load_local_i64 y ++ *)
-      (*  [ BI_const_num (nat_to_value64 62) *)
-      (*  ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) *)
-      (*  ; BI_testop T_i64 TO_eqz *)
-      (*  ; BI_binop T_i32 (Binop_i BOI_or) *)
-      (*  ; BI_if (BT_valtype None) *)
-      (*      [ ] *)
-      (*      [ (* glob_tmp2 <- let l' := l + (x << 62) *) *)
-      (*      BI_global_get glob_tmp4 *)
-      (*      ; BI_local_get x *)
-      (*      ; BI_load T_i64 None 2%N 0%N *)
-      (*      ; BI_const_num (nat_to_value64 62) *)
-      (*      ; BI_binop T_i64 (Binop_i BOI_shl) *)
-      (*      ; BI_binop T_i64 (Binop_i BOI_add) *)
-      (*      ; BI_const_num maxuint63 *)
-      (*      ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*      ; BI_global_set glob_tmp2 *)
-      (*      (* glob_tmp1 <- let h := if l' < l then h + 1 else h *) *)
-      (*      ; BI_global_get glob_tmp2 *)
-      (*      ; BI_global_get glob_tmp4 *)
-      (*      ; BI_relop T_i64 (Relop_i (ROI_lt SX_U)) *)
-      (*      ; BI_if (BT_valtype None) *)
-      (*          [ BI_global_get glob_tmp1 *)
-      (*          ; BI_const_num (nat_to_value64 1) *)
-      (*          ; BI_binop T_i64 (Binop_i BOI_add) *)
-      (*          ; BI_global_set glob_tmp1 *)
-      (*          ] *)
-      (*          [ ] *)
-      (*      (* return (h + (x >> 1), l') *) *)
-      (*      ; BI_global_get glob_tmp1 *)
-      (*      ; BI_local_get x *)
-      (*      ; BI_load T_i64 None 2%N 0%N *)
-      (*      ; BI_const_num (nat_to_value64 1) *)
-      (*      ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) *)
-      (*      ; BI_binop T_i64 (Binop_i BOI_add) *)
-      (*      ; BI_const_num maxuint63 *)
-      (*      ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*      ; BI_global_set glob_tmp1 *)
-      (*      ; BI_global_get glob_tmp2 *)
-      (*      ; BI_global_set glob_tmp4 *)
-      (*      ] *)
-      (*  ] ++ make_product global_mem_ptr glob_tmp1 glob_tmp4) *)
 
 | Rprim_diveucl : forall x y,
     repr_primitive_binary_operation PrimInt63diveucl x y
       (diveucl_instrs global_mem_ptr glob_tmp1 glob_tmp2 x y).
-      (* ([ BI_local_get x *)
-      (*  ; BI_load T_i64 None 2%N 0%N *)
-      (*  ; BI_testop T_i64 TO_eqz *)
-      (*  ; BI_if (BT_valtype None) *)
-      (*      [ BI_const_num (nat_to_value64 0) *)
-      (*      ; BI_global_set glob_tmp1 *)
-      (*      ; BI_const_num (nat_to_value64 0) *)
-      (*      ; BI_global_set glob_tmp2 *)
-      (*      ] *)
-      (*      [ BI_local_get y *)
-      (*      ; BI_load T_i64 None 2%N 0%N *)
-      (*      ; BI_testop T_i64 TO_eqz *)
-      (*      ; BI_if (BT_valtype None) *)
-      (*          [ BI_const_num (nat_to_value64 0) *)
-      (*          ; BI_global_set glob_tmp1 *)
-      (*          ; BI_local_get x *)
-      (*          ; BI_load T_i64 None 2%N 0%N *)
-      (*          ; BI_global_set glob_tmp2 *)
-      (*          ] *)
-      (*          (load_local_i64 x ++ *)
-      (*           load_local_i64 y ++ *)
-      (*           [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ; BI_global_set glob_tmp1 ] ++ *)
-      (*           load_local_i64 x ++ *)
-      (*           load_local_i64 y ++ *)
-      (*           [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ; BI_global_set glob_tmp2 ]) *)
-      (*      ] *)
-      (*  ] ++ make_product global_mem_ptr glob_tmp1 glob_tmp2). *)
 
 Inductive repr_primitive_ternary_operation : primop -> localidx -> localidx -> localidx -> list basic_instruction -> Prop :=
 | Rprim_diveucl_21 : forall xh xl y,
     repr_primitive_ternary_operation PrimInt63diveucl_21 xh xl y
       (diveucl_21_instrs global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 xh xl y)
-      (* (load_local_i64 z ++ *)
-      (*  [ BI_const_num maxuint63 *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*  ; BI_global_set glob_tmp4 *)
-      (*  ] ++ *)
-      (*  load_local_i64 x ++ *)
-      (*  [ BI_const_num maxuint63 *)
-      (*  ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*  ; BI_global_set glob_tmp1 *)
-      (*  ] ++ *)
-      (*  [ BI_global_get glob_tmp4 *)
-      (*  ; BI_global_get glob_tmp1 *)
-      (*  ; BI_relop T_i64 (Relop_i (ROI_le SX_U)) *)
-      (*  ; BI_if (BT_valtype (Some (T_num T_i32))) *)
-      (*      ([ BI_const_num (nat_to_value64 0) ; BI_global_set glob_tmp1 ] ++ make_product global_mem_ptr glob_tmp1 glob_tmp1) *)
-      (*      (load_local_i64 y ++ *)
-      (*       [ BI_global_set glob_tmp2 *)
-      (*       ; BI_const_num (nat_to_value64 0) *)
-      (*       ; BI_global_set glob_tmp3 *)
-      (*       ] ++ (List.flat_map (fun x => x) (List.repeat (div21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) 63)) ++ *)
-      (*       [ BI_global_get glob_tmp1 *)
-      (*       ; BI_const_num maxuint63 *)
-      (*       ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*       ; BI_global_set glob_tmp1 *)
-      (*       ] ++ (make_product global_mem_ptr glob_tmp3 glob_tmp1)) *)
-      (*  ]) *)
 
 | Rprim_addmuldiv : forall p x y,
     repr_primitive_ternary_operation PrimInt63addmuldiv p x y
       (addmuldiv_instrs global_mem_ptr  p x y).
-      (* (BI_global_get global_mem_ptr :: *)
-      (*  load_local_i64 x ++ *)
-      (*  [ BI_const_num (nat_to_value64 63) *)
-      (*  ; BI_relop T_i64 (Relop_i (ROI_gt SX_U)) *)
-      (*  ; BI_if (BT_valtype (Some (T_num T_i64))) *)
-      (*      [ BI_const_num (nat_to_value64 0) ] *)
-      (*      (* Compute x << z on the stack *) *)
-      (*      (load_local_i64 y ++ *)
-      (*       load_local_i64 x ++ *)
-      (*       [ BI_binop T_i64 (Binop_i BOI_shl) *)
-      (*       ; BI_const_num maxuint63 *)
-      (*       ; BI_binop T_i64 (Binop_i BOI_and) *)
-      (*       ] ++ *)
-      (*       (* Put y on the stack *) *)
-      (*       load_local_i64 z ++ *)
-      (*       (* Compute 63 - z on the stack *) *)
-      (*       [ BI_const_num (nat_to_value64 63) ] ++ *)
-      (*       load_local_i64 x ++ *)
-      (*       [ BI_binop T_i64 (Binop_i BOI_sub) *)
-      (*       (* Compute y >> (63 - z) on the stack *) *)
-      (*       ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) *)
-      (*       (* Finally, compute (x << z) | (y >> (63 - z)) on the stack *) *)
-      (*       ; BI_binop T_i64 (Binop_i BOI_or) *)
-      (*       ]) *)
-      (*  ; BI_store T_i64 None 2%N 0%N *)
-      (*  ; BI_global_get global_mem_ptr *)
-      (*  ] ++ increment_global_mem_ptr global_mem_ptr 8). *)
 
 Inductive repr_primitive_operation {lenv} : primop -> list positive  -> list basic_instruction -> Prop :=
 | Rprim_unop :
@@ -1175,7 +832,6 @@ Proof.
     unfold translate_primitive_operation in Hprimop.
     do 3 destruct p0.
     destruct (KernameMap.find _) eqn:Hker. 2: inv Hprimop.
-    (* inversion Hprimop. *)
     inv H1.
     eapply R_prim; eauto.
     econstructor; eauto.
@@ -1225,8 +881,6 @@ Let repr_expr_LambdaANF_Wasm := @repr_expr_LambdaANF_Wasm cenv fenv nenv.
 Let repr_funvar := @repr_funvar fenv nenv.
 
 Context `{ho : host}.
-
-Definition i64_of_uint63 x := (Wasm_int.Int64.repr (to_Z x)).
 
 (* VALUE RELATION *)
 (* immediate is pointer to linear memory or function id *)
@@ -2236,7 +1890,7 @@ Proof.
 Qed.
 
 Ltac separate_instr :=
-  simpl;
+  cbn;
   repeat match goal with
   |- context C [?x :: ?l] =>
      lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
@@ -2281,14 +1935,6 @@ Ltac dostep_nary n :=
 
 Ltac dostep_nary_eliml n n' :=
   dostep; first ((do n'! (apply r_eliml; auto)); elimr_nary_instr n).
-
-Ltac dostep_nary_eliml' n n' :=
-  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t]));
-  first (apply rt_step; 
-         repeat match goal with
-             |- context C [?x :: ?l] =>
-               lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-           end); first ((do n'! (apply r_eliml; auto)); elimr_nary_instr n).
 
 Ltac dostep_nary' n :=
   dostep'; first elimr_nary_instr n.
@@ -3783,268 +3429,8 @@ Proof.
         destruct (IHxs _ _ _ _ _ Heqn H0 H1) as [k [Hk1 Hk2]]. exists (S k). now cbn.
 Qed.
 
-(* Inductive bs_LambdaANF_prim_fun_extracted_prim_related : *)
-(*   (Kernames.kername * string * bool * nat) -> (list val -> option val) -> Prop := *)
-(* | Bstep_primInt_add : forall s b n (i1 i2 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Add, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*             Some ( Vprim (AstCommon.primInt ; (Uint63.add i1 i2) ) ) | _ => None end) *)
-
-(* | Bstep_primInt_sub : forall s b n (i1 i2 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Sub, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*             Some ( Vprim (AstCommon.primInt ; (Uint63.sub i1 i2) ) ) | _ => None end) *)
-
-(* | Bstep_primInt_mul : forall s b n (i1 i2 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Mul, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*             Some ( Vprim (AstCommon.primInt ; (Uint63.mul i1 i2) ) ) | _ => None end) *)
-
-(* | Bstep_primInt_div : forall s b n (i1 i2 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Div, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*             Some ( Vprim (AstCommon.primInt ; (Uint63.div i1 i2) ) ) | _ => None end) *)
-
-(* | Bstep_primInt_mod : forall s b n (i1 i2 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Mod, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*             Some ( Vprim (AstCommon.primInt ; (Uint63.mod i1 i2) ) ) | _ => None end) *)
-
-(* | Bstep_primInt_land : forall s b n (i1 i2 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Land, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*             Some ( Vprim (AstCommon.primInt ; (Uint63.land i1 i2) ) ) | _ => None end) *)
-
-(* | Bstep_primInt_lor : forall s b n (i1 i2 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Lor, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*             Some ( Vprim (AstCommon.primInt ; (Uint63.lor i1 i2) ) ) | _ => None end) *)
-
-(* | Bstep_primInt_lxor : forall s b n (i1 i2 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Lxor, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*             Some ( Vprim (AstCommon.primInt ; (Uint63.lxor i1 i2) ) ) | _ => None end) *)
-
-(* | Bstep_primInt_lsl : forall s b n (i1 i2 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Lsl, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*             Some ( Vprim (AstCommon.primInt ; (Uint63.lsl i1 i2) ) ) | _ => None end) *)
-
-(* | Bstep_primInt_lsr : forall s b n (i1 i2 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Lsr, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*             Some ( Vprim (AstCommon.primInt ; (Uint63.lsr i1 i2) ) ) | _ => None end) *)
-
-(* | Bstep_primInt_eqb : forall s b n (i1 i2 : Uint63.int) t_true it_true t_false it_false, *)
-(*     M.get t_true cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_true 0%N 0) -> *)
-(*     M.get t_false cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_false 0%N 1) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Eqb, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*               if Uint63.eqb i1 i2 then *)
-(*                 Some ( Vconstr t_true [] ) *)
-(*               else *)
-(*                 Some ( Vconstr t_false [] ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_ltb : forall s b n (i1 i2 : Uint63.int) t_true it_true t_false it_false, *)
-(*     M.get t_true cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_true 0%N 0) -> *)
-(*     M.get t_false cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_false 0%N 1) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Ltb, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*               if Uint63.ltb i1 i2 then *)
-(*                 Some ( Vconstr t_true [] ) *)
-(*               else *)
-(*                 Some ( Vconstr t_false [] ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_leb : forall s b n (i1 i2 : Uint63.int) t_true it_true t_false it_false, *)
-(*     M.get t_true cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_true 0%N 0) -> *)
-(*     M.get t_false cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_false 0%N 1) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Leb, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*               if Uint63.leb i1 i2 then *)
-(*                 Some ( Vconstr t_true [] ) *)
-(*               else *)
-(*                 Some ( Vconstr t_false [] ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_compare : forall s b n (i1 i2 : Uint63.int) t_Eq t_Lt t_Gt it_compare, *)
-(*     M.get t_Eq cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Eq") (Common.BasicAst.nNamed "compare") it_compare 0%N 0) -> *)
-(*     M.get t_Lt cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Lt") (Common.BasicAst.nNamed "compare") it_compare 0%N 1) -> *)
-(*     M.get t_Gt cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Gt") (Common.BasicAst.nNamed "compare") it_compare 0%N 2) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Leb, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*               match Uint63.compare i1 i2 with *)
-(*               | Eq => Some ( Vconstr t_Eq [] ) *)
-(*               | Lt => Some ( Vconstr t_Lt [] ) *)
-(*               | Gt => Some ( Vconstr t_Gt [] ) *)
-(*               end *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_addc : forall s b n (i1 i2 : Uint63.int) t_C0 t_C1 it_carry, *)
-(*     M.get t_C0 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N 0) -> *)
-(*     M.get t_C1 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N 1) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Addc, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*               let r := Uint63.add i1 i2 in *)
-(*               if Uint63.ltb r i1 then *)
-(*                 Some ( Vconstr t_C1 [ Vprim (AstCommon.primInt ; r) ] ) *)
-(*               else *)
-(*                 Some ( Vconstr t_C0 [ Vprim (AstCommon.primInt ; r) ] ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_addcarryc : forall s b n (i1 i2 : Uint63.int) t_C0 t_C1 it_carry, *)
-(*     M.get t_C0 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N 0) -> *)
-(*     M.get t_C1 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N 1) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Addcarryc, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*               let r := Uint63.add (Uint63.add i1 i2) 1%uint63 in *)
-(*               if Uint63.leb r i1 then *)
-(*                 Some ( Vconstr t_C1 [ Vprim (AstCommon.primInt ; r) ] ) *)
-(*               else *)
-(*                 Some ( Vconstr t_C0 [ Vprim (AstCommon.primInt ; r) ] ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_subc : forall s b n (i1 i2 : Uint63.int) t_C0 t_C1 it_carry, *)
-(*     M.get t_C0 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N 0) -> *)
-(*     M.get t_C1 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N 1) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Subc, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*               if Uint63.leb i2 i1 then *)
-(*                 Some ( Vconstr t_C0 [ Vprim (AstCommon.primInt ; Uint63.sub i1 i2) ] ) *)
-(*               else *)
-(*                 Some ( Vconstr t_C1 [ Vprim (AstCommon.primInt ; Uint63.sub i1 i2) ] ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_subcarryc : forall s b n (i1 i2 : Uint63.int) t_C0 t_C1 it_carry, *)
-(*     M.get t_C0 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N 0) -> *)
-(*     M.get t_C1 cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N 1) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Subcarryc, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*               if Uint63.ltb i2 i1 then *)
-(*                 Some ( Vconstr t_C0 [ Vprim (AstCommon.primInt ; Uint63.sub (Uint63.sub i1 i2) 1%uint63) ] ) *)
-(*               else *)
-(*                 Some ( Vconstr t_C1 [ Vprim (AstCommon.primInt ; Uint63.sub (Uint63.sub i1 i2) 1%uint63 ) ] ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_mulc : forall s b n (i1 i2 : Uint63.int) t_pair it_prod, *)
-(*     M.get t_pair cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N 0) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Mulc, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*               let '(h, l) := Uint63.mulc i1 i2 in *)
-(*               Some ( Vconstr t_pair [ Vprim (AstCommon.primInt ; h ) ; Vprim (AstCommon.primInt ; l) ] ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_diveucl : forall s b n (i1 i2 : Uint63.int) t_pair it_prod, *)
-(*     M.get t_pair cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N 0) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Diveucl, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ] => *)
-(*               let '(q, r) := Uint63.diveucl i1 i2 in *)
-(*               Some ( Vconstr t_pair [ Vprim (AstCommon.primInt ; q) ; Vprim (AstCommon.primInt ; r) ] ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_diveucl_21 : forall s b n (i1 i2 i3 : Uint63.int) t_pair it_prod, *)
-(*     M.get t_pair cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N 0) -> *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Diveucl_21, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ; Vprim ( (AstCommon.primInt ; i3) ) ] => *)
-(*               let '(q, r) := Uint63.diveucl_21 i1 i2 i3 in *)
-(*               Some ( Vconstr t_pair [ Vprim (AstCommon.primInt ; q) ; Vprim (AstCommon.primInt ; r) ] ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_addmuldiv : forall s b n (i1 i2 i3 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Addmuldiv, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ; Vprim ( (AstCommon.primInt ; i2) ) ; Vprim ( (AstCommon.primInt ; i3) ) ] => *)
-(*               Some ( Vprim ( (AstCommon.primInt ; Uint63.addmuldiv i1 i2 i3) ) ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_head0 : forall s b n (i1 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Head0, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ] => *)
-(*               Some ( Vprim ( (AstCommon.primInt ; Uint63.head0 i1) ) ) *)
-(*           | _ => None *)
-(*           end) *)
-
-(* | Bstep_primInt_tail0 : forall s b n (i1 : Uint63.int), *)
-(*     bs_LambdaANF_prim_fun_extracted_prim_related *)
-(*       (primInt63Tail0, s, b, n) *)
-(*       ( fun vs => *)
-(*           match vs with *)
-(*           | [ Vprim ( (AstCommon.primInt ; i1) ) ] => *)
-(*               Some ( Vprim ( (AstCommon.primInt ; Uint63.tail0 i1) ) ) *)
-(*           | _ => None *)
-(*           end). *)
-
+(* Arguments to primitive operations can only be primInts
+   (Eventually adapt for floats) *)
 Lemma apply_primop_only_defined_on_primInts :
   forall op vs v true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag,
     apply_LambdaANF_primInt_operator true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag op vs = Some v ->
@@ -4946,6 +4332,20 @@ Proof.
   }
 Qed.
 
+(* Helper tactic to solve the cases for simple binary arithmetic operators like add, sub, mul etc. *)
+Local Ltac solve_arith_op_aux v aexp H1 H2 H3 H4 :=
+  (inv H1; simpl;
+   destruct (H2 aexp) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]];
+   exists s_final, fr;
+   replace v with (Vprim ( primInt aexp)) in * by congruence;
+   split; auto;
+   dostep_nary 0; [apply r_global_get; eassumption|];
+   eapply rt_trans; [apply app_trans_const; [auto|apply H3]|];
+   dostep_nary_eliml 2 1;[constructor; apply rs_binop_success; reflexivity|];
+   (try (dostep_nary_eliml 2 1;[constructor; apply rs_binop_success; reflexivity|]));
+   dostep_nary 2; [eapply r_store_success; rewrite H4; eassumption|];
+   eassumption).
+
 Lemma primitive_operation_reduces : forall lenv pfs state s f m fds f' (x : var) (x' : localidx) (p : prim) op_name str b op_arr op
                                            (ys : list var) (e : exp) (vs : list val) (rho : env) (v : val) (gmp_v : u32) instrs,
     prim_funs_env_wellformed penv pfs ->
@@ -4994,6 +4394,10 @@ Proof.
   { (* Unary operations *) admit. }
   { (* Binary operations *)
     have Hpfs' := Hpfs _ _ _ _ _ _ _ vs v Hpenv Hop Hf' HprimResSome.
+    (* Remove the assumption 'KernameMap.find op_name primop_map = Some op' from the context
+       as this causes certain tactics that operate on the context such as
+       discriminate or =>// (from SSRReflect) to hang. *)
+    clear Hop.
     assert (forall w,
              exists mem, store m (Wasm_int.N_of_uint i32m (N_to_i32 gmp_v)) 0%N
                            (bits (VAL_int64 w))
@@ -5043,11 +4447,9 @@ Proof.
       exists s'.
       assert (Hm'': smem_store s (f_inst f) (Wasm_int.N_of_uint i32m (N_to_i32 gmp_v)) 0%N
                       (VAL_int64 (Z_to_i64 (to_Z n))) T_i64 = Some s'). {
-        unfold smem_store. rewrite Hmem1. simpl. subst s'.
-        unfold smem in Hmem2. rewrite Hmem1 in Hmem2.
-        destruct (s_mems s) eqn:Hsmems. simpl in Hmem2. inversion Hmem2.
-        injection Hmem2 as ->. simpl.
-        now rewrite Hm'. }
+        unfold smem_store. rewrite Hmem1. cbn. subst s'.
+        unfold smem in Hmem2. rewrite Hmem1 in Hmem2. destruct (s_mems s)=>//.
+        injection Hmem2 as ->. now rewrite Hm'. }
       assert (Hinv' : INV s' f). {
         subst.
         assert (mem_length m = mem_length m'). {
@@ -5139,9 +4541,9 @@ Proof.
         intros.
         apply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=s) (m:=m) (m':=m') (gmp:=gmp_v) (gmp':=(gmp_v + 8)%N); auto.
         { unfold supdate_glob, sglob_ind, supdate_glob_s in Hupd_glob.
-          destruct (lookup_N (inst_globals (f_inst f)) global_mem_ptr) eqn:Heq''. 2: inv Hupd_glob.
+          destruct (lookup_N (inst_globals (f_inst f)) global_mem_ptr) eqn:Heq''=>//.
           cbn in Hupd_glob.
-          destruct (lookup_N (s_globals s') g). 2: inv Hupd_glob.
+          destruct (lookup_N (s_globals s') g)=>//.
           cbn in Hupd_glob. injection Hupd_glob as <-. subst. assumption. }
         { subst fr s'. cbn. apply update_global_preserves_memory in Hupd_glob. rewrite -Hupd_glob. assumption. }
         { subst fr. assumption. }
@@ -5210,13 +4612,9 @@ Proof.
             split.
             exists x0'. cbn. split. intros.
             inv Hrepr_x.  unfold translate_var. unfold translate_var in H8.
-            destruct (lenv ! x0) eqn:Hx; rewrite Hx in H8.
-            injection H8 as ->.
+            destruct (lenv ! x0) eqn:Hx; rewrite Hx in H8=>//. injection H8 as ->.
             now rewrite Hx.
-            inv H8.
-            unfold lookup_N.
-            cbn.
-            auto.
+            unfold lookup_N; cbn; auto.
             subst fr. cbn. erewrite set_nth_nth_error_same; eauto.
             now subst fr.
           }
@@ -5234,18 +4632,16 @@ Proof.
             specialize Hl1 with err_str.
             intro. assert (x0' = i') by lia. subst x0'.
             unfold translate_var in Hl1, H8.
-            destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in Hl1.
-            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H8. (* =>//. *)
+            destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in Hl1=>//.
+            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H8=>//.
             have H'' := HlenvInjective _ _ _ _ n0 Hlx2 Hlx1. congruence.
-            inv H8. inv Hl1.            
             apply nth_error_Some. congruence.
             now apply HvalsPreserved.
           }
         }
       }
       exists s_final, fr, m', (Val_ptr gmp_v).
-      try repeat (split; auto).
-      all: subst fr; auto.
+      try repeat (split; auto). all: subst fr; auto.
       assert (sglob_val s' (f_inst f) global_mem_ptr =
                 Some (VAL_num (VAL_int32 (N_to_i32 gmp_v)))) by now subst s'.
       separate_instr.
@@ -5333,7 +4729,7 @@ Proof.
             {
               unfold stored_in_locals. exists x0'. split.
               - unfold translate_var. inv Hrepr_x. unfold translate_var in H11.
-                destruct (lenv ! x0) eqn:Hx; rewrite Hx in H11. 2: inv H11. injection H11 as ->. now rewrite Hx.
+                destruct (lenv ! x0) eqn:Hx; rewrite Hx in H11 =>//. injection H11 as ->. now rewrite Hx.
               - subst fr. unfold lookup_N, nat_to_value, nat_to_i32, wasm_value_to_i32. simpl.
                 erewrite set_nth_nth_error_same; eauto.
             }
@@ -5359,8 +4755,8 @@ Proof.
             intro. assert (x0' = i) by lia. subst x0'. inv Hrepr_x.
             specialize Hl1 with err_str.
             unfold translate_var in Hl1, H11.
-            destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in Hl1. 2: inv Hl1. injection Hl1 as ->.
-            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H11. 2: inv H11. injection H11 as ->.
+            destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in Hl1=>//. injection Hl1 as ->.
+            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H11=>//. injection H11 as ->.
             have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. contradiction.
             apply nth_error_Some. congruence.
           }
@@ -5384,11 +4780,11 @@ Proof.
       unfold get_list in *.
       destruct (rho ! x) eqn:Hrho_x. 2: discriminate.
       destruct (rho ! y) eqn:Hrho_y. 2: discriminate.
-      assert (List.In v0 vs) by (inv Hys_vs; now constructor). 
+      assert (List.In v0 vs) by (inv Hys_vs; now constructor).
       assert (List.In v1 vs) by (inv Hys_vs; right; now constructor).
       destruct (apply_primop_only_defined_on_primInts _ vs v _ _ _ _ _ _ _ _ Hres v0 H3) as [n1 Hn1].
       destruct (apply_primop_only_defined_on_primInts _ vs v _ _ _ _ _ _ _ _ Hres v1 H4) as [n2 Hn2].
-      exists n1, n2. 
+      exists n1, n2.
       split; subst; auto.
       split; subst; auto.
       congruence. }
@@ -5407,8 +4803,7 @@ Proof.
       }
       have Hx := Hvars _ H5 HfdsNone_x. destruct Hx as [v1' [w1 [Hrho_x' [Hloc_x Hval_x]]]].
       exists w1; split; auto.
-      replace v1' with (Vprim (primInt n1)) in Hval_x. assumption.
-      rewrite Hrho_x in Hrho_x'. inv Hrho_x'. reflexivity.
+      now replace v1' with (Vprim (primInt n1)) in Hval_x by now rewrite Hrho_x in Hrho_x'; inv Hrho_x'.
     }
     destruct H5 as [wal1 [Hloc_x Hval_x]].
     assert (exists wal2,
@@ -5425,8 +4820,7 @@ Proof.
       }
       have Hy := Hvars _ H5 HfdsNone_y. destruct Hy as [v2' [w2 [Hrho_y' [Hloc_y Hval_y]]]].
       exists w2; split; auto.
-      replace v2' with (Vprim (primInt n2)) in Hval_y. assumption.
-      rewrite Hrho_y in Hrho_y'. inv Hrho_y'. reflexivity.
+      now replace v2' with (Vprim (primInt n2)) in Hval_y by now rewrite Hrho_y in Hrho_y'; inv Hrho_y'.
     }
     destruct H5 as [wal2 [Hloc_y Hval_y]].
     destruct Hloc_x as [? [Htrans Hx']].
@@ -5457,7 +4851,7 @@ Proof.
     }
     destruct Hrv1 as [addr1 Hload1].
     destruct Hload1 as [? Hload1]. subst wal1.
-    unfold load_i64 in Hload1. destruct (load m addr1 0%N 8) eqn:Hload1'. 2: discriminate. 
+    unfold load_i64 in Hload1. destruct (load m addr1 0%N 8) eqn:Hload1'. 2: discriminate.
     assert (Haddr1: addr1 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr1)))). {
       cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
       inv Hval_x. lia. }
@@ -5469,7 +4863,7 @@ Proof.
     }
     destruct Hrv2 as [addr2 Hload2].
     destruct Hload2 as [? Hload2]. subst wal2.
-    unfold load_i64 in Hload2. destruct (load m addr2 0%N 8) eqn:Hload2'. 2: discriminate.  
+    unfold load_i64 in Hload2. destruct (load m addr2 0%N 8) eqn:Hload2'. 2: discriminate.
     assert (addr2 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr2)))). {
       cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
       inv Hval_y. lia. }
@@ -5481,7 +4875,7 @@ Proof.
                  (state, s, f, ([:: $V VAL_num (VAL_int64 (Z_to_i64 (to_Z n1))) ] ++ es))). {
       intros.
       dostep_nary 0. apply r_local_get. eassumption.
-      dostep_nary 1. eapply r_load_success; try eassumption. 
+      dostep_nary 1. eapply r_load_success; try eassumption.
       rewrite -Haddr1. apply Hload1'.
       replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Z_to_i64 (to_Z n1))) by congruence.
       now apply rt_refl. }
@@ -5511,28 +4905,18 @@ Proof.
       apply app_trans_const; auto.
       now apply rt_refl.
     }
-    destruct Hpfs' as 
+    destruct Hpfs' as
       [true_tag [false_tag [bool_tag [eq_tag [lt_tag [gt_tag [comp_tag [c0_tag [c1_tag [carry_tag [pair_tag [prod_tag [Hres [Htrue [Hfalse [Heq [Hlt [Hgt [Hc0 [Hc1 Hpair]]]]]]]]]]]]]]]]]]]].
     rewrite Hvs in Hres.
     unfold apply_LambdaANF_primInt_operator in Hres.
-    Ltac aux v aexp rewr H1 H2 H3 :=
-      (inv H1; simpl;
-      destruct (H2 aexp) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]];
-      exists s_final, fr;
-      replace v with (Vprim ( primInt aexp)) in * by congruence;
-      split; auto;
-      dostep_nary 0; [apply r_global_get; eassumption|];
-      eapply rt_trans; [apply app_trans_const; [auto|apply H3]|];
-      dostep_nary_eliml 2 1;[constructor; apply rs_binop_success; reflexivity|];
-      (try (dostep_nary_eliml 2 1;[constructor; apply rs_binop_success; reflexivity|]));
-      dostep_nary 2; [eapply r_store_success; rewrite rewr; eassumption|];
-      eassumption).
-    destruct op; ltac:(match goal with | [ H : None = Some _  |- _ ] => discriminate | _ => idtac end); unfold LambdaANF_primInt_arith_fun in Hres.
-    - (* add *) aux v (n1 + n2)%uint63 uint63_add_i64_add H2 H3 HloadStep'.
-    - (* sub *) aux v (n1 - n2)%uint63 uint63_sub_i64_sub H2 H3 HloadStep'.
-    - (* sub *) aux v (n1 * n2)%uint63 uint63_mul_i64_mul H2 H3 HloadStep'.
+    destruct op;
+    ltac:(match goal with | [ H : None = Some _  |- _ ] => discriminate | _ => idtac end);
+    unfold LambdaANF_primInt_arith_fun in Hres.
+    - (* add *) solve_arith_op_aux v (n1 + n2)%uint63 H2 H3 HloadStep' uint63_add_i64_add.
+    - (* sub *) solve_arith_op_aux v (n1 - n2)%uint63 H2 H3 HloadStep' uint63_sub_i64_sub.
+    - (* mul *) solve_arith_op_aux v (n1 * n2)%uint63 H2 H3 HloadStep' uint63_mul_i64_mul.
     - { (* div *)
-      inv H2; simpl. 
+      inv H2; simpl.
       destruct (H3 (n1 / n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
       replace v with (Vprim (primInt (n1 / n2)%uint63)) in * by congruence.
       exists s_final, fr.
@@ -5573,7 +4957,7 @@ Proof.
         eassumption.
         eassumption. } }
     - { (* mod *)
-      inv H2; simpl. 
+      inv H2; simpl.
       destruct (H3 (n1 mod n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
       replace v with (Vprim (primInt (n1 mod n2)%uint63)) in * by congruence.
       exists s_final, fr.
@@ -5621,9 +5005,9 @@ Proof.
         eassumption. } }
     - { (* lsl *) admit. }
     - { (* lsr *) admit. }
-    - (* land *) aux v (n1 land n2)%uint63 uint63_land_i64_and H2 H3 HloadStep'.
-    - (* lor *) aux v (n1 lor n2)%uint63 uint63_lor_i64_or H2 H3 HloadStep'.
-    - (* lxor *) aux v (n1 lxor n2)%uint63 uint63_lxor_i64_xor H2 H3 HloadStep'.
+    - (* land *) solve_arith_op_aux v (n1 land n2)%uint63 H2 H3 HloadStep' uint63_land_i64_and.
+    - (* lor *) solve_arith_op_aux v (n1 lor n2)%uint63 H2 H3 HloadStep' uint63_lor_i64_or.
+    - (* lxor *) solve_arith_op_aux v (n1 lxor n2)%uint63 H2 H3 HloadStep' uint63_lxor_i64_xor.
     - { (* eqb *)
         inv H2; simpl.
         destruct (Z.eq_dec (to_Z n1) (to_Z n2)).
@@ -5644,8 +5028,6 @@ Proof.
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor. apply rs_label_const; auto.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
-            (* by now inv HreprVal; replace ord with 0%N by congruence. *)
-            (* now apply Hstep. *)
             inv HreprVal.
             - now replace ord with 0%N by congruence.
             - replace t with true_tag in * by congruence. rewrite Htrue_arr in H8. inv H8. lia.
@@ -7904,7 +7286,6 @@ Proof with eauto.
           destruct Hfd as [? [? [? [idx [Htransf Hval]]]]]; repeat (split; try assumption).
           exists idx.
           split; auto. }
-          (* apply val_relation_func_depends_on_funcs with (s:=sr). now rewrite -Hsfs. now rewrite -Hfinst. } *)
 
         assert (HlocInBound' : (forall (var : positive) (varIdx : localidx),
                                    repr_var (lenv:=lenv) nenv var varIdx -> N.to_nat varIdx < Datatypes.length (f_locs fr_before_IH))).

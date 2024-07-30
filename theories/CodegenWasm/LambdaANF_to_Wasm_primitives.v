@@ -728,7 +728,7 @@ Proof.
   intros; rewrite eqb_false_spec; intro Hcontra; now rewrite Hcontra in H.
 Qed.
 
-Ltac solve_arith_op d1 d2 spec :=
+Local Ltac solve_arith_op d1 d2 spec :=
   intros; unfold d1, d2; (repeat rewrite uint63_unsigned_id); (try rewrite int64_bitmask_modulo); now rewrite spec.
 
 Lemma uint63_add_i64_add : forall x y, Int64.iand (Int64.iadd (to_Z x) (to_Z y)) maxuint63 = to_Z (x + y).
@@ -740,7 +740,7 @@ Proof. solve_arith_op Int64.isub Int64.sub sub_spec. Qed.
 Lemma uint63_mul_i64_mul : forall x y, Int64.iand (Int64.imul (to_Z x) (to_Z y)) maxuint63 = to_Z (x * y).
 Proof. solve_arith_op Int64.imul Int64.mul mul_spec. Qed.
 
-Ltac solve_div_mod d1 d2 spec :=
+Local Ltac solve_div_mod d1 d2 spec :=
   intros; unfold d1, d2;
   repeat rewrite uint63_unsigned_id;
   rewrite spec;
