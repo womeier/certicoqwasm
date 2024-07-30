@@ -346,6 +346,9 @@ Proof.
     inv Hrestr'. by apply IH.
   - (* Eprim *)
     intros ???????????? Hvar Hexpr' IH Hp Hop HprimOp ? Hcontext' Hrestr'.
+    (* Remove the assumption 'KernameMap.find op_name primop_map = Some op' from the context
+       as this causes certain tactics that operate on the context such as
+       discriminate or =>// (from SSReflect) to hang. *)
     clear Hop.
     assert (exists m, lookup_N (tc_mems c0) 0 = Some m) as [m Hm]. {
       destruct (tc_mems c0) eqn:Hc; cbn; eauto. by apply Hcontext' in Hc. }

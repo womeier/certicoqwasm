@@ -13,17 +13,42 @@ From MetaCoq Require Import Common.Kernames Utils.bytestring Utils.MCString.
 
 Import MonadNotation SigTNotations.
 
-Notation uint63 := Uint63.int.
-
-Notation Z_to_i64 z := (Int64.repr z).
-Notation Z_to_VAL_i64 z := (VAL_int64 (Int64.repr z)).
-
-Local Coercion Z_to_i64_co z := Z_to_i64 z.  (* : Z >-> Wasm_int.Int64.int. *)
-Local Coercion Z_to_i64val_co z := Z_to_VAL_i64 z. (* : Z >-> value_num.  *)
-
 Notation "'primInt' x" := (AstCommon.primInt ; x) (at level 0).
 
+(* Define convenience wrappers as notations to allow easy unfolding during proofs *)
+Notation uint63 := Uint63.int.
+Notation Z_to_i64 z := (Int64.repr z).
+Notation Z_to_VAL_i64 z := (VAL_int64 (Int64.repr z)).
+Notation nat_to_i32val n := (VAL_int32 (Wasm_int.Int32.repr (BinInt.Z.of_nat n))).
+
+Local Coercion Z_to_i64_co z := Z_to_i64 z.
+Local Coercion Z_to_i64val_co z := Z_to_VAL_i64 z.
+
+(* Avoid unfolding during proofs *)
 Opaque Uint63.to_Z.
+
+Section Primitives.
+
+Variables global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 : globalidx.
+
+Variables true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag : ctor_tag.
+
+Definition maxuint31 := 2147483647%Z.
+Definition maxuint63 := 9223372036854775807%Z.
+
+
+(* Ordinals of constructors *)
+Definition true_ord  := 0.
+Definition false_ord := 1.
+
+Definition Eq_ord    := 0.
+Definition Lt_ord    := 1.
+Definition Gt_ord    := 2.
+
+Definition C0_ord    := 0.
+Definition C1_ord    := 1.
+
+Definition pair_ord  := 0.
 
 
 (* **** TRANSLATE PRIMITIVE VALUES **** *)
@@ -36,9 +61,11 @@ Definition translate_primitive_value (p : AstCommon.primitive) : error Wasm_int.
 
 (* **** TRANSLATE PRIMITIVE OPERATIONS **** *)
 
+(* Path of the PrimInt63 module in the kernel: Coq.Numbers.Cyclic.Int63.PrimInt63 *)
 Definition primInt63ModPath : Kernames.modpath :=
   Kernames.MPfile [ "PrimInt63"%bs ; "Int63"%bs ; "Cyclic"%bs ; "Numbers"%bs ; "Coq"%bs ].
 
+(* Supported operators defined as data type to avoid pattern matching on kernel name (bytestrings) *)
 Inductive primop :=
 | PrimInt63add
 | PrimInt63sub
@@ -92,17 +119,6 @@ Definition primop_map : KernameMap.t primop :=
     (KernameMap.add (primInt63ModPath, "addmuldiv") PrimInt63addmuldiv
     (KernameMap.empty primop)))))))))))))))))))))))).
 
-Section Primitives.
-
-Variables global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 : globalidx.
-
-Variables true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag : ctor_tag.
-
-Notation nat_to_i32val n := (VAL_int32 (Wasm_int.Int32.repr (BinInt.Z.of_nat n))).
-
-Definition maxuint31 := 2147483647%Z.
-Definition maxuint63 := 9223372036854775807%Z.
-
 Definition load_local_i64 (i : localidx) : list basic_instruction :=
   [ BI_local_get i ; BI_load T_i64 None 2%N 0%N ].
 
@@ -116,16 +132,17 @@ Definition increment_global_mem_ptr i :=
 Definition bitmask_instrs := [ BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ].
 
 Definition apply_binop_and_store_i64 (op : binop_i) (x y : localidx) (apply_bitmask : bool) : list basic_instruction :=
-  BI_global_get global_mem_ptr :: (* Address to store the result of the operation *)
-  load_local_i64 x ++             (* Load the arguments onto the stack *)
+  BI_global_get global_mem_ptr ::                   (* Address to store the result of the operation *)
+  load_local_i64 x ++                               (* Load the arguments onto the stack *)
   load_local_i64 y ++
   [ BI_binop T_i64 (Binop_i op) ] ++
-  (if apply_bitmask then bitmask_instrs else []) ++
-  [ BI_store T_i64 None 2%N 0%N   (* Store the result *)
-  ; BI_global_get global_mem_ptr  (* Put the address where the result was stored on the stack *)
+  (if apply_bitmask then bitmask_instrs else []) ++ (* apply bitmask to zero MSB if necessary *)
+  [ BI_store T_i64 None 2%N 0%N                     (* Store the result *)
+  ; BI_global_get global_mem_ptr                    (* Put the result address on the stack *)
   ] ++
   increment_global_mem_ptr 8.
 
+(* Assume argument is stored in global gidx *)
 Definition make_carry (ord : nat) (gidx : globalidx) : list basic_instruction:=
   [ BI_global_get global_mem_ptr
   ; BI_global_get gidx
@@ -151,7 +168,7 @@ Definition apply_exact_add_operation (x y : localidx) (addone : bool) : list bas
     [BI_global_set glob_tmp1 ;BI_global_get glob_tmp1 ] ++
     load_local_i64 x ++
     [ BI_relop T_i64 (Relop_i ((if addone then ROI_le else ROI_lt) SX_U))
-    ; BI_if (BT_valtype (Some (T_num T_i32))) (make_carry 1 glob_tmp1) (make_carry 0 glob_tmp1)
+    ; BI_if (BT_valtype (Some (T_num T_i32))) (make_carry C1_ord glob_tmp1) (make_carry C0_ord glob_tmp1)
     ].
 
 Definition apply_exact_sub_operation (x y : localidx) (subone : bool) : list basic_instruction :=
@@ -165,12 +182,10 @@ Definition apply_exact_sub_operation (x y : localidx) (subone : bool) : list bas
     load_local_i64 y ++
     load_local_i64 x ++
     [ BI_relop T_i64 (Relop_i ((if subone then ROI_lt else ROI_le) SX_U))
-    ; BI_if (BT_valtype (Some (T_num T_i32))) (make_carry 0 glob_tmp1) (make_carry 1 glob_tmp1)
+    ; BI_if (BT_valtype (Some (T_num T_i32))) (make_carry C0_ord glob_tmp1) (make_carry C1_ord glob_tmp1)
     ].
 
-(* Assumptions for constructing a prod value:
-   - The 1st argument is stored in global gidx1, 2nd argument in global gidx2
-   - ordinal(pair) = 0 *)
+(* Assume 1st element is stored in global gidx1, 2nd element in global gidx2 *)
 Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
   [ BI_global_get global_mem_ptr
   ; BI_global_get gidx1
@@ -179,7 +194,7 @@ Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
   ; BI_global_get gidx2
   ; BI_store T_i64 None 2%N 8%N
   ; BI_global_get global_mem_ptr
-  ; BI_const_num (nat_to_i32val 0)
+  ; BI_const_num (nat_to_i32val pair_ord)
   ; BI_store T_i32 None 2%N 16%N
   ; BI_global_get global_mem_ptr
   ; BI_global_get global_mem_ptr
@@ -194,16 +209,13 @@ Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
   ; BI_binop T_i32 (Binop_i BOI_add)
   ] ++ increment_global_mem_ptr 28.
 
-(* Assumptions about constructor environment for primitive operations that return bools:
-   1. ordinal(true) = 0
-   2. ordinal(false) = 1 *)
 Definition make_boolean_valued_comparison x y relop : list basic_instruction :=
   load_local_i64 x ++            (* Load the arguments onto the stack *)
   load_local_i64 y ++
   [ BI_relop T_i64 (Relop_i relop)
   ; BI_if (BT_valtype (Some (T_num T_i32)))
-      [ BI_const_num (nat_to_i32val 1) ] (* 2 * ordinal(true) + 1 *)
-      [ BI_const_num (nat_to_i32val 3) ] (* 2 * ordinal(false) + 1 *)
+      [ BI_const_num (nat_to_i32val (2 * true_ord + 1)) ] 
+      [ BI_const_num (nat_to_i32val (2 * false_ord + 1)) ]
   ].
 
 
@@ -214,13 +226,13 @@ Definition compare_instrs x y : list basic_instruction :=
     ; BI_load T_i64 None 2%N 0%N
     ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
     ; BI_if (BT_valtype (Some (T_num T_i32)))
-        [ BI_const_num (nat_to_i32val 3) ] (* 2 * ordinal(Lt) + 1 *)
+        [ BI_const_num (nat_to_i32val (2 * Lt_ord + 1)) ]
         (load_local_i64 x ++
            load_local_i64 y ++
            [ BI_relop T_i64 (Relop_i ROI_eq)
              ; BI_if (BT_valtype (Some (T_num T_i32)))
-                 [ BI_const_num (nat_to_i32val 1) ] (* 2 * ordinal(Eq) + 1 *)
-                 [ BI_const_num (nat_to_i32val 5) ] (* 2 * ordinal(Gt) + 1*)
+                 [ BI_const_num (nat_to_i32val (2 * Eq_ord + 1)) ]
+                 [ BI_const_num (nat_to_i32val (2 * Gt_ord + 1)) ]
            ])
   ].
 
@@ -604,7 +616,7 @@ Definition translate_primitive_ternary_op op (x y z : localidx) : error (list ba
   | _ => Err "Unknown primitive ternary operator"
   end.
 
-(* Transparent apply_binop_and_store_i64 div_instrs mod_instrs shift_instrs make_boolean_valued_comparison compare_instrs apply_exact_add_operation apply_exact_sub_operation make_carry diveucl_instrs mulc_instrs load_local_i64 increment_global_mem_ptr bitmask_instrs nat_to_i32val. *)
+(* **** Define LambdaANF wrapper functions for Coq's 63 bit integer operators  **** *)
 
 Definition LambdaANF_primInt_arith_fun (f : uint63 -> uint63 -> uint63) (x y : uint63) := Vprim (primInt (f x y)).
 
@@ -639,6 +651,11 @@ Definition LambdaANF_primInt_diveucl_21 xh xl y :=
 
 Definition LambdaANF_primInt_addmuldiv p x y := Vprim (primInt (addmuldiv p x y)).
 
+(* Define a partial function for applying a primitive operator.
+   The result is only defined if the operator is supported and the arguments
+   match the type of the Coq operator.
+   E.g 'add' has the type 'uint63 -> uint63 -> uint63' so the arguments must be
+   2 primitive integer values. *)
 Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
   match vs with
   | [ Vprim (primInt x) ] =>
@@ -647,7 +664,7 @@ Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
       | PrimInt63tail0 => Some (LambdaANF_primInt_unop_fun Uint63.tail0 x)
       | _ => None
       end
-  | [ Vprim ( (primInt x) ) ; Vprim ( (primInt y) ) ] =>
+  | [ Vprim (primInt x) ; Vprim (primInt y) ] =>
       match op with
       | PrimInt63add => Some (LambdaANF_primInt_arith_fun Uint63.add x y)
       | PrimInt63sub => Some (LambdaANF_primInt_arith_fun Uint63.sub x y)
@@ -680,7 +697,6 @@ Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
   | _ => None
   end.
 
-
 Lemma uint63_mod_modulus_id :
   forall (x : uint63), Int64.Z_mod_modulus (to_Z x) = to_Z x.
 Proof.
@@ -706,7 +722,8 @@ Proof.
   unfold Int64.iand, Int64.and. simpl.
   rewrite Int64.Z_mod_modulus_eq.
   rewrite Int64.modulus_twice_half_modulus.
-  replace (Z.land (x mod (2 * Int64.half_modulus)) 9223372036854775807) with (Z.modulo (x mod (2 * Int64.half_modulus)) Int64.half_modulus) by now rewrite Z_bitmask_modulo_equivalent.
+  replace (Z.land (x mod (2 * Int64.half_modulus)) 9223372036854775807)
+    with (Z.modulo (x mod (2 * Int64.half_modulus)) Int64.half_modulus) by now rewrite Z_bitmask_modulo_equivalent.
   now rewrite Zaux.Zmod_mod_mult.
 Qed.
 
@@ -731,6 +748,19 @@ Qed.
 Local Ltac solve_arith_op d1 d2 spec :=
   intros; unfold d1, d2; (repeat rewrite uint63_unsigned_id); (try rewrite int64_bitmask_modulo); now rewrite spec.
 
+(* Helper lemmas to show that the Wasm arithmetic is correct w.r.t. 63 bit arithmetic.
+   Helps prove that E.g. the instructions
+
+   i64.const x
+   i64.const y
+   i64.add
+   i64.const (2^63 - 1)
+   i64.and
+
+   reduce to
+
+   i64.const ((x + y) mod 2^63)
+ *)
 Lemma uint63_add_i64_add : forall x y, Int64.iand (Int64.iadd (to_Z x) (to_Z y)) maxuint63 = to_Z (x + y).
 Proof. solve_arith_op Int64.iadd Int64.add add_spec. Qed.
 

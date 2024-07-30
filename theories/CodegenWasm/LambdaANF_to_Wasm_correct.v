@@ -4396,7 +4396,7 @@ Proof.
     have Hpfs' := Hpfs _ _ _ _ _ _ _ vs v Hpenv Hop Hf' HprimResSome.
     (* Remove the assumption 'KernameMap.find op_name primop_map = Some op' from the context
        as this causes certain tactics that operate on the context such as
-       discriminate or =>// (from SSRReflect) to hang. *)
+       discriminate or =>// (from SSReflect) to hang. *)
     clear Hop.
     assert (forall w,
              exists mem, store m (Wasm_int.N_of_uint i32m (N_to_i32 gmp_v)) 0%N
