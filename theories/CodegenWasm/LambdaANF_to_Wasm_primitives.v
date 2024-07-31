@@ -19,7 +19,8 @@ Notation "'primInt' x" := (AstCommon.primInt ; x) (at level 0).
 Notation uint63 := Uint63.int.
 Notation Z_to_i64 z := (Int64.repr z).
 Notation Z_to_VAL_i64 z := (VAL_int64 (Int64.repr z)).
-Notation nat_to_i32val n := (VAL_int32 (Wasm_int.Int32.repr (BinInt.Z.of_nat n))).
+Notation nat_to_VAL_i32 n := (VAL_int32 (Wasm_int.Int32.repr (BinInt.Z.of_nat n))).
+Notation N_to_VAL_i32 n := (VAL_int32 (Wasm_int.Int32.repr (BinInt.Z.of_N n))).
 
 Local Coercion Z_to_i64_co z := Z_to_i64 z.
 Local Coercion Z_to_i64val_co z := Z_to_VAL_i64 z.
@@ -38,17 +39,17 @@ Definition maxuint63 := 9223372036854775807%Z.
 
 
 (* Ordinals of constructors *)
-Definition true_ord  := 0.
-Definition false_ord := 1.
+Definition true_ord  := 0%N.
+Definition false_ord := 1%N.
 
-Definition Eq_ord    := 0.
-Definition Lt_ord    := 1.
-Definition Gt_ord    := 2.
+Definition Eq_ord    := 0%N.
+Definition Lt_ord    := 1%N.
+Definition Gt_ord    := 2%N.
 
-Definition C0_ord    := 0.
-Definition C1_ord    := 1.
+Definition C0_ord    := 0%N.
+Definition C1_ord    := 1%N.
 
-Definition pair_ord  := 0.
+Definition pair_ord  := 0%N.
 
 
 (* **** TRANSLATE PRIMITIVE VALUES **** *)
@@ -124,7 +125,7 @@ Definition load_local_i64 (i : localidx) : list basic_instruction :=
 
 Definition increment_global_mem_ptr i :=
   [ BI_global_get global_mem_ptr
-  ; BI_const_num (nat_to_i32val i)
+  ; BI_const_num (nat_to_VAL_i32 i)
   ; BI_binop T_i32 (Binop_i BOI_add)
   ; BI_global_set global_mem_ptr
   ].
@@ -143,18 +144,18 @@ Definition apply_binop_and_store_i64 (op : binop_i) (x y : localidx) (apply_bitm
   increment_global_mem_ptr 8.
 
 (* Assume argument is stored in global gidx *)
-Definition make_carry (ord : nat) (gidx : globalidx) : list basic_instruction:=
+Definition make_carry (ord : N) (gidx : globalidx) : list basic_instruction:=
   [ BI_global_get global_mem_ptr
   ; BI_global_get gidx
   ; BI_store T_i64 None 2%N 0%N
   ; BI_global_get global_mem_ptr
-  ; BI_const_num (nat_to_i32val ord)
+  ; BI_const_num (N_to_VAL_i32 ord)
   ; BI_store T_i32 None 2%N 8%N
   ; BI_global_get global_mem_ptr
   ; BI_global_get global_mem_ptr
   ; BI_store T_i32 None 2%N 12%N
   ; BI_global_get global_mem_ptr
-  ; BI_const_num (nat_to_i32val 8)
+  ; BI_const_num (nat_to_VAL_i32 8)
   ; BI_binop T_i32 (Binop_i BOI_add)
   ] ++ increment_global_mem_ptr 16.
 
@@ -194,18 +195,18 @@ Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
   ; BI_global_get gidx2
   ; BI_store T_i64 None 2%N 8%N
   ; BI_global_get global_mem_ptr
-  ; BI_const_num (nat_to_i32val pair_ord)
+  ; BI_const_num (N_to_VAL_i32 pair_ord)
   ; BI_store T_i32 None 2%N 16%N
   ; BI_global_get global_mem_ptr
   ; BI_global_get global_mem_ptr
   ; BI_store T_i32 None 2%N 20%N
   ; BI_global_get global_mem_ptr
   ; BI_global_get global_mem_ptr
-  ; BI_const_num (nat_to_i32val 8)
+  ; BI_const_num (nat_to_VAL_i32 8)
   ; BI_binop T_i32 (Binop_i BOI_add)
   ; BI_store T_i32 None 2%N 24%N
   ; BI_global_get global_mem_ptr
-  ; BI_const_num (nat_to_i32val 16)
+  ; BI_const_num (nat_to_VAL_i32 16)
   ; BI_binop T_i32 (Binop_i BOI_add)
   ] ++ increment_global_mem_ptr 28.
 
@@ -214,8 +215,8 @@ Definition make_boolean_valued_comparison x y relop : list basic_instruction :=
   load_local_i64 y ++
   [ BI_relop T_i64 (Relop_i relop)
   ; BI_if (BT_valtype (Some (T_num T_i32)))
-      [ BI_const_num (nat_to_i32val (2 * true_ord + 1)) ] 
-      [ BI_const_num (nat_to_i32val (2 * false_ord + 1)) ]
+      [ BI_const_num (N_to_VAL_i32 (2 * true_ord + 1)) ]
+      [ BI_const_num (N_to_VAL_i32 (2 * false_ord + 1)) ]
   ].
 
 
@@ -226,13 +227,13 @@ Definition compare_instrs x y : list basic_instruction :=
     ; BI_load T_i64 None 2%N 0%N
     ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
     ; BI_if (BT_valtype (Some (T_num T_i32)))
-        [ BI_const_num (nat_to_i32val (2 * Lt_ord + 1)) ]
+        [ BI_const_num (N_to_VAL_i32 (2 * Lt_ord + 1)) ]
         (load_local_i64 x ++
            load_local_i64 y ++
            [ BI_relop T_i64 (Relop_i ROI_eq)
-             ; BI_if (BT_valtype (Some (T_num T_i32)))
-                 [ BI_const_num (nat_to_i32val (2 * Eq_ord + 1)) ]
-                 [ BI_const_num (nat_to_i32val (2 * Gt_ord + 1)) ]
+           ; BI_if (BT_valtype (Some (T_num T_i32)))
+               [ BI_const_num (N_to_VAL_i32 (2 * Eq_ord + 1)) ]
+               [ BI_const_num (N_to_VAL_i32 (2 * Gt_ord + 1)) ]
            ])
   ].
 
@@ -280,13 +281,13 @@ Definition mulc_instrs (x y : localidx) : list basic_instruction :=
     load_local_i64 y ++
     [ BI_const_num 62%Z ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_testop T_i64 TO_eqz ] ++
     [ BI_binop T_i32 (Binop_i BOI_or)
-      ; BI_if (BT_valtype None)
-          (load_local_i64 y ++ [ BI_global_set glob_tmp3 ])
-          (load_local_i64 y ++
+    ; BI_if (BT_valtype None)
+        (load_local_i64 y ++ [ BI_global_set glob_tmp3 ])
+        (load_local_i64 y ++
              [ BI_const_num (VAL_int64 (Wasm_int.Int64.repr 4611686018427387904%Z))
-               ; BI_binop T_i64 (Binop_i BOI_xor)
-               ; BI_global_set glob_tmp3
-          ])
+             ; BI_binop T_i64 (Binop_i BOI_xor)
+             ; BI_global_set glob_tmp3
+             ])
     ] ++
     (* glob_tmp1 <- let hx = x >> 31 *)
     load_local_i64 x ++
@@ -303,163 +304,163 @@ Definition mulc_instrs (x y : localidx) : list basic_instruction :=
     [ BI_global_get glob_tmp2 ; BI_global_get glob_tmp4 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++
     [ BI_global_get glob_tmp2 ; BI_global_get glob_tmp3 ; BI_binop T_i64 (Binop_i BOI_mul) ] ++
     (* glob_tmp4 <- let lxy = lx * ly
-            glob_tmp3 <- let lxhy = lx * hy
-            glob_tmp2 <- let hxly = hx * ly
-            glob_tmp1 <- let hxy  = hx * hy *)
+       glob_tmp3 <- let lxhy = lx * hy
+       glob_tmp2 <- let hxly = hx * ly
+       glob_tmp1 <- let hxy  = hx * hy *)
     [ BI_global_set glob_tmp4
-      ; BI_global_set glob_tmp3
-      ; BI_global_set glob_tmp2
-      ; BI_global_set glob_tmp1
+    ; BI_global_set glob_tmp3
+    ; BI_global_set glob_tmp2
+    ; BI_global_set glob_tmp1
     ]  ++
     (* glob_tmp4 <- let l = lxy | (hxy << 62) = glob_tmp4 | (glob_tmp1 << 62) *)
     [ BI_global_get glob_tmp4
-      ; BI_global_get glob_tmp1
-      ; BI_const_num 62%Z
-      ; BI_binop T_i64 (Binop_i BOI_shl)
-      ; BI_const_num maxuint63
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_binop T_i64 (Binop_i BOI_or)
-      ; BI_global_set glob_tmp4
+    ; BI_global_get glob_tmp1
+    ; BI_const_num 62%Z
+    ; BI_binop T_i64 (Binop_i BOI_shl)
+    ; BI_const_num maxuint63
+    ; BI_binop T_i64 (Binop_i BOI_and)
+    ; BI_binop T_i64 (Binop_i BOI_or)
+    ; BI_global_set glob_tmp4
     ] ++
     (* glob_tmp1 <- let h = hxy >> 1 = glob_tmp1 >> 1 *)
     [ BI_global_get glob_tmp1
-      ; BI_const_num 1%Z
-      ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-      ; BI_global_set glob_tmp1
+    ; BI_const_num 1%Z
+    ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+    ; BI_global_set glob_tmp1
     ] ++
     (* glob_tmp3 <- let hl = hxly + lxhy = glob_tmp2 + glob_tmp3 *)
     [ BI_global_get glob_tmp2
-      ; BI_global_get glob_tmp3
-      ; BI_binop T_i64 (Binop_i BOI_add)
-      ; BI_const_num maxuint63
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_global_set glob_tmp3
+    ; BI_global_get glob_tmp3
+    ; BI_binop T_i64 (Binop_i BOI_add)
+    ; BI_const_num maxuint63
+    ; BI_binop T_i64 (Binop_i BOI_and)
+    ; BI_global_set glob_tmp3
     ] ++
     (* glob_tmp1 <- let h = if hl < hxly then h + (1 << 31) else h *)
     [ BI_global_get glob_tmp3
-      ; BI_global_get glob_tmp2
-      ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-      ; BI_if (BT_valtype None)
-          [ BI_global_get glob_tmp1
-            ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr 2147483648%Z))
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_global_set glob_tmp1
-          ]
-          [ ]
+    ; BI_global_get glob_tmp2
+    ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
+    ; BI_if (BT_valtype None)
+        [ BI_global_get glob_tmp1
+        ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr 2147483648%Z))
+        ; BI_binop T_i64 (Binop_i BOI_add)
+        ; BI_global_set glob_tmp1
+        ]
+        [ ]
     ] ++
     (* glob_tmp2 <- let hl' = hl << 31 *)
     [ BI_global_get glob_tmp3
-      ; BI_const_num 31%Z
-      ; BI_binop T_i64 (Binop_i BOI_shl)
-      ; BI_const_num maxuint63
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_global_set glob_tmp2
+    ; BI_const_num 31%Z
+    ; BI_binop T_i64 (Binop_i BOI_shl)
+    ; BI_const_num maxuint63
+    ; BI_binop T_i64 (Binop_i BOI_and)
+    ; BI_global_set glob_tmp2
     ] ++
     (* glob_tmp4 <- let l = l + hl' *)
     [ BI_global_get glob_tmp4
-      ; BI_global_get glob_tmp2
-      ; BI_binop T_i64 (Binop_i BOI_add)
-      ; BI_const_num maxuint63
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_global_set glob_tmp4
+    ; BI_global_get glob_tmp2
+    ; BI_binop T_i64 (Binop_i BOI_add)
+    ; BI_const_num maxuint63
+    ; BI_binop T_i64 (Binop_i BOI_and)
+    ; BI_global_set glob_tmp4
     ] ++
     (* glob_tmp1 <- let h = if l < hl' then h + 1 else h *)
     [ BI_global_get glob_tmp4
-      ; BI_global_get glob_tmp2
-      ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-      ; BI_if (BT_valtype None)
-          [ BI_global_get glob_tmp1
-            ; BI_const_num 1%Z
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_global_set glob_tmp1
-          ]
-          [ ]
+    ; BI_global_get glob_tmp2
+    ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
+    ; BI_if (BT_valtype None)
+        [ BI_global_get glob_tmp1
+        ; BI_const_num 1%Z
+        ; BI_binop T_i64 (Binop_i BOI_add)
+        ; BI_global_set glob_tmp1
+        ]
+        [ ]
     ] ++
     (* glob_tmp1 <- let h = h + (hl >> 32) *)
     [ BI_global_get glob_tmp1
-      ; BI_global_get glob_tmp3
-      ; BI_const_num 32%Z
-      ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-      ; BI_binop T_i64 (Binop_i BOI_add)
-      ; BI_const_num maxuint63
-      ; BI_binop T_i64 (Binop_i BOI_and)
-      ; BI_global_set glob_tmp1
+    ; BI_global_get glob_tmp3
+    ; BI_const_num 32%Z
+    ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+    ; BI_binop T_i64 (Binop_i BOI_add)
+    ; BI_const_num maxuint63
+    ; BI_binop T_i64 (Binop_i BOI_and)
+    ; BI_global_set glob_tmp1
     ] ++
     load_local_i64 x ++
     [ BI_const_num 62%Z
-      ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-      ; BI_testop T_i64 TO_eqz
+    ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+    ; BI_testop T_i64 TO_eqz
     ] ++
     load_local_i64 y ++
     [ BI_const_num 62%Z
-      ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-      ; BI_testop T_i64 TO_eqz
-      ; BI_binop T_i32 (Binop_i BOI_or)
-      ; BI_if (BT_valtype None)
-          [ ]
-          [ (* glob_tmp2 <- let l' := l + (x << 62) *)
-            BI_global_get glob_tmp4
-            ; BI_local_get x
-            ; BI_load T_i64 None 2%N 0%N
-            ; BI_const_num 62%Z
-            ; BI_binop T_i64 (Binop_i BOI_shl)
-            ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_const_num maxuint63
-            ; BI_binop T_i64 (Binop_i BOI_and)
-            ; BI_global_set glob_tmp2
-                            (* glob_tmp1 <- let h := if l' < l then h + 1 else h *)
-            ; BI_global_get glob_tmp2
-            ; BI_global_get glob_tmp4
-            ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-            ; BI_if (BT_valtype None)
-                [ BI_global_get glob_tmp1
-                  ; BI_const_num 1%Z
-                  ; BI_binop T_i64 (Binop_i BOI_add)
-                  ; BI_global_set glob_tmp1
-                ]
-                [ ]
-                (* return (h + (x >> 1), l') *)
-            ; BI_global_get glob_tmp1
-            ; BI_local_get x
-            ; BI_load T_i64 None 2%N 0%N
+    ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+    ; BI_testop T_i64 TO_eqz
+    ; BI_binop T_i32 (Binop_i BOI_or)
+    ; BI_if (BT_valtype None)
+        [ ]
+        [ (* glob_tmp2 <- let l' := l + (x << 62) *)
+        BI_global_get glob_tmp4
+        ; BI_local_get x
+        ; BI_load T_i64 None 2%N 0%N
+        ; BI_const_num 62%Z
+        ; BI_binop T_i64 (Binop_i BOI_shl)
+        ; BI_binop T_i64 (Binop_i BOI_add)
+        ; BI_const_num maxuint63
+        ; BI_binop T_i64 (Binop_i BOI_and)
+        ; BI_global_set glob_tmp2
+        (* glob_tmp1 <- let h := if l' < l then h + 1 else h *)
+        ; BI_global_get glob_tmp2
+        ; BI_global_get glob_tmp4
+        ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
+        ; BI_if (BT_valtype None)
+            [ BI_global_get glob_tmp1
             ; BI_const_num 1%Z
-            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
             ; BI_binop T_i64 (Binop_i BOI_add)
-            ; BI_const_num maxuint63
-            ; BI_binop T_i64 (Binop_i BOI_and)
             ; BI_global_set glob_tmp1
-            ; BI_global_get glob_tmp2
-            ; BI_global_set glob_tmp4
-          ]
+            ]
+            [ ]
+        (* return (h + (x >> 1), l') *)
+        ; BI_global_get glob_tmp1
+        ; BI_local_get x
+        ; BI_load T_i64 None 2%N 0%N
+        ; BI_const_num 1%Z
+        ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+        ; BI_binop T_i64 (Binop_i BOI_add)
+        ; BI_const_num maxuint63
+        ; BI_binop T_i64 (Binop_i BOI_and)
+        ; BI_global_set glob_tmp1
+        ; BI_global_get glob_tmp2
+        ; BI_global_set glob_tmp4
+        ]
     ] ++ make_product glob_tmp1 glob_tmp4.
 
 Definition diveucl_instrs (x y : localidx) : list basic_instruction :=
   [ BI_local_get x
-    ; BI_load T_i64 None 2%N 0%N
-    ; BI_testop T_i64 TO_eqz
-    ; BI_if (BT_valtype None)
-        [ BI_const_num (VAL_int64 (Z_to_i64 0))
+  ; BI_load T_i64 None 2%N 0%N
+  ; BI_testop T_i64 TO_eqz
+  ; BI_if (BT_valtype None)
+      [ BI_const_num (VAL_int64 (Z_to_i64 0))
+      ; BI_global_set glob_tmp1
+      ; BI_const_num 0%Z
+      ; BI_global_set glob_tmp2
+      ]
+      [ BI_local_get y
+      ; BI_load T_i64 None 2%N 0%N
+      ; BI_testop T_i64 TO_eqz
+      ; BI_if (BT_valtype None)
+          [ BI_const_num (VAL_int64 (Z_to_i64 0))
           ; BI_global_set glob_tmp1
-          ; BI_const_num 0%Z
-          ; BI_global_set glob_tmp2
-        ]
-        [ BI_local_get y
+          ; BI_local_get x
           ; BI_load T_i64 None 2%N 0%N
-          ; BI_testop T_i64 TO_eqz
-          ; BI_if (BT_valtype None)
-              [ BI_const_num (VAL_int64 (Z_to_i64 0))
-                ; BI_global_set glob_tmp1
-                ; BI_local_get x
-                ; BI_load T_i64 None 2%N 0%N
-                ; BI_global_set glob_tmp2
-              ]
-              (load_local_i64 x ++
-                 load_local_i64 y ++
-                 [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ; BI_global_set glob_tmp1 ] ++
-                 load_local_i64 x ++
-                 load_local_i64 y ++
-                 [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ; BI_global_set glob_tmp2 ])
-        ]
+          ; BI_global_set glob_tmp2
+          ]
+          (load_local_i64 x ++
+             load_local_i64 y ++
+             [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ; BI_global_set glob_tmp1 ] ++
+             load_local_i64 x ++
+             load_local_i64 y ++
+             [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ; BI_global_set glob_tmp2 ])
+      ]
   ] ++ make_product glob_tmp1 glob_tmp2.
 
 Definition translate_primitive_binary_op op (x y : localidx) : error (list basic_instruction) :=
@@ -493,10 +494,10 @@ Definition head0_instrs (x : localidx) : list basic_instruction :=
   BI_global_get global_mem_ptr ::
     load_local_i64 x ++
     [ BI_unop T_i64 (Unop_i UOI_clz)
-      ; BI_const_num 1%Z
-      ; BI_binop T_i64 (Binop_i BOI_sub)
-      ; BI_store T_i64 None 2%N 0%N
-      ; BI_global_get global_mem_ptr
+    ; BI_const_num 1%Z
+    ; BI_binop T_i64 (Binop_i BOI_sub)
+    ; BI_store T_i64 None 2%N 0%N
+    ; BI_global_get global_mem_ptr
     ] ++ increment_global_mem_ptr 8.
 
 (* tail0 x computes the trailing number of zeros in x
@@ -505,11 +506,11 @@ Definition tail0_instrs (x : localidx) : list basic_instruction :=
   BI_global_get global_mem_ptr ::
     load_local_i64 x ++
     [ BI_testop T_i64 TO_eqz
-      ; BI_if (BT_valtype (Some (T_num T_i64)))
-          [ BI_const_num 63%Z ]
-          (load_local_i64 x ++ [ BI_unop T_i64 (Unop_i UOI_ctz) ])
-      ; BI_store T_i64 None 2%N 0%N
-      ; BI_global_get global_mem_ptr
+    ; BI_if (BT_valtype (Some (T_num T_i64)))
+        [ BI_const_num 63%Z ]
+        (load_local_i64 x ++ [ BI_unop T_i64 (Unop_i UOI_ctz) ])
+    ; BI_store T_i64 None 2%N 0%N
+    ; BI_global_get global_mem_ptr
     ] ++ increment_global_mem_ptr 8.
 
 Definition translate_primitive_unary_op op (x : localidx) : error (list basic_instruction) :=
@@ -563,20 +564,20 @@ Definition diveucl_21_instrs (xh xl y : localidx) : list basic_instruction :=
   load_local_i64 y ++ [ BI_global_set glob_tmp4 ] ++
     load_local_i64 xh ++ [ BI_global_set glob_tmp1 ] ++
     [ BI_global_get glob_tmp4
-      ; BI_global_get glob_tmp1
-      ; BI_relop T_i64 (Relop_i (ROI_le SX_U))
-      ; BI_if (BT_valtype (Some (T_num T_i32)))
-          ([ BI_const_num 0%Z ; BI_global_set glob_tmp1 ] ++ make_product glob_tmp1 glob_tmp1)
-          (load_local_i64 xl ++
-             [ BI_global_set glob_tmp2
-               ; BI_const_num 0%Z
-               ; BI_global_set glob_tmp3
-             ] ++ (List.flat_map (fun x => x) (List.repeat diveucl_21_loop_body 63)) ++
-             [ BI_global_get glob_tmp1
-               ; BI_const_num maxuint63
-               ; BI_binop T_i64 (Binop_i BOI_and)
-               ; BI_global_set glob_tmp1
-             ] ++ (make_product glob_tmp3 glob_tmp1))
+    ; BI_global_get glob_tmp1
+    ; BI_relop T_i64 (Relop_i (ROI_le SX_U))
+    ; BI_if (BT_valtype (Some (T_num T_i32)))
+        ([ BI_const_num 0%Z ; BI_global_set glob_tmp1 ] ++ make_product glob_tmp1 glob_tmp1)
+        (load_local_i64 xl ++
+           [ BI_global_set glob_tmp2
+           ; BI_const_num 0%Z
+           ; BI_global_set glob_tmp3
+           ] ++ (List.flat_map (fun x => x) (List.repeat diveucl_21_loop_body 63)) ++
+           [ BI_global_get glob_tmp1
+           ; BI_const_num maxuint63
+           ; BI_binop T_i64 (Binop_i BOI_and)
+           ; BI_global_set glob_tmp1
+           ] ++ (make_product glob_tmp3 glob_tmp1))
     ].
 
 
@@ -584,29 +585,29 @@ Definition addmuldiv_instrs p x y :=
   BI_global_get global_mem_ptr ::
     load_local_i64 p ++
     [ BI_const_num 63%Z
-      ; BI_relop T_i64 (Relop_i (ROI_gt SX_U))
-      ; BI_if (BT_valtype (Some (T_num T_i64)))
-          [ BI_const_num 0%Z ]
-          (* Compute x << p on the stack *)
-          (load_local_i64 x ++
-             load_local_i64 p ++
-             [ BI_binop T_i64 (Binop_i BOI_shl)
-               ; BI_const_num maxuint63
-               ; BI_binop T_i64 (Binop_i BOI_and)
-             ] ++
-             (* Put y on the stack *)
-             load_local_i64 y ++
-             (* Compute 63 - p on the stack *)
-             [ BI_const_num 63%Z ] ++
-             load_local_i64 p ++
-             [ BI_binop T_i64 (Binop_i BOI_sub)
-             (* Compute y >> (63 - p) on the stack *)
-             ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-             (* Finally, compute (x << p) | (y >> (63 - p)) on the stack *)
-             ; BI_binop T_i64 (Binop_i BOI_or)
-             ])
-      ; BI_store T_i64 None 2%N 0%N
-      ; BI_global_get global_mem_ptr
+    ; BI_relop T_i64 (Relop_i (ROI_gt SX_U))
+    ; BI_if (BT_valtype (Some (T_num T_i64)))
+        [ BI_const_num 0%Z ]
+        (* Compute x << p on the stack *)
+        (load_local_i64 x ++
+           load_local_i64 p ++
+           [ BI_binop T_i64 (Binop_i BOI_shl)
+           ; BI_const_num maxuint63
+           ; BI_binop T_i64 (Binop_i BOI_and)
+           ] ++
+           (* Put y on the stack *)
+           load_local_i64 y ++
+           (* Compute 63 - p on the stack *)
+           [ BI_const_num 63%Z ] ++
+           load_local_i64 p ++
+           [ BI_binop T_i64 (Binop_i BOI_sub)
+           (* Compute y >> (63 - p) on the stack *)
+           ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+           (* Finally, compute (x << p) | (y >> (63 - p)) on the stack *)
+           ; BI_binop T_i64 (Binop_i BOI_or)
+           ])
+    ; BI_store T_i64 None 2%N 0%N
+    ; BI_global_get global_mem_ptr
     ] ++ increment_global_mem_ptr 8.
 
 Definition translate_primitive_ternary_op op (x y z : localidx) : error (list basic_instruction) :=
@@ -655,7 +656,7 @@ Definition LambdaANF_primInt_addmuldiv p x y := Vprim (primInt (addmuldiv p x y)
    The result is only defined if the operator is supported and the arguments
    match the type of the Coq operator.
    E.g 'add' has the type 'uint63 -> uint63 -> uint63' so the arguments must be
-   2 primitive integer values. *)
+   2 primitive integer values and the return value is a primitive integer. *)
 Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
   match vs with
   | [ Vprim (primInt x) ] =>

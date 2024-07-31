@@ -424,7 +424,7 @@ Variable penv   : prim_env.
 Context `{ho : host}.
 Variable hfn : host_function.
 
-Definition initial_store := 
+Definition initial_store :=
 {| s_funcs   := nil
  ; s_tables  := nil
  ; s_mems    := nil

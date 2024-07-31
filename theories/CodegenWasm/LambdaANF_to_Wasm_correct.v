@@ -932,7 +932,7 @@ Inductive repr_val_LambdaANF_Wasm : LambdaANF.cps.val -> store_record -> modulei
     (exists n, addr = 2 * n)%N ->
     smem sr inst = Some m ->
     p = primInt n ->
-    load_i64 m addr = Some (VAL_int64 (Z_to_i64 (to_Z n))) ->
+    load_i64 m addr = Some (VAL_int64 (Z_to_i64 (Uint63.to_Z n))) ->
     repr_val_LambdaANF_Wasm (Vprim (primInt n)) sr inst (Val_ptr addr)
 
 with repr_val_constr_args_LambdaANF_Wasm : list LambdaANF.cps.val -> store_record -> moduleinst -> u32 -> Prop :=
@@ -3458,14 +3458,14 @@ Definition prim_funs_env_wellformed (penv : prim_env) (prim_funs : M.t (list val
       (* This links operational semantics to primitive operators in penv *)
       apply_LambdaANF_primInt_operator true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag op vs = Some v
       (* Constructor tags (bools, comparison, carry and prod) used by prim ops *)
-      /\ M.get true_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_bool 0%N 0) 
-      /\ M.get false_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_bool 0%N 1)
-      /\ M.get eq_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Eq") (Common.BasicAst.nNamed "comparison") it_comparison 0%N 0)
-      /\ M.get lt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Lt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N 1)
-      /\ M.get gt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Gt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N 2)
-      /\ M.get c0_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N 0)
-      /\ M.get c1_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N 1)
-      /\ M.get pair_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N 0).
+      /\ M.get true_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_bool 0%N true_ord)
+      /\ M.get false_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_bool 0%N false_ord)
+      /\ M.get eq_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Eq") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Eq_ord)
+      /\ M.get lt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Lt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Lt_ord)
+      /\ M.get gt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Gt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Gt_ord)
+      /\ M.get c0_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N C0_ord)
+      /\ M.get c1_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N C1_ord)
+      /\ M.get pair_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N pair_ord).
 
 (* Supported primitive functions do not return functions *)
 Definition prim_funs_env_returns_no_funvalues (prim_funs : M.t (list val -> option val)) : Prop :=
@@ -4332,18 +4332,19 @@ Proof.
   }
 Qed.
 
-(* Helper tactic to solve the cases for simple binary arithmetic operators like add, sub, mul etc. *)
-Local Ltac solve_arith_op_aux v aexp H1 H2 H3 H4 :=
-  (inv H1; simpl;
-   destruct (H2 aexp) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]];
+(* Helper tactic to solve the cases for simple binary arithmetic operators like add, sub, mul etc.
+   Proves that the instructions reduces to a constant that is related to the result of applying the operator. *)
+Local Ltac solve_arith_op_aux v aexp Hrepr_binop Hreduce HloadArgsStep HwasmArithEq :=
+  (inv Hrepr_binop; simpl;
+   destruct (Hreduce aexp) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]];
    exists s_final, fr;
    replace v with (Vprim ( primInt aexp)) in * by congruence;
    split; auto;
    dostep_nary 0; [apply r_global_get; eassumption|];
-   eapply rt_trans; [apply app_trans_const; [auto|apply H3]|];
+   eapply rt_trans; [apply app_trans_const; [auto|apply HloadArgsStep]|];
    dostep_nary_eliml 2 1;[constructor; apply rs_binop_success; reflexivity|];
    (try (dostep_nary_eliml 2 1;[constructor; apply rs_binop_success; reflexivity|]));
-   dostep_nary 2; [eapply r_store_success; rewrite H4; eassumption|];
+   dostep_nary 2; [eapply r_store_success; rewrite HwasmArithEq; eassumption|];
    eassumption).
 
 Lemma primitive_operation_reduces : forall lenv pfs state s f m fds f' (x : var) (x' : localidx) (p : prim) op_name str b op_arr op
@@ -5073,8 +5074,6 @@ Proof.
   }
   { (* Ternary operations *) admit. }
 Admitted. (* Qed. *)
-
-Close Scope uint63.
 
 (* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
 Theorem repr_bs_LambdaANF_Wasm_related :
