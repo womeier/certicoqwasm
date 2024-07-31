@@ -249,6 +249,30 @@ Proof.
       apply bet_weakening with (ts:=[::T_num T_i32]). by apply IHl.
 Qed.
 
+Lemma increment_global_mem_ptr_typing {lenv} :
+  forall c ts n,
+         @context_restr lenv c ->
+         be_typing c (increment_global_mem_ptr global_mem_ptr n) (Tf ts ts).
+Proof.
+  intros c ts n Hcontext.
+  unfold increment_global_mem_ptr;
+    replace ts with (ts ++ []);
+    [apply bet_weakening;prepare_solve_bet; try solve_bet Hcontext|now rewrite cats0].
+Qed.
+
+Lemma simple_arith_prim_op_typing {lenv} :
+  forall c x x' y y' bop mask,
+         @context_restr lenv c ->
+         @repr_var nenv lenv x x' ->
+         @repr_var nenv lenv y y' ->
+         be_typing c (apply_binop_and_store_i64 global_mem_ptr bop x' y' mask) (Tf [::] [:: T_num T_i32]).
+Proof.
+  intros ??????? Hcontext Hx Hy.
+  unfold apply_binop_and_store_i64, load_local_i64, bitmask_instrs.
+  assert (Hmem:exists m, lookup_N (tc_mems c) 0 = Some m) by now destruct Hcontext as (_ & _ & _ & _ & Hmems &_); destruct (tc_mems c);[contradiction| eexists].
+  destruct Hmem as [m Hmem].
+  now destruct mask; prepare_solve_bet; eapply increment_global_mem_ptr_typing || solve_bet Hcontext.
+Qed.
 
 Theorem repr_expr_LambdaANF_Wasm_typing {lenv} : forall e e' c,
   @context_restr lenv c ->
@@ -321,39 +345,54 @@ Proof.
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv Hrestr'. by apply IH.
   - (* Eprim *)
-    intros ???????? Hvar Hexpr' IH Hp' HprimOp ? Hcontext' Hrestr'.
+    intros ???????????? Hvar Hexpr' IH Hp Hop HprimOp ? Hcontext' Hrestr'.
+    (* Remove the assumption 'KernameMap.find op_name primop_map = Some op' from the context
+       as this causes certain tactics that operate on the context such as
+       discriminate or =>// (from SSReflect) to hang. *)
+    clear Hop.
     assert (exists m, lookup_N (tc_mems c0) 0 = Some m) as [m Hm]. {
       destruct (tc_mems c0) eqn:Hc; cbn; eauto. by apply Hcontext' in Hc. }
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
     inv HprimOp.
     { (* Unary operations *)
-      inv H1; unfold increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
+      inv H0; unfold head0_instrs, tail0_instrs; prepare_solve_bet;
+      lazymatch goal with
+        | |- be_typing _ (increment_global_mem_ptr _ _) (Tf _ _) => now eapply increment_global_mem_ptr_typing
+        | _ => solve_bet Hcontext'
+      end.
+    }
     { (* Binary operations *)
-      inv H2; unfold apply_binop_and_store_i64, make_boolean_valued_comparison, make_product, apply_carry_operation, make_carry, load_local_i64, increment_global_mem_ptr; prepare_solve_bet; try solve_bet Hcontext'. }
+      inv H1; unfold div_instrs, mod_instrs, shift_instrs, make_boolean_valued_comparison, compare_instrs, apply_exact_add_operation, apply_exact_sub_operation, make_carry, diveucl_instrs, mulc_instrs, make_product, load_local_i64, bitmask_instrs; prepare_solve_bet;
+      match goal with
+      | |- be_typing _ (apply_binop_and_store_i64 _ _ _ _ _) (Tf [] [T_num T_i32]) => now eapply simple_arith_prim_op_typing
+      | |- be_typing _ (increment_global_mem_ptr _ _) (Tf _ _) => now eapply increment_global_mem_ptr_typing
+      | _ => solve_bet Hcontext'
+      end; now eapply increment_global_mem_ptr_typing.
+    }
     { (* Ternary operations *)
-      inv H3; unfold load_local_i64 ; unfold make_product; unfold increment_global_mem_ptr.
-      { (* diveucl_21 *)
-        assert (Hcontext'': context_restr lenv (upd_label c0 ([:: [:: T_num T_i32]] ++ tc_labels c0))) by now inv Hcontext'.
-        assert(Hloop: be_typing (upd_label c0 ([:: [:: T_num T_i32] ++ [::]] ++ tc_labels c0)) (div21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) (Tf [::] [::])) by (unfold div21_loop_body; prepare_solve_bet; try solve_bet Hcontext'').
-        (* Avoid unfolding too much too avoid slowdown *)
-        repeat match goal with
-               | |- context C [?x :: ?l] =>
-                   lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-               end;
-          repeat rewrite catA; repeat eapply bet_composition'.
-        14: { apply bet_if_wasm with (tn:=[])=>//.
-              prepare_solve_bet; try solve_bet Hcontext''.
-              (* Avoid unfolding too much to avoid slowdown *)
-              repeat match goal with
-                     | |- context C [?x :: ?l] =>
-                         lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-                     end;
-                repeat rewrite catA; repeat eapply bet_composition'; eauto; try solve_bet Hcontext''.
-        }
-        all: try solve_bet Hcontext''. }
-      prepare_solve_bet; try solve_bet Hcontext'. }
+      inv H2; unfold addmuldiv_instrs, diveucl_21_instrs, make_product, load_local_i64.
+      - { (* diveucl_21 *)
+          assert (Hcontext'': context_restr lenv (upd_label c0 ([:: [:: T_num T_i32]] ++ tc_labels c0))) by now inv Hcontext'.
+          assert(Hloop: be_typing (upd_label c0 ([:: [:: T_num T_i32] ++ [::]] ++ tc_labels c0)) (diveucl_21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) (Tf [::] [::])) by (unfold diveucl_21_loop_body; prepare_solve_bet; solve_bet Hcontext'').
+          (* Avoid unfolding too much too avoid slowdown *)
+          repeat match goal with
+                 | |- context C [?x :: ?l] =>
+                     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+                 end;
+            repeat rewrite catA; repeat eapply bet_composition'.
+          10: { apply bet_if_wasm with (tn:=[])=>//.
+                prepare_solve_bet; solve_bet Hcontext'' || now eapply increment_global_mem_ptr_typing.
+                (* Avoid unfolding too much to avoid slowdown *)
+                repeat match goal with
+                       | |- context C [?x :: ?l] =>
+                           lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+                       end;
+                  repeat rewrite catA; repeat eapply bet_composition'; eauto; solve_bet Hcontext'' || now eapply increment_global_mem_ptr_typing. }
+          all: solve_bet Hcontext'' || now eapply increment_global_mem_ptr_typing. }
+      - (* addmuldiv *) prepare_solve_bet; solve_bet Hcontext' || now eapply increment_global_mem_ptr_typing.
+    }
     solve_bet Hcontext'.
-    inv Hrestr'. by apply IH.
+    inv Hrestr'; by apply IH.
   - (* repr_branches nil *)
     intros ????? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
     inv Hboxed. inv Hunboxed. by split; solve_bet Hcontext'.
@@ -385,7 +424,7 @@ Variable penv   : prim_env.
 Context `{ho : host}.
 Variable hfn : host_function.
 
-Definition initial_store := 
+Definition initial_store :=
 {| s_funcs   := nil
  ; s_tables  := nil
  ; s_mems    := nil

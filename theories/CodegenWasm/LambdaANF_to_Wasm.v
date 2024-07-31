@@ -315,24 +315,27 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N
 
 Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (p : (kername * string * bool * nat)) (args : list var) : error (list basic_instruction) :=
   let '(op_name, _, _, _) := p in
-  match args with
-  | [ x ] =>
-      x_var <- translate_var nenv lenv x "translate primitive unop operand";;
-      translate_primitive_unary_op global_mem_ptr op_name x_var
+  match KernameMap.find op_name primop_map with
+  | Some op =>
+      match args with
+      | [ x ] =>
+          x_var <- translate_var nenv lenv x "translate primitive unop operand";;
+          translate_primitive_unary_op global_mem_ptr op x_var
 
-  | [ x ; y ] =>
-      x_var <- translate_var nenv lenv x "translate primitive binary operator 1st operand";;
-      y_var <- translate_var nenv lenv y "translate primitive binary operator 2nd operand";;
-      translate_primitive_binary_op global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 op_name x_var y_var
+      | [ x ; y ] =>
+          x_var <- translate_var nenv lenv x "translate primitive binary operator 1st operand";;
+          y_var <- translate_var nenv lenv y "translate primitive binary operator 2nd operand";;
+          translate_primitive_binary_op global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 op x_var y_var
 
-  | [ x ; y ; z ] =>
-      x_var <- translate_var nenv lenv x "translate primitive ternary operator 1st operand" ;;
-      y_var <- translate_var nenv lenv y "translate primitive ternary operator 2nd operand" ;;
-      z_var <- translate_var nenv lenv z "translate primitive ternary operator 3rd operand" ;;
-      translate_primitive_ternary_op global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 op_name x_var y_var z_var
+      | [ x ; y ; z ] =>
+          x_var <- translate_var nenv lenv x "translate primitive ternary operator 1st operand" ;;
+          y_var <- translate_var nenv lenv y "translate primitive ternary operator 2nd operand" ;;
+          z_var <- translate_var nenv lenv z "translate primitive ternary operator 3rd operand" ;;
+          translate_primitive_ternary_op global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 op x_var y_var z_var
 
-  | _ =>
-      Err "Only primitive operations with 1, 2 or 3 arguments are supported"
+      | _ => Err "Only primitive operations with 1, 2 or 3 arguments are supported"
+      end
+  | _ => Err ("Unsupported primitive operator: " ++ (Kernames.string_of_kername op_name))
   end.
 
 (* ***** EXPRESSIONS (except fundefs) ****** *)
