@@ -11,7 +11,7 @@ From CertiCoq Require Import
 Require Import ExtLib.Structures.Monad.
 From MetaCoq Require Import Common.Kernames Utils.bytestring Utils.MCString.
 
-Import MonadNotation SigTNotations.
+Import ssreflect MonadNotation SigTNotations.
 
 Notation "'primInt' x" := (AstCommon.primInt ; x) (at level 0).
 
@@ -28,11 +28,13 @@ Local Coercion Z_to_i64val_co z := Z_to_VAL_i64 z.
 (* Avoid unfolding during proofs *)
 Opaque Uint63.to_Z.
 
-Section Primitives.
+
+
+
+
+Section TRANSLATION.
 
 Variables global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 : globalidx.
-
-Variables true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag : ctor_tag.
 
 Definition maxuint31 := 2147483647%Z.
 Definition maxuint63 := 9223372036854775807%Z.
@@ -617,7 +619,24 @@ Definition translate_primitive_ternary_op op (x y z : localidx) : error (list ba
   | _ => Err "Unknown primitive ternary operator"
   end.
 
+End TRANSLATION.
+
+Section WRAPPERS.
+
 (* **** Define LambdaANF wrapper functions for Coq's 63 bit integer operators  **** *)
+
+(* LambdaANF constructor values 'Vconstr t vs' hold the tag 't' of the constructor and a list of values 'vs'.
+   The tag is NOT the same as the ordinal used in the translation section above,
+   and the tag of a specific constructor is NOT guaranteed to always be the same,
+   it depends on the program being extracted.
+
+   For the proof, we define 'wrapper' functions for the primitive operators,
+   and for primitive operators that return a constructor value, the wrapper function is parameterized over the tags
+   since we don't know the concrete values of the tags.
+
+   For convenience, we define the tags as section variables.
+ *)
+Variables true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag : ctor_tag.
 
 Definition LambdaANF_primInt_arith_fun (f : uint63 -> uint63 -> uint63) (x y : uint63) := Vprim (primInt (f x y)).
 
@@ -697,6 +716,50 @@ Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
       end
   | _ => None
   end.
+
+End WRAPPERS.
+
+(* Arguments to primitive operations can only be primInts
+   (Eventually adapt for floats) *)
+Lemma apply_primop_only_defined_on_primInts :
+  forall op vs v true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag,
+    apply_LambdaANF_primInt_operator true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag op vs = Some v ->
+    forall v',
+      List.In v' vs -> exists n, v' = Vprim (primInt n).
+Proof.
+  intros.
+  unfold apply_LambdaANF_primInt_operator in H.
+  destruct vs=>//. destruct vs; destruct v0=>//; destruct p =>//; destruct x =>//.
+  destruct H0=>//. now exists p.
+  destruct vs; destruct v1=>//; destruct p0 =>//; destruct x =>//.
+  destruct H0. now exists p. destruct H0. now exists p0. destruct H0.
+  destruct vs; destruct v0=>//; destruct p1 =>//; destruct x =>//.
+  destruct H0. now exists p. destruct H0. now exists p0. destruct H0. now exists p1. destruct H0.
+Qed.
+
+(* Well-formedness of the primitive function (and constructor) environment:
+   Applying a (supported) primitive operator evaluates to a (LambdaANF) value, 
+   and the constructor environment contains all constructors that may be returned,
+   and the constructors have the expected ordinals (i.e. the ones used in the translation section).
+ *)
+Definition prim_funs_env_wellformed (cenv : ctor_env) (penv : prim_env) (prim_funs : M.t (list val -> option val)) : Prop :=
+  forall p op_name s b n op f vs v,
+    M.get p penv = Some (op_name, s, b, n) ->       (* penv = primitive function environment obtained from previous pipeline stage *)
+    KernameMap.find op_name primop_map = Some op -> (* primop_map = environment of supported primitive operations *)
+    M.get p prim_funs = Some f ->                   (* from lambdaANF operational semantics *)
+    f vs = Some v ->
+    exists true_tag false_tag it_bool eq_tag lt_tag gt_tag it_comparison c0_tag c1_tag it_carry pair_tag it_prod,
+      (* This links operational semantics to primitive operators in penv *)
+      apply_LambdaANF_primInt_operator true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag op vs = Some v
+      (* Constructor tags (bools, comparison, carry and prod) used by prim ops *)
+      /\ M.get true_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_bool 0%N true_ord)
+      /\ M.get false_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_bool 0%N false_ord)
+      /\ M.get eq_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Eq") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Eq_ord)
+      /\ M.get lt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Lt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Lt_ord)
+      /\ M.get gt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Gt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Gt_ord)
+      /\ M.get c0_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N C0_ord)
+      /\ M.get c1_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N C1_ord)
+      /\ M.get pair_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N pair_ord).
 
 Lemma uint63_mod_modulus_id :
   forall (x : uint63), Int64.Z_mod_modulus (to_Z x) = to_Z x.
@@ -784,7 +847,7 @@ Proof. solve_div_mod Int64.idiv_u Int64.divu div_spec. Qed.
 Lemma uint63_div0 : forall x y,
     to_Z y = to_Z 0 -> to_Z (x / y) = to_Z 0.
 Proof.
-  intros; rewrite div_spec, H, to_Z_0; unfold Z.div, Z.div_eucl; now destruct (to_Z x).
+  intros; rewrite div_spec H to_Z_0; unfold Z.div, Z.div_eucl; now destruct (to_Z x).
 Qed.
 
 Lemma uint63_mod_i64_mod : forall x y,
@@ -794,7 +857,7 @@ Proof. solve_div_mod Int64.irem_u Int64.modu mod_spec. Qed.
 Lemma uint63_mod0 : forall x y,
     to_Z y = to_Z 0 -> to_Z (x mod y) = to_Z x.
 Proof.
-  intros; rewrite mod_spec, H, to_Z_0; unfold Z.modulo, Z.div_eucl; now destruct (to_Z x).
+  intros; rewrite mod_spec H to_Z_0; unfold Z.modulo, Z.div_eucl; now destruct (to_Z x).
 Qed.
 
 Lemma uint63_land_i64_and : forall x y, Int64.iand (to_Z x) (to_Z y) = to_Z (x land y).
@@ -806,4 +869,32 @@ Proof. solve_arith_op Int64.ior Int64.or lor_spec'. Qed.
 Lemma uint63_lxor_i64_xor : forall x y, Int64.ixor (to_Z x) (to_Z y) = to_Z (x lxor y).
 Proof. solve_arith_op Int64.ixor Int64.xor lxor_spec'. Qed.
 
-End Primitives.
+
+Lemma lsl_bits_high : forall x y,
+    (to_Z 63 <= to_Z y)%Z ->
+    forall i, bit (x << y) i = false.
+Proof.
+  intros.
+  destruct (digits <=? i)%uint63 eqn:Hi.
+  now apply bit_M.
+  rewrite bit_lsl; unfold digits in *.
+  assert (to_Z i < to_Z 63)%Z as Hi1 by
+      now destruct (reflect_dec _ _ (lebP 63 i)) as [H'|H']; [rewrite (reflect_iff _ _ (lebP 63 i)) in H'|].
+  assert (to_Z i < to_Z y)%Z as Hi2 by now replace (to_Z 63) with 63%Z in *; [lia|cbn].
+  now replace (i <? y)%uint63 with true; [cbn|rewrite (reflect_iff _ _ (ltbP i y)) in Hi2].
+Qed.
+
+Lemma uint63_bits_inj_0 i : (forall j, bit i j = false) -> i = 0%uint63.
+Proof.
+  intros.
+  assert (forall n, bit i n = bit 0 n) by now intros; rewrite bit_0; apply H.
+  now apply bit_ext.
+Qed.
+
+Lemma lsl_M_r : forall x y,
+    (to_Z 63 <= to_Z y)%Z ->
+    to_Z (x << y) = to_Z 0.
+Proof.
+  intros;
+  now replace (x << y)%uint63 with 0%uint63;[reflexivity|rewrite (uint63_bits_inj_0 _ (lsl_bits_high x y H))].
+Qed.

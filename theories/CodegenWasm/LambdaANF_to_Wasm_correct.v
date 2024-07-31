@@ -925,13 +925,12 @@ Inductive repr_val_LambdaANF_Wasm : LambdaANF.cps.val -> store_record -> modulei
       repr_expr_LambdaANF_Wasm penv (create_local_variable_mapping (xs ++ collect_local_variables e)) e e' ->
       repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f) sr inst (Val_funidx idx)
 
-|  Rprim_v : forall p n sr inst gmp m addr,
+|  Rprim_v : forall n sr inst gmp m addr,
     sglob_val sr inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
     (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
     (addr+8 <= gmp)%N ->
     (exists n, addr = 2 * n)%N ->
     smem sr inst = Some m ->
-    p = primInt n ->
     load_i64 m addr = Some (VAL_int64 (Z_to_i64 (Uint63.to_Z n))) ->
     repr_val_LambdaANF_Wasm (Vprim (primInt n)) sr inst (Val_ptr addr)
 
@@ -3429,44 +3428,6 @@ Proof.
         destruct (IHxs _ _ _ _ _ Heqn H0 H1) as [k [Hk1 Hk2]]. exists (S k). now cbn.
 Qed.
 
-(* Arguments to primitive operations can only be primInts
-   (Eventually adapt for floats) *)
-Lemma apply_primop_only_defined_on_primInts :
-  forall op vs v true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag,
-    apply_LambdaANF_primInt_operator true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag op vs = Some v ->
-    forall v',
-      List.In v' vs -> exists n, v' = Vprim (primInt n).
-Proof.
-  intros.
-  unfold apply_LambdaANF_primInt_operator in H.
-  destruct vs=>//. destruct vs; destruct v0=>//; destruct p =>//; destruct x =>//.
-  destruct H0=>//. now exists p.
-  destruct vs; destruct v1=>//; destruct p0 =>//; destruct x =>//.
-  destruct H0. now exists p. destruct H0. now exists p0. destruct H0.
-  destruct vs; destruct v0=>//; destruct p1 =>//; destruct x =>//.
-  destruct H0. now exists p. destruct H0. now exists p0. destruct H0. now exists p1. destruct H0.
-Qed.
-
-(* prim_funs_wellformed *)
-Definition prim_funs_env_wellformed (penv : prim_env) (prim_funs : M.t (list val -> option val)) : Prop :=
-  forall p op_name s b n op f vs v,
-    M.get p penv = Some (op_name, s, b, n) ->       (* penv = primitive environment obtained from previous pipeline stage *)
-    KernameMap.find op_name primop_map = Some op -> (* primop_map = environment of supported primitive operations *)
-    M.get p prim_funs = Some f ->                   (* from lambdaANF operational semantics *)
-    f vs = Some v ->
-    exists true_tag false_tag it_bool eq_tag lt_tag gt_tag it_comparison c0_tag c1_tag it_carry pair_tag it_prod,
-      (* This links operational semantics to primitive operators in penv *)
-      apply_LambdaANF_primInt_operator true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag op vs = Some v
-      (* Constructor tags (bools, comparison, carry and prod) used by prim ops *)
-      /\ M.get true_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_bool 0%N true_ord)
-      /\ M.get false_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_bool 0%N false_ord)
-      /\ M.get eq_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Eq") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Eq_ord)
-      /\ M.get lt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Lt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Lt_ord)
-      /\ M.get gt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Gt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Gt_ord)
-      /\ M.get c0_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N C0_ord)
-      /\ M.get c1_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N C1_ord)
-      /\ M.get pair_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N pair_ord).
-
 (* Supported primitive functions do not return functions *)
 Definition prim_funs_env_returns_no_funvalues (prim_funs : M.t (list val -> option val)) : Prop :=
   forall rho fds f f' f0 vs v,
@@ -4349,7 +4310,7 @@ Local Ltac solve_arith_op_aux v aexp Hrepr_binop Hreduce HloadArgsStep HwasmArit
 
 Lemma primitive_operation_reduces : forall lenv pfs state s f m fds f' (x : var) (x' : localidx) (p : prim) op_name str b op_arr op
                                            (ys : list var) (e : exp) (vs : list val) (rho : env) (v : val) (gmp_v : u32) instrs,
-    prim_funs_env_wellformed penv pfs ->
+    prim_funs_env_wellformed cenv penv pfs ->
     M.get p pfs = Some f' ->
     M.get p penv = Some (op_name, str, b, op_arr) ->
     KernameMap.find op_name primop_map = Some op ->
@@ -4511,7 +4472,7 @@ Proof.
       }
 
       assert (Hrepr_val : repr_val_LambdaANF_Wasm (Vprim (primInt n)) s_final (f_inst fr) (Val_ptr gmp_v)). {
-        apply Rprim_v with (p:=(primInt n)) (gmp:=(gmp_v+8)%N) (m:=m').
+        apply Rprim_v with (gmp:=(gmp_v+8)%N) (m:=m').
         { unfold sglob_val, sglob.
           apply update_global_get_same with (sr:=s') (sr':=s_final).
           unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in Hupd_glob. cbn in Hupd_glob.
@@ -4527,7 +4488,6 @@ Proof.
           destruct (lookup_N (inst_globals (f_inst f)) global_mem_ptr) eqn:Heq''. 2: discriminate. cbn in Hupd_glob.
           destruct (lookup_N (s_globals s') g). 2: discriminate.
           cbn in Hupd_glob. inv Hupd_glob. assumption. }
-        reflexivity.
         assert ((wasm_deserialise (bits (VAL_int64 (Z_to_i64 (to_Z n)))) T_i64) = (VAL_int64 (Z_to_i64 (to_Z n)))) by now apply deserialise_bits.
         rewrite -H6.
         apply (store_load_i64 m m' gmp_v (bits (VAL_int64 (Z_to_i64 (to_Z n))))); auto.
@@ -4847,8 +4807,9 @@ Proof.
     assert (Hrv1: exists addr1, wal1 = Val_ptr addr1
                /\ load_i64 m addr1 = Some (VAL_int64 (Z_to_i64 (to_Z n1)))). {
       inv Hval_x. replace m with m0 by congruence. exists addr. split; auto.
-      replace n1 with n by now apply inj_pair2 in H5.
-      assumption.
+      remember (primInt n) as p1; remember (primInt n1) as p2.
+      inversion H11; subst p1 p2.
+      now replace n1 with n by now apply inj_pair2 in H13.
     }
     destruct Hrv1 as [addr1 Hload1].
     destruct Hload1 as [? Hload1]. subst wal1.
@@ -4859,8 +4820,9 @@ Proof.
     assert (Hrv2: exists addr2, wal2 = Val_ptr addr2
                /\ load_i64 m addr2 = Some (VAL_int64 (Z_to_i64 (to_Z n2)))). {
       inv Hval_y. replace m with m0 by congruence. exists addr. split; auto.
-      replace n2 with n by now apply inj_pair2 in H5.
-      assumption.
+      remember (primInt n) as p1; remember (primInt n2) as p2.
+      inversion H11; subst p1 p2.
+      now replace n2 with n by now apply inj_pair2 in H13.
     }
     destruct Hrv2 as [addr2 Hload2].
     destruct Hload2 as [? Hload2]. subst wal2.
@@ -5083,7 +5045,7 @@ Theorem repr_bs_LambdaANF_Wasm_related :
     cenv_restricted cenv ->
     (* restrictions on prim_funs env *)
     prim_funs_env_returns_no_funvalues pfs ->
-    prim_funs_env_wellformed penv pfs ->
+    prim_funs_env_wellformed cenv penv pfs ->
     (* restrictions on lenv, fenv *)
     map_injective lenv ->
     domains_disjoint lenv fenv ->
@@ -6942,7 +6904,7 @@ Proof with eauto.
         destruct Hv_int as [n Hn].
         assert (Hv0: v0 = Z_to_i64 (to_Z n)) by now rewrite Hn in H6; unfold translate_primitive_value in *; simpl in H6.
         assert (Hvalue : repr_val_LambdaANF_Wasm (Vprim (primInt n)) s_before_IH (f_inst f_before_IH) (Val_ptr gmp')). {
-          apply Rprim_v with (p:=primInt n) (gmp := (gmp' + 8)%N) (m := m_after_store) (addr := gmp'); auto; try lia.
+          apply Rprim_v with (gmp := (gmp' + 8)%N) (m := m_after_store) (addr := gmp'); auto; try lia.
           { apply update_global_get_same with (sr:=s_prim). subst f_before_IH. assumption. }
           { subst f_before_IH. assumption. }
           { apply store_load_i64 in Hm_after_store; auto.
