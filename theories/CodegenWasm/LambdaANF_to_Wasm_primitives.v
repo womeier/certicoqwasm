@@ -918,9 +918,12 @@ Lemma uint63_lsl_i64_shl : forall x y,
     (to_Z y < to_Z 63)%Z -> Int64.iand (Int64.ishl (to_Z x) (to_Z y)) maxuint63 = to_Z (x << y).
 Proof.
   intros.
-  unfold Int64.ishl, Int64.shl.
-  repeat rewrite uint63_unsigned_id.
-  rewrite Z.shiftl_mul_pow2. 2: now assert (0 <= to_Z y < wB)%Z by apply to_Z_bounded.
+  have H' := to_Z_bounded y.
+  unfold Int64.ishl, Int64.shl, Int64.wordsize, Integers.Wordsize_64.wordsize.
+  replace (to_Z 63) with 63%Z in H by now cbn.
+  do 2 rewrite uint63_unsigned_id.
+  replace (Int64.unsigned (Z_to_i64 (to_Z y mod 64%nat))) with (to_Z y). 2: now rewrite Z.mod_small; [rewrite uint63_unsigned_id|].
+  rewrite Z.shiftl_mul_pow2. 2: lia.
   now rewrite lsl_spec; rewrite int64_bitmask_modulo.
 Qed.
 
@@ -937,9 +940,12 @@ Lemma uint63_lsr_i64_shr : forall x y,
     (to_Z y < to_Z 63)%Z -> Int64.ishr_u (to_Z x) (to_Z y) = to_Z (x >> y).
 Proof.
   intros.
-  unfold Int64.ishr_u. unfold Int64.shru.
-  repeat rewrite uint63_unsigned_id.
-  rewrite Z.shiftr_div_pow2. 2: now assert (0 <= to_Z y < wB)%Z by apply to_Z_bounded.
+  have H' := to_Z_bounded y.
+  unfold Int64.ishr_u, Int64.shru, Int64.wordsize, Integers.Wordsize_64.wordsize.
+  replace (to_Z 63) with 63%Z in H by now cbn.
+  do 2 rewrite uint63_unsigned_id.
+  replace (Int64.unsigned (Z_to_i64 (to_Z y mod 64%nat))) with (to_Z y). 2: now rewrite Z.mod_small; [rewrite uint63_unsigned_id|].
+  rewrite Z.shiftr_div_pow2. 2: lia.
   now rewrite lsr_spec.
 Qed.
 
