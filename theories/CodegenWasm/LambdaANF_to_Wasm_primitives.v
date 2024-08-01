@@ -815,6 +815,15 @@ Lemma uint63_nlt_int64_nlt :
   forall x y, ~ (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = false.
 Proof. intros; unfold Int64.ltu; do 2 rewrite uint63_unsigned_id; now rewrite zlt_false. Qed.
 
+Lemma uint63_le_int64_le :
+  forall x y, (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = true.
+Proof. intros; unfold Int64.ltu; repeat rewrite uint63_unsigned_id; now rewrite zlt_true. Qed.
+
+Lemma uint63_nle_int64_nle :
+  forall x y, ~ (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = false.
+Proof. intros; unfold Int64.ltu; do 2 rewrite uint63_unsigned_id; now rewrite zlt_false. Qed.
+
+
 Local Ltac solve_arith_op d1 d2 spec :=
   intros; unfold d1, d2; (repeat rewrite uint63_unsigned_id); (try rewrite int64_bitmask_modulo); now rewrite spec.
 
@@ -897,7 +906,7 @@ Proof.
   now apply bit_ext.
 Qed.
 
-Lemma lsl_M_r : forall x y,
+Lemma uint63_lsl63 : forall x y,
     (to_Z 63 <= to_Z y)%Z ->
     to_Z (x << y) = to_Z 0.
 Proof.
@@ -913,6 +922,25 @@ Proof.
   repeat rewrite uint63_unsigned_id.
   rewrite Z.shiftl_mul_pow2. 2: now assert (0 <= to_Z y < wB)%Z by apply to_Z_bounded.
   now rewrite lsl_spec; rewrite int64_bitmask_modulo.
+Qed.
+
+Lemma uint63_lsr63 : forall x y,
+    (to_Z 63 <= to_Z y)%Z ->
+    to_Z (x >> y) = to_Z 0.
+Proof.
+  intros;
+  rewrite (reflect_iff _ _ (lebP 63 y)) in H;
+  now replace (x >> y)%uint63 with 0%uint63; [reflexivity|rewrite lsr_M_r].
+Qed.
+
+Lemma uint63_lsr_i64_shr : forall x y,
+    (to_Z y < to_Z 63)%Z -> Int64.ishr_u (to_Z x) (to_Z y) = to_Z (x >> y).
+Proof.
+  intros.
+  unfold Int64.ishr_u. unfold Int64.shru.
+  repeat rewrite uint63_unsigned_id.
+  rewrite Z.shiftr_div_pow2. 2: now assert (0 <= to_Z y < wB)%Z by apply to_Z_bounded.
+  now rewrite lsr_spec.
 Qed.
 
 End CORRECTNESS.
