@@ -28,10 +28,6 @@ Local Coercion Z_to_i64val_co z := Z_to_VAL_i64 z.
 (* Avoid unfolding during proofs *)
 Opaque Uint63.to_Z.
 
-
-
-
-
 Section TRANSLATION.
 
 Variables global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 : globalidx.
@@ -719,6 +715,8 @@ Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
 
 End WRAPPERS.
 
+Section CORRECTNESS.
+
 (* Arguments to primitive operations can only be primInts
    (Eventually adapt for floats) *)
 Lemma apply_primop_only_defined_on_primInts :
@@ -809,6 +807,14 @@ Proof.
   intros; rewrite eqb_false_spec; intro Hcontra; now rewrite Hcontra in H.
 Qed.
 
+Lemma uint63_lt_int64_lt :
+  forall x y, (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = true.
+Proof. intros; unfold Int64.ltu; repeat rewrite uint63_unsigned_id; now rewrite zlt_true. Qed.
+
+Lemma uint63_nlt_int64_nlt :
+  forall x y, ~ (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = false.
+Proof. intros; unfold Int64.ltu; do 2 rewrite uint63_unsigned_id; now rewrite zlt_false. Qed.
+
 Local Ltac solve_arith_op d1 d2 spec :=
   intros; unfold d1, d2; (repeat rewrite uint63_unsigned_id); (try rewrite int64_bitmask_modulo); now rewrite spec.
 
@@ -898,3 +904,15 @@ Proof.
   intros;
   now replace (x << y)%uint63 with 0%uint63;[reflexivity|rewrite (uint63_bits_inj_0 _ (lsl_bits_high x y H))].
 Qed.
+
+Lemma uint63_lsl_i64_shl : forall x y,
+    (to_Z y < to_Z 63)%Z -> Int64.iand (Int64.ishl (to_Z x) (to_Z y)) maxuint63 = to_Z (x << y).
+Proof.
+  intros.
+  unfold Int64.ishl, Int64.shl.
+  repeat rewrite uint63_unsigned_id.
+  rewrite Z.shiftl_mul_pow2. 2: now assert (0 <= to_Z y < wB)%Z by apply to_Z_bounded.
+  now rewrite lsl_spec; rewrite int64_bitmask_modulo.
+Qed.
+
+End CORRECTNESS.

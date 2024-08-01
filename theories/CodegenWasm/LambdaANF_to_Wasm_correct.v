@@ -38,6 +38,9 @@ From Wasm Require Import datatypes operations host memory_list opsem
 Require Import Libraries.maps_util.
 From Coq Require Import List Nnat Uint63.
 
+(* Avoid unfolding during proofs *)
+Opaque Uint63.to_Z.
+
 From MetaCoq Require Import Common.Kernames.
 
 Import ssreflect eqtype ssrbool eqtype.
@@ -4966,7 +4969,56 @@ Proof.
         dostep_nary 2. eapply r_store_success.
         eassumption.
         eassumption. } }
-    - { (* lsl *) admit. }
+    - { (* lsl *)
+        inv H2; simpl.
+        (* Opaque Uint63.to_Z. *)
+        destruct (H3 (n1 << n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+        replace v with (Vprim (primInt (n1 << n2)%uint63)) in * by congruence.
+        exists s_final, fr.
+        split; auto.
+        dostep_nary 0. eapply r_global_get; eassumption.
+        eapply rt_trans.
+        apply app_trans_const; auto.
+        destruct (Z_lt_dec (to_Z n2) (to_Z 63)).
+        { (* n2 < 63 *)
+          dostep_nary_eliml 2 1. constructor; apply rs_relop.
+          dostep_nary_eliml 1 1. constructor; apply rs_if_true; unfold wasm_bool.
+          replace (Z_to_i64 63) with (Z_to_i64 (to_Z 63)) by now cbn.
+          rewrite uint63_lt_int64_lt; auto. discriminate.
+          dostep_nary_eliml 0 1. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto.
+          eapply rt_trans.
+          separate_instr.
+          rewrite catA.
+          apply app_trans.
+          apply app_trans_const; auto.
+          eapply rt_trans.
+          eapply reduce_trans_label1.
+          apply HloadStep'.
+          eapply reduce_trans_label1.
+          dostep_nary 2; constructor; apply rs_binop_success; reflexivity.
+          eapply rt_trans.
+          separate_instr.
+          rewrite catA.
+          apply app_trans.
+          apply app_trans_const; auto.
+          eapply reduce_trans_label1.
+          apply rt_step. constructor; apply rs_binop_success; reflexivity. cbn.
+          rewrite uint63_lsl_i64_shl; simpl; auto.
+          dostep_nary_eliml 0 1. constructor; apply rs_label_const; auto.
+          dostep_nary 2. eapply r_store_success.
+          eassumption.
+          eassumption. }
+        { (* n2 <= 63 *)
+          dostep_nary_eliml 2 1. constructor; apply rs_relop.
+          dostep_nary_eliml 1 1. constructor; apply rs_if_false; unfold wasm_bool.
+          replace (Z_to_i64 63) with (Z_to_i64 (to_Z 63)) by now cbn.
+          rewrite uint63_nlt_int64_nlt; auto.
+          dostep_nary_eliml 0 1. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto.
+          dostep_nary_eliml 0 1. constructor; apply rs_label_const; auto.
+          dostep_nary 2. eapply r_store_success.
+          assert (to_Z 63 <= to_Z n2)%Z as Hle by now destruct (Z.lt_ge_cases (to_Z n2) (to_Z 63)).
+          rewrite (lsl_M_r _ _ Hle) in Hstore; eauto.
+          eassumption. } }
     - { (* lsr *) admit. }
     - (* land *) solve_arith_op_aux v (n1 land n2)%uint63 H2 H3 HloadStep' uint63_land_i64_and.
     - (* lor *) solve_arith_op_aux v (n1 lor n2)%uint63 H2 H3 HloadStep' uint63_lor_i64_or.
