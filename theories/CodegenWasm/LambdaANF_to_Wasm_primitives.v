@@ -28,10 +28,6 @@ Local Coercion Z_to_i64val_co z := Z_to_VAL_i64 z.
 (* Avoid unfolding during proofs *)
 Opaque Uint63.to_Z.
 
-
-
-
-
 Section TRANSLATION.
 
 Variables global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 : globalidx.
@@ -719,6 +715,8 @@ Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
 
 End WRAPPERS.
 
+Section CORRECTNESS.
+
 (* Arguments to primitive operations can only be primInts
    (Eventually adapt for floats) *)
 Lemma apply_primop_only_defined_on_primInts :
@@ -809,6 +807,23 @@ Proof.
   intros; rewrite eqb_false_spec; intro Hcontra; now rewrite Hcontra in H.
 Qed.
 
+Lemma uint63_lt_int64_lt :
+  forall x y, (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = true.
+Proof. intros; unfold Int64.ltu; repeat rewrite uint63_unsigned_id; now rewrite zlt_true. Qed.
+
+Lemma uint63_nlt_int64_nlt :
+  forall x y, ~ (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = false.
+Proof. intros; unfold Int64.ltu; do 2 rewrite uint63_unsigned_id; now rewrite zlt_false. Qed.
+
+Lemma uint63_le_int64_le :
+  forall x y, (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = true.
+Proof. intros; unfold Int64.ltu; repeat rewrite uint63_unsigned_id; now rewrite zlt_true. Qed.
+
+Lemma uint63_nle_int64_nle :
+  forall x y, ~ (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = false.
+Proof. intros; unfold Int64.ltu; do 2 rewrite uint63_unsigned_id; now rewrite zlt_false. Qed.
+
+
 Local Ltac solve_arith_op d1 d2 spec :=
   intros; unfold d1, d2; (repeat rewrite uint63_unsigned_id); (try rewrite int64_bitmask_modulo); now rewrite spec.
 
@@ -891,10 +906,47 @@ Proof.
   now apply bit_ext.
 Qed.
 
-Lemma lsl_M_r : forall x y,
+Lemma uint63_lsl63 : forall x y,
     (to_Z 63 <= to_Z y)%Z ->
     to_Z (x << y) = to_Z 0.
 Proof.
   intros;
   now replace (x << y)%uint63 with 0%uint63;[reflexivity|rewrite (uint63_bits_inj_0 _ (lsl_bits_high x y H))].
 Qed.
+
+Lemma uint63_lsl_i64_shl : forall x y,
+    (to_Z y < to_Z 63)%Z -> Int64.iand (Int64.ishl (to_Z x) (to_Z y)) maxuint63 = to_Z (x << y).
+Proof.
+  intros.
+  have H' := to_Z_bounded y.
+  unfold Int64.ishl, Int64.shl, Int64.wordsize, Integers.Wordsize_64.wordsize.
+  replace (to_Z 63) with 63%Z in H by now cbn.
+  do 2 rewrite uint63_unsigned_id.
+  replace (Int64.unsigned (Z_to_i64 (to_Z y mod 64%nat))) with (to_Z y). 2: now rewrite Z.mod_small; [rewrite uint63_unsigned_id|].
+  rewrite Z.shiftl_mul_pow2. 2: lia.
+  now rewrite lsl_spec; rewrite int64_bitmask_modulo.
+Qed.
+
+Lemma uint63_lsr63 : forall x y,
+    (to_Z 63 <= to_Z y)%Z ->
+    to_Z (x >> y) = to_Z 0.
+Proof.
+  intros;
+  rewrite (reflect_iff _ _ (lebP 63 y)) in H;
+  now replace (x >> y)%uint63 with 0%uint63; [reflexivity|rewrite lsr_M_r].
+Qed.
+
+Lemma uint63_lsr_i64_shr : forall x y,
+    (to_Z y < to_Z 63)%Z -> Int64.ishr_u (to_Z x) (to_Z y) = to_Z (x >> y).
+Proof.
+  intros.
+  have H' := to_Z_bounded y.
+  unfold Int64.ishr_u, Int64.shru, Int64.wordsize, Integers.Wordsize_64.wordsize.
+  replace (to_Z 63) with 63%Z in H by now cbn.
+  do 2 rewrite uint63_unsigned_id.
+  replace (Int64.unsigned (Z_to_i64 (to_Z y mod 64%nat))) with (to_Z y). 2: now rewrite Z.mod_small; [rewrite uint63_unsigned_id|].
+  rewrite Z.shiftr_div_pow2. 2: lia.
+  now rewrite lsr_spec.
+Qed.
+
+End CORRECTNESS.
