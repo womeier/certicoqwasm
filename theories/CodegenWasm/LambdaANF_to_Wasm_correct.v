@@ -5116,9 +5116,255 @@ Proof.
           }
           try repeat (split; auto). all: subst fr; auto.
           exists wal; auto. } }
-    { (* ltb *) admit. }
-    { (* leb *) admit. }
-    { (* compare *) admit. }
+    - { (* ltb *)
+        inv H2; simpl.
+        destruct (Z_lt_dec (to_Z n1) (to_Z n2)).
+        { (* n1 < n2 *)
+          assert (Hv_true: v = Vconstr true_tag []) by now unfold LambdaANF_primInt_bool_fun in Hres; rewrite (reflect_iff _ _ (Uint63.ltbP n1 n2)) in l; rewrite l in Hres.
+          assert (Htrue_arr: get_ctor_arity cenv true_tag = Ret 0) by now unfold get_ctor_arity; rewrite Htrue.
+          assert (Htrue_ord: get_ctor_ord cenv true_tag = Ret 0%N) by now unfold get_ctor_ord; rewrite Htrue.
+          destruct (H4 _ _ Hv_true Htrue_arr Htrue_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          simpl_modulus. simpl_modulus. cbn. lia.
+          exists s, fr.
+          split. {
+            separate_instr.
+            eapply rt_trans.
+            apply HloadStep'.
+            dostep_nary 2. constructor. apply rs_relop.
+            dostep_nary 1. constructor. apply rs_if_true. unfold wasm_bool.
+            rewrite uint63_lt_int64_lt. discriminate. assumption.
+            dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
+            dostep_nary 0. constructor. apply rs_label_const; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            inv HreprVal.
+            - now replace ord with 0%N by congruence.
+            - replace t with true_tag in * by congruence. rewrite Htrue_arr in H8. inv H8. lia.
+            - discriminate.
+            - discriminate.
+          }
+          try repeat (split; auto). all: subst fr; auto.
+          exists wal; auto. }
+        { (* ~ (n1 < n2) *)
+          assert (Hv_false: v = Vconstr false_tag []) by now unfold LambdaANF_primInt_bool_fun in Hres; rewrite (to_Z_nlt_uint63_ltb_false _ _ n) in Hres.
+          assert (Hfalse_arr: get_ctor_arity cenv false_tag = Ret 0) by now unfold get_ctor_arity; rewrite Hfalse.
+          assert (Hfalse_ord: get_ctor_ord cenv false_tag = Ret 1%N) by now unfold get_ctor_ord; rewrite Hfalse.
+          destruct (H4 _ _ Hv_false Hfalse_arr Hfalse_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          simpl_modulus. simpl_modulus. cbn. lia.
+          exists s, fr.
+          split. {
+            separate_instr.
+            eapply rt_trans.
+            apply HloadStep'.
+            dostep_nary 2. constructor. apply rs_relop.
+            dostep_nary 1. constructor. apply rs_if_false. unfold wasm_bool.
+            rewrite uint63_nlt_int64_nlt. reflexivity. assumption.
+            dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
+            dostep_nary 0. constructor. apply rs_label_const; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            inv HreprVal.
+            - now replace ord with 1%N by congruence.
+            - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H8. inv H8. lia.
+            - discriminate.
+            - discriminate.
+          }
+          try repeat (split; auto). all: subst fr; auto.
+          exists wal; auto. } }
+    - { (* leb *)
+        inv H2; simpl.
+        destruct (Z_le_dec (to_Z n1) (to_Z n2)).
+        { (* n1 < n2 *)
+          assert (Hv_true: v = Vconstr true_tag []) by now unfold LambdaANF_primInt_bool_fun in Hres; rewrite (reflect_iff _ _ (Uint63.lebP n1 n2)) in l; rewrite l in Hres.
+          assert (Htrue_arr: get_ctor_arity cenv true_tag = Ret 0) by now unfold get_ctor_arity; rewrite Htrue.
+          assert (Htrue_ord: get_ctor_ord cenv true_tag = Ret 0%N) by now unfold get_ctor_ord; rewrite Htrue.
+          destruct (H4 _ _ Hv_true Htrue_arr Htrue_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          simpl_modulus. simpl_modulus. cbn. lia.
+          exists s, fr.
+          split. {
+            separate_instr.
+            eapply rt_trans.
+            apply HloadStep'.
+            dostep_nary 2. constructor. apply rs_relop.
+            dostep_nary 1. constructor. apply rs_if_true. unfold wasm_bool.
+            rewrite uint63_le_int64_le. discriminate. assumption.
+            dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
+            dostep_nary 0. constructor. apply rs_label_const; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            inv HreprVal.
+            - now replace ord with 0%N by congruence.
+            - replace t with true_tag in * by congruence. rewrite Htrue_arr in H8. inv H8. lia.
+            - discriminate.
+            - discriminate.
+          }
+          try repeat (split; auto). all: subst fr; auto.
+          exists wal; auto. }
+        { (* ~ (n1 < n2) *)
+          assert (Hv_false: v = Vconstr false_tag []) by now unfold LambdaANF_primInt_bool_fun in Hres; rewrite (to_Z_nle_uint63_leb_false _ _ n) in Hres.
+          assert (Hfalse_arr: get_ctor_arity cenv false_tag = Ret 0) by now unfold get_ctor_arity; rewrite Hfalse.
+          assert (Hfalse_ord: get_ctor_ord cenv false_tag = Ret 1%N) by now unfold get_ctor_ord; rewrite Hfalse.
+          destruct (H4 _ _ Hv_false Hfalse_arr Hfalse_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          simpl_modulus. simpl_modulus. cbn. lia.
+          exists s, fr.
+          split. {
+            separate_instr.
+            eapply rt_trans.
+            apply HloadStep'.
+            dostep_nary 2. constructor. apply rs_relop.
+            dostep_nary 1. constructor. apply rs_if_false. unfold wasm_bool.
+            rewrite uint63_nle_int64_nle. reflexivity. assumption.
+            dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
+            dostep_nary 0. constructor. apply rs_label_const; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            inv HreprVal.
+            - now replace ord with 1%N by congruence.
+            - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H8. inv H8. lia.
+            - discriminate.
+            - discriminate.
+          }
+          try repeat (split; auto). all: subst fr; auto.
+          exists wal; auto. } }
+    - { (* compare *)
+        inv H2; simpl.
+        destruct (Z_lt_dec (to_Z n1) (to_Z n2)).
+        { (* n1 < n2 *)
+          assert (Hv_lt: v = Vconstr lt_tag []). {
+            unfold LambdaANF_primInt_compare_fun in Hres.
+            inversion Hres as [Hcomp].
+            rewrite compare_def_spec.
+            unfold compare_def.
+            rewrite (reflect_iff _ _ (Uint63.ltbP n1 n2)) in l.
+            now rewrite l.
+          }
+          assert (Hlt_arr: get_ctor_arity cenv lt_tag = Ret 0) by now unfold get_ctor_arity; rewrite Hlt.
+          assert (Hlt_ord: get_ctor_ord cenv lt_tag = Ret 1%N) by now unfold get_ctor_ord; rewrite Hlt.
+          destruct (H4 _ _ Hv_lt Hlt_arr Hlt_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          simpl_modulus. simpl_modulus. cbn. lia.
+          exists s, fr.
+          split. {
+            separate_instr.
+            eapply rt_trans.
+            apply HloadStep'.
+            dostep_nary 2. constructor. apply rs_relop.
+            dostep_nary 1. constructor. apply rs_if_true. unfold wasm_bool.
+            rewrite uint63_lt_int64_lt. discriminate. assumption.
+            dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
+            dostep_nary 0. constructor. apply rs_label_const; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            inv HreprVal.
+            - now replace ord with 1%N by congruence.
+            - replace t with lt_tag in * by congruence. rewrite Hlt_arr in H8. inv H8. lia.
+            - discriminate.
+            - discriminate.
+          }
+          try repeat (split; auto). subst fr; auto.
+          exists wal; auto. }
+        { (* ~ (n1 < n2) *)
+          destruct (Z.eq_dec (to_Z n1) (to_Z n2)).
+          { (* n1 = n2 *)
+            assert (Hv_eq: v = Vconstr eq_tag []). {
+              unfold LambdaANF_primInt_compare_fun in Hres.
+              inversion Hres as [Hcomp].
+              rewrite compare_def_spec.
+              unfold compare_def.
+              rewrite (to_Z_nlt_uint63_ltb_false _ _ n).
+              now rewrite (reflect_iff _ _ (Uint63.eqbP n1 n2)) in e0; rewrite e0.
+            }
+            assert (Heq_arr: get_ctor_arity cenv eq_tag = Ret 0) by now unfold get_ctor_arity; rewrite Heq.
+            assert (Heq_ord: get_ctor_ord cenv eq_tag = Ret 0%N) by now unfold get_ctor_ord; rewrite Heq.
+            destruct (H4 _ _ Hv_eq Heq_arr Heq_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          simpl_modulus. simpl_modulus. cbn. lia.
+          exists s, fr.
+          split. {
+            separate_instr.
+            eapply rt_trans.
+            apply HloadStep'.
+            dostep_nary 2. constructor. apply rs_relop.
+            dostep_nary 1. constructor. apply rs_if_false. unfold wasm_bool.
+            rewrite uint63_nlt_int64_nlt. reflexivity. assumption.
+            dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
+            eapply rt_trans.
+            separate_instr.
+            rewrite catA.
+            apply app_trans.
+            eapply reduce_trans_label1.
+            apply HloadStep'.
+            eapply rt_trans.
+            apply app_trans.
+            eapply reduce_trans_label1.
+            dostep_nary 2. constructor. apply rs_relop.
+            apply rt_step. constructor. apply rs_if_true. unfold wasm_bool.
+            cbn. rewrite uint63_eq_int64_eq. discriminate. assumption.
+            eapply rt_trans.
+            apply app_trans.
+            eapply reduce_trans_label1.
+            apply rt_step. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
+            eapply rt_trans.
+            apply app_trans.
+            eapply reduce_trans_label1. cbn.
+            apply rt_step. constructor. apply rs_label_const; auto.
+            dostep_nary 0. constructor. apply rs_label_const; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            inv HreprVal.
+            - replace ord with 0%N by congruence.
+            - replace t with eq_tag in * by congruence. rewrite Heq_arr in H8. inv H8. reflexivity.
+            - replace arity with 0 in H9 by congruence; lia.
+            - discriminate.
+            - discriminate.
+          }
+          try repeat (split; auto). subst fr; auto.
+          exists wal; auto. }
+          { (* n1 <> n2 *)
+            assert (Hv_gt: v = Vconstr gt_tag []). {
+              unfold LambdaANF_primInt_compare_fun in Hres.
+              inversion Hres as [Hcomp].
+              rewrite compare_def_spec.
+              unfold compare_def.
+              rewrite (to_Z_nlt_uint63_ltb_false _ _ n).
+              now rewrite (to_Z_neq_uint63_eqb_false _ _ n0).
+            }
+            assert (Hgt_arr: get_ctor_arity cenv gt_tag = Ret 0) by now unfold get_ctor_arity; rewrite Hgt.
+            assert (Hgt_ord: get_ctor_ord cenv gt_tag = Ret 2%N) by now unfold get_ctor_ord; rewrite Hgt.
+            destruct (H4 _ _ Hv_gt Hgt_arr Hgt_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          simpl_modulus. simpl_modulus. cbn. lia.
+          exists s, fr.
+          split. {
+            separate_instr.
+            eapply rt_trans.
+            apply HloadStep'.
+            dostep_nary 2. constructor. apply rs_relop.
+            dostep_nary 1. constructor. apply rs_if_false. unfold wasm_bool.
+            rewrite uint63_nlt_int64_nlt. reflexivity. assumption.
+            dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
+            eapply rt_trans.
+            separate_instr.
+            rewrite catA.
+            apply app_trans.
+            eapply reduce_trans_label1.
+            apply HloadStep'.
+            eapply rt_trans.
+            apply app_trans.
+            eapply reduce_trans_label1.
+            dostep_nary 2. constructor. apply rs_relop.
+            apply rt_step. constructor. apply rs_if_false. unfold wasm_bool.
+            cbn. rewrite uint63_neq_int64_neq. reflexivity. assumption.
+            eapply rt_trans.
+            apply app_trans.
+            eapply reduce_trans_label1.
+            apply rt_step. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
+            eapply rt_trans.
+            apply app_trans.
+            eapply reduce_trans_label1. cbn.
+            apply rt_step. constructor. apply rs_label_const; auto.
+            dostep_nary 0. constructor. apply rs_label_const; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 5)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            inv HreprVal.
+            - replace ord with 2%N by congruence.
+            - replace t with gt_tag in * by congruence. rewrite Hgt_arr in H8. inv H8. reflexivity.
+            - replace arity with 0 in H9 by congruence; lia.
+            - discriminate.
+            - discriminate.
+          }
+          try repeat (split; auto). subst fr; auto.
+          exists wal; auto. } } }
     { (* addc *)  admit. }
     { (* addcarryc *) admit. }
     { (* subc *) admit. }

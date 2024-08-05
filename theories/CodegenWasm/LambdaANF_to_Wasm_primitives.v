@@ -736,7 +736,7 @@ Proof.
 Qed.
 
 (* Well-formedness of the primitive function (and constructor) environment:
-   Applying a (supported) primitive operator evaluates to a (LambdaANF) value, 
+   Applying a (supported) primitive operator evaluates to a (LambdaANF) value,
    and the constructor environment contains all constructors that may be returned,
    and the constructors have the expected ordinals (i.e. the ones used in the translation section).
  *)
@@ -815,14 +815,21 @@ Lemma uint63_nlt_int64_nlt :
   forall x y, ~ (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = false.
 Proof. intros; unfold Int64.ltu; do 2 rewrite uint63_unsigned_id; now rewrite zlt_false. Qed.
 
+Lemma to_Z_nlt_uint63_ltb_false :
+  forall x y, ~ (to_Z x < to_Z y)%Z -> (x <? y)%uint63 = false.
+Proof. intros; have H' := reflect_iff _ _ (ltbP x y); now destruct (x <? y)%uint63. Qed.
+
 Lemma uint63_le_int64_le :
-  forall x y, (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = true.
-Proof. intros; unfold Int64.ltu; repeat rewrite uint63_unsigned_id; now rewrite zlt_true. Qed.
+  forall x y, (to_Z x <= to_Z y)%Z -> negb (Int64.ltu (to_Z y) (to_Z x)) = true.
+Proof. intros; unfold Int64.ltu; repeat rewrite uint63_unsigned_id; rewrite zlt_false; auto; lia. Qed.
 
 Lemma uint63_nle_int64_nle :
-  forall x y, ~ (to_Z x < to_Z y)%Z -> Int64.ltu (to_Z x) (to_Z y) = false.
-Proof. intros; unfold Int64.ltu; do 2 rewrite uint63_unsigned_id; now rewrite zlt_false. Qed.
+  forall x y, ~ (to_Z x <= to_Z y)%Z -> negb (Int64.ltu (to_Z y) (to_Z x)) = false.
+Proof. intros; unfold Int64.ltu; do 2 rewrite uint63_unsigned_id; rewrite zlt_true; auto; lia. Qed.
 
+Lemma to_Z_nle_uint63_leb_false :
+  forall x y, ~ (to_Z x <= to_Z y)%Z -> (x <=? y)%uint63 = false.
+Proof. intros; have H' := reflect_iff _ _ (lebP x y); now destruct (x <=? y)%uint63. Qed.
 
 Local Ltac solve_arith_op d1 d2 spec :=
   intros; unfold d1, d2; (repeat rewrite uint63_unsigned_id); (try rewrite int64_bitmask_modulo); now rewrite spec.
