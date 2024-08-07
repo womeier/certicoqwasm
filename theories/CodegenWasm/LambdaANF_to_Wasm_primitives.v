@@ -123,7 +123,7 @@ Definition load_local_i64 (i : localidx) : list basic_instruction :=
 
 Definition increment_global_mem_ptr i :=
   [ BI_global_get global_mem_ptr
-  ; BI_const_num (nat_to_VAL_i32 i)
+  ; BI_const_num (N_to_VAL_i32 i)
   ; BI_binop T_i32 (Binop_i BOI_add)
   ; BI_global_set global_mem_ptr
   ].
@@ -139,7 +139,7 @@ Definition apply_binop_and_store_i64 (op : binop_i) (x y : localidx) (apply_bitm
   [ BI_store T_i64 None 2%N 0%N                     (* Store the result *)
   ; BI_global_get global_mem_ptr                    (* Put the result address on the stack *)
   ] ++
-  increment_global_mem_ptr 8.
+  increment_global_mem_ptr 8%N.
 
 (* Assume argument is stored in global gidx *)
 Definition make_carry (ord : N) (gidx : globalidx) : list basic_instruction:=
@@ -155,7 +155,7 @@ Definition make_carry (ord : N) (gidx : globalidx) : list basic_instruction:=
   ; BI_global_get global_mem_ptr
   ; BI_const_num (nat_to_VAL_i32 8)
   ; BI_binop T_i32 (Binop_i BOI_add)
-  ] ++ increment_global_mem_ptr 16.
+  ] ++ increment_global_mem_ptr 16%N.
 
 Definition apply_exact_add_operation (x y : localidx) (addone : bool) : list basic_instruction :=
     load_local_i64 x ++ load_local_i64 y ++
@@ -206,7 +206,7 @@ Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
   ; BI_global_get global_mem_ptr
   ; BI_const_num (nat_to_VAL_i32 16)
   ; BI_binop T_i32 (Binop_i BOI_add)
-  ] ++ increment_global_mem_ptr 28.
+  ] ++ increment_global_mem_ptr 28%N.
 
 Definition make_boolean_valued_comparison x y relop : list basic_instruction :=
   load_local_i64 x ++            (* Load the arguments onto the stack *)
@@ -244,7 +244,7 @@ Definition div_instrs (x y : localidx) : list basic_instruction :=
         (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ])
     ; BI_store T_i64 None 2%N 0%N
     ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8.
+    ] ++ increment_global_mem_ptr 8%N.
 
 
 Definition mod_instrs (x y : localidx) : list basic_instruction :=
@@ -256,7 +256,7 @@ Definition mod_instrs (x y : localidx) : list basic_instruction :=
         (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ])
     ; BI_store T_i64 None 2%N 0%N
     ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8.
+    ] ++ increment_global_mem_ptr 8%N.
 
 Definition shift_instrs (x y : localidx) shiftop (mask : bool) : list basic_instruction :=
   BI_global_get global_mem_ptr ::
@@ -271,7 +271,7 @@ Definition shift_instrs (x y : localidx) shiftop (mask : bool) : list basic_inst
         [ BI_const_num 0%Z ]
     ; BI_store T_i64 None 2%N 0%N
     ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8.
+    ] ++ increment_global_mem_ptr 8%N.
 
 Definition mulc_instrs (x y : localidx) : list basic_instruction :=
   load_local_i64 x ++
@@ -496,7 +496,7 @@ Definition head0_instrs (x : localidx) : list basic_instruction :=
     ; BI_binop T_i64 (Binop_i BOI_sub)
     ; BI_store T_i64 None 2%N 0%N
     ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8.
+    ] ++ increment_global_mem_ptr 8%N.
 
 (* tail0 x computes the trailing number of zeros in x
    OBS: if x is 0, then result is 63 (can't just use wasm ctz op) ) *)
@@ -509,7 +509,7 @@ Definition tail0_instrs (x : localidx) : list basic_instruction :=
         (load_local_i64 x ++ [ BI_unop T_i64 (Unop_i UOI_ctz) ])
     ; BI_store T_i64 None 2%N 0%N
     ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8.
+    ] ++ increment_global_mem_ptr 8%N.
 
 Definition translate_primitive_unary_op op (x : localidx) : error (list basic_instruction) :=
   match op with
@@ -606,7 +606,7 @@ Definition addmuldiv_instrs p x y :=
            ])
     ; BI_store T_i64 None 2%N 0%N
     ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8.
+    ] ++ increment_global_mem_ptr 8%N.
 
 Definition translate_primitive_ternary_op op (x y z : localidx) : error (list basic_instruction) :=
   match op with
