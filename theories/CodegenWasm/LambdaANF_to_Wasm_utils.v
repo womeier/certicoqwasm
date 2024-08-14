@@ -1728,8 +1728,8 @@ Qed.
 (* global vars *)
 
 Lemma update_global_get_same : forall sr sr' i val fr,
-  supdate_glob sr (f_inst fr) i (VAL_num (VAL_int32 val)) = Some sr' ->
-     sglob_val sr' (f_inst fr) i = Some (VAL_num (VAL_int32 val)).
+  supdate_glob sr (f_inst fr) i val = Some sr' ->
+     sglob_val sr' (f_inst fr) i = Some val.
 Proof.
   unfold supdate_glob, supdate_glob_s, sglob_val, sglob, sglob_ind. cbn. intros.
   destruct (lookup_N (inst_globals (f_inst fr)) i) eqn:H1. 2: inv H. cbn in H.
@@ -1741,9 +1741,9 @@ Qed.
 Lemma update_global_get_other : forall i j sr sr' fr num val,
   NoDup (inst_globals (f_inst fr)) ->
   i <> j ->
-  sglob_val sr (f_inst fr) i = Some (VAL_num (VAL_int32 val)) ->
-  supdate_glob sr (f_inst fr) j (VAL_num (VAL_int32 num)) = Some sr' ->
-  sglob_val sr' (f_inst fr) i = Some (VAL_num (VAL_int32 val)).
+  sglob_val sr (f_inst fr) i = Some (VAL_num val) ->
+  supdate_glob sr (f_inst fr) j (VAL_num num) = Some sr' ->
+  sglob_val sr' (f_inst fr) i = Some (VAL_num val).
 Proof.
   intros ? ? ? ? ? ? ? Hnodup Hneq Hr Hw.
     unfold supdate_glob, sglob_ind, supdate_glob_s in *.
