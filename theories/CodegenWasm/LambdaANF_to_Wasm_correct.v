@@ -1273,75 +1273,35 @@ Lemma update_global_preserves_globals_all_mut : forall sr sr' i f num,
 Proof.
   intros ????? Hnodup Hi Hmut Hupd.
   unfold globals_all_mut, globals_all_mut32, globals_all_mut64 in *.
-  destruct Hi as [(Hi32glob & Hi32) | (Hi64glob & Hi64)].
-  split.
-  { intros.
-    unfold supdate_glob, supdate_glob_s, sglob_ind in Hupd.
-    destruct (lookup_N (inst_globals (f_inst f)) i) eqn:Heqn. 2: inv Hupd. cbn in Hupd.
-    destruct (lookup_N (s_globals sr) g1) eqn:Heqn'. 2: inv Hupd. inv Hupd. cbn in H1.
+  destruct Hmut as [Hmut32 Hmut64].
+  destruct Hi as [(Hi & Hi32) | (Hi & Hi64)]; 
+    split; intros ??? Hgidx Hinstglobs Hstoreglobs; 
+    unfold supdate_glob, supdate_glob_s, sglob_ind in Hupd. 
+  (* discharge absurd cases *)
+  2, 3: destruct (N.eq_dec gidx i) as [Heq | Hneq];
+  [subst gidx; now assert (i < i)%N by now eapply (globs_disjoint _ i); eauto|];
+  destruct (lookup_N (inst_globals (f_inst f)) i) eqn:Heqn;[|inv Hupd]; 
+  cbn in Hupd;destruct (lookup_N (s_globals sr) g1) eqn:Heqn';[|inv Hupd];
+  inv Hupd; cbn in Hstoreglobs; unfold lookup_N in *;
+  erewrite set_nth_nth_error_other in Hstoreglobs; eauto;
+  [intro Hcontra; apply N2Nat.inj in Hcontra; subst g1; apply Hneq; rewrite <- Heqn in Hinstglobs; unfold lookup_N in Heqn, Hinstglobs; eapply NoDup_nth_error in Hinstglobs; eauto; [lia|now apply nth_error_Some]|]; now apply nth_error_Some.
+  all: destruct (lookup_N (inst_globals (f_inst f)) i) eqn:Heqn; [|inv Hupd]; cbn in Hupd;
+    destruct (lookup_N (s_globals sr) g1) eqn:Heqn';[|inv Hupd]; inv Hupd; cbn in Hstoreglobs;
     destruct (N.lt_total g g1) as [Heq | [Heq | Heq]]; unfold lookup_N in *.
-    - (* g < g1 *)
-      destruct Hmut.
-      erewrite set_nth_nth_error_other in H1; eauto. lia. apply nth_error_Some. congruence.
-    - (* g = g1 *)
-      destruct Hmut.
-      subst. erewrite set_nth_nth_error_same in H1; eauto. inv H1.
-      destruct num; unfold typeof_num in Hi32; try discriminate.
-      assert (g2.(g_type) = {| tg_mut := MUT_var; tg_t := T_num T_i32 |}). {
-        apply H2 with (gidx:=i) in Heqn'; auto. destruct Heqn'. subst. reflexivity. }
-      rewrite H1. eauto.    
-    - (* g1 < g *)
-      destruct Hmut.
-      rewrite set_nth_nth_error_other in H1. eauto. lia.
-      apply nth_error_Some. intro. congruence. }
-  { intros.
-    unfold supdate_glob, supdate_glob_s, sglob_ind in Hupd.
-    destruct (N.eq_dec gidx i) as [Heq | Hneq].
-    subst gidx.
-    have H' := globs_disjoint _ i Hi32glob H. lia.
-    destruct (lookup_N (inst_globals (f_inst f)) i) eqn:Heqn. 2: inv Hupd. cbn in Hupd.
-    destruct (lookup_N (s_globals sr) g1) eqn:Heqn'. 2: inv Hupd. inv Hupd. cbn in H1.
-    assert (g <> g1). {
-      intro. subst g1. rewrite <- Heqn in H0.
-      apply Hneq. unfold lookup_N in Heqn, H0.
-      eapply NoDup_nth_error in H0; eauto. lia. apply nth_error_Some. congruence. }
-    unfold lookup_N in *.
-    destruct Hmut.
-    erewrite set_nth_nth_error_other in H1; eauto. lia. apply nth_error_Some. congruence. }
-  { split.
-    { intros.
-      unfold supdate_glob, supdate_glob_s, sglob_ind in Hupd.
-      destruct (N.eq_dec gidx i) as [Heq | Hneq].
-      subst gidx.
-      have H' := globs_disjoint _ i H Hi64glob. lia.
-      destruct (lookup_N (inst_globals (f_inst f)) i) eqn:Heqn. 2: inv Hupd. cbn in Hupd.
-      destruct (lookup_N (s_globals sr) g1) eqn:Heqn'. 2: inv Hupd. inv Hupd. cbn in H1.
-      assert (g <> g1). {
-        intro. subst g1. rewrite <- Heqn in H0.
-        apply Hneq. unfold lookup_N in Heqn, H0.
-        eapply NoDup_nth_error in H0; eauto. lia. apply nth_error_Some. congruence. }
-      unfold lookup_N in *.
-      destruct Hmut.
-      erewrite set_nth_nth_error_other in H1; eauto. lia. apply nth_error_Some. congruence. }
-    { intros.
-      unfold supdate_glob, supdate_glob_s, sglob_ind in Hupd.
-      destruct (lookup_N (inst_globals (f_inst f)) i) eqn:Heqn. 2: inv Hupd. cbn in Hupd.
-      destruct (lookup_N (s_globals sr) g1) eqn:Heqn'. 2: inv Hupd. inv Hupd. cbn in H1.
-      destruct (N.lt_total g g1) as [Heq | [Heq | Heq]]; unfold lookup_N in *.
-      - (* g < g1 *)
-        destruct Hmut.
-        erewrite set_nth_nth_error_other in H1; eauto. lia. apply nth_error_Some. congruence.
-      - (* g = g1 *)
-        destruct Hmut.
-        subst. erewrite set_nth_nth_error_same in H1; eauto. inv H1.
-        destruct num; unfold typeof_num in Hi64; try discriminate.
-        assert (g2.(g_type) = {| tg_mut := MUT_var; tg_t := T_num T_i64 |}). {
-          apply H3 with (gidx:=i) in Heqn'; auto. destruct Heqn'. subst. reflexivity. }
-        rewrite H1. eauto.    
-      - (* g1 < g *)
-        destruct Hmut.
-        rewrite set_nth_nth_error_other in H1. eauto. lia.
-        apply nth_error_Some. intro. congruence. } }
+  (* Discharge cases where the global index is different from the one being updated *)
+  1,3,4,6: erewrite set_nth_nth_error_other in Hstoreglobs; eauto; [lia|now apply nth_error_Some].
+  - (* i32 globals *)
+    subst. erewrite set_nth_nth_error_same in Hstoreglobs; eauto. inv Hstoreglobs.
+    destruct num; unfold typeof_num in Hi32; try discriminate.
+    assert (g2.(g_type) = {| tg_mut := MUT_var; tg_t := T_num T_i32 |}). {
+      apply Hmut32 with (gidx:=i) in Heqn'; auto. destruct Heqn'. now subst. }
+    now rewrite H.
+  - (* i64 globals *)
+    subst. erewrite set_nth_nth_error_same in Hstoreglobs; eauto. inv Hstoreglobs.
+    destruct num; unfold typeof_num in Hi64; try discriminate.
+    assert (g2.(g_type) = {| tg_mut := MUT_var; tg_t := T_num T_i64 |}). {
+      apply Hmut64 with (gidx:=i) in Heqn'; auto. destruct Heqn'. now subst. }
+    now rewrite H.
 Qed.
 
 
@@ -1429,8 +1389,7 @@ Proof.
   }
   { (* g <> global_mem_ptr *)
     assert (Hgmp_r : sglob_val sr (f_inst f) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp_v)))). {
-    unfold sglob_val, sglob, sglob_ind in Hglob.
-    unfold sglob_val, sglob, sglob_ind.
+    unfold sglob_val, sglob, sglob_ind in Hglob |- *.
     destruct (lookup_N (inst_globals (f_inst f)) global_mem_ptr) eqn:Heqn.
       2: inv Hglob. cbn in Hglob.
     destruct (lookup_N (s_globals sr') g) eqn:Heqn'; inv Hglob. cbn.
