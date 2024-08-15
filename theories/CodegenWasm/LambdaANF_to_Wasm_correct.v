@@ -34,6 +34,7 @@ From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm_primitives LambdaANF_
 From Wasm Require Import datatypes operations host memory_list opsem
                          type_preservation instantiation_spec
                          instantiation_properties properties common numerics.
+Import Wasm_int.
 
 Require Import Libraries.maps_util.
 From Coq Require Import List Nnat Uint63.
@@ -48,7 +49,7 @@ Import LambdaANF.toplevel LambdaANF.cps compM.
 Import bytestring.
 Import ExtLib.Structures.Monad MonadNotation.
 Import bytestring.
-Import ListNotations.
+Import ListNotations SigTNotations.
 Import seq.
 
 (* Restrictions on LambdaANF expressions, s.t. everything fits in Wasm i32s *)
@@ -4472,7 +4473,26 @@ Proof.
   apply rt_step; apply r_global_set; eassumption.
 Qed.
 
-Import Wasm_int.
+Ltac unfold_bits :=
+  unfold bits, serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian.
+
+(* Lemma i32_val_4_bytes : forall v, length (bits (VAL_int32 v)) = 4. *)
+(* Proof. intros; unfold_bits; now cbn. Qed. *)
+
+(* Lemma i64_val_8_bytes : forall v, length (bits (VAL_int64 v)) = 8. *)
+(* Proof. intros; unfold_bits; now cbn. Qed. *)
+
+(* Lemma f32_val_4_bytes : forall v, length (bits (VAL_float32 v)) = 4. *)
+(* Proof. intros; unfold_bits; now cbn. Qed. *)
+
+(* Lemma f64_val_8_bytes : forall v, length (bits (VAL_float64 v)) = 8. *)
+(* Proof. intros; unfold_bits; now cbn. Qed. *)
+
+(* Lemma store_new_mem (sr : store_record) : *)
+(*   forall fr m addr off v, *)
+(*     smem sr (f_inst fr) = Some m -> *)
+(*     smem_store sr (f_inst fr) addr off v (typeof_num v) = Some sr' -> *)
+(*     smem sr' (f_inst fr) = Some m' *)
 
 Lemma store_preserves_INV (sr : store_record) :
   forall fr m addr off v,
@@ -4498,116 +4518,53 @@ Proof.
   destruct Hm0size as (Hmemsize & Hmemmaxsize & Hsizebound).
   assert (Hsrmem: lookup_N (s_mems sr) 0 = Some m)
     by now unfold smem in Hm; rewrite Hmeminst in Hm; cbn in Hm; destruct (s_mems sr).
-  assert (Hstore: exists m', store m addr off (bits v) (length (bits v)) = Some m') by now destruct v; apply enough_space_to_store; cbn in *; unfold serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian; cbn in *; try lia.
-  destruct Hstore as (m' & Hstore).
+  assert (Hstore: exists m', store m addr off (bits v) (length (bits v)) = Some m') by now destruct v; apply enough_space_to_store; unfold_bits; cbn in *; try lia.
+  destruct Hstore as [m' Hstore].
   remember (upd_s_mem sr (set_nth m' sr.(s_mems) (N.to_nat 0) m')) as sr'.
   assert (Hsmem_store : smem_store sr (f_inst fr) addr off v (typeof_num v) = Some sr'). {
-    unfold smem_store.
-    rewrite Hmeminst. cbn.
+    unfold smem_store; rewrite Hmeminst; cbn.
     destruct (s_mems sr). now cbn in Hsrmem.
     replace m1 with m in * by now cbn in *.
     replace (ssrnat.nat_of_bin (tnum_length (typeof_num v))) with (Datatypes.length (bits v)) 
-      by now destruct v; cbn in *; unfold serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian; cbn in *.
-    rewrite Hstore; rewrite Heqsr'; now cbn.
-  }
+      by now destruct v; unfold_bits; cbn in *. 
+    rewrite Hstore; rewrite Heqsr'; now cbn. }
   assert (Hmemlength': mem_length m = mem_length m') by now unfold store in Hstore;
     destruct (addr + off + N.of_nat (Datatypes.length (bits v)) <=? mem_length m)%N; [now destruct (write_bytes_preserve_type Hstore)|inv Hstore].
-  exists sr', m'; auto.  
+  exists sr', m'; auto.
   split; auto.
-  unfold smem_store in Hsmem_store.    
-  rewrite Hmeminst in Hsmem_store. cbn in *. rewrite Hsrmem in Hsmem_store.
-  rewrite Heqsr'.
-  unfold smem.
-  rewrite Hmeminst. cbn.
-  destruct (s_mems sr).
-  now cbn.
-  now inv Hsrmem.
-  split; auto.
-  split; auto.
-  split; auto.
-  split; auto.
-  apply update_mem_preserves_INV with (vd:=m') (s:=sr) (m:=m) (m':=m'); auto.
-  lia.
-  assert (mem_max_opt m = mem_max_opt m'). {
-    unfold store in Hstore.
-    destruct (addr + off + N.of_nat (Datatypes.length (bits v)) <=? mem_length m)%N. 2: inv Hstore.
-    unfold write_bytes in Hstore.
-    destruct (fold_lefti _ _ _); now inv Hstore.
+  unfold smem_store in Hsmem_store; rewrite Hmeminst in Hsmem_store; cbn in *.
+  rewrite Hsrmem in Hsmem_store; rewrite Heqsr'; unfold smem.
+  rewrite Hmeminst; cbn.
+  destruct (s_mems sr); [now cbn|now inv Hsrmem].
+  do 3 (try split; auto).
+  split. { (* INV *)
+    apply update_mem_preserves_INV with (vd:=m') (s:=sr) (m:=m) (m':=m'); auto.
+    - lia.
+    - replace (mem_max_opt m') with (mem_max_opt m);[assumption|rewrite store_offset_eq in Hstore; eapply mem_store_preserves_max_pages; eauto].
+    - exists size; split; auto. unfold mem_size in Hmemsize; now rewrite Hmemlength' in Hmemsize.
+  } split. { (* all i32 values in mem are preserved *)
+    intros.
+    assert (exists v', load_i32 m a = Some v') as Hex by now apply enough_space_to_load; lia.
+    destruct Hex as [v' Hv']; rewrite Hv'; symmetry; destruct v; rewrite store_offset_eq in Hstore.
+    - apply load_store_load_i32 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int32 s))); auto.
+    - apply load_store_load_i32' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int64 s))); auto.
+    - apply load_store_load_i32 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float32 s))); auto.
+    - apply load_store_load_i32' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float64 s))); auto.
+  } split. { (* all i64 values in mem are preserved *)
+    intros.
+    assert (exists v', load_i64 m a = Some v') as Hex by now apply enough_space_to_load_i64; lia.
+    destruct Hex as [v' Hv']; rewrite Hv'; symmetry; destruct v; rewrite store_offset_eq in Hstore.
+    - apply load_store_load_i64 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int32 s))); auto.
+    - apply load_store_load_i64' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int64 s))); auto.
+    - apply load_store_load_i64 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float32 s))); auto.
+    - apply load_store_load_i64' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float64 s))); auto.
   }
-  now rewrite H in Hmemmaxsize.
-  exists size.
-  split; auto.
-  unfold mem_size in Hmemsize.
-  now rewrite Hmemlength' in Hmemsize.
-  assert (store m addr off (bits v) (length (bits v)) = store m (addr + off) 0%N (bits v) (length (bits v))) by
-    now unfold store; replace (addr + off + 0)%N with (addr + off)%N by lia.
-  rewrite H in Hstore.  
-  split.
-  intros.
-  destruct v.
-  assert (length (bits (VAL_int32 s)) = 4) by now cbn in *; unfold serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian; cbn in *.
-  assert (exists v', load_i32 m a = Some v').
-  apply enough_space_to_load. lia.
-  destruct H2 as (v' & Hv').
-  rewrite Hv'. symmetry.
-  apply load_store_load_i32 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int32 s))); auto.
-  assert (length (bits (VAL_int64 s)) = 8) by now cbn in *; unfold serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian; cbn in *.
-  assert (exists v', load_i32 m a = Some v').
-  apply enough_space_to_load. lia.
-  destruct H2 as (v' & Hv').
-  rewrite Hv'. symmetry.
-  apply load_store_load_i32' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int64 s))); auto.
-  assert (length (bits (VAL_float32 s)) = 4) by now cbn in *; unfold serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian; cbn in *.
-  assert (exists v', load_i32 m a = Some v').
-  apply enough_space_to_load. lia.
-  destruct H2 as (v' & Hv').
-  rewrite Hv'. symmetry.
-  apply load_store_load_i32 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float32 s))); auto.
-  assert (length (bits (VAL_float64 s)) = 8) by now cbn in *; unfold serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian; cbn in *.
-  assert (exists v', load_i32 m a = Some v').
-  apply enough_space_to_load. lia.
-  destruct H2 as (v' & Hv').
-  rewrite Hv'. symmetry.
-  apply load_store_load_i32' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float64 s))); auto.
-  split.
-  intros.
-  destruct v.
-  assert (length (bits (VAL_int32 s)) = 4) by now cbn in *; unfold serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian; cbn in *.
-  assert (exists v', load_i64 m a = Some v').
-  apply enough_space_to_load_i64. lia.
-  destruct H2 as (v' & Hv').
-  rewrite Hv'. symmetry.
-  apply load_store_load_i64 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int32 s))); auto.
-  assert (length (bits (VAL_int64 s)) = 8) by now cbn in *; unfold serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian; cbn in *.
-  assert (exists v', load_i64 m a = Some v').
-  apply enough_space_to_load_i64. lia.
-  destruct H2 as (v' & Hv').
-  rewrite Hv'. symmetry.
-  apply load_store_load_i64' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int64 s))); auto.
-  assert (length (bits (VAL_float32 s)) = 4) by now cbn in *; unfold serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian; cbn in *.
-  assert (exists v', load_i64 m a = Some v').
-  apply enough_space_to_load_i64. lia.
-  destruct H2 as (v' & Hv').
-  rewrite Hv'. symmetry.
-  apply load_store_load_i64 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float32 s))); auto.
-  assert (length (bits (VAL_float64 s)) = 8) by now cbn in *; unfold serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian; cbn in *.
-  assert (exists v', load_i64 m a = Some v').
-  apply enough_space_to_load_i64. lia.
-  destruct H2 as (v' & Hv').
-  rewrite Hv'. symmetry.
-  apply load_store_load_i64' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float64 s))); auto.
   unfold smem_store in Hsmem_store.
   destruct (lookup_N (inst_mems (f_inst fr)) 0). 2: discriminate.
   destruct (lookup_N (s_mems sr) m1). 2: discriminate.
   destruct (store m2 addr off (bits v) (ssrnat.nat_of_bin (tnum_length (typeof_num v)))). 2: discriminate.
-  inversion Hsmem_store.
-  now cbn.
+  split; intros; now inv Hsmem_store.
 Qed.
-
-Lemma store_offset_eq :
-  forall m addr off w,
-    store m addr off (bits w) (Datatypes.length (bits w)) = store m (addr + off) 0%N (bits w) (Datatypes.length (bits w)).
-Proof. intros; unfold store; now replace (addr + off + 0)%N with (addr + off)%N by now cbn. Qed. 
 
 Lemma make_carry_reduce (ord : N) :
   forall state sr fr m gmp res,
@@ -4909,7 +4866,7 @@ Proof.
     assumption. }
 Qed.
 
-Import SigTNotations.
+
 
 Lemma addc_reduce :
   forall state sr fr (m : meminst) gmp_v l x y addrx addry bsx bsy n1 n2  v c0_tag c1_tag it_carry,

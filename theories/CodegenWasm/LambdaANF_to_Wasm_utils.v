@@ -1844,4 +1844,9 @@ Proof.
   apply those_cat=>//.
 Qed.
 
+Lemma store_offset_eq :
+  forall m addr off w,
+    store m addr off (bits w) (Datatypes.length (bits w)) = store m (addr + off) 0%N (bits w) (Datatypes.length (bits w)).
+Proof. intros; unfold store; now replace (addr + off + 0)%N with (addr + off)%N by now cbn. Qed.
+
 End Arith.
