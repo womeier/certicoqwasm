@@ -23,6 +23,8 @@ Import ssreflect ssrbool eqtype.
 Import ListNotations.
 Import seq.
 
+Ltac unfold_bits :=
+  unfold bits, serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian.
 
 Section General.
 
@@ -1783,6 +1785,18 @@ Proof.
   destruct (lookup_N (s_globals sr) g). inv H. reflexivity. inv H.
 Qed.
 
+
+Lemma store_offset_eq :
+  forall m addr off w,
+    store m addr off (bits w) (Datatypes.length (bits w)) = store m (addr + off) 0%N (bits w) (Datatypes.length (bits w)).
+Proof. intros; unfold store; now replace (addr + off + 0)%N with (addr + off)%N by now cbn. Qed.
+
+Lemma i32_val_4_bytes : forall v, length (bits (VAL_int32 v)) = 4.
+Proof. intros; unfold_bits; now cbn. Qed.
+
+Lemma i64_val_8_bytes : forall v, length (bits (VAL_int64 v)) = 8.
+Proof. intros; unfold_bits; now cbn. Qed.
+
 End Wasm.
 
 Section Arith.
@@ -1843,10 +1857,5 @@ Proof.
   rewrite -cat1s. rewrite <- (cat1s (VAL_num (nat_to_value 0))).
   apply those_cat=>//.
 Qed.
-
-Lemma store_offset_eq :
-  forall m addr off w,
-    store m addr off (bits w) (Datatypes.length (bits w)) = store m (addr + off) 0%N (bits w) (Datatypes.length (bits w)).
-Proof. intros; unfold store; now replace (addr + off + 0)%N with (addr + off)%N by now cbn. Qed.
 
 End Arith.
