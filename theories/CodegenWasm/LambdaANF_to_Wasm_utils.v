@@ -1797,6 +1797,9 @@ Proof. intros; unfold_bits; now cbn. Qed.
 Lemma i64_val_8_bytes : forall v, length (bits (VAL_int64 v)) = 8.
 Proof. intros; unfold_bits; now cbn. Qed.
 
+Lemma unfold_val_notation : forall v, $VN v = $V (VAL_num v).
+Proof. intros; now destruct v. Qed.
+
 End Wasm.
 
 Section Arith.
