@@ -4645,7 +4645,7 @@ Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : loca
     /\ load m (Wasm_int.N_of_uint i32m addr) 0%N (N.to_nat (tnum_length T_i64)) = Some bs
     /\ wasm_deserialise bs T_i64 = (VAL_int64 val).
 
-Lemma apply_exact_add_operation_reduce (x y : localidx) (addone : bool) :
+Lemma apply_exact_add_operation_reduce (x y : localidx) :
   forall state sr fr m gmp_v addrx addry bsx bsy n1 n2 c0_tag c1_tag it_carry v,
     INV sr fr ->
     M.get c0_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N C0_ord) ->
@@ -4662,7 +4662,7 @@ Lemma apply_exact_add_operation_reduce (x y : localidx) (addone : bool) :
     exists (sr': store_record) m',
       (forall instrs,
           reduce_trans
-            (state, sr, fr, map AI_basic (apply_exact_add_operation global_mem_ptr glob_tmp1 x y addone) ++ instrs)
+            (state, sr, fr, map AI_basic (apply_exact_add_operation global_mem_ptr glob_tmp1 x y false) ++ instrs)
             (state, sr', fr, ($VN (VAL_int32 (N_to_i32 (gmp_v + 8)%N))) :: instrs))
       /\ INV sr' fr
       /\ smem sr' (f_inst fr) = Some m'
@@ -4724,84 +4724,80 @@ Proof.
     now constructor. }
 
   assert (HvalC1: repr_val_LambdaANF_Wasm (Vconstr c1_tag [Vprim (AstCommon.primInt ; (n1 + n2)%uint63)]) sr_C1 (f_inst fr) (Val_ptr (gmp + 8)%N)). {
-      eapply Rconstr_boxed_v with (v:=Int32.repr (Z.of_N C1_ord)) (t:=c1_tag) (sr:=sr_C1) (m:=m_C1) (gmp:=(gmp+16)%N) (addr:=(gmp + 8)%N) (arity:=1) (ord:=C1_ord); auto; try lia.
-      - unfold get_ctor_ord; now rewrite Hc1.
-      - unfold get_ctor_arity; now rewrite Hc1.
-      - now exists (n+4)%N.  }
+    eapply Rconstr_boxed_v with (v:=Int32.repr (Z.of_N C1_ord)) (t:=c1_tag) (sr:=sr_C1) (m:=m_C1) (gmp:=(gmp+16)%N) (addr:=(gmp + 8)%N) (arity:=1) (ord:=C1_ord); auto; try lia.
+    - unfold get_ctor_ord; now rewrite Hc1.
+    - unfold get_ctor_arity; now rewrite Hc1.
+    - now exists (n+4)%N.  }
 
-  destruct addone eqn:Haddone.
-  { (* addcarryc: Compute x + y + 1 and check if there is overflow *)
-    admit. (* TODO: addcarryc *)
-  } { (* addc: Compute x + y and check if there is overflow *)
-    destruct Hv as [[Heq Hv]|[Heq Hv]]; subst v.
-    { (* There is no overflow <-> x <= x + y  *)
-      exists sr_C0, m_C0.
-      split. {
-        intros; unfold apply_exact_add_operation.
-        (* remember to avoid unfolding *)
-        remember ((make_carry global_mem_ptr C1_ord glob_tmp1)) as carryInstrsC1;
+  destruct Hv as [[Heq Hv]|[Heq Hv]]; subst v.
+  { (* There is no overflow <-> x <= x + y  *)
+    exists sr_C0, m_C0.
+    split. {
+      intros; unfold apply_exact_add_operation.
+      (* remember to avoid unfolding *)
+      remember ((make_carry global_mem_ptr C1_ord glob_tmp1)) as carryInstrsC1;
         remember ((make_carry global_mem_ptr C0_ord glob_tmp1)) as carryInstrsC0;
         separate_instr.
-        (* Load and deserialise value of x *)
-        dostep_nary 0. eapply r_local_get; eauto.
-        dostep_nary 1. eapply r_load_success; eauto.
-        rewrite Hdesx.
-        (* Load and deserialise value of y *)
-        dostep_nary_eliml 0 1. eapply r_local_get; eauto.
-        dostep_nary_eliml 1 1. eapply r_load_success; eauto.
-        rewrite Hdesy.
-        (* Apply addition binary operation *)
-        dostep_nary 2. constructor; apply rs_binop_success; now cbn.
-        (* Apply bitmask *)
-        dostep_nary 2. constructor; apply rs_binop_success; now cbn.
-        rewrite uint63_add_i64_add.
-        (* Temporarily store the result in a global *)
-        dostep_nary 1. rewrite unfold_val_notation; eapply r_global_set; eauto.
-        (* Put the result on the stack again *)
-        dostep_nary 0. eapply r_global_get; eauto.
-        (* Load and deserialise value of x *)
-        dostep_nary_eliml 0 1. eapply r_local_get; eauto.
-        dostep_nary_eliml 1 1. eapply r_load_success; eauto.
-        rewrite Hdesx.
-        (* Check for overflow, step into the if-branch and reduce the make_carry instructions *)
-        dostep_nary 2. constructor; apply rs_relop.
-        dostep_nary 1. constructor; apply rs_if_false; rewrite uint63_nlt_int64_nlt; auto.
-        dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
-        reduce_under_label. subst carryInstrsC0; apply Hmake_carry_red_C0.
-        dostep_nary 0. constructor; apply rs_label_const; auto.
-        now apply rt_refl. }
+      (* Load and deserialise value of x *)
+      dostep_nary 0. eapply r_local_get; eauto.
+      dostep_nary 1. eapply r_load_success; eauto.
+      rewrite Hdesx.
+      (* Load and deserialise value of y *)
+      dostep_nary_eliml 0 1. eapply r_local_get; eauto.
+      dostep_nary_eliml 1 1. eapply r_load_success; eauto.
+      rewrite Hdesy.
+      (* Apply addition binary operation *)
+      dostep_nary 2. constructor; apply rs_binop_success; now cbn.
+      (* Apply bitmask *)
+      dostep_nary 2. constructor; apply rs_binop_success; now cbn.
+      rewrite uint63_add_i64_add.
+      (* Temporarily store the result in a global *)
+      dostep_nary 1. rewrite unfold_val_notation; eapply r_global_set; eauto.
+      (* Put the result on the stack again *)
+      dostep_nary 0. eapply r_global_get; eauto.
+      (* Load and deserialise value of x *)
+      dostep_nary_eliml 0 1. eapply r_local_get; eauto.
+      dostep_nary_eliml 1 1. eapply r_load_success; eauto.
+      rewrite Hdesx.
+      (* Check for overflow, step into the if-branch and reduce the make_carry instructions *)
+      dostep_nary 2. constructor; apply rs_relop.
+      dostep_nary 1. constructor; apply rs_if_false; rewrite uint63_nlt_int64_nlt; auto.
+      dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
+      reduce_under_label. subst carryInstrsC0; apply Hmake_carry_red_C0.
+      dostep_nary 0. constructor; apply rs_label_const; auto.
+      now apply rt_refl. }
     repeat (split; auto); try now intros.
     intros; eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=sr) (m:=m) (gmp:=gmp) (gmp':=(gmp + 16)%N); eauto; try lia; now erewrite ->Hsfs1; eauto. }
-    { (* There is overflow <-> x + y < x *)
-      exists sr_C1, m_C1.
-      split. {
-        intros; unfold apply_exact_add_operation.
-        remember ((make_carry global_mem_ptr C1_ord glob_tmp1)) as carryInstrsC1;
+  { (* There is overflow <-> x + y < x *)
+    exists sr_C1, m_C1.
+    split. {
+      intros; unfold apply_exact_add_operation.
+      remember ((make_carry global_mem_ptr C1_ord glob_tmp1)) as carryInstrsC1;
         remember ((make_carry global_mem_ptr C0_ord glob_tmp1)) as carryInstrsC0;
         separate_instr.
-        dostep_nary 0. eapply r_local_get; eauto.
-        dostep_nary 1. eapply r_load_success; eauto.
-        rewrite Hdesx.
-        dostep_nary_eliml 0 1. eapply r_local_get; eauto.
-        dostep_nary_eliml 1 1. eapply r_load_success; eauto.
-        rewrite Hdesy.
-        dostep_nary 2. constructor; apply rs_binop_success; now cbn.
-        dostep_nary 2. constructor; apply rs_binop_success; now cbn.
-        rewrite uint63_add_i64_add.
-        dostep_nary 1. rewrite unfold_val_notation; eapply r_global_set; eauto.
-        dostep_nary 0. eapply r_global_get; eauto.
-        dostep_nary_eliml 0 1. eapply r_local_get; eauto.
-        dostep_nary_eliml 1 1. eapply r_load_success; eauto.
-        rewrite Hdesx.
-        dostep_nary 2. constructor; apply rs_relop.
-        dostep_nary 1. constructor; apply rs_if_true; rewrite uint63_lt_int64_lt; auto. discriminate.
-        dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
-        reduce_under_label. subst carryInstrsC1; apply Hmake_carry_red_C1.
-        dostep_nary 0. constructor; apply rs_label_const; auto.
-        now apply rt_refl. }
+      dostep_nary 0. eapply r_local_get; eauto.
+      dostep_nary 1. eapply r_load_success; eauto.
+      rewrite Hdesx.
+      dostep_nary_eliml 0 1. eapply r_local_get; eauto.
+      dostep_nary_eliml 1 1. eapply r_load_success; eauto.
+      rewrite Hdesy.
+      dostep_nary 2. constructor; apply rs_binop_success; now cbn.
+      dostep_nary 2. constructor; apply rs_binop_success; now cbn.
+      rewrite uint63_add_i64_add.
+      dostep_nary 1. rewrite unfold_val_notation; eapply r_global_set; eauto.
+      dostep_nary 0. eapply r_global_get; eauto.
+      dostep_nary_eliml 0 1. eapply r_local_get; eauto.
+      dostep_nary_eliml 1 1. eapply r_load_success; eauto.
+      rewrite Hdesx.
+      dostep_nary 2. constructor; apply rs_relop.
+      dostep_nary 1. constructor; apply rs_if_true; rewrite uint63_lt_int64_lt; auto. discriminate.
+      dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
+      reduce_under_label. subst carryInstrsC1; apply Hmake_carry_red_C1.
+      dostep_nary 0. constructor; apply rs_label_const; auto.
+      now apply rt_refl. }
     repeat (split; auto); try now intros.
     intros; eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=sr) (m:=m) (gmp:=gmp) (gmp':=(gmp + 16)%N); eauto; try lia; now erewrite ->Hsfs1; eauto. }
-Admitted.
+Qed.
 
 Ltac dep_destruct_primint v p x :=
   try dependent destruction v; try discriminate; dependent destruction p; dependent destruction x; try discriminate.
@@ -5977,7 +5973,7 @@ Proof.
             apply not_true_is_false in Heqn.
             now rewrite Heqn in Hres. }
 
-        have HaddcRed :=  apply_exact_add_operation_reduce x' y' false state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 Hcarry Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
+        have HaddcRed :=  apply_exact_add_operation_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 Hcarry Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
 
         destruct HaddcRed as [sr' [m' [HinstrsRed [HINV_sr' [Hmem_sr' [Hgmp_sr' [Hsfuncs_sr' [Hmemlen_m' [Hval_sr' HvalsPreserved]]]]]]]]].
         exists sr', fr'.
