@@ -1162,8 +1162,7 @@ Definition globals_all_mut s f :=
     globals_all_mut32 s f /\ globals_all_mut64 s f.
 
 Definition global_var_w var (s : store_record) (f : frame) := forall val,
-  exists s',
-    supdate_glob s (f_inst f) var (VAL_num val) = Some s'.
+  exists s', supdate_glob s (f_inst f) var (VAL_num val) = Some s'.
 
 Definition global_var_r var (s : store_record) (f : frame) :=
    exists v, sglob_val s (f_inst f) var = Some (VAL_num v).
@@ -1326,8 +1325,7 @@ Proof.
      apply nth_error_Some in Heqn''''. congruence.
      erewrite nth_error_set_nth_length; eauto.
      apply nth_error_Some. cbn in Heqn'''.
-     congruence.
-    }
+     congruence. }
      cbn in HG. edestruct HG. eauto. inv H0.
      Unshelve. auto.
 Qed.
@@ -1386,8 +1384,7 @@ Proof.
      specialize (Hcond e).
      rewrite -e in Hglob. rewrite H' in Hglob. inv Hglob.
      specialize (Hcond gmp_v (conj Logic.eq_refl Hunbound)).
-     lia.
-  }
+     lia. }
   { (* g <> global_mem_ptr *)
     assert (Hgmp_r : sglob_val sr (f_inst f) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp_v)))). {
     unfold sglob_val, sglob, sglob_ind in Hglob |- *.
@@ -4643,46 +4640,6 @@ Proof.
     now rewrite Hmemlength1 Hmemlength2 Hmemlength3.
 Qed.
 
-(* 2 tactics for reducing instructions for exact arithmetic operations (addc, addcarryc)
-   TODO: Consider merging/ refactoring (split in 2 in anticipation of supporting both addc and addcarryc) *)
-Ltac apply_exact_reduce_aux1 Hdes1 Hdes2 :=
-      intros; unfold apply_exact_add_operation;
-      (* remember to avoid unfolding *)
-      remember ((make_carry global_mem_ptr C1_ord glob_tmp1)) as carryInstrsC1;
-      remember ((make_carry global_mem_ptr C0_ord glob_tmp1)) as carryInstrsC0;
-      separate_instr;
-      (* Load and deserialise 1st argument *)
-      dostep_nary 0; [eapply r_local_get; eauto|];
-      dostep_nary 1; [eapply r_load_success; eauto|];
-      rewrite Hdes1;
-      (* Load and deserialise 1st argument *)
-      dostep_nary_eliml 0 1; [eapply r_local_get; eauto|];
-      dostep_nary_eliml 1 1; [eapply r_load_success; eauto|];
-      rewrite Hdes2;
-      (* Apply addition binary operation *)
-      dostep_nary 2; [constructor;apply rs_binop_success; now cbn|].
-
-Ltac apply_exact_reduce_aux2 v Hdes if_constr Hrewrite carry_instrs Hreduce :=
-      (* Apply bitmask *)
-      dostep_nary 2; [constructor; apply rs_binop_success; now cbn|];
-      rewrite uint63_add_i64_add;
-      (* Temporarily store the result in a global *)
-      dostep_nary 1; [rewrite unfold_val_notation; eapply r_global_set; eauto|];
-      (* Put the result on the stack again *)
-      dostep_nary 0; [eapply r_global_get; eauto|];
-      (* Load and deserialise the argument *)
-      dostep_nary_eliml 0 1; [eapply r_local_get; eauto|];
-      dostep_nary_eliml 1 1; [eapply r_load_success; eauto|];
-      rewrite Hdes;
-      (* Check if the addition overflowed is overflow *)
-      dostep_nary 2; [constructor; apply rs_relop|];
-      (* Step into the right branch and reduce make_carry *)
-      dostep_nary 1; [constructor; apply if_constr; rewrite Hrewrite; auto; try discriminate|];
-      dostep_nary 0; [eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto|];
-      reduce_under_label; [cbn; subst carry_instrs; apply Hreduce|];
-      dostep_nary 0; [constructor; apply rs_label_const; auto|];
-      now apply rt_refl.
-
 Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : localidx) (addr: i32) (val : i64) (m : meminst) bs : Prop :=
     lookup_N fr.(f_locs) l = Some (VAL_num (VAL_int32 addr))
     /\ load m (Wasm_int.N_of_uint i32m addr) 0%N (N.to_nat (tnum_length T_i64)) = Some bs
@@ -4776,19 +4733,74 @@ Proof.
   { (* addcarryc: Compute x + y + 1 and check if there is overflow *)
     admit. (* TODO: addcarryc *)
   } { (* addc: Compute x + y and check if there is overflow *)
-    destruct Hv as [[Heq Hv]|[Heq Hv]]; subst v;
-(* destruct (Z_lt_dec (to_Z (n1 + n2)) (to_Z n1)); *)
-    [exists sr_C0, m_C0|exists sr_C1, m_C1];
-    (* First reduce instructions *)
-    split. 1, 3: apply_exact_reduce_aux1 Hdesx Hdesy.
-    (* Reduce remaining instructions:  *)
-(*        - 1st case: There is a carry *)
-(*        - 2nd case: There is no carry *)
-    apply_exact_reduce_aux2 (VAL_int64 (Int64.repr (to_Z (n1 + n2)))) Hdesx rs_if_false uint63_nlt_int64_nlt carryInstrsC0 Hmake_carry_red_C0.
-    apply_exact_reduce_aux2 (VAL_int64 (Int64.repr (to_Z (n1 + n2)))) Hdesx rs_if_true uint63_lt_int64_lt carryInstrsC1 Hmake_carry_red_C1.
-    (* The assumption for the remaining goals for both cases are already in the context *)
-    all: repeat (split; auto); try now intros.
-    all: intros; eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=sr) (m:=m) (gmp:=gmp) (gmp':=(gmp + 16)%N); eauto; try lia; now erewrite ->Hsfs1; eauto.
+    destruct Hv as [[Heq Hv]|[Heq Hv]]; subst v.
+    { (* There is no overflow <-> x <= x + y  *)
+      exists sr_C0, m_C0.
+      split. {
+        intros; unfold apply_exact_add_operation.
+        (* remember to avoid unfolding *)
+        remember ((make_carry global_mem_ptr C1_ord glob_tmp1)) as carryInstrsC1;
+        remember ((make_carry global_mem_ptr C0_ord glob_tmp1)) as carryInstrsC0;
+        separate_instr.
+        (* Load and deserialise value of x *)
+        dostep_nary 0. eapply r_local_get; eauto.
+        dostep_nary 1. eapply r_load_success; eauto.
+        rewrite Hdesx.
+        (* Load and deserialise value of y *)
+        dostep_nary_eliml 0 1. eapply r_local_get; eauto.
+        dostep_nary_eliml 1 1. eapply r_load_success; eauto.
+        rewrite Hdesy.
+        (* Apply addition binary operation *)
+        dostep_nary 2. constructor; apply rs_binop_success; now cbn.
+        (* Apply bitmask *)
+        dostep_nary 2. constructor; apply rs_binop_success; now cbn.
+        rewrite uint63_add_i64_add.
+        (* Temporarily store the result in a global *)
+        dostep_nary 1. rewrite unfold_val_notation; eapply r_global_set; eauto.
+        (* Put the result on the stack again *)
+        dostep_nary 0. eapply r_global_get; eauto.
+        (* Load and deserialise value of x *)
+        dostep_nary_eliml 0 1. eapply r_local_get; eauto.
+        dostep_nary_eliml 1 1. eapply r_load_success; eauto.
+        rewrite Hdesx.
+        (* Check for overflow, step into the if-branch and reduce the make_carry instructions *)
+        dostep_nary 2. constructor; apply rs_relop.
+        dostep_nary 1. constructor; apply rs_if_false; rewrite uint63_nlt_int64_nlt; auto.
+        dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
+        reduce_under_label. subst carryInstrsC0; apply Hmake_carry_red_C0.
+        dostep_nary 0. constructor; apply rs_label_const; auto.
+        now apply rt_refl. }
+    repeat (split; auto); try now intros.
+    intros; eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=sr) (m:=m) (gmp:=gmp) (gmp':=(gmp + 16)%N); eauto; try lia; now erewrite ->Hsfs1; eauto. }
+    { (* There is overflow <-> x + y < x *)
+      exists sr_C1, m_C1.
+      split. {
+        intros; unfold apply_exact_add_operation.
+        remember ((make_carry global_mem_ptr C1_ord glob_tmp1)) as carryInstrsC1;
+        remember ((make_carry global_mem_ptr C0_ord glob_tmp1)) as carryInstrsC0;
+        separate_instr.
+        dostep_nary 0. eapply r_local_get; eauto.
+        dostep_nary 1. eapply r_load_success; eauto.
+        rewrite Hdesx.
+        dostep_nary_eliml 0 1. eapply r_local_get; eauto.
+        dostep_nary_eliml 1 1. eapply r_load_success; eauto.
+        rewrite Hdesy.
+        dostep_nary 2. constructor; apply rs_binop_success; now cbn.
+        dostep_nary 2. constructor; apply rs_binop_success; now cbn.
+        rewrite uint63_add_i64_add.
+        dostep_nary 1. rewrite unfold_val_notation; eapply r_global_set; eauto.
+        dostep_nary 0. eapply r_global_get; eauto.
+        dostep_nary_eliml 0 1. eapply r_local_get; eauto.
+        dostep_nary_eliml 1 1. eapply r_load_success; eauto.
+        rewrite Hdesx.
+        dostep_nary 2. constructor; apply rs_relop.
+        dostep_nary 1. constructor; apply rs_if_true; rewrite uint63_lt_int64_lt; auto. discriminate.
+        dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
+        reduce_under_label. subst carryInstrsC1; apply Hmake_carry_red_C1.
+        dostep_nary 0. constructor; apply rs_label_const; auto.
+        now apply rt_refl. }
+    repeat (split; auto); try now intros.
+    intros; eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=sr) (m:=m) (gmp:=gmp) (gmp':=(gmp + 16)%N); eauto; try lia; now erewrite ->Hsfs1; eauto. }
 Admitted.
 
 Ltac dep_destruct_primint v p x :=
@@ -4997,8 +5009,6 @@ Proof.
       assert (Hgmp_w' : INV_global_mem_ptr_writable s' f) by now destruct Hinv'.
       assert (Z.of_N (gmp_v + 8)%N < Wasm_int.Int32.modulus)%Z as HgmpModulus by now
           apply mem_length_upper_bound in Hmem5; simpl_modulus; cbn in Hmem5 |- *.
-
-      (* have HincGmp := increment_global_mem_ptr_reduce s' f 8%N state gmp_v Hgmp_w' Hsglobval_s' HgmpModulus. *)
       assert (HfsEq: s_funcs s = s_funcs s') by now subst.
       assert (HfsEq': s_funcs s' = s_funcs s_final) by now apply update_global_preserves_funcs in Hupd_glob.
       assert (HfsEq'': s_funcs s = s_funcs s_final) by now subst.
@@ -5950,7 +5960,7 @@ Proof.
         remember {|f_locs := set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N))));
                    f_inst := f_inst f|} as fr'.
 
-        assert (Hoverflow:
+        assert (Hcarry:
                  (~ (to_Z (n1 + n2) < to_Z n1)%Z
                   /\ v = Vconstr c0_tag [Vprim (AstCommon.primInt ; (n1 + n2)%uint63)])
                  \/
@@ -5967,7 +5977,7 @@ Proof.
             apply not_true_is_false in Heqn.
             now rewrite Heqn in Hres. }
 
-        have HaddcRed :=  apply_exact_add_operation_reduce x' y' false state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 Hoverflow Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
+        have HaddcRed :=  apply_exact_add_operation_reduce x' y' false state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 Hcarry Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
 
         destruct HaddcRed as [sr' [m' [HinstrsRed [HINV_sr' [Hmem_sr' [Hgmp_sr' [Hsfuncs_sr' [Hmemlen_m' [Hval_sr' HvalsPreserved]]]]]]]]].
         exists sr', fr'.
