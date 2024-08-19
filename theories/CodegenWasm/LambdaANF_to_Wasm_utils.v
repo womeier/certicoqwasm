@@ -705,6 +705,28 @@ Proof.
 Qed.
 
 
+(* a bit stronger than set_lists_In *)
+Lemma set_lists_nth_error {A} : forall xs (vs : list A) rho rho' x v,
+  set_lists xs vs rho = Some rho' ->
+  In x xs ->
+  rho' ! x = Some v ->
+  exists k, nth_error vs k = Some v /\ nth_error xs k = Some x.
+Proof.
+  induction xs; intros.
+  - inv H0.
+  - destruct H0.
+    + (* a=v *)
+      subst a. destruct vs. inv H. cbn in H. destruct (set_lists xs vs rho) eqn:Heqn; inv H.
+      rewrite M.gss in H1. inv H1. exists 0. now cbn.
+    + (* a<>v *)
+      destruct vs. inv H. cbn in H. destruct (set_lists xs vs rho) eqn:Heqn; inv H.
+      destruct (var_dec a x).
+      * subst. rewrite M.gss in H1; inv H1. exists 0; now cbn.
+      * rewrite M.gso in H1; auto.
+        destruct (IHxs _ _ _ _ _ Heqn H0 H1) as [k [Hk1 Hk2]]. exists (S k). now cbn.
+Qed.
+
+
 (* TODO: move this to cps_util *)
 Definition Forall_constructors_in_e (P: var -> ctor_tag -> list var -> Prop) (e:exp) :=
   forall x t  ys e',

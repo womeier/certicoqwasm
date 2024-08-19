@@ -15,34 +15,32 @@
  *)
 Set Printing Compact Contexts.
 
-From compcert Require Import Coqlib.
+From compcert Require Import
+  Coqlib
+  lib.Integers common.Memory.
 
-Require Import LambdaANF.cps LambdaANF.eval LambdaANF.cps_util LambdaANF.List_util
-               LambdaANF.Ensembles_util LambdaANF.identifiers
-               LambdaANF.shrink_cps_corresp.
-
-
-Require Import Coq.Program.Program Coq.Sets.Ensembles
-               Coq.Logic.Decidable Coq.Lists.ListDec
-               Coq.Relations.Relations Relations.Relation_Operators Lia
-               EqdepFacts.
-
-Require Import compcert.lib.Integers compcert.common.Memory.
-
-From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm_primitives LambdaANF_to_Wasm LambdaANF_to_Wasm_utils.
-
-From Wasm Require Import datatypes operations host memory_list opsem
-                         type_preservation instantiation_spec
-                         instantiation_properties properties common numerics.
-Import Wasm_int.
-
-Require Import Libraries.maps_util.
-From Coq Require Import List Nnat Uint63.
-
-(* Avoid unfolding during proofs *)
-Opaque Uint63.to_Z.
+From CertiCoq Require Import
+  LambdaANF.cps LambdaANF.eval LambdaANF.cps_util LambdaANF.List_util
+  LambdaANF.Ensembles_util LambdaANF.identifiers
+  LambdaANF.shrink_cps_corresp
+  Libraries.maps_util
+  CodegenWasm.LambdaANF_to_Wasm
+  CodegenWasm.LambdaANF_to_Wasm_utils
+  CodegenWasm.LambdaANF_to_Wasm_primitives.
 
 From MetaCoq Require Import Common.Kernames.
+
+From Coq Require Import
+  Program.Program Sets.Ensembles
+  Logic.Decidable Lists.ListDec
+  Relations.Relations Relations.Relation_Operators Lia
+  EqdepFacts
+  List Nnat Uint63.
+
+From Wasm Require Import
+  datatypes operations host memory_list opsem
+  type_preservation instantiation_spec
+  instantiation_properties properties common numerics.
 
 Import ssreflect eqtype ssrbool eqtype.
 Import LambdaANF.toplevel LambdaANF.cps compM.
@@ -51,6 +49,11 @@ Import ExtLib.Structures.Monad MonadNotation.
 Import bytestring.
 Import ListNotations SigTNotations.
 Import seq.
+Import Wasm_int.
+
+(* Avoid unfolding during proofs *)
+Opaque Uint63.to_Z.
+
 
 (* Restrictions on LambdaANF expressions, s.t. everything fits in Wasm i32s *)
 Section SIZE_RESTRICTED.
@@ -608,7 +611,7 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
        ; BI_const_num (nat_to_value 8)
        ; BI_binop T_i32 (Binop_i BOI_add)
        ; BI_global_set global_mem_ptr
-        ] ++ e')
+       ] ++ e')
 
 | R_prim : forall x x' p op_name s b n op ys e e' prim_instrs,
     repr_var (lenv:=lenv) x x' ->
@@ -859,12 +862,13 @@ Proof.
       destruct p0; try inv Hprimop; econstructor; econstructor; eauto.
     }
     destruct l. 2: inv Hprimop.
-    (* Ternary ops *)
-    destruct (translate_var nenv lenv v0 _) eqn:Hx. inv Hprimop.
-    destruct (translate_var nenv lenv v1 _) eqn:Hy. inv Hprimop.
-    destruct (translate_var nenv lenv v2 _) eqn:Hz. inv Hprimop.
-    unfold translate_primitive_ternary_op in Hprimop.
-    destruct p0; try inv Hprimop; econstructor; econstructor; eauto.
+    { (* Ternary ops *)
+      destruct (translate_var nenv lenv v0 _) eqn:Hx. inv Hprimop.
+      destruct (translate_var nenv lenv v1 _) eqn:Hy. inv Hprimop.
+      destruct (translate_var nenv lenv v2 _) eqn:Hz. inv Hprimop.
+      unfold translate_primitive_ternary_op in Hprimop.
+      destruct p0; try inv Hprimop; econstructor; econstructor; eauto.
+    }
   - (* Ehalt *)
     simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
     injection H => instr'. subst. constructor. now econstructor.
@@ -1135,7 +1139,7 @@ Definition rel_env_LambdaANF_Wasm {lenv} (e : exp) (rho : LambdaANF.eval.env)
                stored_in_locals (lenv:=lenv) x w fr /\
                repr_val_LambdaANF_Wasm v sr (f_inst fr) w)).
 
-(* INVARIANT *)
+(* INVARIANTS *)
 
 Notation i32_glob gidx := (In gidx [ result_var ; result_out_of_mem ; global_mem_ptr ; constr_alloc_ptr ]).
 Notation i64_glob gidx := (In gidx [ glob_tmp1 ; glob_tmp2 ; glob_tmp3 ; glob_tmp4 ]).
@@ -1509,7 +1513,7 @@ Qed.
 Corollary update_global_preserves_INV : forall sr sr' i f m num,
   (i32_glob i /\ typeof_num num = T_i32) \/ (i64_glob i /\ typeof_num num = T_i64) ->
   INV sr f ->
-  (* if result_out_of_mem is set, INV doesn't need to hold anymore *)
+  (* if result_out_of_mem is set (to 1), INV doesn't need to hold anymore *)
   result_out_of_mem <> i ->
   (* if updated gmp, new value in mem *)
   smem sr (f_inst f) = Some m ->
@@ -1830,7 +1834,7 @@ Proof with eassumption.
   unfold INV_i64_glob_tmps_writable. intros. eapply update_mem_preserves_global_var_w; eauto.
 Qed.
 
-Corollary sgrow_mem_preserves_INV : forall sr sr' fr bytes size,
+Corollary smem_grow_preserves_INV : forall sr sr' fr bytes size,
   INV sr fr ->
   smem_grow sr (f_inst fr) bytes = Some (sr', size) ->
   INV sr' fr.
@@ -2017,9 +2021,6 @@ Ltac simpl_modulus_in H :=
   unfold Wasm_int.Int32.modulus, Wasm_int.Int64.modulus, Wasm_int.Int32.half_modulus, Wasm_int.Int64.half_modulus, two_power_nat in H; cbn in H.
 Ltac simpl_modulus :=
   unfold Wasm_int.Int64.max_unsigned, Wasm_int.Int32.modulus, Wasm_int.Int64.modulus, Wasm_int.Int32.half_modulus, Wasm_int.Int64.half_modulus, two_power_nat.
-
-Ltac simpl_modulus64_in H :=
-  unfold Wasm_int.Int64.max_unsigned, Wasm_int.Int64.half_modulus, Wasm_int.Int64.modulus, two_power_nat in H.
 
 (* Print caseConsistent. *)
 Lemma caseConsistent_findtag_In_cenv:
@@ -2299,7 +2300,7 @@ Proof with eauto.
       - intros. eapply mem_grow_preserves_original_values; eauto; unfold page_limit; lia.
     } left. split.
     { (* invariant *)
-      eapply sgrow_mem_preserves_INV; eauto. }
+      eapply smem_grow_preserves_INV; eauto. }
     { (* enough memory available *)
       intros. split.
       - erewrite <- smem_grow_peserves_globals; eauto.
@@ -3519,42 +3520,6 @@ Proof.
    }
 Qed.
 
-Lemma translate_functions_numOf_fundefs_length : forall fds fns,
-  translate_functions nenv cenv fenv penv fds = Ret fns ->
-  numOf_fundefs fds = length fns.
-Proof.
-  induction fds; intros. 2: { now inv H. }
-  simpl in H.
-  destruct (translate_function nenv cenv fenv penv v l e). inv H.
-  destruct (translate_functions _ _ _ _ fds). inv H. destruct fns; inv H. cbn. now rewrite -IHfds.
-Qed.
-
-Lemma collect_function_vars_length_numOf_fundefs_eq : forall fds e,
-  length (collect_function_vars (Efun fds e)) = numOf_fundefs fds.
-Proof.
-  induction fds; intros; auto. cbn. f_equal. now eapply IHfds with (e:=e).
-Qed.
-
-(* a bit stronger than set_lists_In *)
-Lemma set_lists_nth_error {A} : forall xs (vs : list A) rho rho' x v,
-  set_lists xs vs rho = Some rho' ->
-  In x xs ->
-  rho' ! x = Some v ->
-  exists k, nth_error vs k = Some v /\ nth_error xs k = Some x.
-Proof.
-  induction xs; intros.
-  - inv H0.
-  - destruct H0.
-    + (* a=v *)
-      subst a. destruct vs. inv H. cbn in H. destruct (set_lists xs vs rho) eqn:Heqn; inv H.
-      rewrite M.gss in H1. inv H1. exists 0. now cbn.
-    + (* a<>v *)
-      destruct vs. inv H. cbn in H. destruct (set_lists xs vs rho) eqn:Heqn; inv H.
-      destruct (var_dec a x).
-      * subst. rewrite M.gss in H1; inv H1. exists 0; now cbn.
-      * rewrite M.gso in H1; auto.
-        destruct (IHxs _ _ _ _ _ Heqn H0 H1) as [k [Hk1 Hk2]]. exists (S k). now cbn.
-Qed.
 
 (* Supported primitive functions do not return functions *)
 Definition prim_funs_env_returns_no_funvalues (prim_funs : M.t (list val -> option val)) : Prop :=
