@@ -1807,6 +1807,16 @@ Proof.
   destruct (lookup_N (s_globals sr) g). inv H. reflexivity. inv H.
 Qed.
 
+Lemma update_memory_preserves_globals (sr : store_record) (fr : frame) :
+  forall g gv sr' m,
+    sglob_val sr (f_inst fr) g = Some gv ->
+    sr' = upd_s_mem sr (set_nth m sr.(s_mems) 0 m) ->
+    sglob_val sr' (f_inst fr) g = Some gv.
+Proof.
+  intros; subst sr'.
+  unfold upd_s_mem, sglob_val, sglob, sglob_ind in H |- *; cbn.
+  now destruct (lookup_N (inst_globals (f_inst fr))) eqn:Hinstglob.
+Qed.
 
 Lemma store_offset_eq :
   forall m addr off w,

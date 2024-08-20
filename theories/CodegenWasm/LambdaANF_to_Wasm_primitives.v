@@ -1,4 +1,4 @@
-From Coq Require Import POrderedType ZArith BinNat List Lia Uint63.
+From Coq Require Import POrderedType ZArith BinNat List Lia Uint63 Program.
 From Wasm Require Import datatypes operations numerics.
 Import Wasm_int.
 
@@ -714,6 +714,9 @@ Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
   end.
 
 End WRAPPERS.
+
+Ltac dep_destruct_primint v p x :=
+  try dependent destruction v; try discriminate; dependent destruction p; dependent destruction x; try discriminate.
 
 Section CORRECTNESS.
 
