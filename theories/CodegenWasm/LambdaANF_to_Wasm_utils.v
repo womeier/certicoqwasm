@@ -23,6 +23,8 @@ Import ssreflect ssrbool eqtype.
 Import ListNotations.
 Import seq.
 
+Ltac unfold_bits :=
+  unfold bits, serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian.
 
 Section General.
 
@@ -700,6 +702,28 @@ Proof.
       constructor 2.
       inv H. exfalso; apply n; reflexivity.
       eapply IHxs; eauto.
+Qed.
+
+
+(* a bit stronger than set_lists_In *)
+Lemma set_lists_nth_error {A} : forall xs (vs : list A) rho rho' x v,
+  set_lists xs vs rho = Some rho' ->
+  In x xs ->
+  rho' ! x = Some v ->
+  exists k, nth_error vs k = Some v /\ nth_error xs k = Some x.
+Proof.
+  induction xs; intros.
+  - inv H0.
+  - destruct H0.
+    + (* a=v *)
+      subst a. destruct vs. inv H. cbn in H. destruct (set_lists xs vs rho) eqn:Heqn; inv H.
+      rewrite M.gss in H1. inv H1. exists 0. now cbn.
+    + (* a<>v *)
+      destruct vs. inv H. cbn in H. destruct (set_lists xs vs rho) eqn:Heqn; inv H.
+      destruct (var_dec a x).
+      * subst. rewrite M.gss in H1; inv H1. exists 0; now cbn.
+      * rewrite M.gso in H1; auto.
+        destruct (IHxs _ _ _ _ _ Heqn H0 H1) as [k [Hk1 Hk2]]. exists (S k). now cbn.
 Qed.
 
 
@@ -1728,8 +1752,8 @@ Qed.
 (* global vars *)
 
 Lemma update_global_get_same : forall sr sr' i val fr,
-  supdate_glob sr (f_inst fr) i (VAL_num (VAL_int32 val)) = Some sr' ->
-     sglob_val sr' (f_inst fr) i = Some (VAL_num (VAL_int32 val)).
+  supdate_glob sr (f_inst fr) i val = Some sr' ->
+     sglob_val sr' (f_inst fr) i = Some val.
 Proof.
   unfold supdate_glob, supdate_glob_s, sglob_val, sglob, sglob_ind. cbn. intros.
   destruct (lookup_N (inst_globals (f_inst fr)) i) eqn:H1. 2: inv H. cbn in H.
@@ -1741,9 +1765,9 @@ Qed.
 Lemma update_global_get_other : forall i j sr sr' fr num val,
   NoDup (inst_globals (f_inst fr)) ->
   i <> j ->
-  sglob_val sr (f_inst fr) i = Some (VAL_num (VAL_int32 val)) ->
-  supdate_glob sr (f_inst fr) j (VAL_num (VAL_int32 num)) = Some sr' ->
-  sglob_val sr' (f_inst fr) i = Some (VAL_num (VAL_int32 val)).
+  sglob_val sr (f_inst fr) i = Some (VAL_num val) ->
+  supdate_glob sr (f_inst fr) j (VAL_num num) = Some sr' ->
+  sglob_val sr' (f_inst fr) i = Some (VAL_num val).
 Proof.
   intros ? ? ? ? ? ? ? Hnodup Hneq Hr Hw.
     unfold supdate_glob, sglob_ind, supdate_glob_s in *.
@@ -1782,6 +1806,31 @@ Proof.
   destruct (lookup_N (inst_globals (f_inst fr)) j). 2: inv H. cbn in H.
   destruct (lookup_N (s_globals sr) g). inv H. reflexivity. inv H.
 Qed.
+
+Lemma update_memory_preserves_globals (sr : store_record) (fr : frame) :
+  forall g gv sr' m,
+    sglob_val sr (f_inst fr) g = Some gv ->
+    sr' = upd_s_mem sr (set_nth m sr.(s_mems) 0 m) ->
+    sglob_val sr' (f_inst fr) g = Some gv.
+Proof.
+  intros; subst sr'.
+  unfold upd_s_mem, sglob_val, sglob, sglob_ind in H |- *; cbn.
+  now destruct (lookup_N (inst_globals (f_inst fr))) eqn:Hinstglob.
+Qed.
+
+Lemma store_offset_eq :
+  forall m addr off w,
+    store m addr off (bits w) (Datatypes.length (bits w)) = store m (addr + off) 0%N (bits w) (Datatypes.length (bits w)).
+Proof. intros; unfold store; now replace (addr + off + 0)%N with (addr + off)%N by now cbn. Qed.
+
+Lemma i32_val_4_bytes : forall v, length (bits (VAL_int32 v)) = 4.
+Proof. auto. Qed.
+
+Lemma i64_val_8_bytes : forall v, length (bits (VAL_int64 v)) = 8.
+Proof. auto. Qed.
+
+Lemma unfold_val_notation : forall v, $VN v = $V (VAL_num v).
+Proof. auto. Qed.
 
 End Wasm.
 

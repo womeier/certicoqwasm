@@ -362,7 +362,7 @@ Proof.
       end.
     }
     { (* Binary operations *)
-      inv H1; unfold div_instrs, mod_instrs, shift_instrs, make_boolean_valued_comparison, compare_instrs, apply_exact_add_operation, apply_exact_sub_operation, make_carry, diveucl_instrs, mulc_instrs, make_product, load_local_i64, bitmask_instrs; prepare_solve_bet;
+      inv H1; unfold div_instrs, mod_instrs, shift_instrs, make_boolean_valued_comparison, compare_instrs, apply_add_carry_operation, apply_sub_carry_operation, make_carry, diveucl_instrs, mulc_instrs, make_product, load_local_i64, bitmask_instrs; prepare_solve_bet;
       match goal with
       | |- be_typing _ (apply_binop_and_store_i64 _ _ _ _ _) (Tf [] [T_num T_i32]) => now eapply simple_arith_prim_op_typing
       | |- be_typing _ (increment_global_mem_ptr _ _) (Tf _ _) => now eapply increment_global_mem_ptr_typing
@@ -1621,6 +1621,7 @@ Definition INV_instantiation (s : store_record) (f : frame) (num_funs : nat) :=
  /\ INV_global_mem_ptr_multiple_of_two s f
  /\ INV_exists_func_grow_mem s f
  /\ INV_inst_funcs_id s f
+ /\ INV_i64_glob_tmps_writable s f
 (* additional *)
  /\ INV_instantiation_elems s f num_funs
  /\ INV_instantiation_table_empty s f num_funs.
@@ -1745,7 +1746,7 @@ Proof.
   split.
   (* INV *)
   unfold INV_result_var_writable, INV_result_var_out_of_mem_writable, INV_global_mem_ptr_writable,
-  INV_constr_alloc_ptr_writable. unfold global_var_w, supdate_glob, supdate_glob_s.
+  INV_constr_alloc_ptr_writable, INV_i64_glob_tmps_writable. unfold global_var_w, supdate_glob, supdate_glob_s.
   cbn. rewrite F2.
   (* cbn in Hglobals, Hfuncs, Hmems. rewrite F0. cbn. *)
   split. (* res_var_w *)   eexists. rewrite -E3. reflexivity.
@@ -1755,7 +1756,7 @@ Proof.
   split. (* gmp_w *) eexists. rewrite -E3. reflexivity.
   split. (* cap_w *) eexists. rewrite -E3. reflexivity.
   (* globals mut i32 *)
-  split. unfold INV_globals_all_mut, globals_all_mut. intros. unfold lookup_N in H1.
+  split. unfold INV_globals_all_mut, globals_all_mut, globals_all_mut32, globals_all_mut64. split; intros. unfold lookup_N in H1.
   {
     unfold result_var, result_out_of_mem, global_mem_ptr, constr_alloc_ptr in *.
     cbn in H0; try subst gidx; try rewrite F2 in H0; unfold lookup_N in H0.
@@ -1770,6 +1771,16 @@ Proof.
     replace g with 3%N in * by congruence. inv H1. now eexists.
     repeat (try destruct H;[now subst gidx|]).
     now inv H.
+  }
+  {
+    unfold glob_tmp1, glob_tmp2, glob_tmp3, glob_tmp4 in *.
+    cbn in H0; try subst gidx; try rewrite F2 in H0; unfold lookup_N in H0.    
+    rewrite -E3 in H1.
+    destruct (List.in_inv H). subst gidx. replace (N.to_nat 4) with 4 in * by now cbn. cbn in H0. inv H0. inv H1. now eexists.
+    destruct (List.in_inv H2). subst gidx. replace (N.to_nat 5) with 5 in * by now cbn. cbn in H0. inv H0. inv H1. now eexists.
+    destruct (List.in_inv H3). subst gidx. replace (N.to_nat 6) with 6 in * by now cbn. inv H0. inv H1. now eexists.
+    destruct (List.in_inv H4). subst gidx. replace (N.to_nat 7) with 7 in * by now cbn. inv H0. inv H1. now eexists.
+    now inv H5.
   }
   split. (* linmem *)
   { unfold INV_linear_memory. unfold smem. cbn. rewrite F3.
@@ -1830,6 +1841,17 @@ Proof.
       rewrite -E0 in Hbound. cbn in Hbound.
       do 2! rewrite map_length in Hbound. lia. }
   }
+  split. (* i64 globs writable *)
+  { intros gidx [Htmp1 | [Htmp2 | [Htmp3 | [Htmp4 | Hfls]]]]; intro v; unfold glob_tmp1, glob_tmp2, glob_tmp3, glob_tmp4 in *; auto; try subst gidx; 
+    try (eexists;
+    rewrite -E3;
+    cbn;
+    unfold Pos.to_nat in *; cbn;
+    cbn;
+    rewrite F2; cbn;
+    unfold Pos.to_nat in *; cbn;
+    reflexivity).
+  }  
   split. (* instantiation_elems *)
   { unfold INV_instantiation_elems.
     apply translate_functions_length in HtransFns. split.
@@ -2357,9 +2379,10 @@ Theorem post_instantiation_reduce {fenv} : forall hs sr fr fr' num_funs,
   s_funcs sr = s_funcs sr'.
 Proof.
   intros ????? Hfenv Hinv Hfinst.
-  destruct Hinv as [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]]]]].
-  destruct H15 as [HiT HsT].
-  destruct H14 as [HsE HiE].
+  unfold INV_instantiation in *.
+  destruct Hinv as [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]]]]]].
+  destruct H16 as [HiT HsT].
+  destruct H15 as [HsE HiE].
 
   assert (HiE1': (forall i : nat,
       i < num_funs + 0 -> nth_error (inst_elems (f_inst fr')) i = Some (N.of_nat i))). {
@@ -2433,7 +2456,8 @@ Proof.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
   split. (* globals all mut i32s *)
-    unfold INV_globals_all_mut, globals_all_mut. rewrite -Hglobals. assumption.
+    unfold INV_globals_all_mut, globals_all_mut, globals_all_mut32, globals_all_mut64.
+    rewrite -Hglobals. assumption.
   split. (* linear memory *)
     unfold INV_linear_memory, smem. by rewrite -Hmems.
   split. (* global_mem_ptr in linear mem *)
@@ -2456,7 +2480,16 @@ Proof.
   split. (* exists mem_grow_func *)
     unfold INV_exists_func_grow_mem. rewrite -Hfuncs. assumption.
   (* inst funcs id mapping *)
-  unfold INV_inst_funcs_id. rewrite -Hfuncs. assumption.
+  split. 
+    unfold INV_inst_funcs_id. rewrite -Hfuncs. assumption.
+    unfold INV_i64_glob_tmps_writable.
+    intros. intro.
+    destruct (H14 gidx H15 val) as [s Hs].
+    unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. 
+    repeat rewrite Hglobals in Hs.
+    destruct (lookup_N (inst_globals (f_inst fr)) gidx)=>//. cbn. cbn in Hs.
+    rewrite <- Hglobals in *.
+    destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
 Qed.
 
 
