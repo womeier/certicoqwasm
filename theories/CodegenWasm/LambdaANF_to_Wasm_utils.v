@@ -1824,13 +1824,13 @@ Lemma store_offset_eq :
 Proof. intros; unfold store; now replace (addr + off + 0)%N with (addr + off)%N by now cbn. Qed.
 
 Lemma i32_val_4_bytes : forall v, length (bits (VAL_int32 v)) = 4.
-Proof. intros; unfold_bits; now cbn. Qed.
+Proof. auto. Qed.
 
 Lemma i64_val_8_bytes : forall v, length (bits (VAL_int64 v)) = 8.
-Proof. intros; unfold_bits; now cbn. Qed.
+Proof. auto. Qed.
 
 Lemma unfold_val_notation : forall v, $VN v = $V (VAL_num v).
-Proof. intros; now destruct v. Qed.
+Proof. auto. Qed.
 
 End Wasm.
 
