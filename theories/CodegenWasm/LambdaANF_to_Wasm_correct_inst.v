@@ -362,7 +362,7 @@ Proof.
       end.
     }
     { (* Binary operations *)
-      inv H1; unfold div_instrs, mod_instrs, shift_instrs, make_boolean_valued_comparison, compare_instrs, apply_exact_add_operation, apply_exact_sub_operation, make_carry, diveucl_instrs, mulc_instrs, make_product, load_local_i64, bitmask_instrs; prepare_solve_bet;
+      inv H1; unfold div_instrs, mod_instrs, shift_instrs, make_boolean_valued_comparison, compare_instrs, apply_add_carry_operation, apply_sub_carry_operation, make_carry, diveucl_instrs, mulc_instrs, make_product, load_local_i64, bitmask_instrs; prepare_solve_bet;
       match goal with
       | |- be_typing _ (apply_binop_and_store_i64 _ _ _ _ _) (Tf [] [T_num T_i32]) => now eapply simple_arith_prim_op_typing
       | |- be_typing _ (increment_global_mem_ptr _ _) (Tf _ _) => now eapply increment_global_mem_ptr_typing

@@ -462,19 +462,19 @@ Inductive repr_primitive_binary_operation : primop -> localidx -> localidx -> li
 
 | Rprim_addc : forall x y,
     repr_primitive_binary_operation PrimInt63addc x y
-      (apply_exact_add_operation global_mem_ptr glob_tmp1 x y false)
+      (apply_add_carry_operation global_mem_ptr glob_tmp1 x y false)
 
 | Rprim_addcarryc : forall x y,
     repr_primitive_binary_operation PrimInt63addcarryc x y
-      (apply_exact_add_operation global_mem_ptr glob_tmp1 x y true)
+      (apply_add_carry_operation global_mem_ptr glob_tmp1 x y true)
 
 | Rprim_subc : forall x y,
     repr_primitive_binary_operation PrimInt63subc x y
-      (apply_exact_sub_operation global_mem_ptr glob_tmp1 x y false)
+      (apply_sub_carry_operation global_mem_ptr glob_tmp1 x y false)
 
 | Rprim_subcarryc : forall x y,
     repr_primitive_binary_operation PrimInt63subcarryc x y
-      (apply_exact_sub_operation global_mem_ptr glob_tmp1 x y true)
+      (apply_sub_carry_operation global_mem_ptr glob_tmp1 x y true)
 
 | Rprim_mulc : forall x y,
     repr_primitive_binary_operation PrimInt63mulc x y
@@ -4479,10 +4479,9 @@ Lemma make_carry_reduce (ord : N) :
     (Z.of_N gmp + Z.of_N page_size <= Z.of_N (mem_length m) < Int32.modulus)%Z ->
     sglob_val sr (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr res))) ->
     exists (sr': store_record) m',
-      (forall instrs,
-          reduce_trans
-            (state, sr, fr, map AI_basic (make_carry global_mem_ptr ord glob_tmp1) ++ instrs)
-            (state, sr', fr, ($VN (VAL_int32 (N_to_i32 (gmp + 8)%N))) :: instrs))
+      reduce_trans
+        (state, sr, fr, map AI_basic (make_carry global_mem_ptr ord glob_tmp1))
+        (state, sr', fr, [$VN (VAL_int32 (N_to_i32 (gmp + 8)%N))])
       /\ INV sr' fr
       /\ smem sr' (f_inst fr) = Some m'
       /\ sglob_val sr' (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 (gmp + 16))))
@@ -4594,12 +4593,7 @@ Proof.
     now rewrite Hmemlength1 Hmemlength2 Hmemlength3.
 Qed.
 
-Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : localidx) (addr: i32) (val : i64) (m : meminst) bs : Prop :=
-    lookup_N fr.(f_locs) l = Some (VAL_num (VAL_int32 addr))
-    /\ load m (Wasm_int.N_of_uint i32m addr) 0%N (N.to_nat (tnum_length T_i64)) = Some bs
-    /\ wasm_deserialise bs T_i64 = (VAL_int64 val).
-
-Lemma apply_exact_add_operation_reduce (x y : localidx) :
+Lemma apply_add_carry_operation_reduce (x y : localidx) :
   forall state sr fr m gmp_v addrx addry bsx bsy n1 n2 c0_tag c1_tag it_carry v,
     INV sr fr ->
     M.get c0_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N C0_ord) ->
@@ -4616,7 +4610,7 @@ Lemma apply_exact_add_operation_reduce (x y : localidx) :
     exists (sr': store_record) m',
       (forall instrs,
           reduce_trans
-            (state, sr, fr, map AI_basic (apply_exact_add_operation global_mem_ptr glob_tmp1 x y false) ++ instrs)
+            (state, sr, fr, map AI_basic (apply_add_carry_operation global_mem_ptr glob_tmp1 x y false) ++ instrs)
             (state, sr', fr, ($VN (VAL_int32 (N_to_i32 (gmp_v + 8)%N))) :: instrs))
       /\ INV sr' fr
       /\ smem sr' (f_inst fr) = Some m'
@@ -4687,7 +4681,7 @@ Proof.
   { (* There is no overflow <-> x <= x + y  *)
     exists sr_C0, m_C0.
     split. {
-      intros; unfold apply_exact_add_operation.
+      intros; unfold apply_add_carry_operation.
       (* remember to avoid unfolding *)
       remember ((make_carry global_mem_ptr C1_ord glob_tmp1)) as carryInstrsC1;
         remember ((make_carry global_mem_ptr C0_ord glob_tmp1)) as carryInstrsC0;
@@ -4725,7 +4719,7 @@ Proof.
   { (* There is overflow <-> x + y < x *)
     exists sr_C1, m_C1.
     split. {
-      intros; unfold apply_exact_add_operation.
+      intros; unfold apply_add_carry_operation.
       remember ((make_carry global_mem_ptr C1_ord glob_tmp1)) as carryInstrsC1;
         remember ((make_carry global_mem_ptr C0_ord glob_tmp1)) as carryInstrsC0;
         separate_instr.
@@ -5924,7 +5918,7 @@ Proof.
             apply not_true_is_false in Heqn.
             now rewrite Heqn in Hres. }
 
-        have HaddcRed :=  apply_exact_add_operation_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 Hcarry Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
+        have HaddcRed :=  apply_add_carry_operation_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 Hcarry Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
 
         destruct HaddcRed as [sr' [m' [HinstrsRed [HINV_sr' [Hmem_sr' [Hgmp_sr' [Hsfuncs_sr' [Hmemlen_m' [Hval_sr' HvalsPreserved]]]]]]]]].
         exists sr', fr'.

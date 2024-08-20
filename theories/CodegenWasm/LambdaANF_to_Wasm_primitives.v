@@ -1,5 +1,5 @@
 From Coq Require Import POrderedType ZArith BinNat List Lia Uint63 Program.
-From Wasm Require Import datatypes operations numerics.
+From Wasm Require Import datatypes operations numerics host opsem properties common.
 Import Wasm_int.
 
 Require Import compcert.lib.Coqlib.
@@ -157,7 +157,7 @@ Definition make_carry (ord : N) (gidx : globalidx) : list basic_instruction:=
   ; BI_binop T_i32 (Binop_i BOI_add)
   ] ++ increment_global_mem_ptr 16%N.
 
-Definition apply_exact_add_operation (x y : localidx) (addone : bool) : list basic_instruction :=
+Definition apply_add_carry_operation (x y : localidx) (addone : bool) : list basic_instruction :=
     load_local_i64 x ++ load_local_i64 y ++
     [ BI_binop T_i64 (Binop_i BOI_add) ] ++
     (if addone then
@@ -170,7 +170,7 @@ Definition apply_exact_add_operation (x y : localidx) (addone : bool) : list bas
     ; BI_if (BT_valtype (Some (T_num T_i32))) (make_carry C1_ord glob_tmp1) (make_carry C0_ord glob_tmp1)
     ].
 
-Definition apply_exact_sub_operation (x y : localidx) (subone : bool) : list basic_instruction :=
+Definition apply_sub_carry_operation (x y : localidx) (subone : bool) : list basic_instruction :=
     load_local_i64 x ++ load_local_i64 y ++
     [ BI_binop T_i64 (Binop_i BOI_sub) ] ++
     (if subone then
@@ -477,10 +477,10 @@ Definition translate_primitive_binary_op op (x y : localidx) : error (list basic
   | PrimInt63ltb       => Ret (make_boolean_valued_comparison x y (ROI_lt SX_U))
   | PrimInt63leb       => Ret (make_boolean_valued_comparison x y (ROI_le SX_U))
   | PrimInt63compare   => Ret (compare_instrs x y)
-  | PrimInt63addc      => Ret (apply_exact_add_operation x y false)
-  | PrimInt63addcarryc => Ret (apply_exact_add_operation x y true)
-  | PrimInt63subc      => Ret (apply_exact_sub_operation x y false)
-  | PrimInt63subcarryc => Ret (apply_exact_sub_operation x y true)
+  | PrimInt63addc      => Ret (apply_add_carry_operation x y false)
+  | PrimInt63addcarryc => Ret (apply_add_carry_operation x y true)
+  | PrimInt63subc      => Ret (apply_sub_carry_operation x y false)
+  | PrimInt63subcarryc => Ret (apply_sub_carry_operation x y true)
   | PrimInt63mulc      => Ret (mulc_instrs x y)
   | PrimInt63diveucl   => Ret (diveucl_instrs x y)
   | _ => Err "Unknown primitive binary operator"
@@ -720,6 +720,8 @@ Ltac dep_destruct_primint v p x :=
 
 Section CORRECTNESS.
 
+Context `{ho : host}.
+
 (* Arguments to primitive operations can only be primInts
    (Eventually adapt for floats) *)
 Lemma apply_primop_only_defined_on_primInts :
@@ -958,5 +960,10 @@ Proof.
   rewrite Z.shiftr_div_pow2. 2: lia.
   now rewrite lsr_spec.
 Qed.
+
+Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : localidx) addr val (m : meminst) bs : Prop :=
+    lookup_N fr.(f_locs) l = Some (VAL_num (VAL_int32 addr))
+    /\ load m (N_of_uint i32m addr) 0%N (N.to_nat (tnum_length T_i64)) = Some bs
+    /\ wasm_deserialise bs T_i64 = (VAL_int64 val).
 
 End CORRECTNESS.
