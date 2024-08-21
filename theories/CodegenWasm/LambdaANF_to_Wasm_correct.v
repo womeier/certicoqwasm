@@ -4593,12 +4593,13 @@ Proof.
     now rewrite Hmemlength1 Hmemlength2 Hmemlength3.
 Qed.
 
-Lemma apply_add_carry_operation_reduce (x y : localidx) :
+Lemma addc_reduce (x y : localidx) :
   forall state sr fr m gmp_v addrx addry bsx bsy n1 n2 c0_tag c1_tag it_carry v,
     INV sr fr ->
     M.get c0_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N C0_ord) ->
     M.get c1_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N C1_ord) ->
-    ((~ (to_Z (n1 + n2) < to_Z n1)%Z /\ v = Vconstr c0_tag [Vprim (AstCommon.primInt ; (n1 + n2)%uint63)]) \/ ((to_Z (n1 + n2) < to_Z n1)%Z /\ v = Vconstr c1_tag [Vprim (AstCommon.primInt ; (n1 + n2)%uint63)])) ->
+    LambdaANF_primInt_carry_fun c0_tag c1_tag addc n1 n2 = v ->
+    (* ((~ (to_Z (n1 + n2) < to_Z n1)%Z /\ v = Vconstr c0_tag [Vprim (AstCommon.primInt ; (n1 + n2)%uint63)]) \/ ((to_Z (n1 + n2) < to_Z n1)%Z /\ v = Vconstr c1_tag [Vprim (AstCommon.primInt ; (n1 + n2)%uint63)])) -> *)
     smem sr (f_inst fr) = Some m ->
     (* Local x holds address to 1st i64 *)
     local_holds_address_to_i64 sr fr x addrx (Int64.repr (to_Z n1)) m bsx ->
@@ -4677,9 +4678,11 @@ Proof.
     - unfold get_ctor_arity; now rewrite Hc1.
     - now exists (n+4)%N.  }
 
-  destruct Hv as [[Heq Hv]|[Heq Hv]]; subst v.
-  { (* There is no overflow <-> x <= x + y  *)
-    exists sr_C0, m_C0.
+  unfold LambdaANF_primInt_carry_fun in Hv.
+  destruct (Z_lt_dec (to_Z (n1 + n2)%uint63) (to_Z n1)) as [Hlt | Hlt].
+  { rewrite addc_def_spec in Hv. unfold addc_def in Hv.
+    replace (n1 + n2 <? n1)%uint63 with true in Hv by now rewrite (reflect_iff _ _ (ltbP _ _)) in Hlt.
+    exists sr_C1, m_C1.
     split. {
       intros; unfold apply_add_carry_operation.
       (* remember to avoid unfolding *)
@@ -4709,15 +4712,17 @@ Proof.
       rewrite Hdesx.
       (* Check for overflow, step into the if-branch and reduce the make_carry instructions *)
       dostep_nary 2. constructor; apply rs_relop.
-      dostep_nary 1. constructor; apply rs_if_false; rewrite uint63_nlt_int64_nlt; auto.
+      dostep_nary 1. constructor; apply rs_if_true; rewrite uint63_lt_int64_lt; auto. discriminate.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
-      reduce_under_label. subst carryInstrsC0; apply Hmake_carry_red_C0.
+      reduce_under_label. subst carryInstrsC1; apply Hmake_carry_red_C1.
       dostep_nary 0. constructor; apply rs_label_const; auto.
       now apply rt_refl. }
     repeat (split; auto); try now intros.
     intros; eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=sr) (m:=m) (gmp:=gmp) (gmp':=(gmp + 16)%N); eauto; try lia; now erewrite ->Hsfs1; eauto. }
   { (* There is overflow <-> x + y < x *)
-    exists sr_C1, m_C1.
+    rewrite addc_def_spec in Hv. unfold addc_def in Hv.
+    replace (n1 + n2 <? n1)%uint63 with false in Hv by now apply to_Z_nlt_uint63_ltb_false in Hlt.
+    exists sr_C0, m_C0.
     split. {
       intros; unfold apply_add_carry_operation.
       remember ((make_carry global_mem_ptr C1_ord glob_tmp1)) as carryInstrsC1;
@@ -4738,9 +4743,9 @@ Proof.
       dostep_nary_eliml 1 1. eapply r_load_success; eauto.
       rewrite Hdesx.
       dostep_nary 2. constructor; apply rs_relop.
-      dostep_nary 1. constructor; apply rs_if_true; rewrite uint63_lt_int64_lt; auto. discriminate.
+      dostep_nary 1. constructor; apply rs_if_false; rewrite uint63_nlt_int64_nlt; auto.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
-      reduce_under_label. subst carryInstrsC1; apply Hmake_carry_red_C1.
+      reduce_under_label. subst carryInstrsC0; apply Hmake_carry_red_C0.
       dostep_nary 0. constructor; apply rs_label_const; auto.
       now apply rt_refl. }
     repeat (split; auto); try now intros.
@@ -5897,28 +5902,10 @@ Proof.
         assert (HgmpBounds: (Z.of_N gmp_v + Z.of_N page_size <= Z.of_N (mem_length m) < Int32.modulus)%Z). {
           apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
           simpl_modulus. cbn. cbn in HenoughM. lia. }
-        unfold LambdaANF_primInt_carry_fun in HaddcApp.
         remember {|f_locs := set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N))));
                    f_inst := f_inst f|} as fr'.
 
-        assert (Hcarry:
-                 (~ (to_Z (n1 + n2) < to_Z n1)%Z
-                  /\ v = Vconstr c0_tag [Vprim (AstCommon.primInt ; (n1 + n2)%uint63)])
-                 \/
-                 ((to_Z (n1 + n2) < to_Z n1)%Z
-                  /\ v = Vconstr c1_tag [Vprim (AstCommon.primInt ; (n1 + n2)%uint63)])). {
-          unfold LambdaANF_primInt_carry_fun in Hres.
-          rewrite addc_def_spec in Hres; unfold addc_def in Hres.
-          destruct (Z_lt_dec (to_Z (n1 + n2)) (to_Z n1)) as [Heqn|Heqn].
-          - right; split; auto.
-            rewrite (reflect_iff _ _ (ltbP (n1 + n2) n1)) in Heqn.
-            now rewrite Heqn in Hres.
-          - left; split; auto.
-            rewrite (reflect_iff _ _ (ltbP (n1 + n2) n1)) in Heqn.
-            apply not_true_is_false in Heqn.
-            now rewrite Heqn in Hres. }
-
-        have HaddcRed :=  apply_add_carry_operation_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 Hcarry Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
+        have HaddcRed :=  addc_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 HaddcApp Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
 
         destruct HaddcRed as [sr' [m' [HinstrsRed [HINV_sr' [Hmem_sr' [Hgmp_sr' [Hsfuncs_sr' [Hmemlen_m' [Hval_sr' HvalsPreserved]]]]]]]]].
         exists sr', fr'.
