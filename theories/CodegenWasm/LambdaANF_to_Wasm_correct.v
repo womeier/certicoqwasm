@@ -4593,6 +4593,7 @@ Proof.
     now rewrite Hmemlength1 Hmemlength2 Hmemlength3.
 Qed.
 
+(* TODO: Move (as much as possible) to primitives file *)
 Lemma addc_reduce (x y : localidx) :
   forall state sr fr m gmp_v addrx addry bsx bsy n1 n2 c0_tag c1_tag it_carry v,
     INV sr fr ->
@@ -4752,13 +4753,13 @@ Proof.
     intros; eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=sr) (m:=m) (gmp:=gmp) (gmp':=(gmp + 16)%N); eauto; try lia; now erewrite ->Hsfs1; eauto. }
 Qed.
 
+(* TODO: Move (as much as possible) to primitives file *)
 Lemma addcarryc_reduce (x y : localidx) :
   forall state sr fr m gmp_v addrx addry bsx bsy n1 n2 c0_tag c1_tag it_carry v,
     INV sr fr ->
     M.get c0_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N C0_ord) ->
     M.get c1_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N C1_ord) ->
     LambdaANF_primInt_carry_fun c0_tag c1_tag addcarryc n1 n2 = v ->
-    (* ((~ (to_Z (n1 + n2) < to_Z n1)%Z /\ v = Vconstr c0_tag [Vprim (AstCommon.primInt ; (n1 + n2)%uint63)]) \/ ((to_Z (n1 + n2) < to_Z n1)%Z /\ v = Vconstr c1_tag [Vprim (AstCommon.primInt ; (n1 + n2)%uint63)])) -> *)
     smem sr (f_inst fr) = Some m ->
     (* Local x holds address to 1st i64 *)
     local_holds_address_to_i64 sr fr x addrx (Int64.repr (to_Z n1)) m bsx ->
@@ -5947,6 +5948,20 @@ Proof.
     assert (Htrue_ord: get_ctor_ord cenv true_tag = Ret 0%N) by now unfold get_ctor_ord; rewrite Htrue.
     assert (Hfalse_arr: get_ctor_arity cenv false_tag = Ret 0) by now unfold get_ctor_arity; rewrite Hfalse.
     assert (Hfalse_ord: get_ctor_ord cenv false_tag = Ret 1%N) by now unfold get_ctor_ord; rewrite Hfalse.
+
+    (* TODO: Added for carry ops, remove/ clean up when moving/ refactoring *)
+    assert (Hflocs: N.to_nat x0' < Datatypes.length (f_locs f)) by now eapply HlocsInBounds; eauto.
+    rewrite Haddr1 in Hload1'.
+    rewrite H5 in Hload2'.
+    replace 8 with (N.to_nat (tnum_length T_i64)) in Hload1', Hload2' by now cbn.
+    assert (Hbsx : wasm_deserialise b0 T_i64 = Z_to_VAL_i64 φ (n1)%uint63) by congruence.
+    assert (Hbsy : wasm_deserialise b1 T_i64 = Z_to_VAL_i64 φ (n2)%uint63) by congruence.
+    assert (HgmpBounds: (Z.of_N gmp_v + Z.of_N page_size <= Z.of_N (mem_length m) < Int32.modulus)%Z). {
+      apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
+      simpl_modulus. cbn. cbn in HenoughM. lia. }
+    remember {|f_locs := set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N))));
+               f_inst := f_inst f|} as fr_carry_ops.
+
     rewrite Hvs in Hres.
     unfold apply_LambdaANF_primInt_operator in Hres.
     destruct op;
@@ -6353,41 +6368,30 @@ Proof.
           }
           try repeat (split; auto). subst fr; auto.
           exists wal; auto. } } }
-    - { (* addc *)
+    - { (* addc
+           TODO: reduce duplication/ move to primitives file *)
         inversion H2; subst x1 y0.
         assert (HaddcApp: LambdaANF_primInt_carry_fun c0_tag c1_tag addc n1 n2 = v) by congruence.
-        assert (N.to_nat x0' < Datatypes.length (f_locs f)) by now eapply HlocsInBounds; eauto.
-        rewrite Haddr1 in Hload1'.
-        rewrite H5 in Hload2'.
-        replace 8 with (N.to_nat (tnum_length T_i64)) in Hload1', Hload2' by now cbn.
-        assert (Hbsx : wasm_deserialise b0 T_i64 = Z_to_VAL_i64 φ (n1)%uint63) by congruence.
-        assert (Hbsy : wasm_deserialise b1 T_i64 = Z_to_VAL_i64 φ (n2)%uint63) by congruence.
-        assert (HgmpBounds: (Z.of_N gmp_v + Z.of_N page_size <= Z.of_N (mem_length m) < Int32.modulus)%Z). {
-          apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
-          simpl_modulus. cbn. cbn in HenoughM. lia. }
-        remember {|f_locs := set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N))));
-                   f_inst := f_inst f|} as fr'.
-
         have HaddcRed :=  addc_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 HaddcApp Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
 
         destruct HaddcRed as [sr' [m' [HinstrsRed [HINV_sr' [Hmem_sr' [Hgmp_sr' [Hsfuncs_sr' [Hmemlen_m' [Hval_sr' HvalsPreserved]]]]]]]]].
-        exists sr', fr'.
+        exists sr', fr_carry_ops.
         split. { (* Instructions reduce *)
           eapply rt_trans. apply HinstrsRed.
-          dostep_nary' 1. rewrite unfold_val_notation; eapply r_local_set with (f':=fr'); subst fr'; eauto.
+          dostep_nary' 1. rewrite unfold_val_notation; eapply r_local_set with (f':=fr_carry_ops); subst fr_carry_ops; eauto.
           apply /ssrnat.leP.
           apply HlocsInBounds in Hrepr_x. lia. reflexivity.
           now apply rt_refl. }
-        split. eapply update_local_preserves_INV with (f':=fr'); eauto.
-        split. now subst fr'.
+        split. eapply update_local_preserves_INV with (f':=fr_carry_ops); eauto.
+        split. now subst fr_carry_ops.
         split; auto.
         split. {
           unfold LambdaANF_primInt_carry_fun in Hres.
           rewrite addc_def_spec in Hres;
           unfold addc_def in Hres.
-          subst fr'.
+          subst fr_carry_ops.
           destruct ((n1 + n2) <? n1)%uint63 eqn:Haddc;
-          inversion Hres; rewrite H8;
+          inversion Hres as [Hvconstr]; rewrite Hvconstr;
           eapply HunaryConstrValRelEnv; eauto;
           unfold get_ctor_arity; unfold get_ctor_ord; cbn;
           try rewrite Hc1;
@@ -6395,43 +6399,32 @@ Proof.
           try rewrite nth_error_set_eq;
           auto.
           all: cbn; lia. }
-        subst fr'; cbn; repeat (split; auto).
+        subst fr_carry_ops; cbn; repeat (split; auto).
         now exists (Val_ptr (gmp_v + 8)%N). }
-    - { (* addcarryc *)
+    - { (* addcarryc
+           TODO: reduce duplication/ move to primitives file *)
         inversion H2; subst x1 y0.
         assert (HaddcarrycApp: LambdaANF_primInt_carry_fun c0_tag c1_tag addcarryc n1 n2 = v) by congruence.
-        assert (N.to_nat x0' < Datatypes.length (f_locs f)) by now eapply HlocsInBounds; eauto.
-        rewrite Haddr1 in Hload1'.
-        rewrite H5 in Hload2'.
-        replace 8 with (N.to_nat (tnum_length T_i64)) in Hload1', Hload2' by now cbn.
-        assert (Hbsx : wasm_deserialise b0 T_i64 = Z_to_VAL_i64 φ (n1)%uint63) by congruence.
-        assert (Hbsy : wasm_deserialise b1 T_i64 = Z_to_VAL_i64 φ (n2)%uint63) by congruence.
-        assert (HgmpBounds: (Z.of_N gmp_v + Z.of_N page_size <= Z.of_N (mem_length m) < Int32.modulus)%Z). {
-          apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
-          simpl_modulus. cbn. cbn in HenoughM. lia. }
-        remember {|f_locs := set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N))));
-                   f_inst := f_inst f|} as fr'.
-
         have HaddcarrycRed :=  addcarryc_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 HaddcarrycApp Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
 
         destruct HaddcarrycRed as [sr' [m' [HinstrsRed [HINV_sr' [Hmem_sr' [Hgmp_sr' [Hsfuncs_sr' [Hmemlen_m' [Hval_sr' HvalsPreserved]]]]]]]]].
-        exists sr', fr'.
+        exists sr', fr_carry_ops.
         split. { (* Instructions reduce *)
           eapply rt_trans. apply HinstrsRed.
-          dostep_nary' 1. rewrite unfold_val_notation; eapply r_local_set with (f':=fr'); subst fr'; eauto.
+          dostep_nary' 1. rewrite unfold_val_notation; eapply r_local_set with (f':=fr_carry_ops); subst fr_carry_ops; eauto.
           apply /ssrnat.leP.
           apply HlocsInBounds in Hrepr_x. lia. reflexivity.
           now apply rt_refl. }
-        split. eapply update_local_preserves_INV with (f':=fr'); eauto.
-        split. now subst fr'.
+        split. eapply update_local_preserves_INV with (f':=fr_carry_ops); eauto.
+        split. now subst fr_carry_ops.
         split; auto.
         split. {
           unfold LambdaANF_primInt_carry_fun in Hres.
           rewrite addcarryc_def_spec in Hres;
           unfold addcarryc_def, addcarry in Hres.
-          subst fr'.
+          subst fr_carry_ops.
           destruct ((n1 + n2 + 1) <=? n1)%uint63 eqn:Haddcarryc;
-          inversion Hres; rewrite H8;
+          inversion Hres as [Hvconstr]; rewrite Hvconstr;
           eapply HunaryConstrValRelEnv; eauto;
           unfold get_ctor_arity; unfold get_ctor_ord; cbn;
           try rewrite Hc1;
@@ -6439,43 +6432,31 @@ Proof.
           try rewrite nth_error_set_eq;
           auto.
           all: cbn; lia. }
-        subst fr'; cbn; repeat (split; auto).
+        subst fr_carry_ops; cbn; repeat (split; auto).
         now exists (Val_ptr (gmp_v + 8)%N). }
-    - { (* subc *)
+    - { (* subc
+           TODO: reduce duplication/ move to primitives file *)
         inversion H2; subst x1 y0.
         assert (HsubcApp: LambdaANF_primInt_carry_fun c0_tag c1_tag subc n1 n2 = v) by congruence.
-        assert (N.to_nat x0' < Datatypes.length (f_locs f)) by now eapply HlocsInBounds; eauto.
-        rewrite Haddr1 in Hload1'.
-        rewrite H5 in Hload2'.
-        replace 8 with (N.to_nat (tnum_length T_i64)) in Hload1', Hload2' by now cbn.
-        assert (Hbsx : wasm_deserialise b0 T_i64 = Z_to_VAL_i64 φ (n1)%uint63) by congruence.
-        assert (Hbsy : wasm_deserialise b1 T_i64 = Z_to_VAL_i64 φ (n2)%uint63) by congruence.
-        assert (HgmpBounds: (Z.of_N gmp_v + Z.of_N page_size <= Z.of_N (mem_length m) < Int32.modulus)%Z). {
-          apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
-          simpl_modulus. cbn. cbn in HenoughM. lia. }
-        remember {|f_locs := set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N))));
-                   f_inst := f_inst f|} as fr'.
-
         have HsubcRed :=  subc_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 HsubcApp Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
-
         destruct HsubcRed as [sr' [m' [HinstrsRed [HINV_sr' [Hmem_sr' [Hgmp_sr' [Hsfuncs_sr' [Hmemlen_m' [Hval_sr' HvalsPreserved]]]]]]]]].
-        exists sr', fr'.
+        exists sr', fr_carry_ops.
         split. { (* Instructions reduce *)
           eapply rt_trans. apply HinstrsRed.
-          dostep_nary' 1. rewrite unfold_val_notation; eapply r_local_set with (f':=fr'); subst fr'; eauto.
+          dostep_nary' 1. rewrite unfold_val_notation; eapply r_local_set with (f':=fr_carry_ops); subst fr_carry_ops; eauto.
           apply /ssrnat.leP.
           apply HlocsInBounds in Hrepr_x. lia. reflexivity.
           now apply rt_refl. }
-        split. eapply update_local_preserves_INV with (f':=fr'); eauto.
-        split. now subst fr'.
+        split. eapply update_local_preserves_INV with (f':=fr_carry_ops); eauto.
+        split. now subst fr_carry_ops.
         split; auto.
         split. {
           unfold LambdaANF_primInt_carry_fun in Hres.
           rewrite subc_def_spec in Hres;
           unfold subc_def in Hres.
-          subst fr'.
+          subst fr_carry_ops.
           destruct (n2 <=? n1)%uint63 eqn:Hsubc;
-          inversion Hres; rewrite H8;
+          inversion Hres as [Hvconstr]; rewrite Hvconstr;
           eapply HunaryConstrValRelEnv; eauto;
           unfold get_ctor_arity; unfold get_ctor_ord; cbn;
           try rewrite Hc1;
@@ -6483,43 +6464,31 @@ Proof.
           try rewrite nth_error_set_eq;
           auto.
           all: cbn; lia. }
-        subst fr'; cbn; repeat (split; auto).
+        subst fr_carry_ops; cbn; repeat (split; auto).
         now exists (Val_ptr (gmp_v + 8)%N). }
-    - { (* subcarryc *)
+    - { (* subcarryc
+           TODO: reduce duplication/ move to primitives file *)
         inversion H2; subst x1 y0.
         assert (HsubcarrycApp: LambdaANF_primInt_carry_fun c0_tag c1_tag subcarryc n1 n2 = v) by congruence.
-        assert (N.to_nat x0' < Datatypes.length (f_locs f)) by now eapply HlocsInBounds; eauto.
-        rewrite Haddr1 in Hload1'.
-        rewrite H5 in Hload2'.
-        replace 8 with (N.to_nat (tnum_length T_i64)) in Hload1', Hload2' by now cbn.
-        assert (Hbsx : wasm_deserialise b0 T_i64 = Z_to_VAL_i64 φ (n1)%uint63) by congruence.
-        assert (Hbsy : wasm_deserialise b1 T_i64 = Z_to_VAL_i64 φ (n2)%uint63) by congruence.
-        assert (HgmpBounds: (Z.of_N gmp_v + Z.of_N page_size <= Z.of_N (mem_length m) < Int32.modulus)%Z). {
-          apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
-          simpl_modulus. cbn. cbn in HenoughM. lia. }
-        remember {|f_locs := set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N))));
-                   f_inst := f_inst f|} as fr'.
-
         have HsubcarrycRed :=  subcarryc_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 HsubcarrycApp Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
-
         destruct HsubcarrycRed as [sr' [m' [HinstrsRed [HINV_sr' [Hmem_sr' [Hgmp_sr' [Hsfuncs_sr' [Hmemlen_m' [Hval_sr' HvalsPreserved]]]]]]]]].
-        exists sr', fr'.
+        exists sr', fr_carry_ops.
         split. { (* Instructions reduce *)
           eapply rt_trans. apply HinstrsRed.
-          dostep_nary' 1. rewrite unfold_val_notation; eapply r_local_set with (f':=fr'); subst fr'; eauto.
+          dostep_nary' 1. rewrite unfold_val_notation; eapply r_local_set with (f':=fr_carry_ops); subst fr_carry_ops; eauto.
           apply /ssrnat.leP.
           apply HlocsInBounds in Hrepr_x. lia. reflexivity.
           now apply rt_refl. }
-        split. eapply update_local_preserves_INV with (f':=fr'); eauto.
-        split. now subst fr'.
+        split. eapply update_local_preserves_INV with (f':=fr_carry_ops); eauto.
+        split. now subst fr_carry_ops.
         split; auto.
         split. {
           unfold LambdaANF_primInt_carry_fun in Hres.
           rewrite subcarryc_def_spec in Hres;
           unfold subcarryc_def, subcarry in Hres.
-          subst fr'.
+          subst fr_carry_ops.
           destruct (n2 <? n1)%uint63 eqn:Hsubcarryc;
-          inversion Hres; rewrite H8;
+          inversion Hres as [Hvconstr]; rewrite Hvconstr;
           eapply HunaryConstrValRelEnv; eauto;
           unfold get_ctor_arity; unfold get_ctor_ord; cbn;
           try rewrite Hc1;
@@ -6527,7 +6496,7 @@ Proof.
           try rewrite nth_error_set_eq;
           auto.
           all: cbn; lia. }
-        subst fr'; cbn; repeat (split; auto).
+        subst fr_carry_ops; cbn; repeat (split; auto).
         now exists (Val_ptr (gmp_v + 8)%N). }
     - { (* mulc *)  admit. }
     - { (* diveucl *) admit. }
