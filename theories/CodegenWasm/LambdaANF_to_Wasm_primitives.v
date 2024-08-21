@@ -855,6 +855,19 @@ Local Ltac solve_arith_op d1 d2 spec :=
 Lemma uint63_add_i64_add : forall x y, Int64.iand (Int64.iadd (to_Z x) (to_Z y)) maxuint63 = to_Z (x + y).
 Proof. solve_arith_op Int64.iadd Int64.add add_spec. Qed.
 
+Lemma uint63_add_i64_add' : forall x y z,
+    Int64.iand (Int64.iadd (Int64.iadd (to_Z x) (to_Z y)) (to_Z z)) maxuint63 = to_Z (x + y + z).
+Proof.
+  intros. unfold Int64.iadd, Int64.add.
+  do 3 rewrite uint63_unsigned_id.
+  rewrite int64_bitmask_modulo.
+  cbn. rewrite Int64.Z_mod_modulus_eq.
+  rewrite Int64.modulus_twice_half_modulus.
+  rewrite -Zplus_mod_idemp_l.
+  rewrite Zaux.Zmod_mod_mult; [|lia|now cbn].
+  now do 2 rewrite -add_spec.
+Qed.
+
 Lemma uint63_sub_i64_sub : forall x y, Int64.iand (Int64.isub (to_Z x) (to_Z y)) maxuint63 = to_Z (x - y).
 Proof. solve_arith_op Int64.isub Int64.sub sub_spec. Qed.
 
