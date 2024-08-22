@@ -871,6 +871,19 @@ Qed.
 Lemma uint63_sub_i64_sub : forall x y, Int64.iand (Int64.isub (to_Z x) (to_Z y)) maxuint63 = to_Z (x - y).
 Proof. solve_arith_op Int64.isub Int64.sub sub_spec. Qed.
 
+Lemma uint63_sub_i64_sub' : forall x y z,
+    Int64.iand (Int64.isub (Int64.isub (to_Z x) (to_Z y)) (to_Z z)) maxuint63 = to_Z (x - y - z).
+Proof.
+  intros. unfold Int64.isub, Int64.sub.
+  do 3 rewrite uint63_unsigned_id.
+  rewrite int64_bitmask_modulo.
+  cbn. rewrite Int64.Z_mod_modulus_eq.
+  rewrite Int64.modulus_twice_half_modulus.
+  rewrite -Zminus_mod_idemp_l.
+  rewrite Zaux.Zmod_mod_mult; [|lia|now cbn].
+  now do 2 rewrite -sub_spec.
+Qed.
+
 Lemma uint63_mul_i64_mul : forall x y, Int64.iand (Int64.imul (to_Z x) (to_Z y)) maxuint63 = to_Z (x * y).
 Proof. solve_arith_op Int64.imul Int64.mul mul_spec. Qed.
 
