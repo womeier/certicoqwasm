@@ -5216,6 +5216,146 @@ Proof.
     intros; eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=sr) (m:=m) (gmp:=gmp) (gmp':=(gmp + 16)%N); eauto; try lia; now erewrite ->Hsfs1; eauto. }
 Qed.
 
+Lemma make_product_reduce (gidx1 gidx2 : globalidx) :
+  forall state sr fr m gmp p1 p2,
+    i64_glob gidx1 ->
+    i64_glob gidx2 ->
+    INV sr fr ->
+    smem sr (f_inst fr) = Some m ->
+    sglob_val sr (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+    (Z.of_N gmp + Z.of_N page_size <= Z.of_N (mem_length m) < Int32.modulus)%Z ->
+    sglob_val sr (f_inst fr) gidx1 = Some (VAL_num (VAL_int64 (Int64.repr p1))) ->
+    sglob_val sr (f_inst fr) gidx2 = Some (VAL_num (VAL_int64 (Int64.repr p2))) ->
+    exists (sr': store_record) m',
+      reduce_trans
+        (state, sr, fr, map AI_basic (make_product global_mem_ptr gidx1 gidx2))
+        (state, sr', fr, [$VN (VAL_int32 (N_to_i32 (gmp + 16)%N))])
+      /\ INV sr' fr
+      /\ smem sr' (f_inst fr) = Some m'
+      /\ sglob_val sr' (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 (gmp + 28))))
+      /\ load_i64 m' gmp = Some (VAL_int64 (Int64.repr p1))
+      /\ load_i64 m' (gmp + 8) = Some (VAL_int64 (Int64.repr p2))
+      /\ load_i32 m' (gmp + 16)%N = Some (VAL_int32 (N_to_i32 pair_ord))
+      /\ load_i32 m' (gmp + 20)%N = Some (VAL_int32 (N_to_i32 gmp))
+      /\ load_i32 m' (gmp + 24)%N = Some (VAL_int32 (N_to_i32 (gmp + 8)))
+      /\ (forall a, (a + 4 <= gmp)%N -> load_i32 m a = load_i32 m' a)
+      /\ (forall a, (a + 8 <= gmp)%N -> load_i64 m a = load_i64 m' a)
+      /\ s_funcs sr = s_funcs sr'
+      /\ mem_length m = mem_length m'.
+Proof.
+  intros state sr fr m gmp p1 p2 Hgidx1 Hgidx2 HINV Hmem Hgmp HenoughMem Hp1 Hp2.
+  assert (0 + 8 <= page_size)%N as Hoff1 by now unfold page_size.
+  assert (8 + 8 <= page_size)%N as Hoff2 by now unfold page_size.
+  assert (16 + 8 <= page_size)%N as Hoff3 by now unfold page_size.
+  assert (20 + 8 <= page_size)%N as Hoff4 by now unfold page_size.
+  assert (24 + 8 <= page_size)%N as Hoff5 by now unfold page_size.
+  assert (Hdesp1: wasm_deserialise (bits (VAL_int64 (Int64.repr p1))) T_i64 = VAL_int64 (Int64.repr p1)) by now apply deserialise_bits.
+  assert (Hdesp2: wasm_deserialise (bits (VAL_int64 (Int64.repr p2))) T_i64 = VAL_int64 (Int64.repr p2)) by now apply deserialise_bits.
+  assert (Hdesp1Addr: wasm_deserialise (bits (VAL_int32 (N_to_i32 gmp))) T_i32 = VAL_int32 (N_to_i32 gmp)) by now apply deserialise_bits.
+  assert (Hdesp2Addr: wasm_deserialise (bits (VAL_int32 (N_to_i32 (gmp + 8)))) T_i32 = VAL_int32 (N_to_i32 (gmp + 8))) by now apply deserialise_bits.
+  assert (HdesOrd: wasm_deserialise (bits (VAL_int32 (N_to_i32 pair_ord))) T_i32 = VAL_int32 (N_to_i32 pair_ord)) by now apply deserialise_bits.
+  (* Store p1 at gmp *)
+  destruct (store_preserves_INV sr fr m gmp 0%N (VAL_int64 (Int64.repr p1)) HINV Hmem Hoff1 HenoughMem) as [sr1 [m1 [Hmem1 [Hmemlength1 [Hstore1 [Hsmem_store1 [HINV1 [Hpres32_1 [Hpres64_1 [Hsfs1 [HglobPres1 HenoughMem1]]]]]]]]]]].
+  (* Store p2 at gmp+8 *)
+  destruct (store_preserves_INV sr1 fr m1 gmp 8%N (VAL_int64 (Int64.repr p2)) HINV1 Hmem1 Hoff2 HenoughMem1) as [sr2 [m2 [Hmem2 [Hmemlength2 [Hstore2 [Hsmem_store2 [HINV2 [Hpres32_2 [Hpres64_2 [Hsfs2 [HglobPres2 HenoughMem2]]]]]]]]]]].
+  (* Store the ordinal at gmp+16 *)
+  destruct (store_preserves_INV sr2 fr m2 gmp 16%N (VAL_int32 (N_to_i32 pair_ord)) HINV2 Hmem2 Hoff3 HenoughMem2) as [sr3 [m3 [Hmem3 [Hmemlength3 [Hstore3 [Hsmem_store3 [HINV3 [Hpres32_3 [Hpres64_3 [Hsfs3 [HglobPres3 HenoughMem3]]]]]]]]]]].
+  (* Store gmp at gmp+20 *)
+  destruct (store_preserves_INV sr3 fr m3 gmp 20%N (VAL_int32 (N_to_i32 gmp)) HINV3 Hmem3 Hoff4 HenoughMem3) as [sr4 [m4 [Hmem4 [Hmemlength4 [Hstore4 [Hsmem_store4 [HINV4 [Hpres32_4 [Hpres64_4 [Hsfs_4 [HglobPres4 HenoughMem4]]]]]]]]]]].
+  (* Store gmp at gmp+20 *)
+  destruct (store_preserves_INV sr4 fr m4 gmp 24%N (VAL_int32 (N_to_i32 (gmp+8))) HINV4 Hmem4 Hoff5 HenoughMem4) as [sr5 [m5 [Hmem5 [Hmemlength5 [Hstore5 [Hsmem_store5 [HINV5 [Hpres32_5 [Hpres64_5 [Hsfs_5 [HglobPres5 _]]]]]]]]]]].
+
+  have I := HINV5. destruct I as [_ [_ [_ [HgmpWritable _]]]].
+  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [Hmult2 _]]]]]]]]]]]]]].
+
+  (* Increment gmp by 16 to point to next free address *)
+  destruct (HgmpWritable (VAL_int32 (N_to_i32 (gmp + 28)))) as [sr'  Hupdgmp].
+  assert (HINV' : INV sr' fr). {
+    apply update_global_preserves_INV with (sr:=sr5) (i:=global_mem_ptr) (m:=m5) (num:=(VAL_int32 (N_to_i32 (gmp+28)))); auto.
+    left; split; [right; right; now constructor|now cbn].
+    discriminate.
+    move => _. intros n [Heqn Hrangen].
+    replace n with (gmp + 28)%N.
+    unfold page_size in *. lia.
+    inv Heqn.
+    repeat rewrite Int32.Z_mod_modulus_id in H0; try lia.
+    move => _. intros n [Heqn Hrangen].
+    replace n with (gmp + 28)%N.
+    assert (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z by now unfold page_size in *; simpl_modulus_in HenoughMem; simpl_modulus; cbn in HenoughMem |- *; lia.
+    destruct (Hmult2 _ _ Hmem Hgmp H) as (n0 & Hn0).
+    now exists (n0 + 14)%N.
+    inv Heqn.
+    repeat rewrite Int32.Z_mod_modulus_id in H0; try lia. }
+  assert (Hgmp' : sglob_val sr' (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 (gmp + 28))))) by now
+    apply HglobPres1, HglobPres2, HglobPres3, HglobPres4, HglobPres5 in Hgmp; apply update_global_get_same with (sr:=sr5).
+  (* All i32 values below gmp are preserved *)
+  assert (Hpres32: forall a, (a + 4 <= gmp)%N -> load_i32 m a = load_i32 m5 a) by now
+    intros; rewrite ->Hpres32_1, ->Hpres32_2, ->Hpres32_3, ->Hpres32_4, ->Hpres32_5; try lia; auto.
+  (* All i64 values below gmp are preserved *)
+  assert (Hpres64: forall a, (a + 8 <= gmp)%N -> load_i64 m a = load_i64 m5 a) by now
+    intros; rewrite ->Hpres64_1, ->Hpres64_2, -> Hpres64_3, ->Hpres64_4, ->Hpres64_5; try lia; auto.
+  exists sr', m5.
+  split. { (* make_product instructions reduce *)
+    intros.
+    assert (HrewriteGmp : N_of_uint i32m (N_to_i32 gmp) = gmp) by now cbn; rewrite Int32.Z_mod_modulus_id;[now rewrite N2Z.id|lia].
+    unfold make_product.
+    separate_instr.
+    dostep_nary 0. apply r_global_get; eassumption.
+    dostep_nary_eliml 0 1. apply r_global_get; eassumption.
+    dostep_nary 2.
+    apply r_store_success; rewrite HrewriteGmp; cbn; eassumption.
+    dostep_nary 0. apply r_global_get; apply HglobPres1 in Hgmp; eassumption.
+    dostep_nary_eliml 0 1. apply r_global_get. apply HglobPres1 in Hp2. eassumption.
+    dostep_nary 2.
+    apply r_store_success; rewrite HrewriteGmp; cbn; eassumption.
+    dostep_nary 0. apply r_global_get. apply HglobPres1, HglobPres2 in Hgmp. eassumption.
+    dostep_nary 2.
+    apply r_store_success; rewrite HrewriteGmp; cbn; eassumption.
+    dostep_nary 0. apply r_global_get. apply HglobPres1, HglobPres2, HglobPres3 in Hgmp. eassumption.
+    dostep_nary_eliml 0 1. apply r_global_get. apply HglobPres1, HglobPres2, HglobPres3 in Hgmp. eassumption.
+    dostep_nary 2.
+    apply r_store_success; rewrite HrewriteGmp; cbn; eassumption.
+    dostep_nary 0. apply r_global_get. apply HglobPres1, HglobPres2, HglobPres3, HglobPres4 in Hgmp. eassumption.
+    dostep_nary_eliml 0 1. apply r_global_get. apply HglobPres1, HglobPres2, HglobPres3, HglobPres4 in Hgmp. eassumption.
+    dostep_nary_eliml 2 1. constructor. apply rs_binop_success. cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
+    rewrite Int32.Z_mod_modulus_id. replace 8%Z with (Z.of_N 8) by now cbn. rewrite <-N2Z.inj_add. reflexivity.
+    simpl_modulus; simpl_modulus_in HenoughMem; unfold page_size in *; cbn in *; lia.
+    dostep_nary 2.
+    apply r_store_success; rewrite HrewriteGmp; cbn; eassumption.
+    dostep_nary 0. apply r_global_get. apply HglobPres1, HglobPres2, HglobPres3, HglobPres4, HglobPres5 in Hgmp. eassumption.
+    dostep_nary 2. constructor. apply rs_binop_success. cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
+    rewrite Int32.Z_mod_modulus_id. replace 16%Z with (Z.of_N 16) by now cbn. rewrite <-N2Z.inj_add. reflexivity.
+    simpl_modulus; simpl_modulus_in HenoughMem; unfold page_size in *; cbn in *; lia.
+    dostep_nary_eliml 0 1. apply r_global_get. apply HglobPres1, HglobPres2, HglobPres3, HglobPres4, HglobPres5 in Hgmp. eassumption.
+    dostep_nary_eliml 2 1. constructor. apply rs_binop_success. cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
+    rewrite Int32.Z_mod_modulus_id. replace 28%Z with (Z.of_N 28) by now cbn. rewrite <-N2Z.inj_add. reflexivity.
+    simpl_modulus; simpl_modulus_in HenoughMem; unfold page_size in *; cbn in *; lia.
+    dostep_nary_eliml 1 1. replace ($VN N_to_VAL_i32 (gmp + 28)) with ($V (VAL_num (N_to_VAL_i32 (gmp + 28)))) by now cbn.
+    apply r_global_set. eassumption.
+    now apply rt_refl. }
+  replace (smem sr' (f_inst fr)) with (smem sr5 (f_inst fr)) by now eapply update_global_preserves_memory; eassumption.
+  repeat (split; auto).
+  - (* Load p1 *)
+    rewrite <-Hpres64_5, <-Hpres64_4, <-Hpres64_3, <-Hpres64_2, <-Hdesp1; try lia.
+    eapply store_load_i64 with (m:=m); erewrite i64_val_8_bytes in *; eauto.
+  - (* Load p2 *)
+    rewrite <-Hpres64_5, <-Hpres64_4, <-Hpres64_3, <-Hdesp2; try lia.
+    eapply store_load_i64 with (m:=m1); erewrite i64_val_8_bytes in *; rewrite store_offset_eq in Hstore2; eauto.
+  - (* The ordinal can be loaded as an i32 from address gmp + 16 *)
+    rewrite <-Hpres32_5, <-Hpres32_4, <-HdesOrd; try lia.
+    eapply store_load_i32 with (m:=m2); erewrite i32_val_4_bytes in *; rewrite store_offset_eq in Hstore3; eauto.
+  - (* The address of the result (gmp) can be loaded from address gmp + 20 *)
+    rewrite <-Hpres32_5, <-Hdesp1Addr; try lia.
+    apply store_load_i32 with (m:=m3); erewrite i32_val_4_bytes in *; rewrite store_offset_eq in Hstore4; eauto.
+  - (* The address of the result (gmp) can be loaded from address gmp + 20 *)
+    rewrite <-Hdesp2Addr; try lia.
+    apply store_load_i32 with (m:=m4); erewrite i32_val_4_bytes in *; rewrite store_offset_eq in Hstore5; eauto.
+  - (* Functions in the store are preserved*)
+    rewrite Hsfs1 Hsfs2 Hsfs3 Hsfs_4 Hsfs_5; eapply update_global_preserves_funcs; eassumption.
+  - (* Length of memory is preserved *)
+    now rewrite Hmemlength1 Hmemlength2 Hmemlength3 Hmemlength4 Hmemlength5.
+Qed.
+
 (* Application of primitive operators can never evaluate to a function value *)
 Lemma primop_value_not_funval :
   forall p pfs f' vs v op op_name str b op_arr,
