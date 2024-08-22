@@ -762,7 +762,7 @@ Definition prim_funs_env_wellformed (cenv : ctor_env) (penv : prim_env) (prim_fu
       /\ M.get gt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Gt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Gt_ord)
       /\ M.get c0_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N C0_ord)
       /\ M.get c1_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N C1_ord)
-      /\ M.get pair_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 1%N pair_ord).
+      /\ M.get pair_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 2%N pair_ord).
 
 Lemma uint63_mod_modulus_id :
   forall (x : uint63), Int64.Z_mod_modulus (to_Z x) = to_Z x.
@@ -985,6 +985,17 @@ Proof.
   replace (Int64.unsigned (Z_to_i64 (to_Z y mod 64%nat))) with (to_Z y). 2: now rewrite Z.mod_small; [rewrite uint63_unsigned_id|].
   rewrite Z.shiftr_div_pow2. 2: lia.
   now rewrite lsr_spec.
+Qed.
+
+Lemma uint63_diveucl_0 : forall x y,
+    to_Z y = to_Z 0 ->
+    to_Z (fst (diveucl x y)) = to_Z 0 /\ to_Z (snd (diveucl x y)) = to_Z x.
+Proof.
+  intros.
+  rewrite diveucl_def_spec; unfold diveucl_def; simpl.
+  rewrite ->div_spec, ->mod_spec.
+  unfold Z.div, Z.modulo, Z.div_eucl.
+  split; rewrite H; destruct (to_Z x); auto.
 Qed.
 
 Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : localidx) addr val (m : meminst) bs : Prop :=
