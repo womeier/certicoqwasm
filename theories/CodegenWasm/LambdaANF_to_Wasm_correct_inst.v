@@ -1519,7 +1519,7 @@ Qed.
 End INSTANTIATION.
 
 
-Section TOPLEVEL.
+Section POST_INSTANTIATION.
 
 Import host instantiation_spec.
 Import Lia.
@@ -2493,6 +2493,168 @@ Proof.
 Qed.
 
 
+(* instantiation + post-instantiation, refered to as *instantiate* (without apostrophe) in writing *)
+Definition instantiate' module hs sr fr :=
+  exists sr' fr' es_post,
+  instantiate initial_store module [] (sr', fr', es_post) /\
+  reduce_trans (hs, sr', fr', map AI_basic es_post) (hs, sr, fr, [::]).
+
+(* instantiation and post-instantiation combined *)
+Theorem instantiation_combined_INV_and_more : forall e eAny topExp fds num_funs module fenv main_lenv hs,
+  NoDup (collect_function_vars (Efun fds eAny)) ->
+  expression_restricted cenv e ->
+  topExp = match e with | Efun _ _ => e | _ => Efun Fnil e end ->
+  (match topExp with Efun fds' _ => fds' | _ => Fnil end) = fds ->
+  correct_cenv_of_exp cenv e ->
+  num_funs = match topExp with | Efun fds _ => numOf_fundefs fds | _ => 42 (* unreachable*) end ->
+  (Z.of_nat num_funs <= max_num_functions)%Z ->
+  LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, main_lenv) ->
+
+exists sr fr,
+  (* instantiate + post-instantiate *)
+  instantiate' module hs sr fr /\
+  INV fenv nenv sr fr /\
+
+  (* conclusions of module_instantiate_INV_and_more_hold *)
+
+  inst_funcs (f_inst fr) = [:: 0%N, 1%N & (funcidcs num_funs (N.of_nat num_custom_funs))] /\
+  (* value relation holds for all funcs in fds *)
+  (forall a errMsg, find_def a fds <> None ->
+	exists fidx : funcidx,
+	  translate_var nenv fenv a errMsg = Ret fidx /\
+	  repr_val_LambdaANF_Wasm cenv fenv nenv penv (Vfun (M.empty _) fds a) sr (f_inst fr) (Val_funidx fidx)) /\
+
+  exists grow_mem_fn main_fn e' fns,
+    grow_mem_fn = {| modfunc_type := 1%N (* [i32] -> [] *)
+                   ; modfunc_locals := [::]
+                   ; modfunc_body := grow_memory_if_necessary
+                   |} /\
+    main_fn = {| modfunc_type := 0%N (* [] -> [] *)
+               ; modfunc_locals := map (fun _ : var => T_num T_i32)
+                                       (collect_local_variables match e with | Efun _ exp => exp | _ => e end)
+               ; modfunc_body := e'
+               |} /\
+    s_funcs sr =
+    [:: FC_func_native (Tf [::T_num T_i32] [::]) (f_inst fr) grow_mem_fn,
+        FC_func_native (Tf [::] [::]) (f_inst fr) main_fn
+    &   map (fun f0 : wasm_function =>
+             FC_func_native (Tf (repeat (T_num T_i32) (N.to_nat (type f0))) [::]) (f_inst fr)
+             {| modfunc_type := type f0; modfunc_locals := locals f0; modfunc_body := body f0 |})
+            fns
+     ] /\
+  (* links e and e' in main_fn above *)
+  translate_body nenv cenv
+          (create_local_variable_mapping
+             (collect_local_variables
+                match e with
+                | Efun _ exp => exp
+                | _ => e
+                end)) fenv penv match e with
+                           | Efun _ exp => exp
+                           | _ => e
+                           end = Ret e' /\
+  (* translation of functions *)
+  match topExp with
+  | Efun fds _ => translate_functions nenv cenv fenv penv fds
+  | _ => Ret []
+  end = Ret fns.
+Proof.
+  intros ????????? Hnodup HeRestr HtopExp Hfds HcenvCorrect Hnumfuns HfnsLength LANF2Wasm.
+  assert (Hnodup' : NoDup (collect_function_vars e)). {
+    destruct e; cbn; try by constructor. now subst topExp f. }
+  (* module instantiates *)
+  have HINST := @module_instantiate _ _ _ hfc ho _ _ _ _ hs HcenvCorrect Hnodup' LANF2Wasm.
+  destruct HINST as [sr [fr [es_post Hinst]]].
+
+  assert (HcenvCorrect' : (forall (f : var) (t : fun_tag) (ys : seq var) (e : exp),
+             find_def f fds = Some (t, ys, e) ->
+             correct_cenv_of_exp cenv e)). {
+    subst topExp. destruct e; subst; intros=>//.
+    eapply Forall_constructors_subterm. eassumption.
+    apply find_def_dsubterm_fds_e in H.
+    apply t_step. apply dsubterm_fds. eassumption. }
+
+  (* INV_instantiate hold after instantiation *)
+  have HINST_INV := module_instantiate_INV_and_more_hold _ _ _ _ _ module fenv main_lenv sr fr es_post Hnodup HeRestr HtopExp Hfds HcenvCorrect' Hnumfuns HfnsLength LANF2Wasm Hinst.
+  destruct HINST_INV as [Hinv_inst [HinstFuncs [HvalRel [grow_mem_fn [main_fn [e' [fns' [Hgrow_mem_fn [H_main [Hfuncs [HesPost [He Hfns]]]]]]]]]]]].
+
+  assert (HfenvBound: (forall (f0 : var) (f' : u32) (errMsg : string),
+             translate_var nenv fenv f0 errMsg = Ret f' ->
+             N.to_nat f' < num_funs + num_custom_funs)). {
+        intros.
+    unfold LambdaANF_to_Wasm in LANF2Wasm.
+    remember (list_function_types (Z.to_nat max_function_args)) as ftypes.
+    simpl in LANF2Wasm.
+    destruct (check_restrictions cenv e). inv LANF2Wasm.
+    destruct (match _ with
+       | Efun fds _ => _ fds
+       | _ => Err _
+       end) eqn:Hfuns. inv LANF2Wasm. rename l into fns.
+    destruct (match e with
+                    | Efun _ _ => e
+                    | _ => Efun Fnil e
+                    end) eqn:HtopExp'; try (by inv LANF2Wasm).
+    destruct (translate_body nenv cenv _ _ _) eqn:Hexpr. inv LANF2Wasm. rename l into wasm_main_instr.
+    inv LANF2Wasm.
+    unfold create_fname_mapping in H.
+    eapply var_mapping_list_lt_length' in H.
+    destruct e; inv HtopExp'=>//.
+    rewrite collect_function_vars_length in H. lia. }
+
+  (* post-instantiation *)
+  have HinstPost := post_instantiation_reduce hs _ _ _ _ HfenvBound Hinv_inst Logic.eq_refl.
+  destruct HinstPost as [sr' [HredPost [Hinv HfuncsEq]]].
+
+  exists sr', fr.
+  split.
+  { unfold instantiate'.
+    exists sr, fr, es_post. split. assumption.
+    subst. destruct e; inv Hfns; try assumption.
+    apply translate_functions_length in H0.
+    now rewrite -H0. }
+  split. assumption.
+  split. assumption.
+  split.
+  { intros ?? HfdNone. apply HvalRel with (errMsg:=errMsg) in HfdNone.
+    destruct HfdNone as [fidx [Hvar Hval]].
+    exists fidx. split=>//.
+    by apply val_relation_func_depends_on_funcs with (s:=sr). }
+  exists grow_mem_fn, main_fn, e', fns'.
+  do 3 split=>//. congruence.
+Qed.
+
+End POST_INSTANTIATION.
+
+Section TOPLEVEL.
+
+Import host instantiation_spec.
+Import Lia.
+Import Relations.Relation_Operators.
+
+Variable cenv:LambdaANF.cps.ctor_env.
+Variable funenv:LambdaANF.cps.fun_env.
+Variable nenv : LambdaANF.cps_show.name_env.
+Variable penv : LambdaANF.toplevel.prim_env.
+
+
+Ltac separate_instr :=
+  cbn;
+  repeat match goal with
+  |- context C [?x :: ?l] =>
+     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+  end.
+
+Ltac dostep :=
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t]));
+  first (apply rt_step; separate_instr).
+
+(* only returns single list of instructions *)
+Ltac dostep' :=
+   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s]));
+   first (apply rt_step; separate_instr).
+
+Context `{ho : host}.
+
 (* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
 Theorem LambdaANF_Wasm_related :
   forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var)
@@ -2516,26 +2678,19 @@ Theorem LambdaANF_Wasm_related :
   (* expression must be closed *)
   (~ exists x, occurs_free e x ) ->
 
-  (* instantiation with the two imported functions *)
-  exists sr fr es_post sr',
-    instantiate initial_store module [] (sr, fr, es_post) /\
-    (* perform post_instantiation: initialises table for indirect calls *)
-         reduce_trans (hs, sr,  (Build_frame [] (f_inst fr)), map AI_basic es_post)
-                      (hs, sr', (Build_frame [] (f_inst fr)), [])    /\
-    exists sr'',
-      (* execute main function *)
-           reduce_trans (hs, sr',  (Build_frame [] (f_inst fr)), [ AI_basic (BI_call main_function_idx) ])
-                        (hs, sr'', (Build_frame [] (f_inst fr)), [])    /\
-      (* result variable has the correct value set *)
-      result_val_LambdaANF_Wasm cenv fenv nenv penv v sr'' (f_inst fr).
+  exists sr fr,
+    (* instantiation *)
+    instantiate' module hs sr fr /\
+
+    exists sr',
+    (* execute main function *)
+    reduce_trans (hs, sr,  (Build_frame [] (f_inst fr)), [ AI_basic (BI_call main_function_idx) ])
+                 (hs, sr', (Build_frame [] (f_inst fr)), [])    /\
+    (* result variable has the correct value set *)
+    result_val_LambdaANF_Wasm cenv fenv nenv penv v sr' (f_inst fr).
 Proof.
   intros ????????? Hstep HprimFunsRet HprimFunsRelated LANF2Wasm Hcenv HcenvRestr HvarsEq HvarsNodup Hfreevars.
   subst vars.
-
-  assert (Hnodup: NoDup (collect_function_vars e)) by now eapply NoDup_app_remove_l in HvarsNodup.
-  have Hinst := module_instantiate cenv nenv penv _ _ _ _ hs Hcenv Hnodup LANF2Wasm.
-  destruct Hinst as [sr [fr [es_post Hinst]]]. clear Hnodup.
-  exists sr, fr, es_post.
 
   assert (HeRestr: expression_restricted cenv e).
   { unfold LambdaANF_to_Wasm in LANF2Wasm. destruct (check_restrictions cenv e) eqn:HeRestr.
@@ -2612,14 +2767,12 @@ Proof.
     destruct e; inv HtopExp=>//.
     rewrite collect_function_vars_length in H. lia. }
 
-  have HI := module_instantiate_INV_and_more_hold _ _ _ _ _ _ _ _ _ _ _ Hnodup' HeRestr
-               Logic.eq_refl Logic.eq_refl Hcenv' Logic.eq_refl Hmaxfuns LANF2Wasm Hinst.
-  clear Hnodup' Hcenv'.
-  destruct HI as [Hinv [HinstFuncs [HfVal [grow_mem_fn [main_fn [e' [fns' [-> [-> [HsrFuncs [-> [Hexpr' Hfns']]]]]]]]]]]].
+  have HI := @instantiation_combined_INV_and_more _ _ _ hfc ho _ _ _ _ _ _ _ _ hs Hnodup' HeRestr
+               Logic.eq_refl Logic.eq_refl Hcenv Logic.eq_refl Hmaxfuns LANF2Wasm.
+  destruct HI as [sr [fr [Hinst [Hinv [HinstFuncs [HfVal [grow_mem_fn [main_fn [e' [fns [-> [-> [Hfuncs [Hexpr' Hfns']]]]]]]]]]]]]].
 
-  have HpostInst := post_instantiation_reduce (fenv:=fenv) hs sr fr {| f_locs := [::]; f_inst := f_inst fr |} _
-                       HfenvBound Hinv Logic.eq_refl.
-  destruct HpostInst as [sr' [HredPost [Hinv' Hsr'F]]].
+  exists sr, fr.
+  split. assumption.
 
   remember (Build_frame (repeat (VAL_num (nat_to_value 0)) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
 
@@ -2630,21 +2783,17 @@ Proof.
   destruct (match _ with
        | Efun fds _ => _ fds
        | _ => Err _
-       end) eqn:Hfuns. inv LANF2Wasm. rename l into fns.
+       end) eqn:Hfuns. inv LANF2Wasm. (* rename l into fns. *)
   destruct (match e with
                     | Efun _ _ => e
                     | _ => Efun Fnil e
                     end) eqn:HtopExp; try (by inv LANF2Wasm).
-  destruct (translate_body nenv cenv _ _ _) eqn:Hexpr. inv LANF2Wasm. rename l into wasm_main_instr.
+  destruct (translate_body nenv cenv _ _ _) eqn:Hexpr. inv LANF2Wasm. rename l into fns'. rename l0 into wasm_main_instr.
   inv LANF2Wasm.
 
-  (* from lemma module_instantiate_INV_and_more_hold *)
+  (* from lemma module_instantiate_INV_and_more_hold TODO no *)
   assert (e' = wasm_main_instr). { destruct e; inv HtopExp; congruence. } subst e'. clear Hexpr'.
   assert (fns = fns'). { destruct e; inv HtopExp; congruence. } subst fns'. clear Hfns'.
-
-  (* step through post instantiation *)
-  exists sr'. split. apply Hinst. split.
-  apply translate_functions_length in Hfuns. rewrite -Hfuns. apply HredPost.
 
   remember (Build_frame (repeat (VAL_num (nat_to_value 0)) (length (collect_local_variables e))) (f_inst fr)) as f_before_IH.
   remember (create_local_variable_mapping (collect_local_variables e)) as lenv.
@@ -2655,9 +2804,9 @@ Proof.
    { intros ? ? Hvar. subst f_before_IH. cbn. rewrite repeat_length. inv Hvar.
      eapply var_mapping_list_lt_length. eassumption. }
 
-  assert (Hinv_before_IH: INV fenv nenv sr' f_before_IH). {
+  assert (Hinv_before_IH: INV fenv nenv sr f_before_IH). {
     subst f_before_IH.
-    eapply init_locals_preserves_INV with (args:=[]). apply Hinv'. reflexivity.
+    eapply init_locals_preserves_INV with (args:=[]). apply Hinv. reflexivity.
   }
 
   have Heqdec := inductive_eq_dec e. destruct Heqdec.
@@ -2686,11 +2835,11 @@ Proof.
       now eapply NoDup_app_remove_middle in HvarsNodup.
     }
 
-    assert (Hnodup': NoDup (collect_local_variables e ++
+    assert (Hnodup'': NoDup (collect_local_variables e ++
                             collect_function_vars (Efun fds e))). {
       cbn in HvarsNodup. rewrite <-catA in HvarsNodup.
       now eapply NoDup_app_remove_middle in HvarsNodup.
-    }
+    } 
 
     assert (HfenvWf: (forall f : var,
          (exists res : fun_tag * seq var * exp,
@@ -2736,7 +2885,7 @@ Proof.
            collect_function_vars (Efun fds e0)) /\
         (exists fidx : funcidx,
            translate_var nenv fenv a errMsg = Ret fidx /\
-           repr_val_LambdaANF_Wasm cenv fenv nenv penv (Vfun (M.empty _) fds a) sr' (f_inst f_before_IH) (Val_funidx fidx))). {
+           repr_val_LambdaANF_Wasm cenv fenv nenv penv (Vfun (M.empty _) fds a) sr (f_inst f_before_IH) (Val_funidx fidx))). {
       intros ????? Hcontra.
       split. { inv HeRestr. eapply H3. eassumption. }
       split. { intros x Hocc.
@@ -2761,7 +2910,7 @@ Proof.
 
     assert (HrelE : @rel_env_LambdaANF_Wasm cenv fenv nenv penv
                    _ (create_local_variable_mapping (collect_local_variables e)) e (def_funs fds fds (M.empty _) (M.empty _))
-          sr' f_before_IH fds). {
+          sr f_before_IH fds). {
       split.
       { (* funs1 (follows from previous Hfds) *)
         intros ? ? ? ? ? Hdf Hval. have H' := Hdf.
@@ -2788,14 +2937,14 @@ Proof.
     subst lenv.
     have HMAIN := repr_bs_LambdaANF_Wasm_related cenv funenv fenv nenv penv _
                     _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
-                    HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
-                    HeRestr' Hunbound Hstep hs sr' _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
+                    HenvsDisjoint Logic.eq_refl Hnodup'' HfenvWf HfenvRho
+                    HeRestr' Hunbound Hstep hs sr _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
     destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn. subst frameInit.
     exists s'. split.
     dostep'. apply r_call. cbn.
     rewrite HinstFuncs. reflexivity.
     dostep'. eapply r_invoke_native with (ves:=[]) (vs:=[]); eauto.
-    rewrite- Hsr'F HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst. reflexivity. reflexivity.
+    rewrite Hfuncs. subst f_before_IH.  cbn. rewrite Hfinst. reflexivity. reflexivity.
     erewrite <-map_repeat_eq. by apply default_vals_i32_Some.
     subst f_before_IH. cbn. subst lh. cbn in Hred. rewrite <- Hfinst. rewrite cats0 in Hred.
     eapply rt_trans. cbn. unfold to_e_list. apply Hred.
@@ -2807,16 +2956,16 @@ Proof.
     rename f into fds. assert (fds = Fnil). {
       destruct e; inv HtopExp; auto. exfalso. eauto.
     } subst fds. injection Hfuns => ?. subst fns. clear Hfuns.
-    cbn in HsrFuncs, HinstFuncs, Hmaxfuns.
+    cbn in Hfuncs, HinstFuncs, Hmaxfuns.
     assert (e0 = e). { destruct e; inv HtopExp; auto. exfalso. eauto. }
     subst e0. clear HtopExp.
 
     eapply translate_body_correct in Hexpr; eauto.
 
     assert (HrelE : @rel_env_LambdaANF_Wasm cenv fenv nenv penv
-                    _ (create_local_variable_mapping (collect_local_variables e)) e (M.empty _) sr' f_before_IH Fnil). {
+                    _ (create_local_variable_mapping (collect_local_variables e)) e (M.empty _) sr f_before_IH Fnil). {
     split.
-    { intros. exfalso. cbn in HsrFuncs. inv H. } split.
+    { intros. exfalso. inv H. } split.
     { intros. inv H. }
     { intros. exfalso. eauto. }}
 
@@ -2849,14 +2998,14 @@ Proof.
         (exists fidx : funcidx,
            translate_var nenv fenv a errMsg = Ret fidx /\
            repr_val_LambdaANF_Wasm cenv fenv nenv penv (Vfun (M.empty _) Fnil a)
-             sr' (f_inst f_before_IH) (Val_funidx fidx))). {
+             sr (f_inst f_before_IH) (Val_funidx fidx))). {
         intros ? ? ? ? ? Hcontra. inv Hcontra. }
 
     assert (Hunbound : (forall x : var,
          In x (collect_local_variables e) ->
          (M.empty cps.val) ! x = None)). { intros. reflexivity. }
 
-    assert (Hnodup': NoDup (collect_local_variables e ++
+    assert (Hnodup'': NoDup (collect_local_variables e ++
                            collect_function_vars (Efun Fnil e))). {
       cbn. rewrite cats0.
       apply NoDup_app_remove_r in HvarsNodup.
@@ -2883,8 +3032,8 @@ Proof.
     subst lenv.
     have HMAIN := repr_bs_LambdaANF_Wasm_related cenv funenv fenv nenv penv _
                     _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
-                    HenvsDisjoint Logic.eq_refl Hnodup' HfenvWf HfenvRho
-                    HeRestr Hunbound Hstep hs sr' _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
+                    HenvsDisjoint Logic.eq_refl Hnodup'' HfenvWf HfenvRho
+                    HeRestr Hunbound Hstep hs sr _ _ Hfds HlocInBound Hinv_before_IH Hexpr HrelE.
 
     subst lh frameInit.
 
@@ -2893,7 +3042,7 @@ Proof.
     dostep'. apply r_call. cbn.
     rewrite HinstFuncs. reflexivity.
     dostep'. eapply r_invoke_native with (ves:=[]) (vs:=[]); eauto.
-    rewrite -Hsr'F HsrFuncs. subst f_before_IH. cbn. rewrite Hfinst. reflexivity. reflexivity.
+    rewrite Hfuncs. subst f_before_IH. cbn. rewrite Hfinst. reflexivity. reflexivity.
     subst f_before_IH. cbn.
     assert (HexpEq: match e with | Efun _ exp => exp
                                  | _ => e end= e).
