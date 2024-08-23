@@ -575,21 +575,16 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
   let grow_mem_function := generate_grow_mem_function in
 
-  (* ensure toplevel exp is an Efun*)
-  let top_exp := match e with
-                 | Efun _ _ => e
-                 | _ => Efun Fnil e
-                 end in
-
-  fns <- match top_exp with
+  fns <- match e with
          | Efun fds exp => translate_functions nenv cenv fname_mapping penv fds
-         | _ => Err "unreachable"
+         | _ => Err "unreachable" (* can't happen, see toplevel.v *)
          end ;;
 
-  main_expr <- match top_exp with
+  main_expr <- match e with
                | Efun _ exp => Ret exp
                | _ => Err "unreachable"
                end;;
+
   let main_vars := collect_local_variables main_expr in
   let main_lenv := create_local_variable_mapping main_vars in
   main_instr <- translate_body nenv cenv main_lenv fname_mapping penv main_expr ;;
