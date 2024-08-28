@@ -345,16 +345,7 @@ Inductive repr_asgn_constr_Wasm {lenv} : localidx -> ctor_tag -> list var -> lis
     Forall_statements_in_seq (set_nth_constr_arg (lenv:=lenv)) vs sargs ->
 
     repr_asgn_constr_Wasm x' t vs scont
-      ([ BI_const_num (N_to_value page_size)
-       ; BI_call grow_mem_function_idx
-       ; BI_global_get result_out_of_mem
-       ; BI_const_num (nat_to_value 1)
-       ; BI_relop T_i32 (Relop_i ROI_eq)
-       ; BI_if (BT_valtype None)
-           (* grow mem failed *)
-           [ BI_return ]
-           []
-       ; BI_global_get global_mem_ptr
+      ([ BI_global_get global_mem_ptr
        ; BI_global_set constr_alloc_ptr
        ; BI_global_get constr_alloc_ptr
        ; BI_const_num (nat_to_value (N.to_nat ord))
@@ -515,20 +506,42 @@ Inductive repr_primitive_operation {lenv} : primop -> list positive  -> list bas
     repr_primitive_ternary_operation op x' y' z' instr ->
     repr_primitive_operation op [ x ; y ; z ] instr.
 
+
+Inductive repr_call_grow_mem_if_necessary : N (* at least mem available, known statically *) ->
+                                            N (* bytes required for alloc *) ->
+                                            N (* at least mem available after allocation *) -> 
+                                            list basic_instruction (* generated instr *) -> Prop :=
+| G_enough_mem : forall mem mem' bytes,
+  (bytes <= mem)%N ->
+  (mem' = mem - bytes)%N ->
+  repr_call_grow_mem_if_necessary mem bytes mem' []
+
+| G_call_grow_mem : forall mem mem' bytes,
+  (bytes >= mem)%N ->
+  (mem' = 65536 - bytes)%N ->
+  repr_call_grow_mem_if_necessary mem bytes mem'
+    [ BI_const_num (N_to_value page_size)
+    ; BI_call grow_mem_function_idx
+    ; BI_global_get result_out_of_mem
+    ; BI_if (BT_valtype None) [ BI_return ] []
+    ]
+.
+
+
 (* CODEGEN RELATION: relatates LambdaANF expression and result of translate_body *)
-Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_instruction -> Prop :=
-| R_halt_e: forall x x',
+Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> N -> list basic_instruction -> Prop :=
+| R_halt_e: forall x x' mem,
     repr_var (lenv:=lenv) x x' ->
-    repr_expr_LambdaANF_Wasm (Ehalt x)
+    repr_expr_LambdaANF_Wasm (Ehalt x) mem
       [ BI_local_get x'
       ; BI_global_set result_var
       ; BI_return
       ]
-| Rproj_e: forall x x' t n y y' e e',
-    repr_expr_LambdaANF_Wasm e e' ->
+| Rproj_e: forall x x' t n y y' e e' mem,
+    repr_expr_LambdaANF_Wasm e mem e' ->
     repr_var (lenv:=lenv) x x' ->
     repr_var (lenv:=lenv) y y' ->
-    repr_expr_LambdaANF_Wasm (Eproj x t n y e)
+    repr_expr_LambdaANF_Wasm (Eproj x t n y e) mem
       ([ BI_local_get y'
        ; BI_const_num (nat_to_value (((N.to_nat n) + 1) * 4))
        ; BI_binop T_i32 (Binop_i BOI_add)
@@ -536,18 +549,21 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
        ; BI_local_set x'
        ] ++ e')
 
-| Rconstr_e: forall x x' t vs e instrs e',
-    repr_expr_LambdaANF_Wasm e e' ->
+| Rconstr_e: forall x x' t vs e arity instrs e' grow_mem_instr constr_size mem mem',
+    get_ctor_arity cenv t = Ret arity ->
+    get_ctor_size cenv t = Ret constr_size ->
+    repr_call_grow_mem_if_necessary mem constr_size mem' grow_mem_instr ->
+    repr_expr_LambdaANF_Wasm e mem' e' ->
     repr_var (lenv:=lenv) x x' ->
     repr_asgn_constr_Wasm (lenv:=lenv) x' t vs e' instrs ->
-    repr_expr_LambdaANF_Wasm (Econstr x t vs e) instrs
+    repr_expr_LambdaANF_Wasm (Econstr x t vs e) mem (grow_mem_instr ++ instrs)
 
-| Rcase_e : forall y y' cl brs1 brs2 e1' e2',
+| Rcase_e : forall y y' cl brs1 brs2 e1' e2' mem,
     repr_var (lenv:=lenv) y y' ->
-    repr_branches y' cl brs1 brs2 ->
+    repr_branches y' cl brs1 mem brs2 ->
     repr_case_boxed y' brs1 e1' ->
     repr_case_unboxed y' brs2 e2' ->
-    repr_expr_LambdaANF_Wasm (Ecase y cl)
+    repr_expr_LambdaANF_Wasm (Ecase y cl) mem
       [ BI_local_get y'
       ; BI_const_num (nat_to_value 1)
       ; BI_binop T_i32 (Binop_i BOI_and)
@@ -557,25 +573,24 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
           e2'
       ]
 
-| R_app_e : forall v instr t args args',
+| R_app_e : forall v instr t args args' mem,
     (* args are provided properly *)
     repr_fun_args_Wasm (lenv:=lenv) args args' ->
     (* instr reduces to const containing funidx to call *)
     repr_read_var_or_funvar (lenv:=lenv) v instr ->
-    repr_expr_LambdaANF_Wasm (Eapp v t args) (args' ++
-                                                [instr] ++
-                                                [BI_return_call_indirect 0%N (N.of_nat (length args))])
+    repr_expr_LambdaANF_Wasm (Eapp v t args) mem
+      (args' ++ [instr] ++ [BI_return_call_indirect 0%N (N.of_nat (length args))])
 
-| R_letapp_e : forall x x' v instr t args args' e e',
+| R_letapp_e : forall x x' v instr t args args' e e' mem,
     (* translated assigned var *)
     repr_var (lenv:=lenv) x x' ->
     (* following expression *)
-    repr_expr_LambdaANF_Wasm e e' ->
+    repr_expr_LambdaANF_Wasm e 0%N e' ->
     (* args are provided properly *)
     repr_fun_args_Wasm (lenv:=lenv) args args' ->
     (* instr reduces to const containing funidx to call *)
     repr_read_var_or_funvar (lenv:=lenv) v instr ->
-    repr_expr_LambdaANF_Wasm (Eletapp x v t args e)
+    repr_expr_LambdaANF_Wasm (Eletapp x v t args e) mem
       (args' ++
        [ instr
        ; BI_call_indirect 0%N (N.of_nat (length args))
@@ -588,21 +603,15 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
        ; BI_local_set x'
        ] ++ e')
 
-| R_prim_val : forall x x' p v e e',
+| R_prim_val : forall x x' p v e e' mem instr_grow_mem mem',
     repr_var (lenv:=lenv) x x' ->
-    repr_expr_LambdaANF_Wasm e e' ->
+    repr_expr_LambdaANF_Wasm e mem' e' ->
     translate_primitive_value p = Ret v ->
-    repr_expr_LambdaANF_Wasm (Eprim_val x p e)
-      ([ BI_const_num (N_to_value page_size)
-       ; BI_call grow_mem_function_idx
-       ; BI_global_get result_out_of_mem
-       ; BI_const_num (nat_to_value 1)
-       ; BI_relop T_i32 (Relop_i ROI_eq)
-       ; BI_if (BT_valtype None)
-           (* grow mem failed *)
-           [ BI_return ]
-           []
-       ; BI_global_get global_mem_ptr
+    repr_call_grow_mem_if_necessary mem 8%N mem' instr_grow_mem ->
+
+    repr_expr_LambdaANF_Wasm (Eprim_val x p e) mem
+      (instr_grow_mem ++
+       [ BI_global_get global_mem_ptr
        ; BI_const_num (VAL_int64 v)
        ; BI_store T_i64 None 2%N 0%N
        ; BI_global_get global_mem_ptr
@@ -613,42 +622,36 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> list basic_inst
        ; BI_global_set global_mem_ptr
        ] ++ e')
 
-| R_prim : forall x x' p op_name s b n op ys e e' prim_instrs,
+| R_prim : forall x x' p op_name s b n op ys e e' prim_instrs mem mem' grow_instr,
     repr_var (lenv:=lenv) x x' ->
-    repr_expr_LambdaANF_Wasm e e' ->
+    repr_expr_LambdaANF_Wasm e mem' e' ->
     M.get p penv = Some (op_name, s, b, n) ->
     KernameMap.find op_name primop_map = Some op ->
     repr_primitive_operation (lenv:=lenv) op ys prim_instrs ->
-    repr_expr_LambdaANF_Wasm (Eprim x p ys e)
-      (([ BI_const_num (N_to_value page_size)
-        ; BI_call grow_mem_function_idx
-        ; BI_global_get result_out_of_mem
-        ; BI_const_num (nat_to_value 1)
-        ; BI_relop T_i32 (Relop_i ROI_eq)
-        ; BI_if (BT_valtype None)
-            (* grow mem failed *)
-            [ BI_return ]
-            []
-         ] ++ prim_instrs ++ [ BI_local_set x' ]) ++  e')
+    repr_call_grow_mem_if_necessary mem 28%N mem' grow_instr ->
 
-with repr_branches {lenv}: localidx -> list (ctor_tag * exp) -> list (N * list basic_instruction) -> list (N * list basic_instruction) -> Prop :=
-| Rbranch_nil : forall x, repr_branches x [] [ ] [ ]
+    repr_expr_LambdaANF_Wasm (Eprim x p ys e) mem
+      (grow_instr ++ prim_instrs ++ [ BI_local_set x' ] ++  e')
 
-| Rbranch_cons_boxed : forall x cl t e ord n e' brs1 brs2,
-    repr_branches x cl brs1 brs2 ->
+with repr_branches {lenv}: localidx -> list (ctor_tag * exp) -> list (N * list basic_instruction) -> N -> list (N * list basic_instruction) -> Prop :=
+| Rbranch_nil : forall x mem,
+    repr_branches x [] [] mem []
+
+| Rbranch_cons_boxed : forall x cl t e ord n e' brs1 brs2 mem,
+    repr_branches x cl brs1 mem brs2 ->
     get_ctor_ord cenv t = Ret ord ->
     get_ctor_arity cenv t = Ret n ->
     0 < n ->
-    repr_expr_LambdaANF_Wasm e e' ->
-    repr_branches x ((t, e) :: cl) ((ord,e') :: brs1) brs2
+    repr_expr_LambdaANF_Wasm e mem e' ->
+    repr_branches x ((t, e) :: cl) ((ord,e') :: brs1) mem brs2
 
-| Rbranch_cons_unboxed : forall x cl t e ord n e' brs1 brs2,
-    repr_branches x cl brs1 brs2 ->
+| Rbranch_cons_unboxed : forall x cl t e ord n e' brs1 brs2 mem,
+    repr_branches x cl brs1 mem brs2 ->
     get_ctor_ord cenv t = Ret ord ->
     get_ctor_arity cenv t = Ret n ->
     n = 0 ->
-    repr_expr_LambdaANF_Wasm e e' ->
-    repr_branches x ((t, e) :: cl) brs1 ((ord,e') :: brs2).
+    repr_expr_LambdaANF_Wasm e mem e' ->
+    repr_branches x ((t, e) :: cl) brs1 mem ((ord,e') :: brs2).
 
 Scheme repr_expr_LambdaANF_Wasm_mut := Induction for repr_expr_LambdaANF_Wasm Sort Prop
     with repr_branches_mut :=
@@ -698,22 +701,56 @@ Proof.
     constructor. now econstructor.
 Qed.
 
-Theorem translate_body_correct {lenv} :
-    forall e instructions,
-      correct_cenv_of_exp cenv e ->
-    translate_body nenv cenv lenv fenv penv e = Ret instructions ->
-    @repr_expr_LambdaANF_Wasm lenv e instructions.
+(* TODO move to utils *)
+Lemma correct_cenv_of_exp_get_ctor_arity : forall v t ys e,
+  correct_cenv_of_exp cenv (Econstr v t ys e) ->
+  get_ctor_arity cenv t = Ret (length ys).
 Proof.
-  induction e using exp_ind'; intros instr Hcenv; intros.
+  intros.
+  apply Forall_constructors_in_constr in H.
+  unfold get_ctor_arity.
+  destruct (cenv ! t) =>//. destruct c=>//.
+  f_equal. lia.
+Qed.
+
+
+Lemma call_grow_mem_if_necessary_correct : forall mem bytes p,
+  call_grow_mem_if_necessary mem bytes = Ret p ->
+  repr_call_grow_mem_if_necessary mem bytes (snd p) (fst p).
+Proof.
+  intros.
+  unfold call_grow_mem_if_necessary in H.
+  destruct ((bytes <=? mem)%N) eqn:Henough.
+  - (* enough *)
+    inv H. apply G_enough_mem=>//.
+    now apply N.leb_le in Henough.
+  - (* need more *)
+     apply N.leb_gt in Henough.
+     inv H.
+     eapply G_call_grow_mem=>//. lia.
+Qed.
+
+Theorem translate_body_correct {lenv} :
+    forall e instructions mem,
+      correct_cenv_of_exp cenv e ->
+    translate_body nenv cenv lenv fenv penv e mem = Ret instructions ->
+    @repr_expr_LambdaANF_Wasm lenv e mem instructions.
+Proof.
+  induction e using exp_ind'; intros instr mem Hcenv; intros.
   - (* Econstr *)
     simpl in H.
-    destruct (translate_body nenv cenv lenv fenv penv e) eqn:H_eqTranslate; inv H.
-    destruct (translate_var nenv lenv v _) eqn:H_translate_var. inv H1.
+    destruct (translate_var nenv lenv v _) eqn:H_translate_var. inv H.
     destruct l as [|v0 l'].
-
     + (* Nullary constructor *)
-      destruct (get_ctor_ord cenv t) eqn:Hord; inv H1.
-      eapply Rconstr_e with (e':=l0); eauto.
+      destruct (get_ctor_ord cenv t) eqn:Hord. inv H.
+      destruct (translate_body nenv cenv lenv fenv penv e mem) eqn:H_eqTranslate; inv H.
+      assert (get_ctor_size cenv t = Ret 0%N). {
+      apply correct_cenv_of_exp_get_ctor_arity in Hcenv.
+        unfold get_ctor_size. now rewrite Hcenv. }
+      eapply Rconstr_e with (e':=l) (grow_mem_instr:=[]); eauto.
+      eapply correct_cenv_of_exp_get_ctor_arity. eassumption.
+      assert (repr_call_grow_mem_if_necessary mem 0 mem []). { eapply G_enough_mem; lia. }
+      eassumption.
       apply IHe; auto.
       assert (subterm_e e (Econstr v t [] e) ). { constructor; constructor. }
       eapply Forall_constructors_subterm. eassumption. assumption.
@@ -724,20 +761,26 @@ Proof.
       unfold get_ctor_arity. now rewrite Hc.
     + (* Non-nullary constructor *)
       remember (v0 :: l') as l.
-      destruct (store_constructor nenv cenv lenv fenv t l) eqn:Hstore_constr; inv H1.
+      destruct (store_constructor nenv cenv lenv fenv t l) eqn:Hstore_constr; inv H.
+      destruct (get_ctor_size _ _) eqn:HconstrSize. inv H1.
+      destruct (call_grow_mem_if_necessary mem n) eqn:Hgrow. inv H1.
       unfold store_constructor in Hstore_constr.
       destruct (get_ctor_ord cenv t) eqn:Hord; first by inv Hstore_constr.
       destruct (set_constructor_args nenv lenv fenv (v0 :: l') 0) eqn:Hconstrargs; first by inv Hstore_constr.
+      destruct (translate_body _ _ _ _ _ _ _) eqn:Hbody; inversion H1.
       inversion Hstore_constr.
       repeat rewrite <- app_assoc.
-      eapply Rconstr_e with (e' := l0); eauto.
+      apply call_grow_mem_if_necessary_correct in Hgrow.
+
+      eapply Rconstr_e with (e' := l1)(grow_mem_instr:=fst p); eauto.
+      eapply correct_cenv_of_exp_get_ctor_arity. eassumption.
       apply IHe.
       assert (subterm_e e (Econstr v t (v0 :: l') e) ). { constructor; constructor. }
-      eapply Forall_constructors_subterm. eassumption. assumption. reflexivity.
+      eapply Forall_constructors_subterm. eassumption. assumption. assumption.
       econstructor. eassumption.
       apply Forall_constructors_in_constr in Hcenv; auto.
       destruct (cenv ! t) eqn:Hc. 2:auto. destruct c. inv Hcenv.
-      separate_instr. do 7! rewrite catA. (* first 8 instr belong to sgrow *)
+      separate_instr. (* do 7! rewrite catA. first 8 instr belong to sgrow *)
       apply Rconstr_asgn_boxed with (arity:=S (length l')); eauto.
       unfold get_ctor_arity. rewrite Hc. f_equal. cbn. lia. lia.
       apply set_nth_constr_arg_correct.
@@ -748,24 +791,24 @@ Proof.
   - (* Ecase const *)
     simpl in H.
     destruct (translate_var nenv lenv v _) eqn:Hvar. inv H.
-    destruct (translate_body nenv cenv lenv fenv penv e) eqn:He. inv H.
-    destruct (translate_body nenv cenv lenv fenv penv (Ecase v l)) eqn:Hl.
+    destruct (translate_body nenv cenv lenv fenv penv e mem) eqn:He. inv H.
+    destruct (translate_body nenv cenv lenv fenv penv (Ecase v l) mem) eqn:Hl.
     simpl in Hl. destruct (_ l) eqn:Hm. inv H. rewrite Hvar in Hl. destruct p. inv Hl.
     assert (correct_cenv_of_exp cenv (Ecase v l)). {
       intros ?????. eapply Hcenv. apply rt_then_t_or_eq in H0. inv H0. inv H1.
       apply t_then_rt. apply subterm_case. by eauto.
     }
-    specialize (IHe0 l1 H0). clear H0. specialize (IHe0 Logic.eq_refl).
+    specialize (IHe0 l1 mem H0 Hl).
     simpl in Hl.
     destruct (_ l) eqn:Hm. inv H. rewrite Hvar in Hl. inv Hl. destruct p.
     assert (correct_cenv_of_exp cenv e). {
       intro; intros. eapply Hcenv. eapply rt_trans. eauto. constructor.
       econstructor. now left.
     }
-    specialize (IHe l0 H0). assert (Ret l0 = Ret l0) by reflexivity. specialize (IHe H2). clear H0  H2.
-    inv IHe0. inv H1.
-    unfold create_case_nested_if_chain in H5.
+    specialize (IHe l0 mem H1 He).
+    inv IHe0. inv H2.
     unfold create_case_nested_if_chain in H7.
+    unfold create_case_nested_if_chain in H10.
     destruct (get_ctor_ord cenv c) eqn:Hord. inv H.
     rename n into ord.
     destruct (get_ctor_arity cenv c) eqn:Har. inv H.
@@ -816,30 +859,32 @@ Proof.
       constructor. now econstructor.
   - (* Eprim_val *)
     inv H.
-    destruct (translate_body nenv cenv lenv fenv penv e) eqn:H_eqTranslate. inv H1.
     destruct (translate_var nenv lenv v _) eqn:Hvar. inv H1.
     destruct (translate_primitive_value p) eqn:Hprim. inv H1.
-    inversion H1.
-    separate_instr. do 7! rewrite catA. (* first 8 instr belong to sgrow *)
-    apply R_prim_val.
-    + econstructor; eauto.
+    destruct (call_grow_mem_if_necessary mem 8) eqn:Hgrow. inv H1.
+    destruct (translate_body nenv cenv lenv fenv penv e _) eqn:H_eqTranslate. inv H1.
+    inv H1.
+    apply call_grow_mem_if_necessary_correct in Hgrow.
+    apply R_prim_val with (instr_grow_mem:=fst p0)(mem':=snd p0)=>//.
+    + now econstructor.
     + assert (Hcenv': correct_cenv_of_exp cenv e). {
         intro; intros. eapply Hcenv. eapply rt_trans. eauto. constructor.
         now econstructor.
       }
       now eapply IHe.
-    + now assumption.
   - (* Eprim *)
     inv H.
-    destruct (M.get p penv) eqn:Hp. 2: inv H1.
-    destruct (translate_body nenv cenv lenv fenv penv e) eqn:H_eqTranslate. inv H1.
+    destruct (penv ! p) eqn:Hp. 2: inv H1.
     destruct (translate_var nenv lenv v _) eqn:Hvar. inv H1.
     destruct (translate_primitive_operation _) eqn:Hprimop. inv H1.
+    destruct (call_grow_mem_if_necessary mem 28) eqn:Hgrow. inv H1.
+    destruct (translate_body nenv cenv lenv fenv penv e _) eqn:H_eqTranslate. inv H1.
     unfold translate_primitive_operation in Hprimop.
     do 3 destruct p0.
     destruct (KernameMap.find _) eqn:Hker. 2: inv Hprimop.
-    inv H1.
-    eapply R_prim; eauto.
+    inv H1. cbn.
+    apply call_grow_mem_if_necessary_correct in Hgrow.
+    eapply R_prim with (mem':=snd p1); eauto.
     econstructor; eauto.
     assert (Hcenv': correct_cenv_of_exp cenv e). {
       intro; intros. eapply Hcenv. eapply rt_trans. eauto. constructor.

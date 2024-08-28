@@ -183,6 +183,10 @@ Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
   | _ => Err "found constructor without ctor_arity set"
   end.
 
+Definition get_ctor_size (cenv : ctor_env) (t : ctor_tag) : error N :=
+  arity <- get_ctor_arity cenv t;;
+  Ret (if arity =? 0 then 0%N else N.of_nat (4 * (arity + 1))).
+
 (* ***** FUNCTION TO GROW LINEAR MEMORY ****** *)
 
 (* a page is 2^16 bytes, expected num of required bytes in local 0 *)
@@ -338,6 +342,17 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
   | _ => Err ("Unsupported primitive operator: " ++ (Kernames.string_of_kername op_name))
   end.
 
+(* mem is bytes of available linmem, known statically *)
+Definition call_grow_mem_if_necessary (mem : N) (required_bytes : N) : error (list basic_instruction * N) :=
+  if (required_bytes <=? mem)%N
+  then Ret ([], mem - required_bytes)%N
+  (* TODO inline grow_mem_function *)
+  else Ret ([ BI_const_num (N_to_value page_size)
+            ; BI_call grow_mem_function_idx
+            ; BI_global_get result_out_of_mem
+            ; BI_if (BT_valtype None) [ BI_return (* ran out of mem, abort *) ] []
+            ], 65536 - required_bytes)%N.
+
 (* ***** EXPRESSIONS (except fundefs) ****** *)
 
 Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env) (fenv : fname_env) (penv : prim_env) (e : exp) (mem : N) : error (list basic_instruction) :=
@@ -347,27 +362,23 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
       x_var <- translate_var nenv lenv x "translate_body constr";;
       match ys with
       | [] =>
+          (* unboxed *)
           ord <- get_ctor_ord cenv tg ;;
           following_instr <- translate_body nenv cenv lenv fenv penv e' mem ;;
           Ret ([ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N)) ; BI_local_set x_var ] ++ following_instr)
-      | _ => (* n > 0 ary constructor  *)
-          (* Boxed representation *)
+      | _ =>
+          (* n > 0 ary constructor, boxed representation *)
           store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
-          if (4 * (1 + N.of_nat (List.length ys)) <=? mem)%N then
-            following_instr <- translate_body nenv cenv lenv fenv penv e' (mem - (4 * (1 + N.of_nat (List.length ys))))%N ;;
-            Ret (store_constr ++ [ BI_global_get constr_alloc_ptr ; BI_local_set x_var ] ++ following_instr)
-          else
-            following_instr <- translate_body nenv cenv lenv fenv penv e' (65536 - 4 * (1 + N.of_nat (List.length ys)))%N ;;
-            Ret ([ BI_const_num (N_to_value page_size)
-                   ; BI_call grow_mem_function_idx
-                   ; BI_global_get result_out_of_mem
-                   ; BI_if (BT_valtype None)
-                       [ BI_return ]
-                       []
-                ] ++ store_constr ++
-                   [ BI_global_get constr_alloc_ptr
-                     ; BI_local_set x_var
-                   ] ++ following_instr)
+          constr_size <- get_ctor_size cenv tg;;
+          p <- call_grow_mem_if_necessary mem constr_size;;
+          let grow_mem_instr := fst p in
+          let mem' := snd p in
+          following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;
+          Ret (grow_mem_instr ++
+               store_constr ++
+               [ BI_global_get constr_alloc_ptr
+               ; BI_local_set x_var
+               ] ++ following_instr)
       end
    | Ecase x arms =>
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
@@ -404,13 +415,13 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
       Ret ([ BI_local_get y_var
            ; BI_const_num (nat_to_value (((N.to_nat n) + 1) * 4)) (* skip ctor_id and previous constr arguments *)
            ; BI_binop T_i32 (Binop_i BOI_add)
-           ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+           ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: alignment, irrelevant for semantics *)
            ; BI_local_set x_var
            ] ++ following_instr)
 
    | Eletapp x f ft ys e' =>
       x_var <- translate_var nenv lenv x "translate_body proj x";;
-      following_instr <- translate_body nenv cenv lenv fenv penv e' 0%N;;
+      following_instr <- translate_body nenv cenv lenv fenv penv e' 0%N;; (* after function call, no static guarantees for available memory *)
       instr_call <- translate_call nenv lenv fenv f ys false;;
       Ret (instr_call ++ [ BI_global_get result_out_of_mem
                          ; BI_if (BT_valtype None)
@@ -437,36 +448,22 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
             ; BI_global_set global_mem_ptr
             ]
        in
-       if (8 <=? mem)%N then
-         following_instr <- translate_body nenv cenv lenv fenv penv e' (mem - 8)%N ;;
-         Ret (instrs ++ following_instr)
-       else
-         following_instr <- translate_body nenv cenv lenv fenv penv e' 65536%N ;;
-         Ret ([ BI_const_num (N_to_value page_size)
-                ; BI_call grow_mem_function_idx
-                ; BI_global_get result_out_of_mem
-                ; BI_if (BT_valtype None)
-                    [ BI_return ]
-                    []
-                ] ++ instrs ++ following_instr)
+       p <- call_grow_mem_if_necessary mem 8%N;;
+       let grow_instr := fst p in
+       let mem' := snd p in
+       following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;
+       Ret (grow_instr ++ instrs ++ following_instr)
    | Eprim x p ys e' =>
        match M.get p penv with
        | None => Err "Primitive operation not found in prim_env"
        | Some p' =>
            x_var <- translate_var nenv lenv x "translate_exp prim op" ;;
            prim_op_instrs <- translate_primitive_operation nenv lenv p' ys ;;
-           if (28 <=? mem)%N then
-             following_instr <- translate_body nenv cenv lenv fenv penv e' (mem - 28)%N ;;
-             Ret (prim_op_instrs ++ [ BI_local_set x_var ]  ++ following_instr)
-           else
-             following_instr <- translate_body nenv cenv lenv fenv penv e' (65536 - 28)%N ;;
-             Ret ([ BI_const_num (N_to_value page_size)
-                    ; BI_call grow_mem_function_idx
-                    ; BI_global_get result_out_of_mem
-                    ; BI_if (BT_valtype None)
-                        [ BI_return ]
-                        []
-                 ] ++ prim_op_instrs ++ [ BI_local_set x_var ]  ++ following_instr)
+           p <- call_grow_mem_if_necessary mem 28%N;;
+           let grow_instr := fst p in
+           let mem' := snd p in
+           following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;
+           Ret (grow_instr ++ prim_op_instrs ++ [ BI_local_set x_var ]  ++ following_instr)
        end
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_body halt";;
@@ -594,7 +591,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
   let main_vars := collect_local_variables main_expr in
   let main_lenv := create_local_variable_mapping main_vars in
-  main_instr <- translate_body nenv cenv main_lenv fname_mapping penv main_expr 65536%N;;
+  main_instr <- translate_body nenv cenv main_lenv fname_mapping penv main_expr 0%N;;
 
   let main_function := {| fidx := main_function_idx
                         ; export_name := main_function_name
