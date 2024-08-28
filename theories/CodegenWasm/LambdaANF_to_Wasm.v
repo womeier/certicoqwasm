@@ -342,7 +342,8 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
   | _ => Err ("Unsupported primitive operator: " ++ (Kernames.string_of_kername op_name))
   end.
 
-(* mem is bytes of available linmem, known statically *)
+(* mem is lower bound of linmem known to be available statically (bytes)
+   We count allocated bytes to avoid unnecessary checks of the memory size. *)
 Definition call_grow_mem_if_necessary (mem : N) (required_bytes : N) : error (list basic_instruction * N) :=
   if (required_bytes <=? mem)%N
   then Ret ([], mem - required_bytes)%N
