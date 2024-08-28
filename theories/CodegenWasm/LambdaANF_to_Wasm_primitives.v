@@ -1182,10 +1182,137 @@ assert (x / 2^32 < 2^32)%Z by now apply Z.div_lt_upper_bound.
 assert (0 <= x / 2^32)%Z by now apply Z.div_pos; lia.
 lia.
 Qed.
-        
+
+Lemma hi_range_63bit : forall x, 
+    (0 <= x < 2^63)%Z ->
+    (0<= hi x < 2^31)%Z.
+Proof.
+intros.
+assert (x < 2^31 * 2^32)%Z as Hx' by lia.
+assert (0 < 2^32)%Z as H' by lia.
+have Hub := Zdiv_lt_upper_bound _ _ _ H' Hx'.
+assert (0 <= x / 2^32)%Z by now apply Z_div_pos.
+now unfold hi.
+Qed.
+
+
+Lemma lo_hi_product_63bit : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <= lo x * hi y < 9223372030412324866)%Z.
+Proof.
+intros ?? Hx Hy.
+assert (0 <= x < 2^64)%Z as Hx' by lia. 
+have Hxlo := lo_range _ Hx'.
+have Hyhi := hi_range_63bit y Hy.
+cbn in *. 
+assert (lo x * hi y <= 4294967295 * 2147483647)%Z by now apply Zmult_le_compat; auto; try lia.
+cbn in H.
+lia.
+Qed.
+
+Corollary hi_lo_product_63bit : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <= hi x * lo y < 9223372030412324866)%Z.
+Proof.
+intros.
+replace (hi x * lo y)%Z with (lo y * hi x)%Z by lia.
+now apply lo_hi_product_63bit.
+Qed.
+
+Lemma lo_lo_product_63bit : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <= lo x * lo y < 18446744065119617026)%Z.
+Proof.
+intros ?? Hx Hy.
+assert (0 <= x < 2^64)%Z as Hx' by lia. 
+assert (0 <= y < 2^64)%Z as Hy' by lia. 
+have Hxlo := lo_range _ Hx'.
+have Hylo := lo_range _ Hy'.
+now assert (lo x * lo y <= 4294967295 * 4294967295)%Z by now apply Zmult_le_compat; auto; try lia.
+Qed.
+
+Lemma hi_hi_product_63bit : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <= hi x * hi y < 4611686014132420610)%Z.
+Proof.
+intros ?? Hx Hy.
+have Hxhi := hi_range_63bit x Hx.
+have Hyhi := hi_range_63bit y Hy.
+now assert (hi x * hi y <= 2147483647 * 2147483647)%Z by now apply Zmult_le_compat; auto; try lia.
+Qed.
+    
 Definition cross x y := (hi (lo x * lo y) + lo (hi x * lo y) + lo x * hi y)%Z.
 Definition lower x y := ((cross x y) * 2^32 + (lo (lo x * lo y)))%Z.
 Definition upper x y := (hi (hi x * lo y) + hi (cross x y) + (hi x * hi y))%Z.
+
+Lemma cross_upperbound_63bit : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <= cross x y < 9223372039002259456)%Z. 
+Proof.
+intros ?? Hx Hy.
+unfold cross.
+assert (0 <= x < 2^64)%Z as Hx' by lia. 
+assert (0 <= y < 2^64)%Z as Hy' by lia. 
+have Hlo_lo := lo_lo_product_63bit _ _ Hx Hy.
+assert (0 <= lo x * lo y < 2^64)%Z as Hlo_lo' by lia.
+have Hhi_lo := hi_lo_product_63bit _ _ Hx Hy.
+assert (0 <= hi x * lo y < 2^64)%Z as Hhi_lo' by lia.
+have Hlo := lo_range _ Hhi_lo'.
+have Hhi := hi_range _ Hlo_lo'.
+have Hlo_hi := lo_hi_product_63bit _ _ Hx Hy.
+assert (hi (lo x * lo y) + lo (hi x * lo y) <= 4294967295 + 4294967295)%Z by now apply Zplus_le_compat; auto; try lia.
+cbn in H.
+now assert ((hi (lo x * lo y) + lo (hi x * lo y)) + lo x * hi y <= 8589934590 + 9223372030412324865)%Z by now apply Zplus_le_compat; auto; try lia.
+Qed.
+
+(* 2147483646 *)
+(* 2147483648 *)
+(* 461168601413242069 *)
+
+(* 2147483648 *)
+
+Lemma upper_upperbound_63bit : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <= upper x y <= 4611686018427387903)%Z. 
+Proof.
+intros ?? Hx Hy.
+unfold upper.
+assert (0 <= x < 2^64)%Z as Hx' by lia. 
+assert (0 <= y < 2^64)%Z as Hy' by lia. 
+have Hhi_lo := hi_lo_product_63bit _ _ Hx Hy.
+have Hhi_hi := hi_hi_product_63bit _ _ Hx Hy.
+have Hcross := cross_upperbound_63bit _ _ Hx Hy.
+assert (0 <= hi x * lo y < 2^63)%Z as Hhi_lo' by lia.
+have Hhi := hi_range_63bit _ Hhi_lo'.
+assert (cross x y <= 9223372039002259455)%Z by lia.
+Compute (9223372039002259455 / 2^32)%Z.
+assert (hi (cross x y) <= 2147483648)%Z. replace 2147483648%Z with (9223372039002259455 / 2^32)%Z by now cbn.
+unfold hi.
+apply Z.div_le_mono; auto; try lia.
+assert (0 <= hi (cross x y))%Z by now unfold hi; apply Z_div_pos.
+assert (hi x * lo y <= 9223372030412324865)%Z by lia.
+assert (hi (hi x * lo y) <= 2147483646)%Z. { 
+  replace (hi (hi x * lo y))%Z with ((hi x * lo y)/ 2^32)%Z by now unfold hi.
+  replace (2147483646)%Z with (9223372030412324865 /2^32)%Z by now cbn.
+  apply Z.div_le_mono; auto; try lia. }
+assert (hi (hi x * lo y) + hi (cross x y) <= 2147483646 + 2147483648)%Z. apply Zplus_le_compat; auto; try lia.
+assert ((hi (hi x * lo y) + hi (cross x y)) + hi x * hi y <= (2147483646 + 2147483648) + 4611686014132420609)%Z. apply Zplus_le_compat; auto; try lia.
+lia.
+Qed.
+
+Lemma upper_upperbound : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <=2 * (upper x y) + ((lower x y mod 2^64) / 2^63) < 2^63)%Z.
+Proof.
+intros.
+assert (0 <= lower x y mod 2^64 < 2^64)%Z by now apply Z.mod_pos_bound.
+replace (2^64)%Z with (2 * 2^63)%Z in H1 by lia.
+assert (lower x y mod 2^64 / 2^63 < 2)%Z by now apply Z.div_lt_upper_bound.
+assert (0 <= lower x y mod 2^64 / 2^63)%Z by now apply Z.div_pos.
+have Hupper := upper_upperbound_63bit _ _ H H0.
+assert (2 * (upper x y) <= 9223372036854775806)%Z by lia.
+lia.
+Qed.
 
 Lemma lower_of_product : forall x y,
     (0 <= x < 2^64)%Z -> (0 <= y < 2^64)%Z ->
