@@ -138,10 +138,9 @@ export const print_option = (val, dataView, print_elem) => {
 	process.stdout.write("None");
     }
     else {
-	process.stdout.write("Some (");
+	process.stdout.write("Some ");
 	const arg = dataView.getInt32(val + 4, true);
 	print_elem(arg, dataView);
-	process.stdout.write(")");
     }
 }
 
