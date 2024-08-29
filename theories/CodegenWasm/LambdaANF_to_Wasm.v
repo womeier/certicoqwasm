@@ -84,19 +84,14 @@ Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :
  *  The names of translated lANF functions are prefixed with an underscore, others should not to avoid name clashes.
  *)
 
-(* grow_mem: grow linear mem by number of bytes if necessary *)
-Definition grow_mem_function_name := "grow_mem_if_necessary".
-Definition grow_mem_function_idx : funcidx := 0%N.
-
 (* main function: contains the translated main expression *)
 Definition main_function_name := "main_function".
-Definition main_function_idx : funcidx := 1%N.
-
+Definition main_function_idx : funcidx := 0%N.
 
 (* then follow the translated functions,
    index of first translated lANF fun, a custom fun should be added before, and this var increased by 1
    (the proof will still break at various places)  *)
-Definition num_custom_funs := 2.
+Definition num_custom_funs := 1.
 
 (* global vars *)
 Definition global_mem_ptr    : globalidx := 0%N. (* ptr to next free memory, increased after allocation, there is no GC *)
@@ -186,42 +181,6 @@ Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
 Definition get_ctor_size (cenv : ctor_env) (t : ctor_tag) : error N :=
   arity <- get_ctor_arity cenv t;;
   Ret (if arity =? 0 then 0%N else N.of_nat (4 * (arity + 1))).
-
-(* ***** FUNCTION TO GROW LINEAR MEMORY ****** *)
-
-(* a page is 2^16 bytes, expected num of required bytes in local 0 *)
-Definition grow_memory_if_necessary : list basic_instruction :=
-  (* required number of total pages *)
-  [ BI_global_get global_mem_ptr
-  ; BI_local_get 0%N
-  ; BI_binop T_i32 (Binop_i BOI_add)
-  ; BI_const_num (Z_to_value (Z.pow 2 16))
-  ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
-
-  (* current number of pages *)
-  ; BI_memory_size
-  ; BI_relop T_i32 (Relop_i (ROI_ge SX_S))
-  (* allocate one page if necessary *)
-  ; BI_if (BT_valtype None)
-      [ BI_const_num (nat_to_value 1)
-      ; BI_memory_grow (* returns -1 on alloc failure *)
-      ; BI_const_num (Z_to_value (-1))
-      ; BI_relop T_i32 (Relop_i ROI_eq)
-      ; BI_if (BT_valtype None)
-         [ BI_const_num (nat_to_value 1); BI_global_set result_out_of_mem ]
-         []
-      ]
-      []
-  ].
-
-Definition generate_grow_mem_function : wasm_function :=
-  {| fidx := grow_mem_function_idx
-   ; export_name := grow_mem_function_name
-   ; type := 1%N (* [i32] -> [] *)
-   ; locals := []
-   ; body := grow_memory_if_necessary
-   |}.
-
 
 (* ***** FUNCTION CALLS ****** *)
 
@@ -342,17 +301,40 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
   | _ => Err ("Unsupported primitive operator: " ++ (Kernames.string_of_kername op_name))
   end.
 
+
+(* a page is 2^16 bytes, expected num of required bytes in local 0 *)
+Definition grow_memory_if_necessary : list basic_instruction :=
+  (* required number of total pages *)
+  [ BI_global_get global_mem_ptr
+  ; BI_const_num (N_to_value page_size) (* TODO custom numer of bytes *)
+  ; BI_binop T_i32 (Binop_i BOI_add)
+  ; BI_const_num (Z_to_value (Z.pow 2 16))
+  ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
+
+  (* current number of pages *)
+  ; BI_memory_size
+  ; BI_relop T_i32 (Relop_i (ROI_ge SX_S))
+  (* allocate one page if necessary *)
+  ; BI_if (BT_valtype None)
+      [ BI_const_num (nat_to_value 1)
+      ; BI_memory_grow (* returns -1 on alloc failure *)
+      ; BI_const_num (Z_to_value (-1))
+      ; BI_relop T_i32 (Relop_i ROI_eq)
+      ; BI_if (BT_valtype None)
+         [ BI_const_num (nat_to_value 1); BI_global_set result_out_of_mem; BI_return ] (* out of memory, abort *)
+         []
+      ]
+      []
+  ].
+
+
 (* mem is lower bound of linmem known to be available statically (bytes)
    We count allocated bytes to avoid unnecessary checks of the memory size. *)
-Definition call_grow_mem_if_necessary (mem : N) (required_bytes : N) : error (list basic_instruction * N) :=
+(* TODO merge with grow_memory_if_necessary *)
+Definition call_grow_mem_if_necessary (mem : N) (required_bytes : N) : list basic_instruction * N :=
   if (required_bytes <=? mem)%N
-  then Ret ([], mem - required_bytes)%N
-  (* TODO inline grow_mem_function *)
-  else Ret ([ BI_const_num (N_to_value page_size)
-            ; BI_call grow_mem_function_idx
-            ; BI_global_get result_out_of_mem
-            ; BI_if (BT_valtype None) [ BI_return (* ran out of mem, abort *) ] []
-            ], 65536 - required_bytes)%N.
+  then ([], mem - required_bytes)%N
+  else (grow_memory_if_necessary, 65536 - required_bytes)%N.
 
 (* ***** EXPRESSIONS (except fundefs) ****** *)
 
@@ -371,7 +353,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
           (* n > 0 ary constructor, boxed representation *)
           store_constr <- store_constructor nenv cenv lenv fenv tg ys;;
           constr_size <- get_ctor_size cenv tg;;
-          p <- call_grow_mem_if_necessary mem constr_size;;
+          let p := call_grow_mem_if_necessary mem constr_size in
           let grow_mem_instr := fst p in
           let mem' := snd p in
           following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;
@@ -449,7 +431,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
             ; BI_global_set global_mem_ptr
             ]
        in
-       p <- call_grow_mem_if_necessary mem 8%N;;
+       let p := call_grow_mem_if_necessary mem 8%N in
        let grow_instr := fst p in
        let mem' := snd p in
        following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;
@@ -460,7 +442,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
        | Some p' =>
            x_var <- translate_var nenv lenv x "translate_exp prim op" ;;
            prim_op_instrs <- translate_primitive_operation nenv lenv p' ys ;;
-           p <- call_grow_mem_if_necessary mem 28%N;;
+           let p := call_grow_mem_if_necessary mem 28%N in
            let grow_instr := fst p in
            let mem' := snd p in
            following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;
@@ -578,8 +560,6 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
   let fname_mapping := create_fname_mapping e in
 
-  let grow_mem_function := generate_grow_mem_function in
-
   fns <- match e with
          | Efun fds exp => translate_functions nenv cenv fname_mapping penv fds
          | _ => Err "unreachable" (* can't happen, see toplevel.v *)
@@ -601,7 +581,7 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                         ; body := main_instr
                         |}
   in
-  let functions := [grow_mem_function; main_function] ++ unique_export_names fns in
+  let functions := [main_function] ++ unique_export_names fns in
 
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (f.(fidx))
