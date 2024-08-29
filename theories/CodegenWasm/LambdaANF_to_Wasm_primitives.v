@@ -273,7 +273,7 @@ Definition shift_instrs (x y : localidx) shiftop (mask : bool) : list basic_inst
     ; BI_global_get global_mem_ptr
     ] ++ increment_global_mem_ptr 8%N.
 
-Definition mulc_instrs (x y : localidx) : list basic_instruction :=
+Definition mulc_instrs' (x y : localidx) : list basic_instruction :=
   load_local_i64 x ++
     [ BI_const_num 62%Z ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ; BI_testop T_i64 TO_eqz ] ++
     load_local_i64 y ++
@@ -435,7 +435,7 @@ Definition mulc_instrs (x y : localidx) : list basic_instruction :=
 Definition low32 := [ BI_const_num 4294967295%Z ; BI_binop T_i64 (Binop_i BOI_and) ].
 Definition high32 := [ BI_const_num 32%Z ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ].
 
-Definition mulc_instrs' (x y : localidx) : list basic_instruction :=
+Definition mulc_instrs (x y : localidx) : list basic_instruction :=
   (* Compute cross products *)
   (* glob_tmp1 = xlow * ylow *)
   load_local_i64 x ++ low32 ++
@@ -541,7 +541,7 @@ Definition translate_primitive_binary_op op (x y : localidx) : error (list basic
   | PrimInt63addcarryc => Ret (apply_add_carry_operation x y true)
   | PrimInt63subc      => Ret (apply_sub_carry_operation x y false)
   | PrimInt63subcarryc => Ret (apply_sub_carry_operation x y true)
-  | PrimInt63mulc      => Ret (mulc_instrs' x y)
+  | PrimInt63mulc      => Ret (mulc_instrs x y)
   | PrimInt63diveucl   => Ret (diveucl_instrs x y)
   | _ => Err "Unknown primitive binary operator"
   end.
@@ -1071,11 +1071,19 @@ Qed.
 
 Ltac unfold_modulus64 := unfold Int64.modulus, Int64.half_modulus, two_power_nat in *; cbn in *.
 
+Lemma rewrite_modulus64 : Int64.modulus = 18446744073709551616%Z.
+Proof. now unfold_modulus64. Qed.
+
 Ltac solve_unsigned_id := cbn; rewrite Int64.Z_mod_modulus_id; unfold_modulus64; lia.
 
 Lemma low32_max_int32 : forall x,
     (0 <= x mod 2^32 < 2^32)%Z.
 Proof. intros; now cbn; apply Z.mod_pos_bound. Qed.
+
+Lemma low32_max_int32' : forall x,
+    (0 <= x mod 4294967296 < 4294967296)%Z.
+Proof. intros; now apply Z.mod_pos_bound. Qed.
+
 
 Lemma low32_modulo64_id : forall x,
     Int64.unsigned (x mod 2^32)%Z = (x mod 2^32)%Z.
@@ -1084,6 +1092,15 @@ Proof.
   assert (0 <= x mod 2^32 < 2^32)%Z by now apply low32_max_int32.
   solve_unsigned_id.
 Qed.
+
+Lemma low32_modulo64_id' : forall x,
+    Int64.Z_mod_modulus (x mod 4294967296)%Z = (x mod 4294967296)%Z.
+Proof.
+  intros.
+  assert (0 <= x mod 2^32 < 2^32)%Z by now apply low32_max_int32.
+  solve_unsigned_id.
+Qed.
+
 
 Lemma int64_low32 : forall x,
     (0 <= x < Int64.modulus)%Z -> 
@@ -1097,10 +1114,32 @@ rewrite Z_bitmask_modulo32_equivalent.
 now rewrite low32_modulo64_id.
 Qed.
 
+Lemma int64_low32' : forall x,
+    (0 <= x < Int64.modulus)%Z -> 
+    (Int64.iand x 4294967295%Z = x mod 2^32)%Z.
+Proof.  
+intros.
+unfold Int64.iand, Int64.and.
+replace (Int64.unsigned x) with x by now solve_unsigned_id.
+replace (Int64.unsigned 4294967295%Z) with 4294967295%Z by now cbn; lia.
+now rewrite Z_bitmask_modulo32_equivalent.
+Qed.
+
 Lemma high32_max_int32 : forall x,
     (0 <= x < Int64.modulus)%Z -> (0 <= x / 2^32 < 2^32)%Z.
 Proof.
 intros.
+replace Int64.modulus with (2 ^ 32 * 2 ^ 32)%Z in H by now unfold_modulus64; lia.
+assert (x / 2^32 < 2^32)%Z by now apply Z.div_lt_upper_bound.
+assert (0 <= x / 2^32)%Z by now apply Z.div_pos; lia.
+lia.
+Qed.
+
+Lemma high32_max_int32' : forall x,
+    (0 <= x < Int64.modulus)%Z -> (0 <= x / 4294967296 < 4294967296)%Z.
+Proof.
+intros.
+replace 4294967296%Z with (2 ^ 32)%Z by lia.
 replace Int64.modulus with (2 ^ 32 * 2 ^ 32)%Z in H by now unfold_modulus64; lia.
 assert (x / 2^32 < 2^32)%Z by now apply Z.div_lt_upper_bound.
 assert (0 <= x / 2^32)%Z by now apply Z.div_pos; lia.
@@ -1119,6 +1158,21 @@ replace (Int64.unsigned 32%Z) with 32%Z by now cbn.
 rewrite Z.shiftr_div_pow2. 2: lia.
 have H' := high32_max_int32 x H.
 solve_unsigned_id.
+Qed.
+
+Lemma int64_high32' : forall x,
+    (0 <= x < Int64.modulus)%Z -> 
+    (Int64.ishr_u x 32 = x / 2^32)%Z.
+Proof.
+intros.
+unfold Int64.ishr_u, Int64.shru.
+replace (Int64.unsigned (Z_to_i64 (Int64.unsigned 32 mod Int64.wordsize))) with (Int64.unsigned 32%Z) by now cbn.
+replace (Int64.unsigned x) with x by now solve_unsigned_id. 
+replace (Int64.unsigned 32%Z) with 32%Z by now cbn.
+rewrite Z.shiftr_div_pow2.
+have H' := high32_max_int32 x H.
+now cbn.
+replace (Int64.unsigned (Z_to_i64 (32 mod Int64.wordsize))) with (32%Z) by now cbn. lia.
 Qed.
 
 Lemma max32bit_modulo64_id : forall x,
