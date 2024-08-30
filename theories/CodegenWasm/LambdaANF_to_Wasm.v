@@ -22,7 +22,7 @@ Definition max_mem_pages     := 30000%N.
 (* ***** RESTRICTIONS ON lANF EXPRESSIONS ****** *)
 Definition max_function_args := 20%Z.        (* should be possible to vary without breaking much *)
 Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
-Definition max_constr_args   := 1024%Z.      (* should be possible to vary without breaking much *)
+Definition max_constr_args   := 50%Z.        (* should be possible to vary without breaking much *)
 
 Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes, don't change this *)
 
@@ -180,7 +180,7 @@ Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
 
 Definition get_ctor_size (cenv : ctor_env) (t : ctor_tag) : error N :=
   arity <- get_ctor_arity cenv t;;
-  Ret (if arity =? 0 then 0%N else N.of_nat (4 * (arity + 1))).
+  Ret (if arity =? 0 then 0%N else N.of_nat (4 * (arity + 1) + 24)). (* plus 24 for some luft for invariants *)
 
 (* ***** FUNCTION CALLS ****** *)
 
@@ -431,7 +431,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
             ; BI_global_set global_mem_ptr
             ]
        in
-       let p := call_grow_mem_if_necessary mem 8%N in
+       let p := call_grow_mem_if_necessary mem 32%N in  (* plus 24 for some luft for invariants *)
        let grow_instr := fst p in
        let mem' := snd p in
        following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;
@@ -442,7 +442,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
        | Some p' =>
            x_var <- translate_var nenv lenv x "translate_exp prim op" ;;
            prim_op_instrs <- translate_primitive_operation nenv lenv p' ys ;;
-           let p := call_grow_mem_if_necessary mem 28%N in
+           let p := call_grow_mem_if_necessary mem 52%N in (* plus 24 for some luft for invariants *)
            let grow_instr := fst p in
            let mem' := snd p in
            following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;
