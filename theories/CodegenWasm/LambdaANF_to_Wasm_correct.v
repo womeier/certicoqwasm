@@ -1292,7 +1292,7 @@ Definition INV (s : store_record) (f : frame) :=
  /\ INV_table_id s f
  /\ INV_types f
  /\ INV_global_mem_ptr_multiple_of_two s f
- /\ (* INV_exists_func_grow_mem s f *) True (* TODO get rid of *)
+ /\ (* INV_exists_func_grow_mem s f *) True (* TODO get rid of (Martin) *)
  /\ INV_inst_funcs_id s f
  /\ INV_i64_glob_tmps_writable s f.
 
@@ -1399,10 +1399,10 @@ Lemma update_global_preserves_num_functions_bounds : forall j sr sr' f  num,
 Proof.
   unfold INV_num_functions_bounds. intros.
   assert (s_funcs sr = s_funcs sr') as Hfuncs. {
-   unfold supdate_glob, supdate_glob_s in H0.
-   destruct (sglob_ind sr (f_inst f) j). 2:inv H0. cbn in H0.
-   destruct (lookup_N (s_globals sr) g). 2: inv H0. inv H0. reflexivity. }
-   rewrite Hfuncs in H. apply H.
+    unfold supdate_glob, supdate_glob_s in H0.
+    destruct (sglob_ind sr (f_inst f) j). 2:inv H0. cbn in H0.
+    destruct (lookup_N (s_globals sr) g). 2: inv H0. inv H0. reflexivity. }
+  rewrite Hfuncs in H. apply H.
 Qed.
 
 Lemma update_global_preserves_global_mem_ptr_in_linear_memory : forall j sr sr' f m num,

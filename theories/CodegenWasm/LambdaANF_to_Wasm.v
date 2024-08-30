@@ -22,7 +22,7 @@ Definition max_mem_pages     := 30000%N.
 (* ***** RESTRICTIONS ON lANF EXPRESSIONS ****** *)
 Definition max_function_args := 20%Z.        (* should be possible to vary without breaking much *)
 Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
-Definition max_constr_args   := 50%Z.        (* should be possible to vary without breaking much *)
+Definition max_constr_args   := 1024%Z.      (* should be possible to vary without breaking much *)
 
 Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes, don't change this *)
 
@@ -306,7 +306,7 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
 Definition grow_memory_if_necessary : list basic_instruction :=
   (* required number of total pages *)
   [ BI_global_get global_mem_ptr
-  ; BI_const_num (N_to_value page_size) (* TODO custom numer of bytes *)
+  ; BI_const_num (N_to_value page_size)
   ; BI_binop T_i32 (Binop_i BOI_add)
   ; BI_const_num (Z_to_value (Z.pow 2 16))
   ; BI_binop T_i32 (Binop_i (BOI_div SX_S))
@@ -327,10 +327,8 @@ Definition grow_memory_if_necessary : list basic_instruction :=
       []
   ].
 
-
-(* mem is lower bound of linmem known to be available statically (bytes)
-   We count allocated bytes to avoid unnecessary checks of the memory size. *)
-(* TODO merge with grow_memory_if_necessary *)
+(* mem is lower bound of linmem known to be available statically (in bytes)
+   allocated bytes are counted to omit unnecessary checks of the memory size. *)
 Definition call_grow_mem_if_necessary (mem : N) (required_bytes : N) : list basic_instruction * N :=
   if (required_bytes <=? mem)%N
   then ([], mem - required_bytes)%N
