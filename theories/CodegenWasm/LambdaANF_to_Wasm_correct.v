@@ -2198,14 +2198,61 @@ Proof.
   rewrite Hsize. cbn. eauto.
 Qed.
 
-Lemma memory_grow_reduce_need_grow_mem : forall state s f gmp m,
+(* statically known available memory (minimum) *)
+Definition min_available_memory (sr : store_record) (inst : moduleinst) (bytes : N) :=
+  forall m gmp,
+  smem sr inst = Some m ->
+  sglob_val sr inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+  (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
+  (gmp + bytes < mem_length m)%N.
+
+
+Lemma lholed_nested_label : forall k (lh : lholed k) es es',
+  exists k' (lh' : lholed k'),
+  lfill lh ([:: AI_label 0 [::] es] ++ es') = lfill lh' es.
+Proof.
+  intros. induction lh; cbn.
+  - eexists. exists (LH_rec l 0 [] (LH_base [] []) (es' ++ l0)). cbn.
+    by rewrite cats0.
+  - destruct IHlh as [k' [lh' Heq]]. cbn.
+    eexists. exists (LH_rec l n l0 lh' l1). cbn.
+    now rewrite Heq.
+Qed.
+
+Lemma lholed_nested_label2 : forall k (lh : lholed k) es es',
+  exists k' (lh' : lholed k'),
+  lfill lh ([:: AI_label 0 [::] [:: AI_label 0 [::] es]] ++ es') = lfill lh' es.
+Proof.
+  intros. induction lh; cbn.
+  - eexists. exists (LH_rec l 0 [] (LH_rec [] 0 [] (LH_base [] []) []) (es' ++ l0)). cbn.
+    by rewrite cats0.
+  - destruct IHlh as [k' [lh' Heq]]. cbn.
+    eexists. exists (LH_rec l n l0 lh' l1). cbn.
+    now rewrite Heq.
+Qed.
+
+Lemma lholed_tail : forall k (lh : lholed k) es es',
+  exists k' (lh' : lholed k'),
+  lfill lh (es ++ es') = lfill lh' es.
+Proof.
+  intros.
+  induction lh; cbn.
+  - eexists. exists (LH_base l (es' ++ l0)). now rewrite -catA.
+  - destruct IHlh as [k' [lh' Heq]].
+    eexists. rewrite Heq.
+    exists (LH_rec l n l0 lh' l1).
+    reflexivity.
+Qed.
+
+
+Lemma memory_grow_reduce_check_grow_mem : forall state sr fr gmp m,
   (* INV only for the properties on s,
      the one on f won't hold anymore when we switch to reference types (WasmGC), TODO consider
      having INV only depend on s *)
-  INV s f ->
+  INV sr fr ->
   (* need more memory *)
-  sglob_val s (f_inst f) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
-  smem s (f_inst f) = Some m ->
+  sglob_val sr (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+  smem sr (f_inst fr) = Some m ->
   (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
   ~~ Wasm_int.Int32.lt
        (Wasm_int.Int32.repr
@@ -2213,18 +2260,29 @@ Lemma memory_grow_reduce_need_grow_mem : forall state s f gmp m,
              (Wasm_int.Int32.iadd (N_to_i32 gmp)
                 (N_to_i32 page_size)) ÷ 65536))
        (Wasm_int.Int32.repr (Z.of_N (mem_size m))) = true ->
-  exists s', reduce_trans
-   (state, s, f, [ seq AI_basic i | i <- grow_memory_if_necessary ])
-   (state, s', f, [])
-   /\ s_funcs s = s_funcs s'
-   /\ (forall wal val, repr_val_LambdaANF_Wasm val s (f_inst f) wal ->
-                       repr_val_LambdaANF_Wasm val s' (f_inst f) wal)
+
+   (exists sr', reduce_trans
+   (state, sr, fr, [seq AI_basic i | i <- grow_memory_if_necessary])
+   (state, sr', fr, [])
+   /\ s_funcs sr = s_funcs sr'
+   /\ (forall wal val, repr_val_LambdaANF_Wasm val sr (f_inst fr) wal ->
+                       repr_val_LambdaANF_Wasm val sr' (f_inst fr) wal)
    (* enough memory to alloc. constructor *)
-   /\ ((INV s' f /\
-       (forall m, smem s' (f_inst f) = Some m ->
-          sglob_val s' (f_inst f) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) /\
-          (Z.of_N gmp + Z.of_N page_size < Z.of_N (mem_length m))%Z))
-       \/ (sglob_val s' (f_inst f) result_out_of_mem = Some (VAL_num (VAL_int32 (N_to_i32 1))))).
+   /\ INV sr' fr /\
+      (forall m, smem sr' (f_inst fr) = Some m ->
+          sglob_val sr' (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) /\
+          (Z.of_N gmp + Z.of_N page_size < Z.of_N (mem_length m))%Z)
+  ) \/
+  (* ran out of memory *)
+  (forall k (lh: lholed k),
+  exists sr' k' (lh': lholed k'),
+    reduce_trans
+      (state, sr,  fr, (lfill lh (map AI_basic grow_memory_if_necessary)))
+      (state, sr', fr, (lfill lh' [::AI_basic BI_return]))
+   /\ s_funcs sr = s_funcs sr'
+   /\ (forall wal val, repr_val_LambdaANF_Wasm val sr (f_inst fr) wal ->
+                       repr_val_LambdaANF_Wasm val sr' (f_inst fr) wal)
+   /\ (sglob_val sr' (f_inst fr) result_out_of_mem = Some (VAL_num (VAL_int32 (nat_to_i32 1))))).
 Proof with eauto.
   (* grow memory if necessary *)
   intros state sr fr gmp m Hinv Hgmp Hm HgmpBound HneedMoreMem.
@@ -2240,14 +2298,15 @@ Proof with eauto.
   have H' := HgmpInM _ _ Hm2 Hgmp HgmpBound.
   (* need to grow memory *)
   destruct (N.leb_spec (size + 1) max_mem_pages); unfold max_mem_pages in *.
-  (* grow memory success *)
-  assert (mem_size m + 1 <= page_limit)%N. { unfold page_limit. lia. }
-  assert (Hsize: (mem_size m + 1 <=? max_mem_pages)%N).
-  { subst. apply N.leb_le. now unfold max_mem_pages. }
+  { (* grow memory success *)
+    assert (mem_size m + 1 <= page_limit)%N. { unfold page_limit. lia. }
+    assert (Hsize: (mem_size m + 1 <=? max_mem_pages)%N).
+    { subst. apply N.leb_le. now unfold max_mem_pages. }
 
-  have Hgrow := memory_grow_success _ _ _ INVlinmem Hm2 Hsize.
-  destruct Hgrow as [s' [size' Hgrow]].
-  { eexists. split.
+    have Hgrow := memory_grow_success _ _ _ INVlinmem Hm2 Hsize.
+    destruct Hgrow as [s' [size' Hgrow]].
+
+    left. eexists. split.
     (* load global_mem_ptr *)
     dostep_nary 0. apply r_global_get. eassumption.
     (* add required bytes *)
@@ -2308,7 +2367,7 @@ Proof with eauto.
       - lia.
       - intros. eapply mem_grow_preserves_original_values; eauto; unfold page_limit; lia.
       - intros. eapply mem_grow_preserves_original_values; eauto; unfold page_limit; lia.
-    } left. split.
+    } split.
     { (* invariant *)
       eapply smem_grow_preserves_INV; eauto. }
     { (* enough memory available *)
@@ -2323,8 +2382,13 @@ Proof with eauto.
   }
 
   { (* growing memory fails *)
-    edestruct INVresM_w as [sr'' HresM].
-    eexists. split.
+    edestruct INVresM_w as [sr'' HresM]. right. intros.
+
+    have Hlh := lholed_nested_label2 _ lh [::AI_basic BI_return] [::].
+    destruct Hlh as [k' [lh' Hlheq]].
+
+    eexists. exists k', lh'. split.
+    eapply rt_trans. apply reduce_trans_label'. separate_instr.
     (* load global_mem_ptr *)
     dostep_nary 0. apply r_global_get. eassumption.
     (* add required bytes *)
@@ -2350,7 +2414,7 @@ Proof with eauto.
 
     dostep'. constructor. subst. rewrite HneedMoreMem. apply rs_if_true. discriminate.
     dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
-    apply reduce_trans_label.
+    apply reduce_trans_label0.
     dostep_nary 1. eapply r_memory_grow_failure; try eassumption.
     { (* TODO cleanup *)
       unfold smem_grow. rewrite Hm1. unfold smem in Hm2. rewrite Hm1 in Hm2. cbn.
@@ -2362,8 +2426,9 @@ Proof with eauto.
     dostep_nary 2. constructor. apply rs_relop. cbn.
     dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
     dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
-    apply reduce_trans_label. cbn.
-    dostep_nary' 1. apply r_global_set with (v:=VAL_num (nat_to_value 1)). eassumption. (* apply rt_refl.
+    apply reduce_trans_label0. cbn.
+    dostep_nary' 1. apply r_global_set with (v:=VAL_num (nat_to_value 1)). eassumption. apply rt_refl.
+    cbn. rewrite -Hlheq. apply rt_refl.
     (* correct resulting environment *)
     split. eapply update_global_preserves_funcs; eassumption.
     split.
@@ -2379,14 +2444,15 @@ Proof with eauto.
       - simpl_modulus. cbn. lia.
       - lia.
    }
-   intros. right. eapply update_global_get_same. eassumption. }
-Qed. *) Admitted.
+   intros. eapply update_global_get_same. eassumption. }
+Qed.
 
-Lemma memory_grow_reduce_already_enough_mem_dynamic_check : forall state s f gmp m,
+
+Lemma memory_grow_reduce_check_enough : forall state sr fr gmp m,
   (* INV only for the properties on s *)
-  INV s f ->
-  sglob_val s (f_inst f) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
-  smem s (f_inst f) = Some m ->
+  INV sr fr ->
+  sglob_val sr (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+  smem sr (f_inst fr) = Some m ->
   (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
   (* already enough memory *)
   ~~ Wasm_int.Int32.lt
@@ -2395,18 +2461,19 @@ Lemma memory_grow_reduce_already_enough_mem_dynamic_check : forall state s f gmp
              (Wasm_int.Int32.iadd (N_to_i32 gmp)
                 (N_to_i32 page_size)) ÷ 65536))
        (Wasm_int.Int32.repr (Z.of_N (mem_size m))) = false ->
-  exists s', reduce_trans
-   (state, s, f, [seq AI_basic i | i <- grow_memory_if_necessary])
-   (state, s', f, [])
-   /\ s_funcs s = s_funcs s'
-   /\ (forall wal val, repr_val_LambdaANF_Wasm val s (f_inst f) wal ->
-                       repr_val_LambdaANF_Wasm val s' (f_inst f) wal)
-   (* enough memory to alloc. constructor *)
-   /\ ((INV s' f /\
-       (forall m, smem s' (f_inst f) = Some m ->
-          sglob_val s' (f_inst f) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) /\
-          (Z.of_N gmp + Z.of_N page_size < Z.of_N (mem_length m))%Z))
-       \/ (sglob_val s' (f_inst f) result_out_of_mem = Some (VAL_num (VAL_int32 (nat_to_i32 1))))).
+
+  (* enough memory (reduction can't run out of memory)*)
+  exists sr', reduce_trans
+  (state, sr, fr, [seq AI_basic i | i <- grow_memory_if_necessary])
+  (state, sr', fr, [])
+  /\ s_funcs sr = s_funcs sr'
+  /\ (forall wal val, repr_val_LambdaANF_Wasm val sr (f_inst fr) wal ->
+                      repr_val_LambdaANF_Wasm val sr' (f_inst fr) wal)
+  (* enough memory to alloc. constructor *)
+  /\ INV sr' fr /\
+     (forall m, smem sr' (f_inst fr) = Some m ->
+         sglob_val sr' (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) /\
+         (Z.of_N gmp + Z.of_N page_size < Z.of_N (mem_length m))%Z).
 Proof with eauto.
   destruct exists_i32 as [my_i32 _].
   (* grow memory if necessary *)
@@ -2417,6 +2484,7 @@ Proof with eauto.
   assert (m' = m) by congruence. subst m'.
 
   have H' := HgmpInM _ _ Hm2 Hgmp HgmpBound.
+
   (* enough space already *)
   exists sr. split.
   (* load global_mem_ptr *)
@@ -2447,7 +2515,7 @@ Proof with eauto.
 
   dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto. cbn.
   apply reduce_trans_label. apply rt_refl. split. reflexivity. split. auto.
-  left. split. assumption.
+  split. assumption.
 
   (* enough space *)
   { intros. unfold max_mem_pages in *. subst size.
@@ -2547,16 +2615,6 @@ Proof.
   now exists vi32.
 Qed.
 
-(* statically known available memory (minimum) *)
-Definition min_available_memory (sr : store_record) (inst : moduleinst) (bytes : N) :=
-  forall m gmp,
-  smem sr inst = Some m ->
-  sglob_val sr inst global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
-  (-1 < Z.of_N gmp < Wasm_int.Int32.modulus)%Z ->
-  (gmp + bytes < mem_length m)%N.
-
-Opaque grow_memory_if_necessary. (* TODO move to top *)
-
 Lemma memory_grow_reduce : forall state sr fr required_bytes mem grow_mem_instr mem',
   (required_bytes < page_size)%N ->
   min_available_memory sr (f_inst fr) mem ->
@@ -2607,35 +2665,48 @@ Proof with eauto.
     repeat split=>//.
     have H' := HmemAvail _ _ H2 Hg'. lia.
   }
+  { (* needs dynamic check if memory should be grown *)
+    have I := Hinv.
+    destruct I as [_ [INVresM_w [_ [INVgmp_w [INVcap_w [INVmut [INVlinmem [HgmpInM [? ?]]]]]]]]].
+    destruct INVlinmem as [Hm1 [m [Hm2 [size [Hm3 [Hm4 Hm5]]]]]].
+    assert (global_var_r global_mem_ptr sr fr) as H2. {
+      apply global_var_w_implies_global_var_r; auto.
+      left; right; right; now constructor.
+    }
+    destruct H2 as [g Hgmp_r].
+    destruct (i32_glob_implies_i32_val _ _ _ gmp_i32_glob INVgmp_w INVmut) as [g' Hg'].
+    destruct (i32_exists_N g') as [gmp [HgmpEq HgmpBound]]. subst g'.
+    replace g with (VAL_int32 (N_to_i32 gmp)) in * by now rewrite Hg' in Hgmp_r.
 
-  (* needs dynamic check if memory should be grown *)
-  have I := Hinv.
-  destruct I as [_ [INVresM_w [_ [INVgmp_w [INVcap_w [INVmut [INVlinmem [HgmpInM [? ?]]]]]]]]].
-  destruct INVlinmem as [Hm1 [m [Hm2 [size [Hm3 [Hm4 Hm5]]]]]].
-  assert (global_var_r global_mem_ptr sr fr) as H2.
-  { apply global_var_w_implies_global_var_r; auto.
-  left; right; right; now constructor.
-  }
-  destruct H2 as [g Hgmp_r].
-  destruct (i32_glob_implies_i32_val _ _ _ gmp_i32_glob INVgmp_w INVmut) as [g' Hg'].
-  destruct (i32_exists_N g') as [gmp [HgmpEq HgmpBound]]. subst g'.
-  replace g with (VAL_int32 (N_to_i32 gmp)) in * by now rewrite Hg' in Hgmp_r.
-  destruct ((~~ Wasm_int.Int32.lt
+    destruct ((~~ Wasm_int.Int32.lt
                  (Wasm_int.Int32.repr
                    (Wasm_int.Int32.signed
                      (Wasm_int.Int32.iadd (N_to_i32 gmp)
                         (N_to_i32 page_size)) ÷ 65536))
                  (Wasm_int.Int32.repr (Z.of_N (mem_size m))))) eqn:HneedMoreMem.
-  2: rename HneedMoreMem into HenoughMem.
-  { (* need to grow memory *)
-    have H' := memory_grow_reduce_need_grow_mem state _ _ _ _
-                                  Hinv Hgmp_r Hm2 HgmpBound HneedMoreMem.
-    admit. }
-  { (* enough space already *)
-     have H' := memory_grow_reduce_already_enough_mem_dynamic_check state _ _ _ _
-                                  Hinv Hgmp_r Hm2 HgmpBound HenoughMem.
-     admit. }
-Admitted.
+    2: rename HneedMoreMem into HenoughMem.
+    { (* need to grow memory *)
+      have H' := memory_grow_reduce_check_grow_mem state _ _ _ _ Hinv Hgmp_r Hm2 HgmpBound HneedMoreMem.
+      destruct H' as [[sr' [Hred [Hfuncs [HvalPreserved [Hinv' HenoughM]]]]] | H'].
+      { (* success *)
+        left. exists gmp, sr'. repeat split=>//.
+        - destruct (HenoughM _ H2) as [? _]. assumption.
+        - destruct (HenoughM _ H2) as [_ ?]. lia. }
+      { (* out of mem *)
+        right. intros.
+        destruct (H' _ lh) as [sr' [k' [lh' [Hred [Hfuncs [HvalPreserved HoutofMem]]]]]].
+        exists sr', k', lh'. by repeat split=>//. }
+    }
+    { (* enough space already *)
+     have H' := memory_grow_reduce_check_enough state _ _ _ _ Hinv Hgmp_r Hm2 HgmpBound HenoughMem.
+     destruct H' as [sr' [Hred [Hfuncs [HvalPreserved [Hinv' HenoughM]]]]].
+     (* success *)
+     left. exists gmp, sr'. repeat split=>//.
+     - destruct (HenoughM _ H2) as [? _]. assumption.
+     - destruct (HenoughM _ H2) as [_ ?]. lia.
+    }
+  }
+Qed.
 
 (* TODO use automation instead *)
 Lemma N_to_i32_eq_modulus: forall n m,
@@ -3852,31 +3923,6 @@ Proof.
   - inv H. reflexivity.
   - destruct a. inv H.
     cbn. apply IHbrs in H5. now rewrite H5.
-Qed.
-
-Lemma lholed_nested_label : forall k (lh : lholed k) es es',
-  exists k' (lh' : lholed k'),
-  lfill lh ([:: AI_label 0 [::] es] ++ es') = lfill lh' es.
-Proof.
-  intros. induction lh; cbn.
-  - eexists. exists (LH_rec l 0 [] (LH_base [] []) (es' ++ l0)). cbn.
-    by rewrite cats0.
-  - destruct IHlh as [k' [lh' Heq]]. cbn.
-    eexists. exists (LH_rec l n l0 lh' l1). cbn.
-    now rewrite Heq.
-Qed.
-
-Lemma lholed_tail : forall k (lh : lholed k) es es',
-  exists k' (lh' : lholed k'),
-  lfill lh (es ++ es') = lfill lh' es.
-Proof.
-  intros.
-  induction lh; cbn.
-  - eexists. exists (LH_base l (es' ++ l0)). now rewrite -catA.
-  - destruct IHlh as [k' [lh' Heq]].
-    eexists. rewrite Heq.
-    exists (LH_rec l n l0 lh' l1).
-    reflexivity.
 Qed.
 
 Lemma and_of_odd_and_1_1 : forall n,
@@ -7353,8 +7399,10 @@ Proof with eauto.
         apply nth_error_Some. congruence. }
 
       assert (HmemAvail': min_available_memory s_v (f_inst f_before_IH) mem'). {
-        intros ?? Hmem Hglob Hbound.
-        
+        intros ?? Hmem Hglob Hbound. subst f_before_IH.
+        rewrite Hgmp_v in Hglob.
+        injection Hglob.
+        have H'' := HenoughM. admit.
       }
 
       (* evironment relation *)
