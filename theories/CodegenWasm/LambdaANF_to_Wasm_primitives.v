@@ -1,4 +1,5 @@
-From Coq Require Import POrderedType ZArith BinNat List Lia Uint63 Program.
+From Coq Require Import POrderedType ZArith BinNat List Lia Uint63 Program Relations.Relations Relations.Relation_Operators.
+
 From Wasm Require Import datatypes operations numerics host opsem properties common.
 Import Wasm_int.
 
@@ -11,7 +12,7 @@ From CertiCoq Require Import
 Require Import ExtLib.Structures.Monad.
 From MetaCoq Require Import Common.Kernames Utils.bytestring Utils.MCString.
 
-Import ssreflect MonadNotation SigTNotations.
+Import eqtype ssrbool eqtype seq ListNotations ssreflect MonadNotation SigTNotations.
 
 Notation "'primInt' x" := (AstCommon.primInt ; x) (at level 0).
 
@@ -454,12 +455,12 @@ Definition mulc_instrs (x y : localidx) : list basic_instruction :=
   load_local_i64 y ++ high32 ++
   [ BI_binop T_i64 (Binop_i BOI_mul) ; BI_global_set glob_tmp4 ] ++
   (* Add the cross products together *)
-  [ BI_global_get glob_tmp1 ] ++ high32 ++ (* (xlow * ylow) >> 32 *) 
+  [ BI_global_get glob_tmp1 ] ++ high32 ++ (* (xlow * ylow) >> 32 *)
   [ BI_global_get glob_tmp2 ] ++ low32 ++ (* (xhigh * ylow) & 0xFFFFFFFF *)
-  [ BI_binop T_i64 (Binop_i BOI_add) 
-  ; BI_global_get glob_tmp3 
+  [ BI_binop T_i64 (Binop_i BOI_add)
+  ; BI_global_get glob_tmp3
   ; BI_binop T_i64 (Binop_i BOI_add)
-  (* We don't need xlow * yhigh, so we can store the intermediate cross in glob_tmp3  *)             
+  (* We don't need xlow * yhigh, so we can store the intermediate cross in glob_tmp3  *)
   ; BI_global_set glob_tmp3
   ] ++
   [ BI_global_get glob_tmp2 ] ++ high32 ++
@@ -471,11 +472,11 @@ Definition mulc_instrs (x y : localidx) : list basic_instruction :=
   ] ++
   [ BI_global_get glob_tmp3 ; BI_const_num 32%Z ; BI_binop T_i64 (Binop_i BOI_shl) ] ++
   [ BI_global_get glob_tmp1 ] ++ low32 ++
-  [ BI_binop T_i64 (Binop_i BOI_or) 
+  [ BI_binop T_i64 (Binop_i BOI_or)
   ; BI_global_set glob_tmp1 (* glob_tmp1 = lower 64 bits of 128 bit product *)
   ] ++
-  (* Now adjust such that glob_tmp2 = upper _63_ bits of _126_ bit product *) 
-  [ BI_global_get glob_tmp2 
+  (* Now adjust such that glob_tmp2 = upper _63_ bits of _126_ bit product *)
+  [ BI_global_get glob_tmp2
   ; BI_const_num 1%Z
   ; BI_binop T_i64 (Binop_i BOI_shl)
   ; BI_global_get glob_tmp1
@@ -483,8 +484,8 @@ Definition mulc_instrs (x y : localidx) : list basic_instruction :=
   ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
   ; BI_binop T_i64 (Binop_i BOI_add)
   ; BI_global_set glob_tmp2
-  ] ++ 
-  (* And glob_tmp1 = lower _63_ bits of _126_ bit product *) 
+  ] ++
+  (* And glob_tmp1 = lower _63_ bits of _126_ bit product *)
   [ BI_global_get glob_tmp1
   ; BI_const_num maxuint63
   ; BI_binop T_i64 (Binop_i BOI_and)
@@ -732,7 +733,7 @@ Definition LambdaANF_primInt_addmuldiv p x y := Vprim (primInt (addmuldiv p x y)
    match the type of the Coq operator.
    E.g 'add' has the type 'uint63 -> uint63 -> uint63' so the arguments must be
    2 primitive integer values and the return value is a primitive integer. *)
-Definition apply_LambdaANF_primInt_operator op (vs : list val) : option val :=
+Definition apply_LambdaANF_primInt_operator op (vs : list cps.val) : option cps.val :=
   match vs with
   | [ Vprim (primInt x) ] =>
       match op with
@@ -782,6 +783,8 @@ Section CORRECTNESS.
 
 Context `{ho : host}.
 
+Ltac Zify.zify_post_hook ::= Z.div_mod_to_equations.
+
 (* Arguments to primitive operations can only be primInts
    (Eventually adapt for floats) *)
 Lemma apply_primop_only_defined_on_primInts :
@@ -805,7 +808,7 @@ Qed.
    and the constructor environment contains all constructors that may be returned,
    and the constructors have the expected ordinals (i.e. the ones used in the translation section).
  *)
-Definition prim_funs_env_wellformed (cenv : ctor_env) (penv : prim_env) (prim_funs : M.t (list val -> option val)) : Prop :=
+Definition prim_funs_env_wellformed (cenv : ctor_env) (penv : prim_env) (prim_funs : M.t (list cps.val -> option cps.val)) : Prop :=
   forall p op_name s b n op f vs v,
     M.get p penv = Some (op_name, s, b, n) ->       (* penv = primitive function environment obtained from previous pipeline stage *)
     KernameMap.find op_name primop_map = Some op -> (* primop_map = environment of supported primitive operations *)
@@ -824,17 +827,46 @@ Definition prim_funs_env_wellformed (cenv : ctor_env) (penv : prim_env) (prim_fu
       /\ M.get c1_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N C1_ord)
       /\ M.get pair_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 2%N pair_ord).
 
-Lemma uint63_mod_modulus_id :
-  forall (x : uint63), Int64.Z_mod_modulus (to_Z x) = to_Z x.
+Hint Resolve eq_sym eq_trans : core.
+Hint Extern 1 => symmetry : core.
+
+Remark int64_modulus_eq_pow64 : Int64.modulus = (2^64)%Z.
+Proof. now unfold Int64.modulus, Int64.half_modulus, two_power_nat. Qed.
+
+Hint Resolve int64_modulus_eq_pow64 : core.
+
+Lemma uint63_lt_pow64 : forall (x : uint63), (0 <= to_Z x < 2^64)%Z.
 Proof.
-  intros.
-  rewrite Int64.Z_mod_modulus_id. reflexivity.
-  assert (0 <= to_Z x < wB)%Z by now apply to_Z_bounded.
-  assert (wB < Int64.modulus)%Z. unfold Int64.modulus, Int64.half_modulus, two_power_nat. cbn. lia. lia.
+  intros; have H := (to_Z_bounded x).
+  cbn in H.
+  lia.
 Qed.
 
+Hint Resolve uint63_lt_pow64 : core.
+
+Lemma lt_pow64_mod_modulus_id : forall x, (0 <= x < 2^64)%Z -> Int64.Z_mod_modulus x = x.
+Proof.
+  intros. now rewrite Int64.Z_mod_modulus_id.
+Qed.
+
+Hint Resolve lt_pow64_mod_modulus_id : core.
+
+Lemma lt_pow64_unsigned_id : forall x, (0 <= x < 2^64)%Z -> Int64.unsigned x = x.
+Proof.
+  intros. now cbn.
+Qed.
+
+Hint Resolve lt_pow64_unsigned_id : core.
+
+Corollary uint63_mod_modulus_id : forall (x : uint63), Int64.Z_mod_modulus (to_Z x) = to_Z x.
+Proof. intros; auto. Qed.
+
+Hint Resolve uint63_mod_modulus_id : core.
+
 Corollary uint63_unsigned_id : forall (x : uint63), Int64.unsigned (to_Z x) = to_Z x.
-Proof. intros; simpl; now rewrite uint63_mod_modulus_id. Qed.
+Proof. intros; auto. Qed.
+
+Hint Resolve uint63_unsigned_id : core.
 
 Lemma Z_bitmask_modulo_equivalent :
   forall (n : Z), Z.land n maxuint63 = Z.modulo n wB.
@@ -982,7 +1014,6 @@ Proof. solve_arith_op Int64.ior Int64.or lor_spec'. Qed.
 Lemma uint63_lxor_i64_xor : forall x y, Int64.ixor (to_Z x) (to_Z y) = to_Z (x lxor y).
 Proof. solve_arith_op Int64.ixor Int64.xor lxor_spec'. Qed.
 
-
 Lemma lsl_bits_high : forall x y,
     (to_Z 63 <= to_Z y)%Z ->
     forall i, bit (x << y) i = false.
@@ -1065,210 +1096,123 @@ Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : loca
 
 Lemma Z_bitmask_modulo32_equivalent :
   forall (n : Z), Z.land n 4294967295%Z = Z.modulo n (2^32)%Z.
-Proof. 
+Proof.
 intros; replace 4294967295%Z with (Z.ones 32);[now rewrite Z.land_ones; lia|now cbn].
 Qed.
 
 Ltac unfold_modulus64 := unfold Int64.modulus, Int64.half_modulus, two_power_nat in *; cbn in *.
 
-Lemma rewrite_modulus64 : Int64.modulus = 18446744073709551616%Z.
-Proof. now unfold_modulus64. Qed.
+Ltac solve_unsigned_id := cbn; rewrite Int64.Z_mod_modulus_id; now replace Int64.modulus with (2^64)%Z.
 
-Ltac solve_unsigned_id := cbn; rewrite Int64.Z_mod_modulus_id; unfold_modulus64; lia.
+Hint Resolve Z.mod_pos_bound : core.
+
+Lemma lt_pow32_mod_modulus_id : forall x, (0 <= x < 2^32)%Z -> Int64.Z_mod_modulus x = x.
+Proof.
+  intros. rewrite Int64.Z_mod_modulus_id. reflexivity. rewrite int64_modulus_eq_pow64. lia.
+Qed.
+
+Hint Resolve lt_pow32_mod_modulus_id : core.
+
+Lemma lt_pow32_unsigned_id : forall x, (0 <= x < 2^32)%Z -> Int64.unsigned x = x.
+Proof. intros; now cbn. Qed.
+
+Hint Resolve lt_pow32_unsigned_id : core.
 
 Lemma low32_max_int32 : forall x,
     (0 <= x mod 2^32 < 2^32)%Z.
-Proof. intros; now cbn; apply Z.mod_pos_bound. Qed.
-
-Lemma low32_max_int32' : forall x,
-    (0 <= x mod 4294967296 < 4294967296)%Z.
-Proof. intros; now apply Z.mod_pos_bound. Qed.
-
+Proof. intros; lia. Qed.
 
 Lemma low32_modulo64_id : forall x,
     Int64.unsigned (x mod 2^32)%Z = (x mod 2^32)%Z.
-Proof.
-  intros.
-  assert (0 <= x mod 2^32 < 2^32)%Z by now apply low32_max_int32.
-  solve_unsigned_id.
-Qed.
+Proof. intros; auto. Qed.
 
 Lemma low32_modulo64_id' : forall x,
-    Int64.Z_mod_modulus (x mod 4294967296)%Z = (x mod 4294967296)%Z.
-Proof.
-  intros.
-  assert (0 <= x mod 2^32 < 2^32)%Z by now apply low32_max_int32.
-  solve_unsigned_id.
-Qed.
-
-
-Lemma int64_low32 : forall x,
-    (0 <= x < Int64.modulus)%Z -> 
-    Int64.unsigned (Int64.iand x 4294967295%Z) = (x mod 2^32)%Z.
-Proof.  
-intros.
-unfold Int64.iand, Int64.and.
-replace (Int64.unsigned x) with x by now solve_unsigned_id.
-replace (Int64.unsigned 4294967295%Z) with 4294967295%Z by now cbn; lia.
-rewrite Z_bitmask_modulo32_equivalent.
-now rewrite low32_modulo64_id.
-Qed.
+    Int64.Z_mod_modulus (x mod 2^32)%Z = (x mod 2^32)%Z.
+Proof. intros; auto. Qed.
 
 Lemma int64_low32' : forall x,
-    (0 <= x < Int64.modulus)%Z -> 
-    (Int64.iand x 4294967295%Z = x mod 2^32)%Z.
-Proof.  
+    (0 <= x < 2^64)%Z -> (Int64.iand x 4294967295%Z = x mod 2^32)%Z.
+Proof.
 intros.
 unfold Int64.iand, Int64.and.
-replace (Int64.unsigned x) with x by now solve_unsigned_id.
-replace (Int64.unsigned 4294967295%Z) with 4294967295%Z by now cbn; lia.
+replace (Int64.unsigned x) with x; auto.
+replace (Int64.unsigned 4294967295%Z) with 4294967295%Z; auto.
 now rewrite Z_bitmask_modulo32_equivalent.
 Qed.
 
-Lemma high32_max_int32 : forall x,
-    (0 <= x < Int64.modulus)%Z -> (0 <= x / 2^32 < 2^32)%Z.
+Lemma int64_low32 : forall x,
+    (0 <= x < 2^64)%Z -> Int64.unsigned (Int64.iand x 4294967295%Z) = (x mod 2^32)%Z.
 Proof.
-intros.
-replace Int64.modulus with (2 ^ 32 * 2 ^ 32)%Z in H by now unfold_modulus64; lia.
-assert (x / 2^32 < 2^32)%Z by now apply Z.div_lt_upper_bound.
-assert (0 <= x / 2^32)%Z by now apply Z.div_pos; lia.
-lia.
+intros. rewrite int64_low32'; auto.
 Qed.
+
+Lemma high32_max_int32 : forall x,
+    (0 <= x < 2^64)%Z -> (0 <= x / 2^32 < 2^32)%Z.
+Proof. lia. Qed.
 
 Lemma high32_max_int32' : forall x,
-    (0 <= x < Int64.modulus)%Z -> (0 <= x / 4294967296 < 4294967296)%Z.
-Proof.
-intros.
-replace 4294967296%Z with (2 ^ 32)%Z by lia.
-replace Int64.modulus with (2 ^ 32 * 2 ^ 32)%Z in H by now unfold_modulus64; lia.
-assert (x / 2^32 < 2^32)%Z by now apply Z.div_lt_upper_bound.
-assert (0 <= x / 2^32)%Z by now apply Z.div_pos; lia.
-lia.
-Qed.
+    (0 <= x < 2^64)%Z -> (0 <= x / 4294967296 < 4294967296)%Z.
+Proof. lia. Qed.
 
 Lemma int64_high32 : forall x,
-    (0 <= x < Int64.modulus)%Z -> 
-    Int64.unsigned (Int64.ishr_u x 32) = (x / 2^32)%Z.
+    (0 <= x < 2^64)%Z -> Int64.ishr_u x 32 = (x / 2^32)%Z.
 Proof.
 intros.
 unfold Int64.ishr_u, Int64.shru.
 replace (Int64.unsigned (Z_to_i64 (Int64.unsigned 32 mod Int64.wordsize))) with (Int64.unsigned 32%Z) by now cbn.
-replace (Int64.unsigned x) with x by now solve_unsigned_id. 
-replace (Int64.unsigned 32%Z) with 32%Z by now cbn.
-rewrite Z.shiftr_div_pow2. 2: lia.
-have H' := high32_max_int32 x H.
-solve_unsigned_id.
-Qed.
-
-Lemma int64_high32' : forall x,
-    (0 <= x < Int64.modulus)%Z -> 
-    (Int64.ishr_u x 32 = x / 2^32)%Z.
-Proof.
-intros.
-unfold Int64.ishr_u, Int64.shru.
-replace (Int64.unsigned (Z_to_i64 (Int64.unsigned 32 mod Int64.wordsize))) with (Int64.unsigned 32%Z) by now cbn.
-replace (Int64.unsigned x) with x by now solve_unsigned_id. 
-replace (Int64.unsigned 32%Z) with 32%Z by now cbn.
-rewrite Z.shiftr_div_pow2.
-have H' := high32_max_int32 x H.
-now cbn.
-replace (Int64.unsigned (Z_to_i64 (32 mod Int64.wordsize))) with (32%Z) by now cbn. lia.
+replace (Int64.unsigned x) with x; auto.
+replace (Int64.unsigned 32%Z) with 32%Z; auto.
+now rewrite Z.shiftr_div_pow2; auto.
 Qed.
 
 Lemma max32bit_modulo64_id : forall x,
-    (0 <= x < 2 ^ 32)%Z ->
-    Int64.Z_mod_modulus x = x.
-Proof.
-  intros; solve_unsigned_id.
-Qed.
+    (0 <= x < 2 ^ 32)%Z -> Int64.Z_mod_modulus x = x.
+Proof. intros; auto. Qed.
 
 Lemma max32bit_mul_modulo64_id : forall x y,
-  (0 <= x < 2^32)%Z ->
-  (0 <= y < 2^32)%Z ->
-  Int64.imul x y = (x * y)%Z.
+  (0 <= x < 2^32)%Z -> (0 <= y < 2^32)%Z -> Int64.imul x y = (x * y)%Z.
 Proof.
 intros.
 unfold Int64.imul, Int64.mul.
-replace (Int64.unsigned x) with x by now solve_unsigned_id.
-replace (Int64.unsigned y) with y by now solve_unsigned_id.
-reflexivity.
+replace (Int64.unsigned x) with x; replace (Int64.unsigned y) with y; auto.
 Qed.
 
 Lemma max32bit_mul_max64bit : forall x y,
-  (0 <= x < 2^32)%Z ->
-  (0 <= y < 2^32)%Z ->
-  (0 <= x * y < 2^64)%Z.
-Proof.
-intros.
-replace (2^64)%Z with (2^32 * 2^32)%Z by lia.
-assert (x * y < 2^32 * 2^32)%Z by now apply Zmult_lt_compat.
-lia.
-Qed.
-
-Lemma product_add : forall a b c d,
-    (0 <= a < 2^32)%Z -> (0 <= b < 2^32)%Z -> (0 <= c < 2^32)%Z -> (0 <= d < 2^32)%Z ->
-    (0 <= a + b + (c * d) < 2^64)%Z.
-Proof.
-intros a b c d Ha Hb Hc Hd.
-assert (a + b <= (2^32-1) + (2^32 -1))%Z. lia.
-assert (c * d <= (2^32 - 1) * (2^32 - 1))%Z. apply Zmult_le_compat; auto; try lia.
-assert (a + b + c * d <= (2^32-1) + (2^32 -1) + (2^32 - 1) * (2^32 - 1))%Z. lia.
-assert ((2^32 - 1) + (2^32 - 1) + (2^32 - 1) * (2^32 - 1) < 2^64)%Z. lia.
-lia.
-Qed. 
+  (0 <= x < 2^32)%Z -> (0 <= y < 2^32)%Z -> (0 <= x * y < 2^64)%Z.
+Proof. intros. nia. Qed.
 
 Definition lo x := (x mod 2^32)%Z.
 Definition hi x := (x / 2^32)%Z.
+Definition cross x y := (hi (lo x * lo y) + lo (hi x * lo y) + lo x * hi y)%Z.
+Definition lower x y := ((cross x y) * 2^32 + (lo (lo x * lo y)))%Z.
+Definition upper x y := (hi (hi x * lo y) + hi (cross x y) + (hi x * hi y))%Z.
 
-Lemma lo_range : forall x, (0 <= x < 2^64)%Z -> (0 <= lo x < 2^32)%Z. 
-Proof. 
-intros.
-unfold lo.
-now apply Z.mod_pos_bound.
-Qed.
+Hint Transparent lo hi cross lower upper : core.
 
-Lemma hi_range : forall x, (0 <= x < 2^64)%Z -> (0 <= hi x < 2^32)%Z. 
-Proof. 
-intros.
-unfold hi.
-replace (2^64)%Z with (2^32 * 2^32)%Z in H by lia.
-assert (x / 2^32 < 2^32)%Z by now apply Z.div_lt_upper_bound.
-assert (0 <= x / 2^32)%Z by now apply Z.div_pos; lia.
-lia.
-Qed.
+Lemma lo_range : forall x, (0 <= x < 2^64)%Z -> (0 <= lo x < 2^32)%Z.
+Proof. intros. eauto. Qed.
 
-Lemma hi_range_63bit : forall x, 
-    (0 <= x < 2^63)%Z ->
-    (0<= hi x < 2^31)%Z.
-Proof.
-intros.
-assert (x < 2^31 * 2^32)%Z as Hx' by lia.
-assert (0 < 2^32)%Z as H' by lia.
-have Hub := Zdiv_lt_upper_bound _ _ _ H' Hx'.
-assert (0 <= x / 2^32)%Z by now apply Z_div_pos.
-now unfold hi.
-Qed.
+Lemma hi_range : forall x, (0 <= x < 2^64)%Z -> (0 <= hi x < 2^32)%Z.
+Proof. intros. unfold hi. nia. Qed.
 
+Lemma hi_range_63bit : forall x,
+    (0 <= x < 2^63)%Z -> (0<= hi x < 2^31)%Z.
+Proof. intros. unfold hi. nia. Qed.
+
+Hint Resolve lo_range hi_range hi_range_63bit : core.
 
 Lemma lo_hi_product_63bit : forall x y,
-    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
-    (0 <= lo x * hi y <=  (2^32 - 1) * (2^31 - 1))%Z.
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z -> (0 <= lo x * hi y <=  (2^32 - 1) * (2^31 - 1))%Z.
 Proof.
 intros ?? Hx Hy.
-assert (0 <= x < 2^64)%Z as Hx' by lia. 
-have Hxlo := lo_range _ Hx'.
-have Hyhi := hi_range_63bit y Hy.
-cbn in *. 
-assert (lo x * hi y <= 4294967295 * 2147483647)%Z by now apply Zmult_le_compat; auto; try lia.
-now cbn in H.
+have Hxlo := lo_range x. have Hyhi := hi_range_63bit y Hy.
+nia.
 Qed.
 
 Corollary hi_lo_product_63bit : forall x y,
-    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
-    (0 <= hi x * lo y <= (2^31 - 1) * (2^32 - 1))%Z.
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z -> (0 <= hi x * lo y <= (2^31 - 1) * (2^32 - 1))%Z.
 Proof.
-intros.
-replace (hi x * lo y)%Z with (lo y * hi x)%Z by lia.
+intros. replace (hi x * lo y)%Z with (lo y * hi x)%Z by nia.
 now apply lo_hi_product_63bit.
 Qed.
 
@@ -1277,280 +1221,398 @@ Lemma lo_lo_product_63bit : forall x y,
     (0 <= lo x * lo y <= (2^32 -1) * (2^32 - 1))%Z.
 Proof.
 intros ?? Hx Hy.
-assert (0 <= x < 2^64)%Z as Hx' by lia. 
-assert (0 <= y < 2^64)%Z as Hy' by lia. 
-have Hxlo := lo_range _ Hx'.
-have Hylo := lo_range _ Hy'.
-now assert (lo x * lo y <= (2^32 -1) * (2^32 - 1))%Z by now apply Zmult_le_compat; auto; try lia.
+have Hxlo := lo_range x. have Hylo := lo_range y.
+nia.
 Qed.
 
 Lemma hi_hi_product_63bit : forall x y,
-    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
-    (0 <= hi x * hi y <= (2^31 - 1) * (2^31 - 1))%Z.
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z -> (0 <= hi x * hi y <= (2^31 - 1) * (2^31 - 1))%Z.
 Proof.
 intros ?? Hx Hy.
-have Hxhi := hi_range_63bit x Hx.
-have Hyhi := hi_range_63bit y Hy.
-now assert (hi x * hi y <= (2^31 - 1) * (2^31 - 1))%Z by now apply Zmult_le_compat; auto; try lia.
+have Hxhi := hi_range_63bit x Hx. have Hyhi := hi_range_63bit y Hy.
+nia.
 Qed.
 
-Definition cross x y := (hi (lo x * lo y) + lo (hi x * lo y) + lo x * hi y)%Z.
-Definition lower x y := ((cross x y) * 2^32 + (lo (lo x * lo y)))%Z.
-Definition upper x y := (hi (hi x * lo y) + hi (cross x y) + (hi x * hi y))%Z.
-
-Lemma cross_upperbound_63bit : forall x y,
-    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
-    (0 <= cross x y <= 9223372039002259455)%Z. 
+Lemma lo_hi_lo_range : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z -> (0<= lo (hi x * lo y) <= 2^32)%Z.
 Proof.
-intros ?? Hx Hy.
-unfold cross.
-assert (0 <= x < 2^64)%Z as Hx' by lia. 
-assert (0 <= y < 2^64)%Z as Hy' by lia. 
-have Hlo_lo := lo_lo_product_63bit _ _ Hx Hy.
-assert (0 <= lo x * lo y < 2^64)%Z as Hlo_lo' by lia.
-have Hhi_lo := hi_lo_product_63bit _ _ Hx Hy.
-assert (0 <= hi x * lo y < 2^64)%Z as Hhi_lo' by lia.
-have Hlo := lo_range _ Hhi_lo'.
-have Hhi := hi_range _ Hlo_lo'.
-have Hlo_hi := lo_hi_product_63bit _ _ Hx Hy.
-assert (hi (lo x * lo y) + lo (hi x * lo y) <= (2^32 - 1) + (2^32 - 1))%Z by now apply Zplus_le_compat; auto; try lia.
-now assert ((hi (lo x * lo y) + lo (hi x * lo y)) + lo x * hi y <= ((2^32 - 1) + (2^32 - 1)) + ((2^32 - 1) * (2^31 - 1)))%Z by now apply Zplus_le_compat; auto; try lia.
+intros ?? Hx Hy. have H := hi_lo_product_63bit x y Hx Hy. unfold lo, hi in *. nia.
 Qed.
 
-Lemma upper_upperbound_63bit : forall x y,
+Lemma sum1_range : forall x y,
     (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
-    (0 <= upper x y <= 4611686018427387903)%Z. 
+    (0 <= hi (lo x * lo y) + lo (hi x * lo y) <= 2^32-1 + 2^32-1)%Z.
 Proof.
 intros ?? Hx Hy.
-unfold upper.
-assert (0 <= x < 2^64)%Z as Hx' by lia. 
-assert (0 <= y < 2^64)%Z as Hy' by lia. 
-have Hhi_lo := hi_lo_product_63bit _ _ Hx Hy.
-have Hhi_hi := hi_hi_product_63bit _ _ Hx Hy.
-have Hcross := cross_upperbound_63bit _ _ Hx Hy.
-assert (0 <= hi x * lo y < 2^63)%Z as Hhi_lo' by lia.
-have Hhi := hi_range_63bit _ Hhi_lo'.
-assert (hi (cross x y) <= 2^31)%Z. {
-  unfold hi. replace (2^31)%Z with (9223372039002259455 / 2^32)%Z by now cbn.
-  now apply Z.div_le_mono; auto; try lia. }
-assert (0 <= hi (cross x y))%Z by now unfold hi; apply Z_div_pos.
-assert (hi x * lo y <= (2^63 - 1))%Z by lia.
-assert (hi (hi x * lo y) <= 2^31 - 2)%Z. { 
-  replace (hi (hi x * lo y))%Z with ((hi x * lo y)/ 2^32)%Z by now unfold hi.
-  replace (2^31 - 2)%Z with (9223372030412324865 /2^32)%Z by now cbn.
-  apply Z.div_le_mono. lia. lia. }
-assert (hi (hi x * lo y) + hi (cross x y) <= (2^31 - 2) + 2^31)%Z. apply Zplus_le_compat; auto; try lia.
-assert ((hi (hi x * lo y) + hi (cross x y)) + hi x * hi y <= ((2^31 - 1) + 2^31) + 4611686014132420610)%Z. apply Zplus_le_compat; auto; try lia.
+have H := lo_lo_product_63bit x y Hx Hy. have H' := hi_lo_product_63bit x y Hx Hy.
+unfold lo, hi in *. nia.
+Qed.
+
+Lemma sum1_i64 : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    Int64.iadd (Int64.repr (hi (lo x * lo y))) (Int64.repr (lo (hi x * lo y))) = Int64.repr (hi (lo x * lo y) + lo (hi x * lo y))%Z.
+Proof.
+intros ?? Hx Hy.
+unfold Int64.iadd, Int64.add.
+have H := lo_lo_product_63bit x y Hx Hy. have H' := hi_lo_product_63bit x y Hx Hy.
+repeat rewrite lt_pow64_unsigned_id. reflexivity.
+all: unfold hi, lo in *; nia.
+Qed.
+
+Lemma cross_range : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <= cross x y <= (2^32-1 + 2^32-1) + (2^32-1) * (2^31-1))%Z.
+Proof.
+intros ?? Hx Hy.
+have H := sum1_range x y Hx Hy. have H' := lo_hi_product_63bit x y Hx Hy.
+unfold cross, lo, hi in *. nia.
+Qed.
+
+Lemma cross_i64 : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    Int64.iadd (Int64.repr (hi (lo x * lo y) + lo (hi x * lo y))) (Int64.repr (lo x * hi y)) = Int64.repr ((hi (lo x * lo y) + lo (hi x * lo y)) + lo x * hi y)%Z.
+Proof.
+  intros ?? Hx Hy.
+  unfold Int64.iadd, Int64.add.
+  have H := lo_lo_product_63bit x y Hx Hy.
+  have H' := hi_lo_product_63bit x y Hx Hy.
+  have H'' := lo_hi_product_63bit x y Hx Hy.
+  repeat rewrite lt_pow64_unsigned_id; unfold hi, lo in *; auto; lia.
+Qed.
+
+Lemma hi_cross_range : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z -> (0 <= hi (cross x y) <= 2^31)%Z.
+Proof.
+  intros ?? Hx Hy. have H := cross_range x y Hx Hy. unfold hi; lia.
+Qed.
+
+Lemma hi_hi_lo_range : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z -> (0<= hi (hi x * lo y) <= 2^31 - 2)%Z.
+Proof.
+  intros ?? Hx Hy. have H := hi_lo_product_63bit x y Hx Hy. unfold hi in *; lia.
+Qed.
+
+Lemma sum2_range : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <= hi (hi x * lo y) + hi (cross x y) <= (2^31 - 2) + 2^31)%Z.
+Proof.
+intros ?? Hx Hy.
+have H := hi_cross_range x y Hx Hy. have H' := hi_hi_lo_range x y Hx Hy.
+unfold hi in *; lia.
+Qed.
+
+Lemma sum2_i64 : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    Int64.iadd (Int64.repr (hi (hi x * lo y))) (Int64.repr (hi (cross x y))) = Int64.repr (hi (hi x * lo y) + hi (cross x y))%Z.
+Proof.
+intros ?? Hx Hy.
+have H := hi_cross_range x y Hx Hy. have H' := hi_hi_lo_range x y Hx Hy.
+unfold Int64.iadd, Int64.add.
+repeat rewrite lt_pow64_unsigned_id. reflexivity.
+all: unfold hi in *; lia.
+Qed.
+
+Lemma upper_range : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <= upper x y <= ((2^31 - 2) + 2^31) + (2^31 - 1) * (2^31-1))%Z.
+Proof.
+intros ?? Hx Hy.
+have H := sum2_range x y Hx Hy. have H' := hi_hi_product_63bit x y Hx Hy.
+unfold upper, hi in *; lia.
+Qed.
+
+Lemma upper_i64 : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    Int64.iadd (Int64.repr (hi (hi x * lo y) + hi (cross x y))) (Int64.repr (hi x * hi y)) = Int64.repr ((hi (hi x * lo y) + hi (cross x y)) + hi x * hi y)%Z.
+Proof.
+intros ?? Hx Hy.
+have H := sum2_range x y Hx Hy. have H' := hi_hi_product_63bit x y Hx Hy.
+unfold Int64.iadd, Int64.add.
+repeat rewrite lt_pow64_unsigned_id; auto; lia.
+Qed.
+
+Lemma lo_lo_lo_range : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z -> (0 <= lo (lo x * lo y) < 2^32)%Z.
+Proof.
+  intros ?? Hx Hy. have H := lo_lo_product_63bit x y Hx Hy. unfold lo in *; lia.
+Qed.
+
+Lemma upper_shifted_range : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z -> (0 <= (upper x y) * 2 <= 2^63-2)%Z.
+Proof.
+intros ?? Hx Hy. have H := upper_range x y Hx Hy; lia.
+Qed.
+
+Lemma upper_shifted_i64 : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    Int64.ishl (Int64.repr (upper x y)) (Int64.repr 1) = Int64.repr (upper x y * 2)%Z.
+Proof.
+intros ?? Hx Hy. have H := upper_range x y Hx Hy.
+unfold Int64.ishl, Int64.shl.
+repeat rewrite lt_pow64_unsigned_id.
+replace (1 mod Int64.wordsize)%Z with 1%Z by now cbn.
+rewrite Z.shiftl_mul_pow2. f_equal. lia.
+all: cbn; lia.
+Qed.
+
+Lemma lower_or_i64 : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    Int64.ior (Int64.shl (Int64.repr (cross x y)) (Int64.repr 32)) (Int64.repr (lo (lo x * lo y))) = Int64.repr ((cross x y) * 2^32 + lo (lo x * lo y)).
+Proof.
+intros ?? Hx Hy.
+have H := cross_range x y Hx Hy.
+have H' := lo_lo_lo_range x y Hx Hy.
+unfold Int64.ior.
+rewrite Int64.shifted_or_is_add; unfold two_p, two_power_pos; auto.
+repeat rewrite lt_pow64_unsigned_id; auto; lia.
+cbn. lia.
+rewrite lt_pow64_unsigned_id; cbn; lia.
+Qed.
+
+Lemma lower_shifted_range : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z -> (0 <= (lower x y mod 2^64) / 2^63 <= 1)%Z.
+Proof. intros ?? Hx Hy. lia. Qed.
+
+Lemma lower_shifted_i64 : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    Int64.ishr_u (Int64.repr (lower x y)) (Int64.repr 63) = Int64.repr ((lower x y) mod 2^64 / 2^63).
+Proof.
+intros ?? Hx Hy.
+unfold Int64.ishr_u, Int64.shru.
+replace (Int64.unsigned (Int64.repr (lower x y))) with ((lower x y) mod 2^64)%Z.
+repeat rewrite lt_pow64_unsigned_id.
+replace (63 mod Int64.wordsize)%Z with 63%Z by now cbn.
+rewrite Z.shiftr_div_pow2. reflexivity.
+lia. lia. cbn; lia. lia.
+cbn. rewrite Int64.Z_mod_modulus_eq. now rewrite int64_modulus_eq_pow64.
+Qed.
+
+Lemma upper63_range : forall x y,
+    (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
+    (0 <= (upper x y) * 2 + ((lower x y mod 2^64) / 2^63) < 2^63)%Z.
+Proof.
+intros ?? Hx Hy.
+have H := upper_shifted_range x y Hx Hy. have H' := lower_shifted_range x y Hx Hy.
 lia.
 Qed.
 
-Lemma upper_upperbound : forall x y,
+Lemma upper63_i64 : forall x y,
     (0 <= x < 2^63)%Z -> (0 <= y < 2^63)%Z ->
-    (0 <=2 * (upper x y) + ((lower x y mod 2^64) / 2^63) < 2^63)%Z.
+    Int64.iadd (Int64.repr (upper x y * 2)) (Int64.repr (lower x y mod 2^64 / 2^63)) = Int64.repr (upper x y * 2 + lower x y mod 2^64 / 2^63).
 Proof.
-intros.
-assert (0 <= lower x y mod 2^64 < 2^64)%Z by now apply Z.mod_pos_bound.
-replace (2^64)%Z with (2 * 2^63)%Z in H1 by lia.
-assert (lower x y mod 2^64 / 2^63 < 2)%Z by now apply Z.div_lt_upper_bound.
-assert (0 <= lower x y mod 2^64 / 2^63)%Z by now apply Z.div_pos.
-have Hupper := upper_upperbound_63bit _ _ H H0.
-assert (2 * (upper x y) <= 2^63-2)%Z by lia.
-lia.
+  intros ?? Hx Hy.
+  have H := upper_shifted_range _ _ Hx Hy.
+  unfold Int64.iadd, Int64.add.
+  repeat rewrite lt_pow64_unsigned_id; auto; lia.
 Qed.
 
+(* TODO: Clean up *)
 Lemma lower_of_product : forall x y,
     (0 <= x < 2^64)%Z -> (0 <= y < 2^64)%Z ->
     ((x * y) mod 2^64 = lower x y mod 2^64)%Z.
 Proof.
   intros x y Hx Hy.
-  remember ((x * y) mod 2^64)%Z as product eqn:Hp.
-  rewrite (Z_div_mod_eq_full x (2^32)%Z) in Hp.
-  rewrite (Z_div_mod_eq_full y (2^32)%Z) in Hp.
-  replace (x / 2^32)%Z with (hi x) in Hp by reflexivity.
-  replace (y / 2^32)%Z with (hi y) in Hp by reflexivity.
-  replace (x mod 2^32)%Z with (lo x) in Hp by reflexivity.
-  replace (y mod 2^32)%Z with (lo y) in Hp by reflexivity.
-  rewrite Z.mul_add_distr_l in Hp.
-  rewrite Z.mul_add_distr_r in Hp.
-  rewrite Z.mul_add_distr_r in Hp.
-  rewrite <-Z.add_assoc in Hp.
-  rewrite <-Z.add_mod_idemp_l in Hp.
-  rewrite Z.add_assoc in Hp.
-  rewrite Z.add_assoc in Hp.
-  rewrite <-Z.add_mod_idemp_r in Hp.
-  rewrite <-Z.add_assoc in Hp.
-  rewrite <-Z.add_assoc in Hp.
-  rewrite Z.add_comm in Hp.
-  rewrite <-Z.add_assoc in Hp.
-  rewrite <-Z.add_mod_idemp_l in Hp.
-  rewrite Z.add_comm in Hp.
-  rewrite <-Z.add_mod_idemp_l in Hp.
-  assert (forall a b, 2^32 * a * (2^32 * b) = (a * b) * 2^64)%Z by now lia.
-  replace ((2^32 * hi x * (2 ^ 32 * hi y)) mod 2^64)%Z with 0%Z in Hp by (rewrite H; now rewrite Z.mod_mul).
-  clear H.
-  replace (lo x * (2^32 * hi y))%Z with (2^32 * (lo x * hi y))%Z in * by lia.
-  replace ((2^32 * (lo x * hi y)) mod 2^64)%Z with ((2^32 * (lo x * hi y)) mod (2^32 * 2^32))%Z in *. 2: now replace (2^64)%Z with (2 ^ 32 * 2^32)%Z by lia.
-  replace ((2^32 * (lo x * hi y)) mod (2^32 * 2^32))%Z with (2^32 * ((lo x * hi y) mod 2^32))%Z in * by now rewrite Z.mul_mod_distr_l.
-  rewrite Z.add_0_r in Hp.
-  replace ((2 ^ 32 * hi x * lo y + (lo x * lo y) mod 2 ^ 64) mod 2 ^ 64)%Z with 
-    (((2 ^ 32 * hi x * lo y) mod 2^64 + ((lo x * lo y) mod 2 ^ 64)) mod 2 ^ 64)%Z in *. 2: now rewrite Z.add_mod_idemp_l.
-  replace ((2^32 * hi x * lo y) mod 2^64)%Z with ((2^32 * hi x * lo y) mod (2^32 * 2^32))%Z in *. 2: now replace (2^64)%Z with (2 ^ 32 * 2^32)%Z by lia.
-  replace ((2^32 * hi x * lo y) mod (2^32 * 2^32))%Z with (2^32 * ((hi x * lo y) mod 2^32))%Z in *. 
-  2: { replace (2^32 * hi x * lo y)%Z with (2^32 * (hi x * lo y))%Z. 2: lia. now rewrite Z.mul_mod_distr_l. }
-  rewrite Z.add_comm in Hp. 
-  replace ((lo x * lo y) mod 2^64)%Z with ((lo x * lo y) mod (2^32 * 2^32))%Z in *. 2: now replace (2^64)%Z with (2 ^ 32 * 2^32)%Z by lia.
-  replace ((lo x * lo y) mod (2^32 * 2^32))%Z with ((lo x * lo y) mod 2^32 + 2^32 * (((lo x * lo y)/ 2^32) mod 2^32))%Z in *. 2: now rewrite Z.rem_mul_r.
-  replace ((lo x * hi y) mod 2^32)%Z with (lo (lo x * hi y))%Z in * by reflexivity.
-  replace ((hi x * lo y) mod 2^32)%Z with (lo (hi x * lo y))%Z in * by reflexivity.
-  replace ((lo x * lo y) mod 2^32)%Z with (lo (lo x * lo y))%Z in * by reflexivity.
-  replace ((lo x * lo y) / 2^32)%Z with (hi (lo x * lo y))%Z in * by reflexivity.
-  replace (hi (lo x * lo y) mod (2 ^ 32))%Z with (hi (lo x * lo y))%Z in *.  
-  rewrite Z.add_mod_idemp_r in Hp.
-  unfold lower. replace (cross x y * 2^32)%Z with (2^32 * cross x y)%Z in * by lia.
-  unfold cross.
-  rewrite Z.mul_add_distr_l.
-  rewrite Z.mul_add_distr_l.
-  rewrite <-Z.add_assoc.
-  replace (2 ^ 32 * (lo x * hi y) + lo (lo x * lo y))%Z with (lo (lo x * lo y) + 2^32 * (lo x * hi y))%Z by lia.
-  rewrite Z.add_assoc.
-  rewrite Z.add_comm.
-  replace (2 ^ 32 * hi (lo x * lo y) + 2 ^ 32 * lo (hi x * lo y) + lo (lo x * lo y))%Z with ( 2 ^ 32 * lo (hi x * lo y) + 2 ^ 32 * hi (lo x * lo y) +lo (lo x * lo y))%Z by lia.
-  replace (2^32 * lo (hi x * lo y) + 2 ^ 32 * hi (lo x * lo y) + lo (lo x * lo y))%Z with (2^32 * lo (hi x * lo y) + lo (lo x * lo y) + 2 ^ 32 * hi (lo x * lo y))%Z by lia.
-  assert (forall a, 2^32 * lo a = (2^32 * a) mod 2^64)%Z. {
-    intros.
-    unfold lo.
-    replace (2^64)%Z with (2^32 * 2^32)%Z by lia.
-    now rewrite Z.mul_mod_distr_l. }
-  replace (2^32 * (lo (lo x * hi y)))%Z with ((2^32 * (lo x * hi y)) mod 2^64)%Z in Hp by now rewrite H.
-  rewrite Z.add_mod_idemp_l in Hp.
-  rewrite Z.add_assoc.
-  rewrite Z.add_assoc.
-  rewrite Z.add_assoc in Hp.
-  rewrite Z.add_assoc in Hp.
-  rewrite Hp.
-  reflexivity.
-  all: try lia.
-  have Hlox := lo_range x Hx.
-  have Hloy := lo_range y Hy.
-  have Hmul := max32bit_mul_max64bit (lo x) (lo y) Hlox Hloy.
-  have Hhi := hi_range (lo x * lo y) Hmul.
-  now rewrite Z.mod_small.
+  unfold lower, cross, lo, hi. lia.
 Qed.
+(*   remember ((x * y) mod 2^64)%Z as product eqn:Hp. *)
+(*   rewrite ->(Z_div_mod_eq_full x (2^32)%Z), ->(Z_div_mod_eq_full y (2^32)%Z) in Hp. *)
+(*   replace (x / 2^32)%Z with (hi x) in Hp by reflexivity. *)
+(*   replace (y / 2^32)%Z with (hi y) in Hp by reflexivity. *)
+(*   replace (x mod 2^32)%Z with (lo x) in Hp by reflexivity. *)
+(*   replace (y mod 2^32)%Z with (lo y) in Hp by reflexivity. *)
+(*   rewrite ->Z.mul_add_distr_l, ->Z.mul_add_distr_r, ->Z.mul_add_distr_r in Hp. *)
+(*   rewrite <-Z.add_assoc in Hp. *)
+(*   rewrite <-Z.add_mod_idemp_l in Hp. *)
+(*   rewrite Z.add_assoc in Hp. *)
+(*   rewrite Z.add_assoc in Hp. *)
+(*   rewrite <-Z.add_mod_idemp_r in Hp. *)
+(*   rewrite <-Z.add_assoc in Hp. *)
+(*   rewrite <-Z.add_assoc in Hp. *)
+(*   rewrite Z.add_comm in Hp. *)
+(*   rewrite <-Z.add_assoc in Hp. *)
+(*   rewrite <-Z.add_mod_idemp_l in Hp. *)
+(*   rewrite Z.add_comm in Hp. *)
+(*   rewrite <-Z.add_mod_idemp_l in Hp. *)
+(*   assert (forall a b, 2^32 * a * (2^32 * b) = (a * b) * 2^64)%Z by nia. *)
+(*   replace ((2^32 * hi x * (2 ^ 32 * hi y)) mod 2^64)%Z with 0%Z in Hp by (rewrite H; now rewrite Z.mod_mul). *)
+(*   clear H. *)
+(*   replace (lo x * (2^32 * hi y))%Z with (2^32 * (lo x * hi y))%Z in * by nia. *)
+(*   replace ((2^32 * (lo x * hi y)) mod 2^64)%Z with ((2^32 * (lo x * hi y)) mod (2^32 * 2^32))%Z in *. 2: now replace (2^64)%Z with (2 ^ 32 * 2^32)%Z by nia. *)
+(*   replace ((2^32 * (lo x * hi y)) mod (2^32 * 2^32))%Z with (2^32 * ((lo x * hi y) mod 2^32))%Z in * by now rewrite Z.mul_mod_distr_l. *)
+(*   rewrite Z.add_0_r in Hp. *)
+(*   replace ((2 ^32 * hi x * lo y + (lo x * lo y) mod 2 ^ 64) mod 2 ^ 64)%Z with  *)
+(*     (((2 ^ 32 * hi x * lo y) mod 2^64 + ((lo x * lo y) mod 2 ^ 64)) mod 2 ^ 64)%Z in *. 2: now rewrite Z.add_mod_idemp_l. *)
+(*   replace ((2^32 * hi x * lo y) mod 2^64)%Z with ((2^32 * hi x * lo y) mod (2^32 * 2^32))%Z in *. 2: now replace (2^64)%Z with (2 ^ 32 * 2^32)%Z by nia. *)
+(*   replace ((2^32 * hi x * lo y) mod (2^32 * 2^32))%Z with (2^32 * ((hi x * lo y) mod 2^32))%Z in *.  *)
+(*   2: { replace (2^32 * hi x * lo y)%Z with (2^32 * (hi x * lo y))%Z. 2: nia. now rewrite Z.mul_mod_distr_l. } *)
+(*   rewrite Z.add_comm in Hp.  *)
+(*   replace ((lo x * lo y) mod 2^64)%Z with ((lo x * lo y) mod (2^32 * 2^32))%Z in *. 2: now replace (2^64)%Z with (2 ^ 32 * 2^32)%Z by nia. *)
+(*   replace ((lo x * lo y) mod (2^32 * 2^32))%Z with ((lo x * lo y) mod 2^32 + 2^32 * (((lo x * lo y)/ 2^32) mod 2^32))%Z in *. 2: now rewrite Z.rem_mul_r. *)
+(*   replace ((lo x * hi y) mod 2^32)%Z with (lo (lo x * hi y))%Z in * by reflexivity. *)
+(*   replace ((hi x * lo y) mod 2^32)%Z with (lo (hi x * lo y))%Z in * by reflexivity. *)
+(*   replace ((lo x * lo y) mod 2^32)%Z with (lo (lo x * lo y))%Z in * by reflexivity. *)
+(*   replace ((lo x * lo y) / 2^32)%Z with (hi (lo x * lo y))%Z in * by reflexivity. *)
+(*   replace (hi (lo x * lo y) mod (2 ^ 32))%Z with (hi (lo x * lo y))%Z in *.   *)
+(*   rewrite Z.add_mod_idemp_r in Hp. *)
+(*   unfold lower. replace (cross x y * 2^32)%Z with (2^32 * cross x y)%Z in * by nia. *)
+(*   unfold cross. *)
+(*   rewrite ->Z.mul_add_distr_l, ->Z.mul_add_distr_l. *)
+(*   rewrite <-Z.add_assoc. *)
+(*   replace (2 ^ 32 * (lo x * hi y) + lo (lo x * lo y))%Z with (lo (lo x * lo y) + 2^32 * (lo x * hi y))%Z by nia. *)
+(*   rewrite ->Z.add_assoc, ->Z.add_comm. *)
+(*   replace (2 ^ 32 * hi (lo x * lo y) + 2 ^ 32 * lo (hi x * lo y) + lo (lo x * lo y))%Z with ( 2 ^ 32 * lo (hi x * lo y) + 2 ^ 32 * hi (lo x * lo y) +lo (lo x * lo y))%Z by nia. *)
+(*   replace (2^32 * lo (hi x * lo y) + 2 ^ 32 * hi (lo x * lo y) + lo (lo x * lo y))%Z with (2^32 * lo (hi x * lo y) + lo (lo x * lo y) + 2 ^ 32 * hi (lo x * lo y))%Z by nia. *)
+(*   assert (forall a, 2^32 * lo a = (2^32 * a) mod 2^64)%Z. { *)
+(*     intros. *)
+(*     unfold lo. *)
+(*     replace (2^64)%Z with (2^32 * 2^32)%Z by nia. *)
+(*     now rewrite Z.mul_mod_distr_l. } *)
+(*   replace (2^32 * (lo (lo x * hi y)))%Z with ((2^32 * (lo x * hi y)) mod 2^64)%Z in Hp by now rewrite H. *)
+(*   rewrite Z.add_mod_idemp_l in Hp. *)
+(*   rewrite ->Z.add_assoc, ->Z.add_assoc. *)
+(*   rewrite ->Z.add_assoc, ->Z.add_assoc in Hp. *)
+(*   rewrite Hp. *)
+(*   reflexivity. *)
+(*   all: try nia. *)
+(*   have Hlox := lo_range x Hx. *)
+(*   have Hloy := lo_range y Hy. *)
+(*   have Hmul := max32bit_mul_max64bit (lo x) (lo y) Hlox Hloy. *)
+(*   have Hhi := hi_range (lo x * lo y) Hmul. *)
+(*   now rewrite Z.mod_small. *)
+(* Qed. *)
 
+
+(* TODO: Clean up *)
 Lemma upper_of_product : forall x y,
     (0 <= x < 2^64)%Z -> (0 <= y < 2^64)%Z ->
     ((x * y) / 2^64 = upper x y)%Z.
 Proof.
-  intros x y Hx Hy.
-  remember (x * y / 2^64)%Z as product eqn:Hp.
-  rewrite (Z_div_mod_eq_full x (2^32)%Z) in Hp.
-  rewrite (Z_div_mod_eq_full y (2^32)%Z) in Hp.
-  replace (x / 2^32)%Z with (hi x) in Hp by reflexivity.
-  replace (y / 2^32)%Z with (hi y) in Hp by reflexivity.
-  replace (x mod 2^32)%Z with (lo x) in Hp by reflexivity.
-  replace (y mod 2^32)%Z with (lo y) in Hp by reflexivity.
-  rewrite Z.mul_add_distr_l in Hp.
-  rewrite Z.mul_add_distr_r in Hp.
-  rewrite Z.mul_add_distr_r in Hp.
-  rewrite Z.add_assoc in Hp.
-  replace (2 ^ 32 * hi x * (2 ^ 32 * hi y))%Z with ((hi x * hi y) * 2^64)%Z in Hp by lia.
-  rewrite -Z.add_assoc in Hp.
-  rewrite -Z.add_assoc in Hp.
-  rewrite Z.div_add_l in Hp.
-  rewrite Z.add_assoc in Hp.
-  unfold upper.
-  unfold cross.
-  assert (forall a b c, hi a + hi b + c = hi (hi a * 2^32 + b) + c)%Z. {
-    intros. unfold hi.
-    now rewrite Z_div_plus_full_l. }
-  rewrite H.
-  assert (forall a, a = 2^32 * hi a + lo a)%Z. intros. unfold hi, lo. now rewrite <-Z_div_mod_eq_full. replace (hi (hi x * lo y) * 2^32)%Z with (2^32 * hi (hi x * lo y))%Z by lia.
-  rewrite Z.add_assoc.
-  rewrite Z.add_assoc.
-  replace (2^32 * hi (hi x * lo y) + hi (lo x * lo y))%Z with (hi (lo x * lo y) + 2^32 * hi (hi x * lo y))%Z by lia.
-  rewrite -Z.add_assoc.
-  rewrite -Z.add_assoc.
-  replace (2 ^ 32 * hi (hi x * lo y) + (lo (hi x * lo y) + lo x * hi y))%Z with ((2 ^ 32 * hi (hi x * lo y) + lo (hi x * lo y)) + lo x * hi y)%Z by lia.
-  rewrite <-H0.
-  replace (2^64)%Z with (2^32 * 2^32)%Z in Hp by lia.  
-  replace (lo x * (2 ^ 32 * hi y) + 2 ^ 32 * hi x * lo y)%Z with ((lo x * hi y + hi x * lo y) * 2^32)%Z in Hp by lia.
-  rewrite <-Z.div_div in Hp.
-  rewrite Z.div_add_l in Hp.
-  replace (lo x * lo y / 2 ^ 32)%Z with (hi (lo x * lo y))%Z in Hp by reflexivity.
-  replace ((lo x * hi y + hi x * lo y + hi (lo x * lo y)) / 2 ^ 32)%Z with (hi (lo x * hi y + hi x * lo y + hi (lo x * lo y)))%Z in Hp by now unfold hi.
-  replace (lo x * hi y + hi x * lo y + hi (lo x * lo y))%Z with (hi (lo x * lo y) + (hi x * lo y + lo x * hi y))%Z in Hp by lia.
-  rewrite Z.add_comm in Hp.
-  rewrite Hp. reflexivity.
-  all: try lia.
+  intros x y Hx Hy. unfold upper, cross, hi, lo. lia.
 Qed.
+  (* remember (x * y / 2^64)%Z as product eqn:Hp. *)
+  (* rewrite ->(Z_div_mod_eq_full x (2^32)%Z), ->(Z_div_mod_eq_full y (2^32)%Z) in Hp. *)
+  (* replace (x / 2^32)%Z with (hi x) in Hp by reflexivity. *)
+  (* replace (y / 2^32)%Z with (hi y) in Hp by reflexivity. *)
+  (* replace (x mod 2^32)%Z with (lo x) in Hp by reflexivity. *)
+  (* replace (y mod 2^32)%Z with (lo y) in Hp by reflexivity. *)
+  (* rewrite Z.mul_add_distr_l in Hp. *)
+  (* rewrite Z.mul_add_distr_r in Hp. *)
+  (* rewrite Z.mul_add_distr_r in Hp. *)
+  (* rewrite Z.add_assoc in Hp. *)
+  (* replace (2 ^ 32 * hi x * (2 ^ 32 * hi y))%Z with ((hi x * hi y) * 2^64)%Z in Hp by lia. *)
+  (* rewrite -Z.add_assoc in Hp. *)
+  (* rewrite -Z.add_assoc in Hp. *)
+  (* rewrite Z.div_add_l in Hp. *)
+  (* rewrite Z.add_assoc in Hp. *)
+  (* unfold upper. *)
+  (* unfold cross. *)
+  (* assert (forall a b c, hi a + hi b + c = hi (hi a * 2^32 + b) + c)%Z. { *)
+  (*   intros. unfold hi. *)
+  (*   now rewrite Z_div_plus_full_l. } *)
+  (* rewrite H. *)
+  (* assert (forall a, a = 2^32 * hi a + lo a)%Z. intros. unfold hi, lo. now rewrite <-Z_div_mod_eq_full. replace (hi (hi x * lo y) * 2^32)%Z with (2^32 * hi (hi x * lo y))%Z by lia. *)
+  (* rewrite Z.add_assoc. *)
+  (* rewrite Z.add_assoc. *)
+  (* replace (2^32 * hi (hi x * lo y) + hi (lo x * lo y))%Z with (hi (lo x * lo y) + 2^32 * hi (hi x * lo y))%Z by lia. *)
+  (* rewrite -Z.add_assoc. *)
+  (* rewrite -Z.add_assoc. *)
+  (* replace (2 ^ 32 * hi (hi x * lo y) + (lo (hi x * lo y) + lo x * hi y))%Z with ((2 ^ 32 * hi (hi x * lo y) + lo (hi x * lo y)) + lo x * hi y)%Z by lia. *)
+  (* rewrite <-H0. *)
+  (* replace (2^64)%Z with (2^32 * 2^32)%Z in Hp by lia.   *)
+  (* replace (lo x * (2 ^ 32 * hi y) + 2 ^ 32 * hi x * lo y)%Z with ((lo x * hi y + hi x * lo y) * 2^32)%Z in Hp by lia. *)
+  (* rewrite <-Z.div_div in Hp. *)
+  (* rewrite Z.div_add_l in Hp. *)
+  (* replace (lo x * lo y / 2 ^ 32)%Z with (hi (lo x * lo y))%Z in Hp by reflexivity. *)
+  (* replace ((lo x * hi y + hi x * lo y + hi (lo x * lo y)) / 2 ^ 32)%Z with (hi (lo x * hi y + hi x * lo y + hi (lo x * lo y)))%Z in Hp by now unfold hi. *)
+  (* replace (lo x * hi y + hi x * lo y + hi (lo x * lo y))%Z with (hi (lo x * lo y) + (hi x * lo y + lo x * hi y))%Z in Hp by lia. *)
+  (* rewrite Z.add_comm in Hp. *)
+  (* rewrite Hp. reflexivity. *)
+  (* all: nia. *)
+(* Qed. *)
 
 Corollary decompose_product : forall x y,
-    (0 <= x < 2^64)%Z -> (0 <= y < 2^64)%Z ->    
+    (0 <= x < 2^64)%Z -> (0 <= y < 2^64)%Z ->
     (x * y = 2^64 * upper x y + lower x y mod 2^64)%Z.
 Proof.
   intros.
-  rewrite <-upper_of_product.
-  rewrite <-lower_of_product.
-  now rewrite <-Z_div_mod_eq_full.
-  all: try lia.
+  unfold upper, lower, cross, lo, hi. lia.
 Qed.
+(*   rewrite <-upper_of_product. *)
+(*   rewrite <-lower_of_product. *)
+(*   now rewrite <-Z_div_mod_eq_full. *)
+(*   all: nia. *)
+(* Qed. *)
 
 Lemma lower_of_product_63bit : forall x y,
-    (0 <= x < 2^64)%Z -> (0 <= y < 2^64)%Z ->    
-    ((x * y) mod 2^63 = (lower x y) mod 2^63)%Z. 
+    (0 <= x < 2^64)%Z -> (0 <= y < 2^64)%Z ->
+    ((x * y) mod 2^63 = (lower x y) mod 2^63)%Z.
 Proof.
-intros.
-rewrite <- (Zaux.Zmod_mod_mult (lower x y) 2%Z (2^63)%Z).
-replace (2*2^63)%Z with (2^64)%Z by lia.
-rewrite <-lower_of_product.
-replace (2^64)%Z with (2*2^63)%Z by lia.
-now rewrite Zaux.Zmod_mod_mult.
-all: try lia. 
+  intros. unfold lower, cross, lo, hi. lia.
 Qed.
-
+(* intros. *)
+(* rewrite <- (Zaux.Zmod_mod_mult (lower x y) 2%Z (2^63)%Z). *)
+(* replace (2*2^63)%Z with (2^64)%Z by nia. *)
+(* rewrite <-lower_of_product. *)
+(* replace (2^64)%Z with (2*2^63)%Z by nia. *)
+(* now rewrite Zaux.Zmod_mod_mult. *)
+(* all: nia. *)
+(* Qed. *)
 
 Lemma upper_of_product_63bit : forall x y,
-    (0 <= x < 2^64)%Z -> (0 <= y < 2^64)%Z ->    
+    (0 <= x < 2^64)%Z -> (0 <= y < 2^64)%Z ->
     ((x * y) / 2^63 = 2 * (upper x y) + ((lower x y mod 2^64) / 2^63))%Z.
 Proof.
-intros.
-rewrite <-upper_of_product.
-rewrite <-lower_of_product.
-rewrite Z.add_comm.
-rewrite <-Z_div_plus.
-rewrite Z.add_comm.
-assert (2 * ((x * y) / 2 ^ 64) * 2 ^ 63 = 2^64 * ((x * y) / 2^64))%Z by lia.
-rewrite H1.
-now rewrite <-Z_div_mod_eq_full.
-all: try lia.
+  intros. unfold upper, lower, cross, lo, hi. lia.
 Qed.
+
+(* rewrite Z.add_comm. *)
+(* rewrite <-Z_div_plus. *)
+(* rewrite Z.add_comm. *)
+(* assert (2 * ((x * y) / 2 ^ 64) * 2 ^ 63 = 2^64 * ((x * y) / 2^64))%Z by nia. *)
+(* rewrite H1. *)
+(* now rewrite <-Z_div_mod_eq_full. *)
+(* all: nia. *)
+(* Qed. *)
 
 Corollary decompose_product_63bit : forall x y,
  (0 <= x < 2^64)%Z -> (0 <= y < 2^64)%Z ->
  (x * y = (2 * (upper x y) + ((lower x y mod 2^64) / 2^63)) * 2^63 + (lower x y mod 2^63))%Z.
 Proof.
-intros.
-rewrite <-lower_of_product_63bit.
-rewrite <-upper_of_product_63bit.
-replace (x * y / 2^63 * 2^63)%Z with (2^63 * ((x * y) / 2^63))%Z by lia.
-now rewrite <-Z_div_mod_eq_full.
-all: try lia.
+  intros. unfold upper, lower, cross, lo, hi. lia.
 Qed.
+(* rewrite <-lower_of_product_63bit. *)
+(* rewrite <-upper_of_product_63bit. *)
+(* replace (x * y / 2^63 * 2^63)%Z with (2^63 * ((x * y) / 2^63))%Z by nia. *)
+(* now rewrite <-Z_div_mod_eq_full. *)
+(* all: nia. *)
+(* Qed. *)
 
 Lemma mulc_spec_alt : forall x y,
     to_Z (fst (mulc x y)) = (((to_Z x) * (to_Z y)) / 2^63)%Z /\ to_Z (snd (mulc x y)) = (((to_Z x) * (to_Z y)) mod 2^63)%Z.
 Proof.
 intros.
 have Hspec := mulc_spec x y.
-have Hx := to_Z_bounded x. 
+have Hx := to_Z_bounded x.
 have Hy := to_Z_bounded y.
-assert (0 <= to_Z x < 2^64)%Z as Hx' by now cbn in Hx.
-assert (0 <= to_Z y < 2^64)%Z as Hy' by now cbn in Hy.
-assert (0 <= to_Z (snd (mulc x y)) < 2^63)%Z as Hrem by now apply to_Z_bounded. replace wB with (2^63)%Z in Hspec by now cbn.
-have Hdiv := Zdiv_unique _ _ _ _ Hspec Hrem.
-have Hmod := Zmod_unique _ _ _ _ Hspec Hrem.
-now split.
+(* assert (0 <= to_Z x < 2^64)%Z as Hx' by auto. *)
+(* assert (0 <= to_Z y < 2^64)%Z as Hy' by auto. *)
+cbn in Hx, Hy, Hspec.
+assert (0 <= to_Z (snd (mulc x y)) < 2^63)%Z as Hrem by apply to_Z_bounded.
+lia.
 Qed.
+(* have Hdiv := Zdiv_unique _ _ _ _ Hspec Hrem. *)
+(* have Hmod := Zmod_unique _ _ _ _ Hspec Hrem. *)
+
+(* now split. *)
+(* Qed. *)
+(* assert (0 <= to_Z x < 2^64)%Z as Hx' by auto. *)
+(* assert (0 <= to_Z y < 2^64)%Z as Hy' by auto. *)
+(* assert (0 <= to_Z (snd (mulc x y)) < 2^63)%Z as Hrem by apply to_Z_bounded. *)
+(* replace wB with (2^63)%Z in Hspec by auto. *)
+(* have Hdiv := Zdiv_unique _ _ _ _ Hspec Hrem. *)
+(* have Hmod := Zmod_unique _ _ _ _ Hspec Hrem. *)
+(* now split. *)
+(* Qed. *)
 
 Theorem mulc_fst : forall x y,
     (to_Z (fst (mulc x y)) = ((2 * (upper (to_Z x) (to_Z y)) + ((lower (to_Z x) (to_Z y) mod 2^64) / 2^63))))%Z.
@@ -1558,18 +1620,143 @@ Proof.
 intros.
 destruct (mulc_spec_alt x y) as [Hfst _].
 have Hx := to_Z_bounded x; have Hy := to_Z_bounded y.
-assert (0 <= to_Z x < 2^64)%Z as Hx' by now cbn in Hx. assert (0 <= to_Z y < 2^64)%Z as Hy' by now cbn in Hy.
-now rewrite <-(upper_of_product_63bit (to_Z x) (to_Z y) Hx' Hy').
+rewrite <- upper_of_product_63bit; auto.
 Qed.
+(* rewrite  *)
+(* assert (0 <= to_Z x < 2^64)%Z as Hx' by auto. assert (0 <= to_Z y < 2^64)%Z as Hy' by auto. *)
+(* now rewrite <-(upper_of_product_63bit (to_Z x) (to_Z y) Hx' Hy'). *)
+(* Qed. *)
 
 Theorem mulc_snd : forall x y,
     (to_Z (snd (mulc x y)) = (lower (to_Z x) (to_Z y) mod 2^63))%Z.
 Proof.
+  intros.
+  destruct (mulc_spec_alt x y) as [_ Hsnd].
+  rewrite <-lower_of_product_63bit; auto.
+Qed.
+
+(* Duplicated from main proof file
+   TODO: Remove/ merge/ refactor (common file?) *)
+Lemma r_eliml_p : forall hs s f es hs' s' f' es' lconst,
+  const_list lconst ->
+  reduce hs s f es hs' s' f' es' ->
+  reduce hs s f (lconst ++ es) hs' s' f' (lconst ++ es').
+Proof.
+  move => hs s f es hs' s' f' es' lconst HConst H.
+  apply const_es_exists in HConst. destruct HConst as [vs ?].
+  eapply r_label with (lh:=LH_base vs []). eassumption.
+  - cbn. rewrite cats0. congruence.
+  - cbn. rewrite cats0. congruence.
+Qed.
+
+Lemma r_elimr_p: forall hs s f es hs' s' f' es' les,
+  reduce hs s f es hs' s' f' es' ->
+  reduce hs s f (es ++ les) hs' s' f' (es' ++ les).
+Proof.
+  move => hs s f es hs' s' f' es' les H.
+  eapply r_label with (lh:=LH_base [] les); eauto.
+Qed.
+
+
+(* Helpers for stepping through the instructions of primitives.
+   Added specifically due to the step tactics (dostep...) in the main proof file
+   being very slow because of the large number of instructions
+   TODO: Remove/ merge/ refactor (common file?) *)
+
+Lemma step0 : forall hs s1 s2 fr instr es' es,
+    reduce hs s1 fr [:: instr ] hs s2 fr es' ->
+    reduce_trans (hs, s1, fr, [ instr ] ++ es) (hs, s2, fr, es' ++ es).
+Proof.
+  intros.
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
+  apply rt_step. eapply r_elimr_p; eauto.
+  now apply rt_refl.
+Qed.
+
+Lemma step0' : forall hs s1 s2 fr num instr es' es,
+    reduce hs s1 fr [:: instr ] hs s2 fr es' ->
+    reduce_trans (hs, s1, fr,  [:: $VN num] ++ [ instr ] ++ es) (hs, s2, fr, [:: $VN num] ++ es' ++ es).
+Proof.
+  intros.
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
+  apply rt_step. eapply r_eliml_p; eauto. eapply r_elimr_p; eauto.
+  now apply rt_refl.
+Qed.
+
+Lemma step1 : forall hs s1 s2 fr num instr es' es,
+    reduce hs s1 fr [:: $VN num ; instr ] hs s2 fr es' ->
+    reduce_trans (hs, s1, fr,  [:: $VN num] ++ [ instr ] ++ es) (hs, s2, fr, es' ++ es).
+Proof.
+  intros.
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
+  apply rt_step.
+  replace ([:: $VN num] ++ [:: instr] ++ es) with ([:: $VN num ; instr] ++ es) by now cbn.
+  eapply r_elimr_p. eassumption.
+  now apply rt_refl.
+Qed.
+
+Lemma step1' : forall hs s1 s2 fr num1 num2 instr es' es,
+    reduce hs s1 fr [:: $VN num2 ; instr ] hs s2 fr es' ->
+    reduce_trans (hs, s1, fr,  [:: $VN num1 ] ++ [:: $VN num2] ++ [ instr ] ++ es) (hs, s2, fr, [:: $VN num1] ++ es' ++ es).
+Proof.
+  intros.
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
+  apply rt_step.
+  apply r_eliml_p; auto.
+  replace ([:: $VN num2] ++ [:: instr] ++ es) with ([:: $VN num2 ; instr] ++ es) by now cbn.
+  eapply r_elimr_p. eassumption.
+  now apply rt_refl.
+Qed.
+
+Lemma step2 :
+  forall hs s1 s2 fr num1 num2 instr es' es,
+    reduce hs s1 fr [:: $VN num1 ; $VN num2 ; instr ] hs s2 fr es' ->
+    reduce_trans (hs, s1, fr,  [:: $VN num1] ++ [:: $VN num2] ++ [ instr ] ++ es) (hs, s2, fr, es' ++ es).
+Proof.
+  intros.
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
+  apply rt_step.
+  replace ([:: $VN num1] ++ [:: $VN num2] ++ [:: instr] ++ es) with ([:: $VN num1 ; $VN num2 ; instr] ++ es) by now cbn.
+  eapply r_elimr_p. eassumption.
+  now apply rt_refl.
+Qed.
+
+Lemma step2' : forall hs s1 s2 fr num1 num2 num3 instr es' es,
+    reduce hs s1 fr [:: $VN num2 ; $VN num3 ; instr ] hs s2 fr es' ->
+    reduce_trans (hs, s1, fr,  [:: $VN num1] ++ [:: $VN num2] ++ [:: $VN num3] ++ [ instr ] ++ es) (hs, s2, fr, [:: $VN num1 ] ++ es' ++ es).
+Proof.
+  intros.
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t])).
+  apply rt_step.
+  replace ([:: $VN num2] ++ [:: $VN num3] ++ [:: instr] ++ es) with ([:: $VN num2 ; $VN num3 ; instr] ++ es) by now cbn.
+  apply r_eliml_p; auto.
+  eapply r_elimr_p. eassumption.
+  now apply rt_refl.
+Qed.
+
+Lemma low32step : forall hfc ho state sr fr num,
+    (0 <= num < 2^64)%Z ->
+    @reduce hfc ho
+      state sr fr ([$VN (VAL_int64 (Int64.repr num))] ++ [ AI_basic (BI_const_num (VAL_int64 (Int64.repr 4294967295))) ] ++ [ AI_basic (BI_binop T_i64 (Binop_i BOI_and)) ])
+      state sr fr [$VN (VAL_int64 (Int64.repr (lo num))) ].
+Proof.
 intros.
-destruct (mulc_spec_alt x y) as [_ Hsnd].
-have Hx := to_Z_bounded x; have Hy := to_Z_bounded y.
-assert (0 <= to_Z x < 2^64)%Z as Hx' by now cbn in Hx. assert (0 <= to_Z y < 2^64)%Z as Hy' by now cbn in Hy.
-now rewrite <-(lower_of_product_63bit (to_Z x) (to_Z y) Hx' Hy').
+constructor. apply rs_binop_success. cbn.
+unfold Int64.iand, Int64.and. cbn.
+rewrite Z_bitmask_modulo32_equivalent.
+now replace (Int64.Z_mod_modulus num) with num by now solve_unsigned_id.
+Qed.
+
+Lemma high32step : forall hfc ho state sr fr num,
+    (0<= num < 2^64)%Z ->
+    @reduce hfc ho
+      state sr fr ([$VN (VAL_int64 (Int64.repr num))] ++ [ AI_basic (BI_const_num (VAL_int64 (Int64.repr 32))) ] ++ [ AI_basic (BI_binop T_i64 (Binop_i (BOI_shr SX_U))) ])
+      state sr fr [ $VN (VAL_int64 (Int64.repr (hi num))) ].
+Proof.
+intros.
+constructor. apply rs_binop_success.
+unfold app_binop. simpl.
+rewrite int64_high32. reflexivity. lia.
 Qed.
 
 End CORRECTNESS.
