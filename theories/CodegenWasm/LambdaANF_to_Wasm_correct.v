@@ -6866,107 +6866,107 @@ Proof.
           remember (make_product global_mem_ptr glob_tmp2 glob_tmp1) as make_product_instrs.
           separate_instr.
           eapply rt_trans. apply HloadStep1.
-          eapply rt_trans. eapply step2. apply low32step; auto.
-          eapply rt_trans. eapply step0'. eapply r_local_get; eauto.
-          eapply rt_trans. eapply step1'. rewrite unfold_val_notation; eapply r_load_success; eauto.
+          dostep_nary 2. apply low32step; auto.
+          dostep_nary_eliml 0 1. eapply r_local_get; eauto.
+          dostep_nary_eliml 1 1. rewrite unfold_val_notation; eapply r_load_success; eauto.
           rewrite Hbsy.
-          eapply rt_trans. eapply step2'. apply low32step; auto.
-          eapply rt_trans. eapply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary_eliml 2 1. apply low32step; auto.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite max32bit_mul_modulo64_id; try apply low32_max_int32. reflexivity.
-          eapply rt_trans. eapply step1. rewrite unfold_val_notation. eapply r_global_set; eauto.
-          eapply rt_trans. eapply step0.  eapply r_local_get; eauto.
-          eapply rt_trans. eapply step1. rewrite unfold_val_notation; eapply r_load_success; eauto.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 0.  eapply r_local_get; eauto.
+          dostep_nary 1. rewrite unfold_val_notation; eapply r_load_success; eauto.
           rewrite Hbsx.
-          eapply rt_trans. eapply step2. apply high32step; auto.
-          eapply rt_trans. eapply step0'.  eapply r_local_get; eauto.
-          eapply rt_trans. eapply step1'. rewrite unfold_val_notation; eapply r_load_success; eauto.
+          dostep_nary 2. apply high32step; auto.
+          dostep_nary_eliml 0 1.  eapply r_local_get; eauto.
+          dostep_nary_eliml 1 1. rewrite unfold_val_notation; eapply r_load_success; eauto.
           rewrite Hbsy.
-          eapply rt_trans. eapply step2'. apply low32step; auto.
-          eapply rt_trans. eapply step2. constructor. apply rs_binop_success. cbn.
-          rewrite max32bit_mul_modulo64_id; try apply low32_max_int32. reflexivity.
-          unfold hi. apply high32_max_int32; auto.
-          eapply rt_trans. eapply step1. rewrite unfold_val_notation. eapply r_global_set; eauto.
-          eapply rt_trans. eapply step0.  eapply r_local_get; eauto.
-          eapply rt_trans. eapply step1. rewrite unfold_val_notation; eapply r_load_success; eauto.
-          rewrite Hbsx.
-          eapply rt_trans. eapply step2. apply low32step; auto.
-          eapply rt_trans. eapply step0'.  eapply r_local_get; eauto.
-          eapply rt_trans. eapply step1'. rewrite unfold_val_notation; eapply r_load_success; eauto.
-          rewrite Hbsy.
-          eapply rt_trans. eapply step2'. apply high32step; auto.
-          eapply rt_trans. eapply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary_eliml 2 1. apply low32step; auto.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite max32bit_mul_modulo64_id; try apply low32_max_int32. reflexivity.
           unfold hi. apply high32_max_int32; auto.
-          eapply rt_trans. eapply step1. rewrite unfold_val_notation. eapply r_global_set; eauto.
-          eapply rt_trans. eapply step0.  eapply r_local_get; eauto.
-          eapply rt_trans. eapply step1. rewrite unfold_val_notation; eapply r_load_success; eauto.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 0.  eapply r_local_get; eauto.
+          dostep_nary 1. rewrite unfold_val_notation; eapply r_load_success; eauto.
           rewrite Hbsx.
-          eapply rt_trans. eapply step2. apply high32step; auto.
-          eapply rt_trans. eapply step0'.  eapply r_local_get; eauto.
-          eapply rt_trans. eapply step1'. rewrite unfold_val_notation; eapply r_load_success; eauto.
+          dostep_nary 2. apply low32step; auto.
+          dostep_nary_eliml 0 1.  eapply r_local_get; eauto.
+          dostep_nary_eliml 1 1. rewrite unfold_val_notation; eapply r_load_success; eauto.
           rewrite Hbsy.
-          eapply rt_trans. eapply step2'. apply high32step; auto.
-          eapply rt_trans. eapply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary_eliml 2 1. apply high32step; auto.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          rewrite max32bit_mul_modulo64_id; try apply low32_max_int32. reflexivity.
+          unfold hi. apply high32_max_int32; auto.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 0.  eapply r_local_get; eauto.
+          dostep_nary 1. rewrite unfold_val_notation; eapply r_load_success; eauto.
+          rewrite Hbsx.
+          dostep_nary 2. apply high32step; auto.
+          dostep_nary_eliml 0 1.  eapply r_local_get; eauto.
+          dostep_nary_eliml 1 1. rewrite unfold_val_notation; eapply r_load_success; eauto.
+          rewrite Hbsy.
+          dostep_nary_eliml 2 1. apply high32step; auto.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite max32bit_mul_modulo64_id; auto.
           unfold hi; apply high32_max_int32; auto. unfold hi; apply high32_max_int32; auto.
-          eapply rt_trans. eapply step1. rewrite unfold_val_notation. eapply r_global_set; eauto.
-          eapply rt_trans. eapply step0. eapply r_global_get; eauto.
-          eapply rt_trans. eapply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 0. eapply r_global_get; eauto.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite int64_high32; auto. have Hb := lo_lo_product_63bit _ _ Hb1 Hb2; lia.
           replace ((lo (to_Z n1) * lo (to_Z n2))%Z / 2^32)%Z with (hi (lo (to_Z n1) * lo (to_Z n2))%Z) by auto.
-          eapply rt_trans. eapply step0'. eapply r_global_get; eauto.
-          eapply rt_trans. eapply step2'. constructor. apply rs_binop_success. cbn.
+          dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+          dostep_nary_eliml 2 1. constructor. apply rs_binop_success. cbn.
           rewrite int64_low32'; auto. have Hb := hi_lo_product_63bit _ _ Hb1 Hb2; lia.
           replace ((hi (to_Z n1) * lo (to_Z n2))%Z mod 2^32)%Z with (lo ((hi (to_Z n1) * lo (to_Z n2))%Z)) by auto.
-          eapply rt_trans. eapply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite sum1_i64; auto.
-          eapply rt_trans. eapply step0'. eapply r_global_get; eauto.
-          eapply rt_trans. eapply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite cross_i64; auto.
           replace (hi (lo (to_Z n1) * lo (to_Z n2))%Z + lo (hi (to_Z n1) * lo (to_Z n2))%Z + (lo (to_Z n1) * hi (to_Z n2))%Z)%Z with crs.
-          eapply rt_trans. eapply step1. rewrite unfold_val_notation. eapply r_global_set; eauto.
-          eapply rt_trans. eapply step0. eapply r_global_get; eauto.
-          eapply rt_trans. eapply step2. apply high32step; auto.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 0. eapply r_global_get; eauto.
+          dostep_nary 2. apply high32step; auto.
           have Hb := hi_lo_product_63bit _ _ Hb1 Hb2; lia.
-          eapply rt_trans. eapply step0'. eapply r_global_get; eauto.
-          eapply rt_trans. eapply step2'. apply high32step; auto.
+          dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+          dostep_nary_eliml 2 1. apply high32step; auto.
           have Hb := cross_range _ _ Hb1 Hb2. lia.
-          eapply rt_trans. eapply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite Hcrs. rewrite sum2_i64; auto.
-          eapply rt_trans. eapply step0'. eapply r_global_get; eauto.
-          eapply rt_trans. eapply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite upper_i64; auto.
           replace (hi (hi (to_Z n1) * lo (to_Z n2))%Z + hi (cross (to_Z n1) (to_Z n2)) + (hi (to_Z n1) * hi (to_Z n2))%Z)%Z with hi64.
-          eapply rt_trans. apply step1. rewrite unfold_val_notation. eapply r_global_set; eauto.
-          eapply rt_trans. apply step0. eapply r_global_get; eauto.
-          eapply rt_trans. apply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 0. eapply r_global_get; eauto.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           unfold Int64.ishl.
           replace (Int64.unsigned (Z_to_i64 32)) with 32%Z by now cbn.
           replace (32 mod Int64.wordsize)%Z with 32%Z by now cbn.
           reflexivity.
-          eapply rt_trans. apply step0'. eapply r_global_get; eauto.
-          eapply rt_trans. apply step2'. apply low32step.
+          dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+          dostep_nary_eliml 2 1. apply low32step.
           have Hb := lo_lo_product_63bit _ _ Hb1 Hb2; lia.
-          eapply rt_trans. apply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite Hcrs. rewrite lower_or_i64; auto.
-          replace (cross (to_Z n1) (to_Z n2) * 2 ^ 32 + lo (lo (to_Z n1) * lo (to_Z n2))%Z)%Z with lo64.      eapply rt_trans. apply step1. rewrite unfold_val_notation. eapply r_global_set; eauto.
-          eapply rt_trans. apply step0. eapply r_global_get; eauto.
-          eapply rt_trans. apply step2. constructor. apply rs_binop_success. cbn.
+          replace (cross (to_Z n1) (to_Z n2) * 2 ^ 32 + lo (lo (to_Z n1) * lo (to_Z n2))%Z)%Z with lo64.      dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 0. eapply r_global_get; eauto.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite Hhi64. rewrite upper_shifted_i64; auto.
-          eapply rt_trans. apply step0'. eapply r_global_get; eauto.
-          eapply rt_trans. apply step2'. constructor. apply rs_binop_success. cbn.
+          dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+          dostep_nary_eliml 2 1. constructor. apply rs_binop_success. cbn.
           rewrite Hlo64. rewrite lower_shifted_i64; auto.
-          eapply rt_trans. apply step2. constructor. apply rs_binop_success.
+          dostep_nary 2. constructor. apply rs_binop_success.
           cbn. rewrite upper63_i64; auto.
           replace (upper (to_Z n1) (to_Z n2) * 2 + lower (to_Z n1) (to_Z n2) mod 2 ^ 64 / 2 ^ 63)%Z with hi63.
-          eapply rt_trans. apply step1. rewrite unfold_val_notation.
+          dostep_nary 1. rewrite unfold_val_notation.
           eapply r_global_set; eauto.
-          eapply rt_trans. apply step0. eapply r_global_get; eauto.
-          eapply rt_trans. apply step2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 0. eapply r_global_get; eauto.
+          dostep_nary 2. constructor. apply rs_binop_success. cbn.
           rewrite int64_bitmask_modulo.
           replace (lo64 mod wB)%Z with lo63; auto.
           rewrite Hlo63 Hlo64. reflexivity.
-          eapply rt_trans. apply step1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
           simpl. rewrite map_cat. eapply rt_trans. apply app_trans. apply Hred.
           dostep_nary' 1. rewrite unfold_val_notation. eapply r_local_set with (f':=fr'); eauto.
           now apply rt_refl. }
