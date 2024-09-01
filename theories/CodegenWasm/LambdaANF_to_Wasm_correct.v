@@ -303,10 +303,10 @@ Inductive repr_read_var_or_funvar {lenv} : positive -> basic_instruction -> Prop
 
 
 (* constr_alloc_ptr: pointer to linear_memory[p + 4 + 4*n] = value v *)
-Inductive set_nth_constr_arg {lenv} : nat -> var -> list basic_instruction -> Prop :=
+Inductive store_nth_constr_arg {lenv} : nat -> var -> list basic_instruction -> Prop :=
   Make_nth_proj: forall (v : var) n instr,
     repr_read_var_or_funvar (lenv:=lenv) v instr ->
-    set_nth_constr_arg n v
+    store_nth_constr_arg n v
       [ BI_global_get constr_alloc_ptr
       ; BI_const_num (nat_to_value ((1 + n) * 4))
       ; BI_binop T_i32 (Binop_i BOI_add)
@@ -320,7 +320,7 @@ Inductive set_nth_constr_arg {lenv} : nat -> var -> list basic_instruction -> Pr
 
 (* args are pushed on the stack before calling a function *)
 Inductive repr_fun_args_Wasm {lenv} : list LambdaANF.cps.var ->
-                                         list basic_instruction -> Prop :=
+                                      list basic_instruction -> Prop :=
 (* base case: no args *)
 | FA_nil :
     repr_fun_args_Wasm [] []
@@ -342,7 +342,7 @@ Inductive repr_asgn_constr_Wasm {lenv} : localidx -> ctor_tag -> list var -> lis
     get_ctor_arity cenv t = Ret arity ->
     arity > 0 ->
     (* store args *)
-    Forall_statements_in_seq (set_nth_constr_arg (lenv:=lenv)) vs sargs ->
+    Forall_statements_in_seq (store_nth_constr_arg (lenv:=lenv)) vs sargs ->
 
     repr_asgn_constr_Wasm x' t vs scont
       ([ BI_global_get global_mem_ptr
@@ -678,14 +678,14 @@ Ltac separate_instr :=
      lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
   end.
 
-Lemma set_nth_constr_arg_correct {lenv} : forall  l instr n,
-  set_constructor_args nenv lenv fenv l n = Ret instr ->
-  Forall_statements_in_seq' (@set_nth_constr_arg lenv) l instr n.
+Lemma store_nth_constr_arg_correct {lenv} : forall  l instr n,
+  store_constructor_args nenv lenv fenv l n = Ret instr ->
+  Forall_statements_in_seq' (@store_nth_constr_arg lenv) l instr n.
 Proof.
   induction l; intros.
   - inv H. econstructor; auto.
   - cbn in H. destruct (instr_local_var_read nenv lenv fenv a) eqn:Hvar. inv H.
-  destruct (set_constructor_args nenv lenv fenv l (S n)) eqn:Harg. inv H. inv H.
+  destruct (store_constructor_args nenv lenv fenv l (S n)) eqn:Harg. inv H. inv H.
   separate_instr. do 8! rewrite catA. constructor. auto.
   replace ((nat_to_value (S (n + S (n + S (n + S (n + 0))))))) with
           ((nat_to_value ((1 + n) * 4))) by (f_equal; lia).
@@ -763,7 +763,7 @@ Proof.
       destruct (call_grow_mem_if_necessary mem n) eqn:Hgrow. inv H1.
       unfold store_constructor in Hstore_constr.
       destruct (get_ctor_ord cenv t) eqn:Hord; first by inv Hstore_constr.
-      destruct (set_constructor_args nenv lenv fenv (v0 :: l') 0) eqn:Hconstrargs; first by inv Hstore_constr.
+      destruct (store_constructor_args nenv lenv fenv (v0 :: l') 0) eqn:Hconstrargs; first by inv Hstore_constr.
       destruct (translate_body _ _ _ _ _ _ _) eqn:Hbody; inversion H0.
       inversion Hstore_constr.
       repeat rewrite <- app_assoc.
@@ -779,7 +779,7 @@ Proof.
       destruct (cenv ! t) eqn:Hc. 2:auto. destruct c. inv Hcenv.
       apply Rconstr_asgn_boxed with (arity:=S (length l')); eauto.
       unfold get_ctor_arity. rewrite Hc. f_equal. cbn. lia. lia.
-      apply set_nth_constr_arg_correct.
+      apply store_nth_constr_arg_correct.
       by assumption.
   - (* Ecase nil *)
     simpl in H. destruct (translate_var nenv lenv v _) eqn:Hvar; inv H.
@@ -2729,7 +2729,7 @@ Lemma store_constr_args_reduce {lenv} : forall ys offset vs sargs state rho fds 
   (v_cap + N.of_nat (4 * (num_args + 1) + 24) < mem_length m)%N ->
   offset + length ys = num_args ->
   sglob_val s (f_inst f) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 (4 + (4*(N.of_nat offset)) + v_cap)))%N) ->
-  Forall_statements_in_seq' (@set_nth_constr_arg fenv nenv lenv) ys sargs offset ->
+  Forall_statements_in_seq' (@store_nth_constr_arg fenv nenv lenv) ys sargs offset ->
   get_list ys rho = Some vs ->
   (* from environment relation: ys are available as locals in frame f *)
   (forall y, In y ys -> find_def y fds = None ->
@@ -3223,7 +3223,7 @@ Lemma store_constr_reduce {lenv} : forall state s f rho fds ys (vs : list cps.va
            @stored_in_locals lenv y val f /\
            repr_val_LambdaANF_Wasm v6 s (f_inst f) val) ->
   (Z.of_nat (length ys) <= max_constr_args)%Z ->
-  Forall_statements_in_seq (@set_nth_constr_arg fenv nenv lenv) ys sargs ->
+  Forall_statements_in_seq (@store_nth_constr_arg fenv nenv lenv) ys sargs ->
   get_list ys rho = Some vs ->
 
   (* function indices: value relation *)

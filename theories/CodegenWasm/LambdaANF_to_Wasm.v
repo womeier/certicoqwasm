@@ -180,7 +180,7 @@ Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
 
 Definition get_ctor_size (cenv : ctor_env) (t : ctor_tag) : error N :=
   arity <- get_ctor_arity cenv t;;
-  Ret (if arity =? 0 then 0%N else N.of_nat (4 * (arity + 1) + 24)). (* plus 24 for some luft for invariants *)
+  Ret (if arity =? 0 then 0%N else N.of_nat (4 * (arity + 1) + 24)). (* size in bytes plus 24 for some luft for invariants *)
 
 (* ***** FUNCTION CALLS ****** *)
 
@@ -204,60 +204,62 @@ Definition translate_call (nenv : name_env) (lenv : localvar_env) (fenv : fname_
   Ret (instr_pass_params ++ [instr_fidx] ++ [call (length args)]).
   (* all fns return nothing, type = num args *)
 
-(* ***** CONSTRUCTOR ALLOCATION ****** *)
 
-(* Example placement of constructors in the linear memory:
-     data Bintree := Leaf | Node Bintree Value Bintree
+(* ***** CONSTRUCTOR REPRESENTATION (as CertiCoq's C backend/OCaml) ****** *)
 
-     Leaf: 0ary constructory with ordinal 0, thus 2*ord(Leaf) + 1 = 1
+(* Example placement of constructors in the linear memory (each cell is 4 bytes):
+   data BTree := Leaf | Node BTree Nat BTree
 
-     Node: --> +---+---+---+---+
-               |T_n| L | V | R |
-               +---+---+---+---+
-    T_l, T_n constructor ordinals
-    L, V, R constructors
+   Leaf: nullary constructor (ordinal 0), thus the i32 value 2*0+1 = 1
+
+   Node: non-nullary constructor (ordinal 0), thus the i32 pointer to
+          --> +---+---+---+---+
+              | 0 | L | V | R |
+              +---+---+---+---+
+   L, V, R constructors
 *)
 
 (* store argument pointers in memory *)
-Fixpoint set_constructor_args (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (args : list cps.var) (current : nat) : error (list basic_instruction) :=
+Fixpoint store_constructor_args (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (args : list cps.var) (current : nat) : error (list basic_instruction) :=
   match args with
   | [] => Ret []
-  | y :: ys => read_y <- instr_local_var_read nenv lenv fenv y;;
-               remaining <- set_constructor_args nenv lenv fenv ys (1 + current);;
+  | y :: ys =>
+      read_y <- instr_local_var_read nenv lenv fenv y;;
+      remaining <- store_constructor_args nenv lenv fenv ys (1 + current);;
 
-               Ret ([ BI_global_get constr_alloc_ptr
-                    ; BI_const_num (nat_to_value (4 * (1 + current))) (* plus 1 : skip tag *)
-                    ; BI_binop T_i32 (Binop_i BOI_add)
-                    ; read_y
-                    ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+      Ret ([ BI_global_get constr_alloc_ptr
+           ; BI_const_num (nat_to_value (4 * (1 + current))) (* plus 1 : skip tag *)
+           ; BI_binop T_i32 (Binop_i BOI_add)
+           ; read_y
+           ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: alignment (irrelevant for semantics) *)
 
-                    (* increase gmp by 4 *)
-                    ; BI_global_get global_mem_ptr
-                    ; BI_const_num (nat_to_value 4)
-                    ; BI_binop T_i32 (Binop_i BOI_add)
-                    ; BI_global_set global_mem_ptr
+           (* increase gmp by 4 *)
+           ; BI_global_get global_mem_ptr
+           ; BI_const_num (nat_to_value 4)
+           ; BI_binop T_i32 (Binop_i BOI_add)
+           ; BI_global_set global_mem_ptr
 
-                    ] ++ remaining)
+           ] ++ remaining)
   end.
 
 
 Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localvar_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
   ord <- get_ctor_ord cenv c ;;
-  set_constr_args <- set_constructor_args nenv lenv fenv ys 0;;
+  store_constr_args <- store_constructor_args nenv lenv fenv ys 0;;
   Ret ([ BI_global_get global_mem_ptr
        ; BI_global_set constr_alloc_ptr
 
-       (* set tag *)
+       (* store tag *)
        ; BI_global_get constr_alloc_ptr
        ; BI_const_num (nat_to_value (N.to_nat ord))
-       ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: 4-byte aligned, alignment irrelevant for semantics *)
+       ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: alignment (irrelevant for semantics) *)
        (* increase gmp by 4 *)
        ; BI_global_get global_mem_ptr
        ; BI_const_num (nat_to_value 4)
        ; BI_binop T_i32 (Binop_i BOI_add)
        ; BI_global_set global_mem_ptr
 
-       ] ++ set_constr_args).
+       ] ++ store_constr_args).
 
 Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N * list basic_instruction)) : list basic_instruction :=
   match es with
@@ -272,7 +274,10 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N
          else
            [ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N)) ]) ++
         [ BI_relop T_i32 (Relop_i ROI_eq)
-        ; BI_if (BT_valtype None) instrs (create_case_nested_if_chain boxed v tl) ]
+        ; BI_if (BT_valtype None)
+            instrs
+            (create_case_nested_if_chain boxed v tl)
+        ]
   end.
 
 
@@ -362,6 +367,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
                ] ++ following_instr)
       end
    | Ecase x arms =>
+      (* split arms into boxed and unboxed constructors *)
       let fix translate_case_branch_expressions (arms : list (ctor_tag * exp))
         : error (list (N * list basic_instruction) * list (N  * list basic_instruction)) :=
         match arms with
@@ -429,7 +435,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
             ; BI_global_set global_mem_ptr
             ]
        in
-       let p := call_grow_mem_if_necessary mem 32%N in  (* plus 24 for some luft for invariants *)
+       let p := call_grow_mem_if_necessary mem 32%N in  (* 8 bytes plus 24 for some luft for invariants *)
        let grow_instr := fst p in
        let mem' := snd p in
        following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;
@@ -440,7 +446,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
        | Some p' =>
            x_var <- translate_var nenv lenv x "translate_exp prim op" ;;
            prim_op_instrs <- translate_primitive_operation nenv lenv p' ys ;;
-           let p := call_grow_mem_if_necessary mem 52%N in (* plus 24 for some luft for invariants *)
+           let p := call_grow_mem_if_necessary mem 52%N in (* 28 bytes plus 24 for some luft for invariants *)
            let grow_instr := fst p in
            let mem' := snd p in
            following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;

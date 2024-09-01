@@ -204,7 +204,7 @@ Qed.
 
 Lemma constr_args_store_typing {lenv} : forall args n instr c,
   @context_restr lenv c ->
-  Forall_statements_in_seq' (@set_nth_constr_arg fenv nenv lenv) args instr n ->
+  Forall_statements_in_seq' (@store_nth_constr_arg fenv nenv lenv) args instr n ->
   be_typing c instr (Tf [::] [::]).
 Proof.
   induction args; intros ??? Hcontext Hargs.
