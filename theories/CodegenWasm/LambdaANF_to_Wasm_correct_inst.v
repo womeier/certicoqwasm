@@ -260,16 +260,6 @@ Proof.
          be_typing c (apply_binop_and_store_i64 global_mem_ptr bop x' y' mask) (Tf [::] [:: T_num T_i32])). {
     intros x x' y y' bop mask Hx Hy. unfold apply_binop_and_store_i64.
     destruct mask; prepare_solve_bet; solve_bet Hcontext || eapply Hinc_gmp; eauto. }
-  assert (Hmake_carry : forall c' ord,
-             context_restr lenv c' -> lookup_N (tc_mems c') 0 = Some m ->
-             be_typing c' (make_carry global_mem_ptr ord glob_tmp1) (Tf [] [:: T_num T_i32])). {
-    intros c' ord Hc' Hm. unfold make_carry. prepare_solve_bet; solve_bet Hc' || eapply Hinc_gmp; eauto. }
-  assert (Hmake_product : forall c' gidx1 gidx2,
-             context_restr lenv c' -> lookup_N (tc_mems c') 0 = Some m ->
-             In gidx1 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4] ->
-             In gidx2 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4] ->
-             be_typing c' (make_product global_mem_ptr gidx1 gidx2) (Tf [] [:: T_num T_i32])). {
-    intros c' ?? Hc' Hm ??. unfold make_product. prepare_solve_bet; solve_bet Hc' || eapply Hinc_gmp; eauto. }
   assert(Hloop: forall c',
             context_restr lenv c' -> lookup_N (tc_mems c') 0 = Some m ->
             be_typing c' (diveucl_21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) (Tf [::] [::])).
@@ -278,17 +268,12 @@ Proof.
   assert (Hin2: In glob_tmp2 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4]) by (right; now constructor).
   assert (Hin3: In glob_tmp3 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4]) by (right; right; now constructor).
   assert (Hin4: In glob_tmp4 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4]) by (right; right; right; now constructor).
-  (* 'make_product' and 'make_carry' have many instructions,
-     and are used for many of the primitives.
-     'prepare_solve_bet' unfolds them,
-     so mark them as opaque and use helper above instead to reduce slowdown. *)
-  Opaque make_product make_carry.
   inv Hinstrs.
   { (* Unary operations *)
     inv H0; unfold head0_instrs, tail0_instrs; prepare_solve_bet; solve_bet Hcontext || eapply Hinc_gmp; eauto. }
   { (* Binary operations *)
-    inv H1; unfold div_instrs, mod_instrs, shift_instrs, make_boolean_valued_comparison, compare_instrs, apply_add_carry_operation, apply_sub_carry_operation, bitmask_instrs, load_local_i64; prepare_solve_bet; (try (eapply Harith_binop; eauto) || (eapply Hinc_gmp; eauto)); eauto.
-    all: solve_bet Hcontext'; eauto. }
+    inversion H1; unfold div_instrs, mod_instrs, shift_instrs, make_boolean_valued_comparison, compare_instrs, mulc_instrs, diveucl_instrs, apply_add_carry_operation, apply_sub_carry_operation, bitmask_instrs, load_local_i64; prepare_solve_bet; (solve_bet Hcontext'; eauto) || (eapply Harith_binop; eauto) || (eapply Hinc_gmp; eauto).
+  }
   { (* Ternary operations *)
       inv H2; unfold addmuldiv_instrs, diveucl_21_instrs, load_local_i64.
       - { (* diveucl_21 *)
@@ -299,7 +284,7 @@ Proof.
                  end;
             repeat rewrite catA; repeat eapply bet_composition'.
           10: { apply bet_if_wasm with (tn:=[])=>//.
-                prepare_solve_bet; try (solve_bet Hcontext'; eauto) || (eapply Hmake_product; eauto).
+                prepare_solve_bet; try (solve_bet Hcontext'; eauto) || (eapply Hinc_gmp; eauto).
                 (* Avoid unfolding too much to avoid slowdown *)
                 repeat match goal with
                        | |- context C [?x :: ?l] =>
