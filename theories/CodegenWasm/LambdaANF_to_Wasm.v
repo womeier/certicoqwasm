@@ -281,6 +281,18 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N
   end.
 
 
+(* **** TRANSLATE PRIMITIVE VALUES **** *)
+
+Definition translate_primitive_value (p : AstCommon.primitive) : error Wasm_int.Int64.int :=
+  match projT1 p as tag return prim_value tag -> error Wasm_int.Int64.T with
+  | AstCommon.primInt => fun i => Ret (Wasm_int.Int64.repr (Uint63.to_Z i))
+  | AstCommon.primFloat => fun f => Err "Extraction of floats to Wasm not yet supported"
+  end (projT2 p).
+
+
+(* **** TRANSLATE PRIMITIVE OPERATIONS **** *)
+
+(* actual translation in _primitives file *)
 Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (p : (kername * string * bool * nat)) (args : list var) : error (list basic_instruction) :=
   let '(op_name, _, _, _) := p in
   match KernameMap.find op_name primop_map with
@@ -306,6 +318,7 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
   | _ => Err ("Unsupported primitive operator: " ++ (Kernames.string_of_kername op_name))
   end.
 
+(* **** GROWING THE LINEAR MEMORY **** *)
 
 (* a page is 2^16 bytes, expected num of required bytes in local 0 *)
 Definition grow_memory_if_necessary : list basic_instruction :=
@@ -338,6 +351,7 @@ Definition call_grow_mem_if_necessary (mem : N) (required_bytes : N) : list basi
   if (required_bytes <=? mem)%N
   then ([], mem - required_bytes)%N
   else (grow_memory_if_necessary, 65536 - required_bytes)%N.
+
 
 (* ***** EXPRESSIONS (except fundefs) ****** *)
 
@@ -456,6 +470,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
      x_var <- translate_var nenv lenv x "translate_body halt";;
      Ret [ BI_local_get x_var; BI_global_set result_var; BI_return ]
    end.
+
 
 (* ***** FUNCTIONS ****** *)
 

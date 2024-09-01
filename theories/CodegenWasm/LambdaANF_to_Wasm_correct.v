@@ -39,8 +39,7 @@ From Coq Require Import
 
 From Wasm Require Import
   datatypes operations host memory_list opsem
-  type_preservation instantiation_spec
-  instantiation_properties properties common numerics.
+  type_preservation properties common numerics.
 
 Import ssreflect eqtype ssrbool eqtype.
 Import LambdaANF.toplevel LambdaANF.cps compM.
@@ -9009,9 +9008,9 @@ Proof with eauto.
           destruct ((Wasm_int.N_of_uint i32m (N_to_i32 gmp) + 0 + N.of_nat 8
                      <=? mem_length m)%N) eqn:Har. 2: by now inv Har.
           apply N.leb_le in Har. cbn in Har.
-          rewrite Wasm_int.Int32.Z_mod_modulus_id in Har; try lia.
+          simpl_eq.
           apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
-          simpl_modulus. cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
+          simpl_modulus. cbn. simpl_eq. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
         subst gmp'.
 
         assert (Hinv_before_IH : INV s_before_IH f_before_IH). {
@@ -9025,19 +9024,27 @@ Proof with eauto.
             assert ((8 + 8 < Z.of_N page_size)%Z). { unfold page_size. lia. }
             replace n with (gmp + 8)%N.
             lia.
-            inv Heqn.
-            repeat rewrite Wasm_int.Int32.Z_mod_modulus_id in H5; auto. lia. }
+            inv Heqn. now simpl_eq. }
           { move => _.
             intros n [Heqn Hboundn].
             destruct Hgmp_v_mult_two as [n' Hn'].
             replace n with (gmp + 8)%N.
             exists (n' + 4)%N. lia.
-            inv Heqn.
-            repeat rewrite Wasm_int.Int32.Z_mod_modulus_id in H2; auto. lia. }
+            inv Heqn. now simpl_eq. }
           subst f_before_IH. by apply Hs_before_IH.
         }
 
-      assert (HmemAvail_before_IH : min_available_memory s_before_IH (f_inst f_before_IH) mem'). { admit. }
+        assert (HmemAvail_before_IH : min_available_memory s_before_IH (f_inst f_before_IH) mem'). {
+          intros ?? Hmem Hgmp'' HgmpBound''.
+          subst f_before_IH.
+          have Hm := Hs_before_IH. apply update_global_preserves_memory in Hm.
+          apply update_global_get_same in Hs_before_IH.
+          rewrite Hs_before_IH in Hgmp''.
+          inversion Hgmp''. simpl_eq. subst gmp0.
+          apply mem_store_preserves_length in Hm_after_store.
+          rewrite -Hm in Hmem. solve_eq m0 m_after_store.
+          lia.
+        }
 
         assert (HmemPreserved': smem s_before_IH (f_inst fr) = Some m_after_store). {
           subst s_prim. cbn.

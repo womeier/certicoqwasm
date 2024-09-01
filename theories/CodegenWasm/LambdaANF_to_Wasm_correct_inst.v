@@ -2591,7 +2591,7 @@ Proof.
     now eapply NoDup_app_remove_l in HvarsNodup.
   }
 
-  have HI := @instantiation_combined_INV_and_more _ nenv _ hfc ho _ _ _ _ _ _ hs Hnodup' HeRestr
+  have HI := @instantiation_combined_INV_and_more _ _ _ hfc ho _ _ _ _ _ _ hs Hnodup' HeRestr
                Hcenv Logic.eq_refl Hmaxfuns LANF2Wasm.
   destruct HI as [sr [fr [Hinst [Hinv [HinstFuncs [HfVal [main_fn [e' [fns [-> [Hfuncs [Hexpr' Hfns']]]]]]]]]]]].
 
