@@ -239,29 +239,75 @@ Proof.
       apply bet_weakening with (ts:=[::T_num T_i32]). by apply IHl.
 Qed.
 
-Lemma increment_global_mem_ptr_typing {lenv} :
-  forall c ts n,
-         @context_restr lenv c ->
-         be_typing c (increment_global_mem_ptr global_mem_ptr n) (Tf ts ts).
+Lemma prim_op_typing {lenv} :
+  forall c ys op instrs,
+    @context_restr lenv c ->
+    @repr_primitive_operation nenv lenv op ys instrs ->
+      be_typing c instrs (Tf [::] [:: T_num T_i32]).
 Proof.
-  intros c ts n Hcontext.
-  unfold increment_global_mem_ptr;
-    replace ts with (ts ++ []);
-    [apply bet_weakening;prepare_solve_bet; try solve_bet Hcontext|now rewrite cats0].
-Qed.
-
-Lemma simple_arith_prim_op_typing {lenv} :
-  forall c x x' y y' bop mask,
-         @context_restr lenv c ->
-         @repr_var nenv lenv x x' ->
-         @repr_var nenv lenv y y' ->
-         be_typing c (apply_binop_and_store_i64 global_mem_ptr bop x' y' mask) (Tf [::] [:: T_num T_i32]).
-Proof.
-  intros ??????? Hcontext Hx Hy.
-  unfold apply_binop_and_store_i64, load_local_i64, bitmask_instrs.
+  intros c ys op instrs Hcontext Hinstrs.
   assert (Hmem:exists m, lookup_N (tc_mems c) 0 = Some m) by now destruct Hcontext as (_ & _ & _ & _ & Hmems &_); destruct (tc_mems c);[contradiction| eexists].
   destruct Hmem as [m Hmem].
-  now destruct mask; prepare_solve_bet; eapply increment_global_mem_ptr_typing || solve_bet Hcontext.
+  assert (Hcontext': context_restr lenv (upd_label c ([:: [:: T_num T_i32]] ++ tc_labels c))) by now inv Hcontext.
+  assert (Hmem' : lookup_N (tc_mems (upd_label c ([:: [:: T_num T_i32]] ++ tc_labels c))) 0 = Some m) by now unfold tc_mems.
+  (* Assert some helpers for instruction sequences that are repeated many times *)
+  assert (Hinc_gmp: forall c' n,
+             context_restr lenv c' ->
+             be_typing c' (increment_global_mem_ptr global_mem_ptr n) (Tf [:: T_num T_i32] [:: T_num T_i32])). {
+    intros c' n Hc'. unfold increment_global_mem_ptr. prepare_solve_bet; solve_bet Hc'. }
+  assert (Harith_binop : forall x x' y y' bop mask,
+         @repr_var nenv lenv x x' -> @repr_var nenv lenv y y' ->
+         be_typing c (apply_binop_and_store_i64 global_mem_ptr bop x' y' mask) (Tf [::] [:: T_num T_i32])). {
+    intros x x' y y' bop mask Hx Hy. unfold apply_binop_and_store_i64.
+    destruct mask; prepare_solve_bet; solve_bet Hcontext || eapply Hinc_gmp; eauto. }
+  assert (Hmake_carry : forall c' ord,
+             context_restr lenv c' -> lookup_N (tc_mems c') 0 = Some m ->
+             be_typing c' (make_carry global_mem_ptr ord glob_tmp1) (Tf [] [:: T_num T_i32])). {
+    intros c' ord Hc' Hm. unfold make_carry. prepare_solve_bet; solve_bet Hc' || eapply Hinc_gmp; eauto. }
+  assert (Hmake_product : forall c' gidx1 gidx2,
+             context_restr lenv c' -> lookup_N (tc_mems c') 0 = Some m ->
+             In gidx1 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4] ->
+             In gidx2 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4] ->
+             be_typing c' (make_product global_mem_ptr gidx1 gidx2) (Tf [] [:: T_num T_i32])). {
+    intros c' ?? Hc' Hm ??. unfold make_product. prepare_solve_bet; solve_bet Hc' || eapply Hinc_gmp; eauto. }
+  assert(Hloop: forall c',
+            context_restr lenv c' -> lookup_N (tc_mems c') 0 = Some m ->
+            be_typing c' (diveucl_21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) (Tf [::] [::])).
+  { intros c' Hc' Hm. unfold diveucl_21_loop_body; prepare_solve_bet; solve_bet Hc'. }
+  assert (Hin1: In glob_tmp1 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4]) by now constructor.
+  assert (Hin2: In glob_tmp2 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4]) by (right; now constructor).
+  assert (Hin3: In glob_tmp3 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4]) by (right; right; now constructor).
+  assert (Hin4: In glob_tmp4 [:: glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4]) by (right; right; right; now constructor).
+  (* 'make_product' and 'make_carry' have many instructions,
+     and are used for many of the primitives.
+     'prepare_solve_bet' unfolds them,
+     so mark them as opaque and use helper above instead to reduce slowdown. *)
+  Opaque make_product make_carry.
+  inv Hinstrs.
+  { (* Unary operations *)
+    inv H0; unfold head0_instrs, tail0_instrs; prepare_solve_bet; solve_bet Hcontext || eapply Hinc_gmp; eauto. }
+  { (* Binary operations *)
+    inv H1; unfold div_instrs, mod_instrs, shift_instrs, make_boolean_valued_comparison, compare_instrs, apply_add_carry_operation, apply_sub_carry_operation, bitmask_instrs, load_local_i64; prepare_solve_bet; (try (eapply Harith_binop; eauto) || (eapply Hinc_gmp; eauto)); eauto.
+    all: solve_bet Hcontext'; eauto. }
+  { (* Ternary operations *)
+      inv H2; unfold addmuldiv_instrs, diveucl_21_instrs, load_local_i64.
+      - { (* diveucl_21 *)
+          (* Avoid unfolding too much too avoid slowdown *)
+          repeat match goal with
+                 | |- context C [?x :: ?l] =>
+                     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+                 end;
+            repeat rewrite catA; repeat eapply bet_composition'.
+          10: { apply bet_if_wasm with (tn:=[])=>//.
+                prepare_solve_bet; try (solve_bet Hcontext'; eauto) || (eapply Hmake_product; eauto).
+                (* Avoid unfolding too much to avoid slowdown *)
+                repeat match goal with
+                       | |- context C [?x :: ?l] =>
+                           lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+                       end;
+                  repeat rewrite catA; repeat eapply bet_composition'; eauto; solve_bet Hcontext' || (eapply Hmake_product; eauto). }
+          all: solve_bet Hcontext'; eauto. }
+      - (* addmuldiv *) prepare_solve_bet; (eapply Hinc_gmp; eauto) || solve_bet Hcontext'; eauto. }
 Qed.
 
 Theorem repr_expr_LambdaANF_Wasm_typing {lenv} : forall e e' mem c,
@@ -345,46 +391,9 @@ Proof.
       destruct (tc_mems c0) eqn:Hc; cbn; eauto. by apply Hcontext' in Hc. }
     eapply bet_composition'. eapply call_grow_mem_if_necessary_typing; eassumption.
     eapply bet_composition'. prepare_solve_bet; try solve_bet Hcontext'.
-    inv HprimOp.
-    { (* Unary operations *)
-      inv H0; unfold head0_instrs, tail0_instrs; prepare_solve_bet;
-      lazymatch goal with
-        | |- be_typing _ (increment_global_mem_ptr _ _) (Tf _ _) => now eapply increment_global_mem_ptr_typing
-        | _ => solve_bet Hcontext'
-      end.
-    }
-    { (* Binary operations *)
-      inv H1; unfold div_instrs, mod_instrs, shift_instrs, make_boolean_valued_comparison, compare_instrs, apply_add_carry_operation, apply_sub_carry_operation, make_carry, diveucl_instrs, mulc_instrs, make_product, load_local_i64, bitmask_instrs; prepare_solve_bet;
-      match goal with
-      | |- be_typing _ (apply_binop_and_store_i64 _ _ _ _ _) (Tf [] [T_num T_i32]) => now eapply simple_arith_prim_op_typing
-      | |- be_typing _ (increment_global_mem_ptr _ _) (Tf _ _) => now eapply increment_global_mem_ptr_typing
-      | _ => solve_bet Hcontext'
-      end; now eapply increment_global_mem_ptr_typing.
-    }
-    { (* Ternary operations *)
-      inv H2; unfold addmuldiv_instrs, diveucl_21_instrs, make_product, load_local_i64.
-      - { (* diveucl_21 *)
-          assert (Hcontext'': context_restr lenv (upd_label c0 ([:: [:: T_num T_i32]] ++ tc_labels c0))) by now inv Hcontext'.
-          assert(Hloop: be_typing (upd_label c0 ([:: [:: T_num T_i32] ++ [::]] ++ tc_labels c0)) (diveucl_21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) (Tf [::] [::])) by (unfold diveucl_21_loop_body; prepare_solve_bet; solve_bet Hcontext'').
-          (* Avoid unfolding too much too avoid slowdown *)
-          repeat match goal with
-                 | |- context C [?x :: ?l] =>
-                     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-                 end;
-            repeat rewrite catA; repeat eapply bet_composition'.
-          10: { apply bet_if_wasm with (tn:=[])=>//.
-                prepare_solve_bet; solve_bet Hcontext'' || now eapply increment_global_mem_ptr_typing.
-                (* Avoid unfolding too much to avoid slowdown *)
-                repeat match goal with
-                       | |- context C [?x :: ?l] =>
-                           lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-                       end;
-                  repeat rewrite catA; repeat eapply bet_composition'; eauto; solve_bet Hcontext'' || now eapply increment_global_mem_ptr_typing. }
-          all: solve_bet Hcontext'' || now eapply increment_global_mem_ptr_typing. }
-      - (* addmuldiv *) prepare_solve_bet; solve_bet Hcontext' || now eapply increment_global_mem_ptr_typing.
-    }
-(*     solve_bet Hcontext'.
-    inv Hrestr'; by apply IH. *) (* TODO Martin *) admit.
+    eapply prim_op_typing; eauto.
+    prepare_solve_bet. solve_bet Hcontext'.
+    inv Hrestr'; by apply IH.
   - (* repr_branches nil *)
     intros ?????? Hcontext' Hrestr' Hvar Hboxed Hunboxed.
     inv Hboxed. inv Hunboxed. by split; solve_bet Hcontext'.
@@ -402,7 +411,7 @@ Proof.
     prepare_solve_bet; try solve_bet Hcontext'.
     + apply IH2=>//. inv Hrestr'. now inv H1.
     + eapply IH1 in H4; try apply Hunboxed; first (now destruct H4); eauto; try eassumption. inv Hrestr'. inv H1. by constructor.
-(* Qed. *) Admitted.
+Qed.
 
 End FUNCTION_BODY_TYPING.
 
@@ -2456,7 +2465,7 @@ exists sr fr,
 Proof.
   intros ??????? Hnodup HeRestr HcenvCorrect Hnumfuns HfnsLength LANF2Wasm.
   (* module instantiates *)
-  have HINST := @module_instantiate _ funenv _  _  hfc ho _ _ _ _ hs HcenvCorrect Hnodup LANF2Wasm.
+  have HINST := @module_instantiate _ nenv _  hfc ho _ _ _ _ hs HcenvCorrect Hnodup LANF2Wasm.
   destruct HINST as [sr [fr [es_post Hinst]]].
 
   assert (HcenvCorrect' : (forall (f : var) (t : fun_tag) (ys : seq var) (e : exp),
@@ -2597,7 +2606,7 @@ Proof.
     now eapply NoDup_app_remove_l in HvarsNodup.
   }
 
-  have HI := @instantiation_combined_INV_and_more _ funenv _ _ hfc ho _ _ _ _ _ _ hs Hnodup' HeRestr
+  have HI := @instantiation_combined_INV_and_more _ nenv _ hfc ho _ _ _ _ _ _ hs Hnodup' HeRestr
                Hcenv Logic.eq_refl Hmaxfuns LANF2Wasm.
   destruct HI as [sr [fr [Hinst [Hinv [HinstFuncs [HfVal [main_fn [e' [fns [-> [Hfuncs [Hexpr' Hfns']]]]]]]]]]]].
 
