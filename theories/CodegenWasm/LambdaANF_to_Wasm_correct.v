@@ -6761,7 +6761,7 @@ Proof.
         assert (Hgv8' : sglob_val sr8 (f_inst f) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr lo64)))) by now eapply update_global_get_other; eauto; discriminate.
         assert (Hgv9 : sglob_val sr9 (f_inst f) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr lo63)))) by now eapply update_global_get_same; eauto; discriminate.
         assert (Hgv9' : sglob_val sr9 (f_inst f) glob_tmp2 = Some (VAL_num (VAL_int64 (Int64.repr hi63)))) by now eapply update_global_get_other; eauto; discriminate.
-        assert (HenoughMem : (Z.of_N gmp_v + Z.of_N page_size <= Z.of_N (mem_length m) < Int32.modulus)%Z) by now unfold page_size in *; lia.
+        assert (HenoughMem : (Z.of_N gmp_v + Z.of_N 52 <= Z.of_N (mem_length m) < Int32.modulus)%Z) by lia.
         replace lo63 with (to_Z (snd (mulc n1 n2))) in Hgv9 by now rewrite mulc_snd.
         replace hi63 with (to_Z (fst (mulc n1 n2))) in Hgv9' by now rewrite mulc_fst.
         have HmakeProdReduce := make_product_reduce glob_tmp2 glob_tmp1 state sr9 f m gmp_v (to_Z (fst (mulc n1 n2))) (to_Z (snd (mulc n1 n2)))

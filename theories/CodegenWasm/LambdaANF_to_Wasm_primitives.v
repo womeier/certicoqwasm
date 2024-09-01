@@ -1311,11 +1311,11 @@ Proof.
   rewrite <-lower_of_product_63bit; auto.
 Qed.
 
-Lemma low32step : forall hfc ho state sr fr num,
+Lemma low32step : forall state sr fr num,
     (0 <= num < 2^64)%Z ->
-    @reduce hfc ho
-      state sr fr ([$VN (VAL_int64 (Int64.repr num))] ++ [ AI_basic (BI_const_num (VAL_int64 (Int64.repr 4294967295))) ] ++ [ AI_basic (BI_binop T_i64 (Binop_i BOI_and)) ])
-      state sr fr [$VN (VAL_int64 (Int64.repr (lo num))) ].
+    reduce state sr fr ([$VN (VAL_int64 (Int64.repr num))] ++ [ AI_basic (BI_const_num (VAL_int64 (Int64.repr 4294967295))) ] ++
+                        [ AI_basic (BI_binop T_i64 (Binop_i BOI_and)) ])
+           state sr fr [$VN (VAL_int64 (Int64.repr (lo num))) ].
 Proof.
 intros.
 constructor. apply rs_binop_success. cbn.
@@ -1324,11 +1324,11 @@ rewrite Z_bitmask_modulo32_equivalent.
 now replace (Int64.Z_mod_modulus num) with num by now solve_unsigned_id.
 Qed.
 
-Lemma high32step : forall hfc ho state sr fr num,
+Lemma high32step : forall state sr fr num,
     (0<= num < 2^64)%Z ->
-    @reduce hfc ho
-      state sr fr ([$VN (VAL_int64 (Int64.repr num))] ++ [ AI_basic (BI_const_num (VAL_int64 (Int64.repr 32))) ] ++ [ AI_basic (BI_binop T_i64 (Binop_i (BOI_shr SX_U))) ])
-      state sr fr [ $VN (VAL_int64 (Int64.repr (hi num))) ].
+    reduce state sr fr ([$VN (VAL_int64 (Int64.repr num))] ++ [ AI_basic (BI_const_num (VAL_int64 (Int64.repr 32))) ] ++
+                        [ AI_basic (BI_binop T_i64 (Binop_i (BOI_shr SX_U))) ])
+           state sr fr [ $VN (VAL_int64 (Int64.repr (hi num))) ].
 Proof.
 intros.
 constructor. apply rs_binop_success.
