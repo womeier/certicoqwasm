@@ -51,16 +51,6 @@ Definition C1_ord    := 1%N.
 Definition pair_ord  := 0%N.
 
 
-(* **** TRANSLATE PRIMITIVE VALUES **** *)
-
-Definition translate_primitive_value (p : AstCommon.primitive) : error Wasm_int.Int64.int :=
-  match projT1 p as tag return prim_value tag -> error Wasm_int.Int64.T with
-  | AstCommon.primInt => fun i => Ret (Wasm_int.Int64.repr (Uint63.to_Z i))
-  | AstCommon.primFloat => fun f => Err "Extraction of floats to Wasm not yet supported"
-  end (projT2 p).
-
-(* **** TRANSLATE PRIMITIVE OPERATIONS **** *)
-
 (* Path of the PrimInt63 module in the kernel: Coq.Numbers.Cyclic.Int63.PrimInt63 *)
 Definition primInt63ModPath : Kernames.modpath :=
   Kernames.MPfile [ "PrimInt63"%bs ; "Int63"%bs ; "Cyclic"%bs ; "Numbers"%bs ; "Coq"%bs ].
@@ -1311,11 +1301,11 @@ Proof.
   rewrite <-lower_of_product_63bit; auto.
 Qed.
 
-Lemma low32step : forall hfc ho state sr fr num,
+Lemma low32step : forall state sr fr num,
     (0 <= num < 2^64)%Z ->
-    @reduce hfc ho
-      state sr fr ([$VN (VAL_int64 (Int64.repr num))] ++ [ AI_basic (BI_const_num (VAL_int64 (Int64.repr 4294967295))) ] ++ [ AI_basic (BI_binop T_i64 (Binop_i BOI_and)) ])
-      state sr fr [$VN (VAL_int64 (Int64.repr (lo num))) ].
+    reduce state sr fr ([$VN (VAL_int64 (Int64.repr num))] ++ [ AI_basic (BI_const_num (VAL_int64 (Int64.repr 4294967295))) ] ++
+                        [ AI_basic (BI_binop T_i64 (Binop_i BOI_and)) ])
+           state sr fr [$VN (VAL_int64 (Int64.repr (lo num))) ].
 Proof.
 intros.
 constructor. apply rs_binop_success. cbn.
@@ -1324,11 +1314,11 @@ rewrite Z_bitmask_modulo32_equivalent.
 now replace (Int64.Z_mod_modulus num) with num by now solve_unsigned_id.
 Qed.
 
-Lemma high32step : forall hfc ho state sr fr num,
+Lemma high32step : forall state sr fr num,
     (0<= num < 2^64)%Z ->
-    @reduce hfc ho
-      state sr fr ([$VN (VAL_int64 (Int64.repr num))] ++ [ AI_basic (BI_const_num (VAL_int64 (Int64.repr 32))) ] ++ [ AI_basic (BI_binop T_i64 (Binop_i (BOI_shr SX_U))) ])
-      state sr fr [ $VN (VAL_int64 (Int64.repr (hi num))) ].
+    reduce state sr fr ([$VN (VAL_int64 (Int64.repr num))] ++ [ AI_basic (BI_const_num (VAL_int64 (Int64.repr 32))) ] ++
+                        [ AI_basic (BI_binop T_i64 (Binop_i (BOI_shr SX_U))) ])
+           state sr fr [ $VN (VAL_int64 (Int64.repr (hi num))) ].
 Proof.
 intros.
 constructor. apply rs_binop_success.
