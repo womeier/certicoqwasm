@@ -7348,7 +7348,7 @@ Proof.
 Admitted. (* Qed. *)
 
 
-(* MAIN THEOREM, corresponds to 4.3.2 in Olivier's thesis *)
+(* GENERALIZED CORRECTNESS THEOREM *)
 Theorem repr_bs_LambdaANF_Wasm_related :
   (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
   forall lenv pfs (rho : eval.env) (v : cps.val) (e : exp) (memAvail : N) (n : nat) (vars : list cps.var) (fds : fundefs)
@@ -7388,6 +7388,7 @@ Theorem repr_bs_LambdaANF_Wasm_related :
 
       (* invariants *)
       INV sr f ->
+      (* memory known to be available statically *)
       min_available_memory sr (f_inst f) memAvail ->
 
       (* translate_body e returns instructions *)

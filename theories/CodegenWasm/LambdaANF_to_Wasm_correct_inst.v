@@ -2535,28 +2535,31 @@ Ltac dostep' :=
 
 Context `{ho : host}.
 
-(* MAIN THEOREM, corresponds to 4.3.1 in Olivier's thesis *)
+
+(* TOPLEVEL CORRECTNESS THEOREM *)
 Theorem LambdaANF_Wasm_related :
   forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var)
          (hs : host_state) module fenv lenv (pfs : M.t (list val -> option val)),
-  (* evaluation of LambdaANF expression *)
-  bstep_e pfs cenv (M.empty _) e v n ->
-
-  (* pfs well-formed *)
+  (* primitive env well-formed *)
   prim_funs_env_returns_no_funvalues pfs ->
   prim_funs_env_wellformed cenv penv pfs ->
 
-  (* compilation function *)
-  LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, lenv) ->
-  (* constructors wellformed *)
+  (* constructors well-formed *)
   correct_cenv_of_exp cenv e ->
   cenv_restricted cenv ->
 
   (* vars unique (guaranteed by previous stage) *)
   vars = ((collect_all_local_variables e) ++ (collect_function_vars e))%list ->
   NoDup vars ->
+
   (* expression must be closed *)
   (~ exists x, occurs_free e x ) ->
+
+  (* evaluation of LambdaANF expression *)
+  bstep_e pfs cenv (M.empty _) e v n ->
+
+  (* compilation to Wasm module *)
+  LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, lenv) ->
 
   exists sr fr,
     (* instantiation *)
@@ -2569,7 +2572,7 @@ Theorem LambdaANF_Wasm_related :
     (* result variable has the correct value set *)
     result_val_LambdaANF_Wasm cenv fenv nenv penv v sr' (f_inst fr).
 Proof.
-  intros ????????? Hstep HprimFunsRet HprimFunsRelated LANF2Wasm Hcenv HcenvRestr HvarsEq HvarsNodup Hfreevars.
+  intros ????????? HprimFunsRet HprimFunsRelated Hcenv HcenvRestr HvarsEq HvarsNodup Hfreevars Hstep LANF2Wasm.
   subst vars.
   assert (exists fds e', e = Efun fds e') as [fds [e' ->]]. {
     unfold LambdaANF_to_Wasm in LANF2Wasm.
