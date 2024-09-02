@@ -5535,6 +5535,7 @@ Proof.
                  /\ INV s_final fr
                  /\ f_inst f = f_inst fr
                  /\ s_funcs s = s_funcs s_final
+                 /\ min_available_memory s_final (f_inst f) mem
                  /\ rel_env_LambdaANF_Wasm (lenv:=lenv) e (M.set x0 (Vprim (primInt n)) rho) s_final fr fds
                  /\ (forall (wal : wasm_value) (v : val),
                         repr_val_LambdaANF_Wasm v s (f_inst f) wal -> repr_val_LambdaANF_Wasm v s_final (f_inst fr) wal)
@@ -5792,6 +5793,17 @@ Proof.
       assumption.
       replace (s_funcs s) with (s_funcs s') by auto.
       now apply update_global_preserves_funcs in Hglob_sr'.
+
+      (* minimum mem *)
+      intros ?????.
+      assert (m0 = m'). { apply update_global_preserves_memory in Hglob_sr'. now solve_eq m0 m'. }
+      subst m0.
+      assert (gmp = gmp_v + 8)%N. {
+        apply update_global_get_same in Hglob_sr'.
+        rewrite Hglob_sr' in H5.
+        inv H5. now simpl_eq. } subst gmp.
+      apply mem_store_preserves_length in Hm'. lia.
+
       exists (Val_ptr gmp_v).
       split; auto. }
 
@@ -5806,7 +5818,8 @@ Proof.
                nth_error (f_locs fr) (N.to_nat x0') = Some (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr addr)))) ->
                (Z.of_N ord < Wasm_int.Int32.half_modulus)%Z ->
                (forall (wal0 : wasm_value) (v0 : val),
-                   repr_val_LambdaANF_Wasm v0 s (f_inst f) wal0 -> repr_val_LambdaANF_Wasm v0 sr (f_inst fr) wal0) -> rel_env_LambdaANF_Wasm (lenv:=lenv) e (M.set x0 v rho) sr fr fds). {
+                   repr_val_LambdaANF_Wasm v0 s (f_inst f) wal0 -> repr_val_LambdaANF_Wasm v0 sr (f_inst fr) wal0) ->
+               rel_env_LambdaANF_Wasm (lenv:=lenv) e (M.set x0 v rho) sr fr fds). {
       intros.
       subst fr.
       have Hl := HlocsInBounds _ _ Hrepr_x.
@@ -6132,12 +6145,24 @@ Proof.
     destruct op;
     ltac:(match goal with | [ H : None = Some _  |- _ ] => discriminate | _ => idtac end);
     unfold LambdaANF_primInt_arith_fun in Hres.
-  (*   - (* add *) solve_arith_op_aux v (n1 + n2)%uint63 H1 H2 HloadStep' uint63_add_i64_add.
+    (* TODO cleanup *)
+    - (* add *) solve_arith_op_aux v (n1 + n2)%uint63 H1 H2 HloadStep' uint63_add_i64_add.
+(*     { inv H1; simpl;
+   destruct (H2 (n1 + n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+   exists s_final, fr.
+   replace v with (Vprim ( primInt (n1 + n2)%uint63)) in * by congruence.
+   split; auto.
+   dostep_nary 0. apply r_global_get; eassumption.
+   eapply rt_trans. apply app_trans_const; try apply HloadStep'; auto.
+   dostep_nary_eliml 2 1. constructor; apply rs_binop_success; reflexivity.
+   dostep_nary_eliml 2 1. constructor; apply rs_binop_success; reflexivity.
+   dostep_nary 2. eapply r_store_success. rewrite uint63_add_i64_add. eassumption.
+   eassumption. } *)
     - (* sub *) solve_arith_op_aux v (n1 - n2)%uint63 H1 H2 HloadStep' uint63_sub_i64_sub.
     - (* mul *) solve_arith_op_aux v (n1 * n2)%uint63 H1 H2 HloadStep' uint63_mul_i64_mul.
     - { (* div *)
-      inv H2; simpl.
-      destruct (H3 (n1 / n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+      inv H1; simpl.
+      destruct (H2 (n1 / n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
       replace v with (Vprim (primInt (n1 / n2)%uint63)) in * by congruence.
       exists s_final, fr.
       split; auto.
@@ -6173,8 +6198,8 @@ Proof.
         eassumption.
         eassumption. } }
     - { (* mod *)
-      inv H2; simpl.
-      destruct (H3 (n1 mod n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+      inv H1; simpl.
+      destruct (H2 (n1 mod n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
       replace v with (Vprim (primInt (n1 mod n2)%uint63)) in * by congruence.
       exists s_final, fr.
       split; auto.
@@ -6212,8 +6237,8 @@ Proof.
         eassumption. } }
     (* TODO: Factor out helper lemma for shifts *)
     - { (* lsl *)
-        inv H2; simpl.
-        destruct (H3 (n1 << n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+        inv H1; simpl.
+        destruct (H2 (n1 << n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
         replace v with (Vprim (primInt (n1 << n2)%uint63)) in * by congruence.
         exists s_final, fr.
         split; auto.
@@ -6251,8 +6276,8 @@ Proof.
           rewrite (uint63_lsl63 _ _ Hle) in Hstore; eauto.
           eassumption. } }
     - { (* lsr *)
-        inv H2; simpl.
-        destruct (H3 (n1 >> n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
+        inv H1; simpl.
+        destruct (H2 (n1 >> n2)%uint63) as [s' [s_final [fr [m' [wal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]].
         replace v with (Vprim (primInt (n1 >> n2)%uint63)) in * by congruence.
         exists s_final, fr.
         split; auto.
@@ -6287,16 +6312,16 @@ Proof.
           assert (to_Z 63 <= to_Z n2)%Z as Hle by now destruct (Z.lt_ge_cases (to_Z n2) (to_Z 63)).
           rewrite (uint63_lsr63 _ _ Hle) in Hstore; eauto.
           eassumption. } }
-    - (* land *) solve_arith_op_aux v (n1 land n2)%uint63 H2 H3 HloadStep' uint63_land_i64_and.
-    - (* lor *) solve_arith_op_aux v (n1 lor n2)%uint63 H2 H3 HloadStep' uint63_lor_i64_or.
-    - (* lxor *) solve_arith_op_aux v (n1 lxor n2)%uint63 H2 H3 HloadStep' uint63_lxor_i64_xor.
+    - (* land *) solve_arith_op_aux v (n1 land n2)%uint63 H1 H2 HloadStep' uint63_land_i64_and.
+    - (* lor *) solve_arith_op_aux v (n1 lor n2)%uint63 H1 H2 HloadStep' uint63_lor_i64_or.
+    - (* lxor *) solve_arith_op_aux v (n1 lxor n2)%uint63 H1 H2 HloadStep' uint63_lxor_i64_xor.
     (* TODO: Factor out helper lemma for booleans *)
     - { (* eqb *)
-        inv H2; simpl.
+        inv H1; simpl.
         destruct (Z.eq_dec (to_Z n1) (to_Z n2)).
         { (* n1 = n2 *)
           assert (Hv_true: v = Vconstr true_tag []) by now unfold LambdaANF_primInt_bool_fun in Hres; rewrite (reflect_iff _ _ (Uint63.eqbP n1 n2)) in e0; rewrite e0 in Hres.
-          destruct (H4 _ _ Hv_true Htrue_arr Htrue_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          destruct (H3 _ _ Hv_true Htrue_arr Htrue_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
           simpl_modulus; simpl_modulus; cbn; lia.
           exists s, fr.
           split. {
@@ -6311,13 +6336,19 @@ Proof.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
             - now replace ord with 0%N by congruence.
-            - replace t with true_tag in * by congruence. rewrite Htrue_arr in H8; inv H8; lia.
+            - replace t with true_tag in * by congruence. rewrite Htrue_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
+
+          (* minimum mem *)
+          intros ?????.
+          solve_eq m m0.
+          solve_eq gmp gmp_v. lia.
+
           exists wal; auto. }
         { (* n1 <> n2 *)
           assert (Hv_false: v = Vconstr false_tag []) by now unfold LambdaANF_primInt_bool_fun in Hres; rewrite (to_Z_neq_uint63_eqb_false _ _ n) in Hres.
-          destruct (H4 _ _ Hv_false Hfalse_arr Hfalse_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          destruct (H3 _ _ Hv_false Hfalse_arr Hfalse_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
           simpl_modulus; simpl_modulus; cbn; lia.
           exists s, fr.
           split. {
@@ -6332,16 +6363,22 @@ Proof.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
             - now replace ord with 1%N by congruence.
-            - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H8; inv H8; lia.
+            - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
+
+          (* minimum mem *)
+          intros ?????.
+          solve_eq m m0.
+          solve_eq gmp gmp_v. lia.
+
           exists wal; auto. } }
     - { (* ltb *)
-        inv H2; simpl.
+        inv H1; simpl.
         destruct (Z_lt_dec (to_Z n1) (to_Z n2)).
         { (* n1 < n2 *)
           assert (Hv_true: v = Vconstr true_tag []) by now unfold LambdaANF_primInt_bool_fun in Hres; rewrite (reflect_iff _ _ (Uint63.ltbP n1 n2)) in l; rewrite l in Hres.
-          destruct (H4 _ _ Hv_true Htrue_arr Htrue_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          destruct (H3 _ _ Hv_true Htrue_arr Htrue_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
           simpl_modulus; simpl_modulus; cbn; lia.
           exists s, fr.
           split. {
@@ -6356,13 +6393,19 @@ Proof.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
             - now replace ord with 0%N by congruence.
-            - replace t with true_tag in * by congruence. rewrite Htrue_arr in H8; inv H8; lia.
+            - replace t with true_tag in * by congruence. rewrite Htrue_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
+
+          (* minimum mem *)
+          intros ?????.
+          solve_eq m m0.
+          solve_eq gmp gmp_v. lia.
+
           exists wal; auto. }
         { (* ~ (n1 < n2) *)
           assert (Hv_false: v = Vconstr false_tag []) by now unfold LambdaANF_primInt_bool_fun in Hres; rewrite (to_Z_nlt_uint63_ltb_false _ _ n) in Hres.
-          destruct (H4 _ _ Hv_false Hfalse_arr Hfalse_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          destruct (H3 _ _ Hv_false Hfalse_arr Hfalse_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
           simpl_modulus; simpl_modulus; cbn; lia.
           exists s, fr.
           split. {
@@ -6377,16 +6420,22 @@ Proof.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
             - now replace ord with 1%N by congruence.
-            - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H8; inv H8; lia.
+            - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
+
+          (* minimum mem *)
+          intros ?????.
+          solve_eq m m0.
+          solve_eq gmp gmp_v. lia.
+
           exists wal; auto. } }
     - { (* leb *)
-        inv H2; simpl.
+        inv H1; simpl.
         destruct (Z_le_dec (to_Z n1) (to_Z n2)).
         { (* n1 < n2 *)
           assert (Hv_true: v = Vconstr true_tag []) by now unfold LambdaANF_primInt_bool_fun in Hres; rewrite (reflect_iff _ _ (Uint63.lebP n1 n2)) in l; rewrite l in Hres.
-          destruct (H4 _ _ Hv_true Htrue_arr Htrue_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          destruct (H3 _ _ Hv_true Htrue_arr Htrue_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
           simpl_modulus; simpl_modulus; cbn; lia.
           exists s, fr.
           split. {
@@ -6401,13 +6450,19 @@ Proof.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
             - now replace ord with 0%N by congruence.
-            - replace t with true_tag in * by congruence. rewrite Htrue_arr in H8; inv H8; lia.
+            - replace t with true_tag in * by congruence. rewrite Htrue_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
+
+          (* minimum mem *)
+          intros ?????.
+          solve_eq m m0.
+          solve_eq gmp gmp_v. lia.
+
           exists wal; auto. }
         { (* ~ (n1 < n2) *)
           assert (Hv_false: v = Vconstr false_tag []) by now unfold LambdaANF_primInt_bool_fun in Hres; rewrite (to_Z_nle_uint63_leb_false _ _ n) in Hres.
-          destruct (H4 _ _ Hv_false Hfalse_arr Hfalse_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          destruct (H3 _ _ Hv_false Hfalse_arr Hfalse_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
           simpl_modulus; simpl_modulus; cbn; lia.
           exists s, fr.
           split. {
@@ -6422,12 +6477,18 @@ Proof.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
             - now replace ord with 1%N by congruence.
-            - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H8; inv H8; lia.
+            - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
+
+          (* minimum mem *)
+          intros ?????.
+          solve_eq m m0.
+          solve_eq gmp gmp_v. lia.
+
           exists wal; auto. } }
     - { (* compare *)
-        inv H2; simpl.
+        inv H1; simpl.
         destruct (Z_lt_dec (to_Z n1) (to_Z n2)).
         { (* n1 < n2 *)
           assert (Hv_lt: v = Vconstr lt_tag [])
@@ -6436,7 +6497,7 @@ Proof.
             rewrite (reflect_iff _ _ (Uint63.ltbP n1 n2)) in l; rewrite l.
           assert (Hlt_arr: get_ctor_arity cenv lt_tag = Ret 0) by now unfold get_ctor_arity; rewrite Hlt.
           assert (Hlt_ord: get_ctor_ord cenv lt_tag = Ret 1%N) by now unfold get_ctor_ord; rewrite Hlt.
-          destruct (H4 _ _ Hv_lt Hlt_arr Hlt_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+          destruct (H3 _ _ Hv_lt Hlt_arr Hlt_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
           simpl_modulus; simpl_modulus; cbn; lia.
           exists s, fr.
           split. {
@@ -6451,9 +6512,15 @@ Proof.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
             - now replace ord with 1%N by congruence.
-            - replace t with lt_tag in * by congruence; rewrite Hlt_arr in H8;inv H8; lia.
+            - replace t with lt_tag in * by congruence; rewrite Hlt_arr in H7;inv H7; lia.
           }
           try repeat (split; auto). subst fr; auto.
+
+          (* minimum mem *)
+          intros ?????.
+          solve_eq m m0.
+          solve_eq gmp gmp_v. lia.
+
           exists wal; auto. }
         { (* ~ (n1 < n2) *)
           destruct (Z.eq_dec (to_Z n1) (to_Z n2)).
@@ -6466,7 +6533,7 @@ Proof.
               rewrite (reflect_iff _ _ (Uint63.eqbP n1 n2)) in e0; rewrite e0.
             assert (Heq_arr: get_ctor_arity cenv eq_tag = Ret 0) by now unfold get_ctor_arity; rewrite Heq.
             assert (Heq_ord: get_ctor_ord cenv eq_tag = Ret 0%N) by now unfold get_ctor_ord; rewrite Heq.
-            destruct (H4 _ _ Hv_eq Heq_arr Heq_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+            destruct (H3 _ _ Hv_eq Heq_arr Heq_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
           simpl_modulus; simpl_modulus; cbn; lia.
           exists s, fr.
           split. {
@@ -6490,10 +6557,16 @@ Proof.
             apply rt_step. constructor. apply rs_label_const; auto.
             dostep_nary 0. constructor. apply rs_label_const; auto.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
-            inv HreprVal; try (replace t with eq_tag in *; [rewrite Heq_arr in H8; inv H8; lia|congruence]); try discriminate.
+            inv HreprVal; try (replace t with eq_tag in *; [rewrite Heq_arr in H7; inv H7; lia|congruence]); try discriminate.
             now replace ord with 0%N by congruence.
           }
           try repeat (split; auto). subst fr; auto.
+
+          (* minimum mem *)
+          intros ?????.
+          solve_eq m m0.
+          solve_eq gmp gmp_v. lia.
+
           exists wal; auto. }
           { (* n1 <> n2 *)
             assert (Hv_gt: v = Vconstr gt_tag [])
@@ -6503,7 +6576,7 @@ Proof.
               now rewrite (to_Z_neq_uint63_eqb_false _ _ n0).
             assert (Hgt_arr: get_ctor_arity cenv gt_tag = Ret 0) by now unfold get_ctor_arity; rewrite Hgt.
             assert (Hgt_ord: get_ctor_ord cenv gt_tag = Ret 2%N) by now unfold get_ctor_ord; rewrite Hgt.
-            destruct (H4 _ _ Hv_gt Hgt_arr Hgt_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
+            destruct (H3 _ _ Hv_gt Hgt_arr Hgt_ord) as [fr [wal [Hinv' [Hfr [HreprVal [HrelE' [HvalsPreserved Hstep]]]]]]].
           simpl_modulus; simpl_modulus; cbn; lia.
           exists s, fr.
           split. {
@@ -6528,14 +6601,20 @@ Proof.
             apply rt_step; constructor; apply rs_label_const; auto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 5)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
-            inv HreprVal; try (replace t with gt_tag in *; [rewrite Hgt_arr in H8; inv H8; lia|congruence]); try discriminate.
+            inv HreprVal; try (replace t with gt_tag in *; [rewrite Hgt_arr in H7; inv H7; lia|congruence]); try discriminate.
             now replace ord with 2%N by congruence.
           }
           try repeat (split; auto). subst fr; auto.
+
+          (* minimum mem *)
+          intros ?????.
+          solve_eq m m0.
+          solve_eq gmp gmp_v. lia.
+
           exists wal; auto. } } }
     - { (* addc
            TODO: reduce duplication/ move to primitives file *)
-        inversion H2; subst x1 y0.
+        inversion H1; subst x1 y0.
         assert (HaddcApp: LambdaANF_primInt_carry_fun c0_tag c1_tag addc n1 n2 = v) by congruence.
         have HaddcRed :=  addc_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 HaddcApp Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
 
@@ -6550,6 +6629,14 @@ Proof.
         split. eapply update_local_preserves_INV with (f':=fr_carry_ops); eauto.
         split. now subst fr_carry_ops.
         split; auto.
+        split. { (* minimum mem *)
+          intros ?????.
+          solve_eq m' m0.
+          assert (gmp = gmp_v + 16)%N. {
+            rewrite Hgmp_sr' in H6.
+            inv H6. now simpl_eq. } subst gmp.
+          lia.
+        }
         split. {
           unfold LambdaANF_primInt_carry_fun in Hres.
           rewrite addc_def_spec in Hres;
@@ -6568,7 +6655,7 @@ Proof.
         now exists (Val_ptr (gmp_v + 8)%N). }
     - { (* addcarryc
            TODO: reduce duplication/ move to primitives file *)
-        inversion H2; subst x1 y0.
+        inversion H1; subst x1 y0.
         assert (HaddcarrycApp: LambdaANF_primInt_carry_fun c0_tag c1_tag addcarryc n1 n2 = v) by congruence.
         have HaddcarrycRed :=  addcarryc_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 HaddcarrycApp Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
 
@@ -6583,6 +6670,14 @@ Proof.
         split. eapply update_local_preserves_INV with (f':=fr_carry_ops); eauto.
         split. now subst fr_carry_ops.
         split; auto.
+        split. { (* minimum mem *)
+          intros ?????.
+          solve_eq m' m0.
+          assert (gmp = gmp_v + 16)%N. {
+            rewrite Hgmp_sr' in H6.
+            inv H6. now simpl_eq. } subst gmp.
+          lia.
+        }
         split. {
           unfold LambdaANF_primInt_carry_fun in Hres.
           rewrite addcarryc_def_spec in Hres;
@@ -6601,7 +6696,7 @@ Proof.
         now exists (Val_ptr (gmp_v + 8)%N). }
     - { (* subc
            TODO: reduce duplication/ move to primitives file *)
-        inversion H2; subst x1 y0.
+        inversion H1; subst x1 y0.
         assert (HsubcApp: LambdaANF_primInt_carry_fun c0_tag c1_tag subc n1 n2 = v) by congruence.
         have HsubcRed :=  subc_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 HsubcApp Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
         destruct HsubcRed as [sr' [m' [HinstrsRed [HINV_sr' [Hmem_sr' [Hgmp_sr' [Hsfuncs_sr' [Hmemlen_m' [Hval_sr' HvalsPreserved]]]]]]]]].
@@ -6615,6 +6710,14 @@ Proof.
         split. eapply update_local_preserves_INV with (f':=fr_carry_ops); eauto.
         split. now subst fr_carry_ops.
         split; auto.
+        split. { (* minimum mem *)
+          intros ?????.
+          solve_eq m' m0.
+          assert (gmp = gmp_v + 16)%N. {
+            rewrite Hgmp_sr' in H6.
+            inv H6. now simpl_eq. } subst gmp.
+          lia.
+        }
         split. {
           unfold LambdaANF_primInt_carry_fun in Hres.
           rewrite subc_def_spec in Hres;
@@ -6633,7 +6736,7 @@ Proof.
         now exists (Val_ptr (gmp_v + 8)%N). }
     - { (* subcarryc
            TODO: reduce duplication/ move to primitives file *)
-        inversion H2; subst x1 y0.
+        inversion H1; subst x1 y0.
         assert (HsubcarrycApp: LambdaANF_primInt_carry_fun c0_tag c1_tag subcarryc n1 n2 = v) by congruence.
         have HsubcarrycRed :=  subcarryc_reduce x' y' state s f m gmp_v (wasm_value_to_i32 (Val_ptr addr1)) (wasm_value_to_i32 (Val_ptr addr2)) b0 b1 n1 n2 c0_tag c1_tag carry_tag v Hinv Hc0 Hc1 HsubcarrycApp Hmem2 (conj Hx' (conj Hload1' Hbsx)) (conj Hy' (conj Hload2' Hbsy)) HgmpBounds Hgmp.
         destruct HsubcarrycRed as [sr' [m' [HinstrsRed [HINV_sr' [Hmem_sr' [Hgmp_sr' [Hsfuncs_sr' [Hmemlen_m' [Hval_sr' HvalsPreserved]]]]]]]]].
@@ -6647,6 +6750,14 @@ Proof.
         split. eapply update_local_preserves_INV with (f':=fr_carry_ops); eauto.
         split. now subst fr_carry_ops.
         split; auto.
+        split. { (* minimum mem *)
+          intros ?????.
+          solve_eq m' m0.
+          assert (gmp = gmp_v + 16)%N. {
+            rewrite Hgmp_sr' in H6.
+            inv H6. now simpl_eq. } subst gmp.
+          lia.
+        }
         split. {
           unfold LambdaANF_primInt_carry_fun in Hres.
           rewrite subcarryc_def_spec in Hres;
@@ -6664,7 +6775,7 @@ Proof.
         subst fr_carry_ops; cbn; repeat (split; auto).
         now exists (Val_ptr (gmp_v + 8)%N). }
     - { (* mulc *)
-        inversion H2; subst x1 y0.
+        inversion H1; subst x1 y0.
         inversion Hres as [Hv_mulc].
         have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ [_ Hi64tempsW]]]]]]]]]]]]]]]].
         assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor.
@@ -6685,7 +6796,7 @@ Proof.
           TODO: Clean up/ automate.*)
         destruct (Hi64tempsW glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr (lo (to_Z n1) * lo (to_Z n2))%Z))) as [sr1 HupdGlob1].
         assert (HINV1: INV sr1 f) by now eapply update_global_preserves_INV with (sr:=s) (sr':=sr1) (i:=glob_tmp1) (num:=(VAL_int64 (Int64.repr (lo (to_Z n1) * lo (to_Z n2))%Z))); eauto; [discriminate|now intros|now intros].
-        have Hmem_sr1 := update_global_preserves_memory _ _ _ _ _ HupdGlob1. symmetry in Hmem_sr1. rewrite Hmem in Hmem_sr1.
+        have Hmem_sr1 := update_global_preserves_memory _ _ _ _ _ HupdGlob1. symmetry in Hmem_sr1. rewrite Hmem2 in Hmem_sr1.
         have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW1]]]]]]]]]]]]]]]].
         destruct (Hi64tempsW1 glob_tmp2 Hglob_tmp2 (VAL_int64 (Int64.repr (hi (to_Z n1) * lo (to_Z n2))%Z))) as [sr2 HupdGlob2].
         assert (HINV2: INV sr2 f) by now eapply update_global_preserves_INV with (sr:=sr1) (sr':=sr2) (i:=glob_tmp2) (num:=(VAL_int64 (Int64.repr (hi (to_Z n1) * lo (to_Z n2))%Z))); eauto; [discriminate|now intros|now intros].
@@ -6782,7 +6893,7 @@ Proof.
           now rewrite ->HupdGlob1, ->HupdGlob2, ->HupdGlob3, ->HupdGlob4, ->HupdGlob5, ->HupdGlob6, ->HupdGlob7, ->HupdGlob8, ->HupdGlob9. }
         assert (Hlocx0' : N.to_nat x0' < length (f_locs f)) by now eapply (HlocsInBounds x0 x0' Hrepr_x).
         assert (Hrange' : (-1 < Z.of_N gmp_v < Int32.modulus)%Z) by lia.
-        destruct (Hmult2 gmp_v m Hmem Hgmp Hrange') as [n0 Hn0].
+        destruct (Hmult2 gmp_v m Hmem2 Hgmp Hrange') as [n0 Hn0].
         remember
        {| f_locs :=
            set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 16)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 16)%N))));
@@ -6855,8 +6966,8 @@ Proof.
               rewrite M.gss. split; auto.
               split.
               exists x0'. cbn. split. intros.
-              inv Hrepr_x.  unfold translate_var. unfold translate_var in H7.
-              destruct (lenv ! x0) eqn:Hx; rewrite Hx in H7=>//. injection H7 as ->.
+              inv Hrepr_x.  unfold translate_var. unfold translate_var in H6.
+              destruct (lenv ! x0) eqn:Hx; rewrite Hx in H6=>//. injection H6 as ->.
               now rewrite Hx.
               unfold lookup_N; cbn; auto.
               subst fr'. cbn.
@@ -6875,9 +6986,9 @@ Proof.
               inv Hrepr_x.
               specialize Hl1 with err_str.
               intro. assert (x0' = i') by lia. subst x0'.
-              unfold translate_var in Hl1, H7.
+              unfold translate_var in Hl1, H6.
               destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in Hl1=>//.
-              destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H7=>//.
+              destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H6=>//.
               have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. congruence.
               now apply HvalsPreserved.
         } } }
@@ -6996,19 +7107,27 @@ Proof.
           dostep_nary' 1. rewrite unfold_val_notation. eapply r_local_set with (f':=fr'); eauto.
           now apply rt_refl. }
         repeat (split; auto).
+        { (* minimum mem *)
+          intros ?????.
+          solve_eq m' m0.
+          assert (gmp = gmp_v + 28)%N. {
+            rewrite Hgmp' in H9.
+            inv H9. now simpl_eq. } subst gmp.
+          lia.
+        }
         now exists (Val_ptr (gmp_v + 16)%N). }
     - { (* diveucl *)
-        inversion H2; subst x1 y0.
+        inversion H1; subst x1 y0.
         inversion Hres as [Hv_diveucl].
         have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ [_ Hi64tempsW]]]]]]]]]]]]]]]].
         assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor. assert (Hglob_tmp2: i64_glob glob_tmp2) by now right; constructor.
         destruct (Hi64tempsW glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr (to_Z (fst (diveucl n1 n2)%uint63))))) as [sr1 HupdGlob1].
         assert (HINV1: INV sr1 f) by now eapply update_global_preserves_INV with (sr:=s) (sr':=sr1) (i:=glob_tmp1) (num:=(VAL_int64 (Int64.repr (to_Z (fst (diveucl n1 n2)%uint63))))); eauto; [discriminate|now intros|now intros].
-        have Hmem_sr1 := update_global_preserves_memory _ _ _ _ _ HupdGlob1. symmetry in Hmem_sr1. rewrite Hmem in Hmem_sr1.
+        have Hmem_sr1 := update_global_preserves_memory _ _ _ _ _ HupdGlob1. symmetry in Hmem_sr1. rewrite Hmem2 in Hmem_sr1.
         have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW1]]]]]]]]]]]]]]]].
         destruct (Hi64tempsW1 glob_tmp2 Hglob_tmp2 (VAL_int64 (Int64.repr (to_Z (snd (diveucl n1 n2)%uint63))))) as [sr2 HupdGlob2].
         assert (Hrange' : (-1 < Z.of_N gmp_v < Int32.modulus)%Z) by lia.
-        destruct (Hmult2 gmp_v m Hmem Hgmp Hrange') as [n0 Hn0].
+        destruct (Hmult2 gmp_v m Hmem2 Hgmp Hrange') as [n0 Hn0].
         assert (HINV2: INV sr2 f). {
           eapply update_global_preserves_INV; eauto.
           right; split; [right; now constructor|now cbn]. discriminate.
@@ -7105,8 +7224,8 @@ Proof.
               rewrite M.gss. split; auto.
               split.
               exists x0'. cbn. split. intros.
-              inv Hrepr_x.  unfold translate_var. unfold translate_var in H7.
-              destruct (lenv ! x0) eqn:Hx; rewrite Hx in H7=>//. injection H7 as ->.
+              inv Hrepr_x.  unfold translate_var. unfold translate_var in H6.
+              destruct (lenv ! x0) eqn:Hx; rewrite Hx in H6=>//. injection H6 as ->.
               now rewrite Hx.
               unfold lookup_N; cbn; auto.
               subst fr'. cbn.
@@ -7125,9 +7244,9 @@ Proof.
               inv Hrepr_x.
               specialize Hl1 with err_str.
               intro. assert (x0' = i') by lia. subst x0'.
-              unfold translate_var in Hl1, H7.
+              unfold translate_var in Hl1, H6.
               destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in Hl1=>//.
-              destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H7=>//.
+              destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H6=>//.
               have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. congruence.
               now apply HvalsPreserved.
         } } }
@@ -7141,7 +7260,7 @@ Proof.
           destruct (Z.eq_dec (to_Z n1) (to_Z 0)) as [Hn1eq0 | Hn1eq0].
           {
             assert (to_Z (fst (diveucl n1 n2)) = 0%Z /\ to_Z (snd (diveucl n1 n2)) = 0%Z). { rewrite diveucl_def_spec. unfold diveucl_def. rewrite div_spec. rewrite mod_spec. rewrite Hn1eq0. unfold Z.div, Z.div_eucl. split; reflexivity. }
-            destruct H8 as [Hfst0 Hsnd0].
+            destruct H7 as [Hfst0 Hsnd0].
             dostep_nary 1. constructor. apply rs_if_true. unfold wasm_bool.
             replace Int64.zero with (Int64.repr (to_Z 0)) by now cbn.
             rewrite uint63_eq_int64_eq; auto. discriminate.
@@ -7216,8 +7335,16 @@ Proof.
             apply app_trans. apply Hred.
             apply rt_step. rewrite unfold_val_notation. eapply r_local_set; eauto. } }
         repeat (split; auto).
+        { (* minimum mem *)
+           intros ?????.
+           solve_eq m' m0.
+           assert (gmp = gmp_v + 28)%N. {
+             rewrite Hgmp' in H9.
+             inv H9. now simpl_eq. } subst gmp.
+           lia.
+         }
         now exists (Val_ptr (gmp_v + 16)%N). } }
-  { (* Ternary operations *) admit. } *)
+  { (* Ternary operations *) admit. }
 Admitted. (* Qed. *)
 
 
