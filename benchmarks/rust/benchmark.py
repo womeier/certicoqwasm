@@ -22,19 +22,32 @@ programs = [
     "sm_gauss_nat",
     "even_10000",
     "ack_3_9",
-    "bernstein_yang",
+#    "bernstein_yang",
 ]
 
 
-def single_run_rust(folder, program, verbose):
+def single_compile_rust(folder, program):
     folder_path = os.path.join(os.path.join(CWD, folder), f"{program}-extracted")
+    os.chdir(folder_path)
+
+    r = subprocess.run(
+        ["cargo", "build", "--release"],
+        capture_output=False,
+    )
+
+    assert r.returncode == 0, f"Running {program} returned non-0 returncode"
+
+
+def single_run_rust(folder, program, verbose):
+    folder_path = os.path.join(
+        os.path.join(CWD, folder), f"{program}-extracted/target/release"
+    )
     os.chdir(folder_path)
 
     start_time = time.time()
     r = subprocess.run(
         [
-            "cargo",
-            "run",
+            f"./{program}",
         ],
         capture_output=True,
     )
@@ -85,8 +98,12 @@ def measure(runs, binary_size, folder, verbose, print_org_table):
     assert runs > 0, "Expected at least one run."
 
     f_name = pathlib.PurePath(folder).name
-    print(f"Running {f_name}, avg. of {runs} runs, rust binaries.")
 
+    print("Compiling all programs...")
+    for program in programs:
+        single_compile_rust(folder, program)
+
+    print(f"Running {f_name}, avg. of {runs} runs, rust binaries.")
     for program in programs:
         values = []
         for run in range(runs):
