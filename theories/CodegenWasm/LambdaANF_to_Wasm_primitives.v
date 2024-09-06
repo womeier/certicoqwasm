@@ -1374,4 +1374,118 @@ unfold app_binop. simpl.
 rewrite int64_high32. reflexivity. lia.
 Qed.
 
+Lemma head0_spec_alt: forall x : uint63, (0 < φ (x)%uint63)%Z -> (to_Z (head0 x) = 62 - Z.log2 (to_Z x))%Z.
+Proof.
+  intros.
+  have H' := head0_spec _ H.
+  replace (wB/2)%Z with (2^62)%Z in H' by now cbn. replace wB with (2^63)%Z in H' by now cbn.  
+  destruct H'.
+  assert (Hlog1: (Z.log2 (2^62) <= Z.log2 (2 ^ (to_Z (head0 x)) * to_Z x))%Z) by now apply Z.log2_le_mono.
+  assert (Hlog2: (Z.log2 (2 ^ (to_Z (head0 x)) * to_Z x) < 63)%Z).
+  apply Z.log2_lt_pow2; lia.
+  replace (2 ^ (to_Z (head0 x)) * to_Z x)%Z with (to_Z x * 2 ^ (to_Z (head0 x)))%Z in Hlog1, Hlog2 by lia.
+  rewrite Z.log2_mul_pow2 in Hlog1, Hlog2. 2: lia. 2: apply to_Z_bounded.
+  replace (Z.log2 (2 ^ 62)) with 62%Z in Hlog1 by now rewrite Z.log2_pow2.
+  lia.
+Qed.
+
+Lemma powserie_nonneg : forall l,
+    (forall x, In x l -> 0 <= x)%Z ->
+    (0 <= Zbits.powerserie l)%Z.
+Proof.
+  induction l.
+  intros.
+  discriminate.
+  intros.
+  unfold Zbits.powerserie.
+  fold Zbits.powerserie.
+  assert (In a (a :: l)) by (constructor; reflexivity).
+  assert (0 <= a)%Z by now apply H.
+  assert (forall x, In x l -> 0 <= x)%Z.
+  intros.
+  assert (In x (a :: l)). right. assumption.
+  now apply H.
+  assert (0 <= Zbits.powerserie l)%Z by now apply IHl.
+  
+  apply Z.add_nonneg_nonneg.
+  have Htwop := two_p_gt_ZERO a H1. lia. lia.
+Qed.
+
+Lemma in_Z_one_bits_pow : forall l i,
+    (i \in l) ->
+    (forall x, In x l -> 0 <= x)%Z ->
+    (2^i <= Zbits.powerserie l)%Z.
+Proof.
+  induction l; intros.
+  discriminate.
+  unfold Zbits.powerserie.
+  destruct (Z.eq_dec i a).
+  fold Zbits.powerserie.  
+  rewrite <-e.
+  rewrite two_p_equiv.
+  assert (0 <= Zbits.powerserie l)%Z. apply powserie_nonneg; auto.
+  assert (forall x, In x l -> 0 <= x)%Z.
+  intros.
+  assert (In x (a :: l)). right. assumption.
+  now apply H0.
+  assumption.
+  lia.
+  fold Zbits.powerserie.
+  assert (i \in l).
+  have H' := in_cons a l i.
+  have Hrefl := reflect_iff.
+  have H''' := eqP.
+  specialize (H''' _ i a).
+  specialize (Hrefl _ _ H''').
+  destruct Hrefl.
+  destruct (i == a)%Z eqn:Heqb. specialize (H2 Logic.eq_refl). contradiction.  
+  rewrite orb_false_l in H'. auto.
+  rewrite <-H'. assumption.
+  assert (forall x, In x l -> 0 <= x)%Z.
+  intros.
+  assert (In x (a :: l)). right. assumption.
+  now apply H0.
+  assert (0 <= a)%Z. apply H0; auto. now constructor. 
+  have Htwop := two_p_gt_ZERO a H3.
+  assert (2 ^i <= Zbits.powerserie l)%Z. apply IHl; auto. lia.
+Qed.
+
+Lemma clz_spec_alt : forall x,
+    (0 < x < Int64.modulus)%Z ->
+    Int64.unsigned (Int64.clz (Int64.repr x)) = (63 - Z.log2 (Int64.unsigned (Int64.repr x)))%Z.
+Proof.
+  intros.
+  rewrite Int64.unsigned_repr. 2: cbn; replace Int64.modulus with (2^64)%Z in H; auto; lia.
+  have H' := clz_spec _ H.
+  destruct H' as [Hle1 Hle2].
+  have H' := Int64.unsigned_range (Int64.clz (Int64.repr x)).
+  assert (Hlog1: (Z.log2 (2^63) <= Z.log2 (2 ^ (Int64.unsigned (Int64.clz (Int64.repr x))) * x))%Z) by (apply Z.log2_le_mono; assumption).    
+  assert (Hlog2: (Z.log2 (2 ^ (Int64.unsigned (Int64.clz (Int64.repr x))) * x) < 64)%Z) by (apply Z.log2_lt_pow2; lia).
+  replace (2 ^ (Int64.unsigned (Int64.clz (Int64.repr x))) * x)%Z with (x * 2 ^ (Int64.unsigned (Int64.clz (Int64.repr x))))%Z in Hlog1, Hlog2 by lia.
+  rewrite Z.log2_mul_pow2 in Hlog1, Hlog2; [|lia|lia].
+  replace (Z.log2 (2 ^ 63)) with 63%Z in Hlog1 by (rewrite Z.log2_pow2; lia).
+  lia.
+Qed.
+
+Lemma head0_int64_clz : forall x,
+    (0 < to_Z x)%Z ->  
+    to_Z (head0 x) = (Int64.unsigned (Int64.clz (Int64.repr (to_Z x))) - 1)%Z.
+Proof.
+  intros.
+  rewrite clz_spec_alt.
+  replace (63 - Z.log2 (Int64.unsigned (Z_to_i64 φ (x)%uint63)) - 1)%Z with (62 - Z.log2 (Int64.unsigned (Z_to_i64 φ (x)%uint63)))%Z by lia.
+  rewrite uint63_unsigned_id.
+  rewrite head0_spec_alt; auto.
+Qed.
+
+Lemma head0_int64_clz : forall x,
+    (0 < to_Z x)%Z ->  
+    to_Z (head0 x) = (Int64.unsigned (Int64.clz (Int64.repr (to_Z x))) - 1)%Z.
+Proof.
+  intros.
+  rewrite clz_spec_alt.
+  replace (63 - Z.log2 (Int64.unsigned (Z_to_i64 φ (x)%uint63)) - 1)%Z with (62 - Z.log2 (Int64.unsigned (Z_to_i64 φ (x)%uint63)))%Z by lia.
+
+
+
 End CORRECTNESS.
