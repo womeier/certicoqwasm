@@ -31,7 +31,7 @@ Opaque Uint63.to_Z.
 
 Section TRANSLATION.
 
-Variables global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 : globalidx.
+Variables global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 loop_counter : globalidx.
 
 Definition maxuint31 := 2147483647%Z.
 Definition maxuint63 := 9223372036854775807%Z.
@@ -409,64 +409,101 @@ Definition translate_primitive_unary_op op (x : localidx) : error (list basic_in
   | _ => Err "Unknown primitive unary operator"
   end.
 
-Definition diveucl_21_loop_body :=
-  [ BI_global_get glob_tmp1
-  ; BI_const_num 1%Z
-  ; BI_binop T_i64 (Binop_i BOI_shl)
-  ; BI_global_get glob_tmp2
-  ; BI_const_num 62%Z
-  ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-  ; BI_binop T_i64 (Binop_i BOI_or)
-  ; BI_global_set glob_tmp1
+Definition diveucl_21_loop_body glob_xh glob_xl glob_y glob_q :=
+  [ BI_global_get glob_xl
+    ; BI_const_num 1%Z
+    ; BI_binop T_i64 (Binop_i BOI_shl)
+    ; BI_global_set glob_xl
+    (* xl := xl << 1 *)
 
-  ; BI_global_get glob_tmp2
-  ; BI_const_num 1%Z
-  ; BI_binop T_i64 (Binop_i BOI_shl)
-  ; BI_const_num maxuint63
-  ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-  ; BI_global_set glob_tmp2
+    ; BI_global_get glob_xh
+    ; BI_const_num 1%Z
+    ; BI_binop T_i64 (Binop_i BOI_shl)
+    ; BI_global_get glob_xl
+    ; BI_const_num 63%Z
+    ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+    ; BI_binop T_i64 (Binop_i BOI_or)
+    ; BI_global_set glob_xh
+    (* xh := (xh << 1) || (xl >> 63) *) 
 
-  ; BI_global_get glob_tmp3
-  ; BI_const_num 1%Z
-  ; BI_binop T_i64 (Binop_i BOI_shl)
-  ; BI_const_num maxuint63
-  ; BI_binop T_i64 (Binop_i BOI_and)
-  ; BI_global_set glob_tmp3
+    ; BI_global_get glob_q
+    ; BI_const_num 1%Z
+    ; BI_binop T_i64 (Binop_i BOI_shl)
+    ; BI_global_set glob_q
+    (* q := q << 1 *)
 
-  ; BI_global_get glob_tmp1
-  ; BI_global_get glob_tmp4
-  ; BI_relop T_i64 (Relop_i (ROI_ge SX_U))
-  ; BI_if (BT_valtype None)
-      [ BI_global_get glob_tmp3
-      ; BI_const_num 1%Z
-      ; BI_binop T_i64 (Binop_i BOI_or)
-      ; BI_global_set glob_tmp3
-      ; BI_global_get glob_tmp1
-      ; BI_global_get glob_tmp4
-      ; BI_binop T_i64 (Binop_i BOI_sub)
-      ; BI_global_set glob_tmp1
-      ]
-      [ ]
+    ; BI_global_get glob_xh
+    ; BI_global_get glob_y
+    ; BI_relop T_i64 (Relop_i (ROI_ge SX_U))
+    (* if xh >= y: *) 
+    ; BI_if (BT_valtype None)
+        ([ BI_global_get glob_q
+           ; BI_const_num 1%Z
+           ; BI_binop T_i64 (Binop_i BOI_or)
+           ; BI_global_set glob_q
+          (* q := q || 1 *)
+          ] ++ 
+          [ BI_global_get glob_xh
+          ; BI_global_get glob_y
+          ; BI_binop T_i64 (Binop_i BOI_sub)
+          ; BI_global_set glob_xh
+          (* xh := xh - y *)
+          ])
+        []
+  ].
+
+Definition diveucl_21_loop glob_xh glob_xl glob_y glob_q iterations :=
+  [ BI_global_get loop_counter
+    ; BI_const_num (VAL_int32 (Int32.repr iterations))
+    ; BI_relop T_i32 (Relop_i (ROI_lt SX_U))
+    ; BI_if (BT_valtype None)
+        ((diveucl_21_loop_body glob_xh glob_xl glob_y glob_q) ++ 
+           [ BI_global_get loop_counter
+             ; BI_const_num (VAL_int32 (Int32.repr 1))
+             ; BI_binop T_i32 (Binop_i BOI_add)
+             ; BI_global_set loop_counter
+             ; BI_br 1%N ])
+        []
   ].
 
 Definition diveucl_21_instrs (xh xl y : localidx) : list basic_instruction :=
-  load_local_i64 y ++ [ BI_global_set glob_tmp4 ] ++
-    load_local_i64 xh ++ [ BI_global_set glob_tmp1 ] ++
-    [ BI_global_get glob_tmp4
-    ; BI_global_get glob_tmp1
-    ; BI_relop T_i64 (Relop_i (ROI_le SX_U))
+  load_local_i64 y ++
+    load_local_i64 xh ++
+    [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
     ; BI_if (BT_valtype (Some (T_num T_i32)))
-        ([ BI_const_num 0%Z ; BI_global_set glob_tmp1 ] ++ make_product glob_tmp1 glob_tmp1)
-        (load_local_i64 xl ++
-           [ BI_global_set glob_tmp2
-           ; BI_const_num 0%Z
-           ; BI_global_set glob_tmp3
-           ] ++ (List.flat_map (fun x => x) (List.repeat diveucl_21_loop_body 63)) ++
-           [ BI_global_get glob_tmp1
-           ; BI_const_num maxuint63
-           ; BI_binop T_i64 (Binop_i BOI_and)
-           ; BI_global_set glob_tmp1
-           ] ++ (make_product glob_tmp3 glob_tmp1))
+        (* if y <= xh, then the result is always 0 *)    
+        ([ BI_const_num 0%Z ; BI_global_set glob_tmp1] ++
+           make_product glob_tmp1 glob_tmp1)
+        ( (* glob_tmp1 = xh *)
+          load_local_i64 xh ++ [ BI_global_set glob_tmp1 ] ++
+          (* glob_tmp2 = xl *)
+          load_local_i64 xl ++ [ BI_global_set glob_tmp2 ] ++
+          (* glob_tmp3 = y *)
+          load_local_i64 y ++ [ BI_global_set glob_tmp3 ] ++
+          [ (* glob_tmp4 = q (the quotient, initialised to 0) *)
+            BI_const_num (VAL_int64 (Int64.repr 0%Z))
+            ; BI_global_set glob_tmp4
+            (* Initialise the loop counter to 0 *)
+            ; BI_const_num (VAL_int32 (Int32.repr 0%Z))
+            ; BI_global_set loop_counter
+
+            (* execute 62 iterations of the loop *)
+             ; BI_loop (BT_valtype None) (diveucl_21_loop glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63%Z)
+
+            (* glob_tmp1 = 64-bit remainder *)
+             (* ; BI_global_get glob_tmp1 *)
+             (* ; BI_const_num maxuint63 *)
+             (* ; BI_binop T_i64 (Binop_i BOI_and) *)
+             (* ; BI_global_set glob_tmp1 *)
+            (* glob_tmp1 = 63-bit remainder *)
+
+            (* glob_tmp4 = lower 64-bit of quotient *)
+             (* ; BI_global_get glob_tmp4 *)
+             (* ; BI_const_num maxuint63 *)
+             (* ; BI_binop T_i64 (Binop_i BOI_and) *)
+             (* ; BI_global_set glob_tmp4 *)
+            (* glob_tmp4 = lower 63-bit of quotient *)
+           ] ++ (make_product glob_tmp4 glob_tmp1))
     ].
 
 
@@ -553,8 +590,7 @@ Definition LambdaANF_primInt_prod_fun (f : uint63 -> uint63 -> prod uint63 uint6
 Definition LambdaANF_primInt_unop_fun (f : uint63 -> uint63) x := Vprim (primInt (f x)).
 
 Definition LambdaANF_primInt_diveucl_21 xh xl y :=
-  let (q, r) := diveucl_21 xh xl y in
-  Vconstr pair_tag [ Vprim (primInt q) ; Vprim (primInt r) ].
+  Vconstr pair_tag [ Vprim (primInt (fst (diveucl_21 xh xl y))) ; Vprim (primInt (snd (diveucl_21 xh xl y))) ].
 
 Definition LambdaANF_primInt_addmuldiv p x y := Vprim (primInt (addmuldiv p x y)).
 

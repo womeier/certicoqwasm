@@ -478,7 +478,7 @@ Inductive repr_primitive_binary_operation : primop -> localidx -> localidx -> li
 Inductive repr_primitive_ternary_operation : primop -> localidx -> localidx -> localidx -> list basic_instruction -> Prop :=
 | Rprim_diveucl_21 : forall xh xl y,
     repr_primitive_ternary_operation PrimInt63diveucl_21 xh xl y
-      (diveucl_21_instrs global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 xh xl y)
+      (diveucl_21_instrs global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 constr_alloc_ptr xh xl y)
 
 | Rprim_addmuldiv : forall p x y,
     repr_primitive_ternary_operation PrimInt63addmuldiv p x y
@@ -5445,6 +5445,629 @@ Proof.
     dep_destruct_primint v2 p2 x.
 Qed.
 
+Definition div21_loop_invariant sr fr i xh xl xh' xl' y q :=  
+  sglob_val sr (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh')))
+  /\ sglob_val sr (f_inst fr) glob_tmp2 = Some (VAL_num (VAL_int64 (Int64.repr xl')))
+  /\ sglob_val sr (f_inst fr) glob_tmp3 = Some (VAL_num (VAL_int64 (Int64.repr y)))
+  /\ sglob_val sr (f_inst fr) glob_tmp4 = Some (VAL_num (VAL_int64 (Int64.repr q)))
+  /\ (0 <= y < Int64.half_modulus)%Z
+  /\ (0 <= xh' < y)%Z
+  /\ (0 <= q < 2^i)%Z
+  /\ (xl' mod 2^64 = (xl * 2^i) mod 2^64)%Z
+  /\ ((q * y + xh') * 2^(63 - i) + (xl mod 2^(63 - i)) = (xh mod y) * 2^63 + xl)%Z.
+
+
+Lemma div21_loop_reduce_stop : forall state sr fr i,
+    sglob_val sr (f_inst fr) constr_alloc_ptr = Some (VAL_num (VAL_int32 (Int32.repr i))) ->
+    (-1 < i < Int32.modulus)%Z ->
+    ~ (i < 63)%Z ->
+    reduce_trans
+      (state, sr, fr,
+        [ AI_basic (BI_loop (BT_valtype None) (diveucl_21_loop constr_alloc_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63%Z))]) 
+      (state, sr, fr, []).
+Proof.
+intros state sr fr i Hival Hi Hlt.
+remember (diveucl_21_loop constr_alloc_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63%Z) as es.
+eapply rt_trans with (y:=(state, sr, fr, [] ++ [AI_label 0 [:: AI_basic (BI_loop (BT_valtype None) es)] (to_e_list es)])).
+replace (state, sr, fr, [:: AI_basic (BI_loop (BT_valtype None) es)]) with (state, sr, fr, [] ++ [:: AI_basic (BI_loop (BT_valtype None) es)]) by reflexivity.
+apply rt_step.
+eapply r_loop; cbn; auto.
+remember (LH_rec [] 0 [:: AI_basic (BI_loop (BT_valtype None) es)] (LH_base [] []) []) as lh eqn:Hlh.
+assert (Hlfill : lfill lh (to_e_list es) = 
+                   [:: AI_label 0 [:: AI_basic (BI_loop (BT_valtype None) es)] (to_e_list es)]).
+subst lh. simpl. rewrite cats0. reflexivity.
+eapply rt_trans with (y:=(state, sr, fr, [AI_label 0 [:: AI_basic (BI_loop (BT_valtype None) es)] []])).
+  rewrite <- Hlfill.
+  replace [AI_label 0 [:: AI_basic (BI_loop (BT_valtype None) es)] []] with (lfill lh []) by (subst lh; reflexivity).
+  apply reduce_trans_label'.
+  subst es.
+  simpl.
+  separate_instr.      
+  dostep_nary' 0. eapply r_global_get; eauto.
+  dostep_nary' 2. constructor. apply rs_relop.
+  dostep_nary' 1. constructor. apply rs_if_false.
+  unfold Int32.ltu. cbn.
+  rewrite Int32.Z_mod_modulus_id. rewrite zlt_false. reflexivity. lia. lia.
+  dostep_nary' 0.
+  replace [:: AI_basic (BI_block (BT_valtype None) [::])] with ([] ++ [:: AI_basic (BI_block (BT_valtype None) [::])]).
+  eapply r_block; eauto. reflexivity. reflexivity. reflexivity.
+  simpl.
+  apply rt_step. apply r_simple.
+  eapply rs_label_const; eauto.
+  apply rt_step.
+  apply r_simple.
+  eapply rs_label_const; eauto.
+Qed.
+  
+Lemma div21_loop_reduce_continue : forall state sr sr' fr m gmp i xh xl xh0' xl0' xh1' xl1' q0 q1 y,
+    sglob_val sr (f_inst fr) constr_alloc_ptr = Some (VAL_num (VAL_int32 (Int32.repr i))) ->
+    (0 <= i < 63)%Z ->
+    div21_loop_invariant sr fr i xh xl xh0' xl0' y q0 ->
+    reduce_trans
+      (state, sr, fr, to_e_list (diveucl_21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4))
+      (state, sr', fr, []) ->
+    div21_loop_invariant sr' fr (i + 1)%Z xh xl xh1' xl1' y q1 ->
+    INV sr' fr ->
+    smem sr' (f_inst fr) = Some m ->
+    s_funcs sr = s_funcs sr' ->
+    sglob_val sr' (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+    sglob_val sr' (f_inst fr) constr_alloc_ptr  = Some (VAL_num (VAL_int32 (Int32.repr i))) ->
+    exists sr'',
+      reduce_trans
+        (state, sr, fr,
+          [ AI_basic (BI_loop (BT_valtype None) (diveucl_21_loop constr_alloc_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63%Z))]) 
+        (state, sr'', fr,
+          [ AI_basic (BI_loop (BT_valtype None) (diveucl_21_loop constr_alloc_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63%Z))])
+      /\ div21_loop_invariant sr'' fr (i + 1)%Z xh xl xh1' xl1' y q1
+      /\ sglob_val sr'' (f_inst fr) constr_alloc_ptr  = Some (VAL_num (VAL_int32 (Int32.repr (i + 1))))
+      /\ INV sr'' fr
+      /\ smem sr'' (f_inst fr) = Some m
+      /\ s_funcs sr = s_funcs sr''
+      /\ sglob_val sr'' (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))).
+Proof.
+Admitted.  
+(*   intros i n idx state sr sr' fr es i' Hival Hi32glob Hg1 Hg2 Hlt Hn Hi Hi' HINV Hwritable Hred Hival'. *)
+(*   remember (LH_rec [] 0 [:: AI_basic (BI_loop (BT_valtype None) (loop idx (Z.to_nat n) es))] (LH_base [] []) []) as lh eqn:Hlh. *)
+(*   assert (Hlfill : lfill lh ( to_e_list (loop idx (Z.to_nat n) es)) =  *)
+(*                      [:: AI_label 0 [:: AI_basic (BI_loop (BT_valtype None) (loop idx (Z.to_nat n) es))] (to_e_list (loop idx (Z.to_nat n) es))]) by (subst lh; reflexivity). *)
+(*   have I := HINV. destruct I as [_ [_ [_ [_ [Hcap [_ [[Hmem1 [m [Hmem2 [size [Hmem3 Hmem5 ]]]]] [_ [_ [_ [HnoDups _]]]]]]]]]]]. *)
+(*   destruct (Hwritable (VAL_int32 (Int32.repr (i' + 1)))) as [sr'' Hupd]. *)
+(*   assert (Hival'' : sglob_val sr'' (f_inst fr) idx = Some (VAL_num (VAL_int32 (Int32.repr (i' + 1))))). *)
+(*   by now eapply update_global_get_same; eauto. *)
+(*   assert (HINV' : INV sr'' fr). *)
+(*   eapply update_global_preserves_INV; eauto. left; split; auto. now intro. now intro.  *)
+(*   exists sr''. *)
+(*   split; auto.  *)
+(*   rewrite <- Hlfill. *)
+(*   remember [AI_label 0 [] [AI_basic (BI_br 1%N)]] as LI. *)
+(*   assert (lfill lh LI = [:: AI_label 0 [:: AI_basic (BI_loop (BT_valtype None) (loop idx (Z.to_nat n) es))] LI]). *)
+(*   subst lh LI. reflexivity. *)
+(*   eapply rt_trans with (y:=(state, sr'', fr, lfill lh LI)).       *)
+(*   eapply reduce_trans_label'. *)
+(*   separate_instr.       *)
+(*   dostep_nary' 0. eapply r_global_get; eauto. *)
+(*   dostep_nary' 2. constructor. apply rs_relop. *)
+(*   dostep_nary' 1. constructor. apply rs_if_true. *)
+(*   unfold Int32.ltu. cbn. rewrite Int32.Z_mod_modulus_id. rewrite Int32.Z_mod_modulus_id. rewrite zlt_true. *)
+(*   discriminate. lia. lia. lia. *)
+(*   simpl.       *)
+(*   remember (es ++ [:: BI_global_get idx; BI_const_num (VAL_int32 (Int32.repr 1)); *)
+(*                      BI_binop T_i32 (Binop_i BOI_add); BI_global_set idx; *)
+(*                      BI_br 1%N]) as block.       *)
+(*     (* eapply rt_trans with (y:=(state, sr, fr, [AI_label 0 [] (to_e_list block)])). *) *)
+(*     dostep_nary' 0. *)
+(*     replace ([:: AI_basic (BI_block (BT_valtype None) block)] ) with ([] ++ [:: AI_basic (BI_block (BT_valtype None) block)]) by reflexivity. *)
+(*     eapply r_block; eauto. simpl; reflexivity. reflexivity.       *)
+(*     simpl. *)
+(*     subst LI block. *)
+(*     apply reduce_trans_label0. *)
+(*     (* eapply rt_trans with (y:=(state, sr, fr, [AI_label 0 [] [AI_basic (BI_br 1%N)]])). *) *)
+(*     rewrite to_e_list_cat. *)
+(*     replace ([:: AI_basic (BI_br 1%N)]) with ([] ++ [:: AI_basic (BI_br 1%N)]) by reflexivity. *)
+(*     eapply rt_trans. *)
+(*     eapply app_trans. *)
+(*     apply Hred. *)
+(*     separate_instr. *)
+(*     dostep_nary' 0. eapply r_global_get; eauto. *)
+(*     dostep_nary' 2. constructor. apply rs_binop_success. cbn. *)
+(*     unfold Int32.iadd, Int32.add. cbn. rewrite Int32.Z_mod_modulus_id.   *)
+(*     reflexivity. lia. *)
+(*     dostep_nary' 1. rewrite unfold_val_notation. eapply r_global_set; eauto. *)
+(*     apply rt_refl. *)
+(*     subst lh LI. simpl. *)
+(*     replace (state, sr'', fr, [:: AI_basic (BI_loop (BT_valtype None) (loop idx (Z.to_nat n) es))]) with (state, sr'', fr, [] ++ [:: AI_basic (BI_loop (BT_valtype None) (loop idx (Z.to_nat n) es))]) by reflexivity. *)
+(*     apply rt_step. *)
+(*     apply r_simple. *)
+(*     remember (LH_rec [] 0 [] (LH_base [] []) []) as lh'. *)
+(*     apply rs_br with (i:=1) (lh:=lh'); auto. *)
+(*     subst lh'. reflexivity. *)
+(*     split; auto. *)
+(*     intros ?? Hneq Hi64 Hv. *)
+(*     eapply update_global_get_other; eauto. *)
+(* Qed. *)
+
+Ltac Zify.zify_post_hook ::= Z.div_mod_to_equations.
+(* Require ZifyUint63. *)
+
+Lemma div21_loop_body_reduce (gidx : globalidx) :
+  forall state sr fr m gmp i xh xl xh0' xl0' q0 y,    
+    INV sr fr ->
+    smem sr (f_inst fr) = Some m ->
+    sglob_val sr (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+    sglob_val sr (f_inst fr) constr_alloc_ptr = Some (VAL_num (VAL_int32 (Int32.repr i))) ->
+    (0 <= i < 63)%Z ->
+    div21_loop_invariant sr fr i xh xl xh0' xl0' y q0 ->
+    exists sr' xh1' xl1' q1,
+    reduce_trans
+      (state, sr, fr, to_e_list (diveucl_21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4))
+      (state, sr', fr, [])
+    /\ INV sr' fr
+    /\ s_funcs sr = s_funcs sr'
+    /\ smem sr' (f_inst fr) = Some m
+    /\ sglob_val sr' (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp)))
+    /\ div21_loop_invariant sr' fr (i + 1) xh xl xh1' xl1' y q1
+    /\ sglob_val sr' (f_inst fr) constr_alloc_ptr = Some (VAL_num (VAL_int32 (Int32.repr i))).
+Proof.
+  intros state sr fr m gmp i xh xl xh0' xl0' q0 y.
+  intros HINV Hmem Hgmp Hival Hi HLoopINV.
+  destruct HLoopINV as [Hxh0' [Hxl0' [Hy [Hq0 [Hli1 [Hli2 [Hli3 [Hli4 Hli5]]]]]]]].
+  have I := HINV. destruct I as [_ [_ [_ [_ [Hcap [_ [[Hmem1 [m' [Hmem2 [size [Hmem3 Hmem5 ]]]]]  [_ [_ [_ [HnoDups [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]]].
+  assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor.
+  assert (Hglob_tmp2: i64_glob glob_tmp2) by now right; constructor.
+  assert (Hglob_tmp3: i64_glob glob_tmp3) by now right; right; constructor.
+  assert (Hglob_tmp4: i64_glob glob_tmp4) by now right; right; right; constructor.
+
+  set (xl1' := (xl0' mod 2^64 * 2)%Z).
+  destruct (Hw glob_tmp2 Hglob_tmp2 (VAL_int64 (Int64.repr xl1'))) as [s0 Hupd0]. 
+  assert (Hg1v : sglob_val s0 (f_inst fr) glob_tmp2 = Some (VAL_num (VAL_int64 (Int64.repr xl1')))).
+  by eapply update_global_get_same; eauto.
+  have Hs0m := update_global_preserves_memory _ _ _ _ _ Hupd0. symmetry in Hs0m. rewrite Hmem2 in Hs0m.
+  have : INV s0 fr.
+  eapply update_global_preserves_INV; eauto. right; split; auto. discriminate. now intros. now intros.
+  clear Hw. intros HINV0.
+
+  set (xh1' := (xh0' * 2 + (xl1' mod 2^64 / (2^63)))%Z).
+  have I := HINV0. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]]].
+  destruct (Hw glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr xh1'))) as [s1 Hupd1]. 
+  assert (Hg2v : sglob_val s1 (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh1')))).
+  by eapply update_global_get_same; eauto.
+  have Hs1m := update_global_preserves_memory _ _ _ _ _ Hupd1. symmetry in Hs1m. rewrite Hs0m in Hs1m.
+  have : INV s1 fr.
+  eapply update_global_preserves_INV with (sr:=s0) (i:=glob_tmp1) (num:=(VAL_int64 (Int64.repr xh1'))); eauto.
+  discriminate. now intros. now intros.
+  intros HINV1. clear Hw.
+  
+  set (q1 := (q0 * 2)%Z).
+  have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]]].
+  destruct (Hw glob_tmp4 Hglob_tmp4 (VAL_int64 (Int64.repr q1))) as [s2 Hupd2]. 
+  assert (Hg3v : sglob_val s2 (f_inst fr) glob_tmp4 = Some (VAL_num (VAL_int64 (Int64.repr q1)))).
+  by eapply update_global_get_same; eauto.
+  have Hs2m := update_global_preserves_memory _ _ _ _ _ Hupd2. symmetry in Hs2m. rewrite Hs1m in Hs2m.
+  have : INV s2 fr.
+  eapply update_global_preserves_INV with (sr:=s1) (i:=glob_tmp4) (num:=(VAL_int64 (Int64.repr q1))); eauto.
+  discriminate. now intros. now intros.
+  intros HINV2. clear Hw.
+
+  have : (sglob_val s0 (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh0')))).
+  eapply update_global_get_other with (sr:=sr) (j:=glob_tmp2); eauto. discriminate. intros.
+  
+  have : (sglob_val s1 (f_inst fr) glob_tmp2 = Some (VAL_num (VAL_int64 (Int64.repr xl1')))).
+  eapply update_global_get_other with (sr:=s0) (j:=glob_tmp1); eauto. discriminate. intros.
+  
+  have : (sglob_val s1 (f_inst fr) glob_tmp4 = Some (VAL_num (VAL_int64 (Int64.repr q0)))).
+  eapply update_global_get_other with (sr:=s0) (j:=glob_tmp1); eauto. discriminate.
+  eapply update_global_get_other with (sr:=sr) (j:=glob_tmp2); eauto. discriminate. intros.
+
+  have : (sglob_val s2 (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh1')))).
+  eapply update_global_get_other with (sr:=s1) (j:=glob_tmp4); eauto. discriminate. intros.
+
+  have : (sglob_val s2 (f_inst fr) glob_tmp2 = Some (VAL_num (VAL_int64 (Int64.repr xl1')))).
+  eapply update_global_get_other with (sr:=s1) (j:=glob_tmp4); eauto. discriminate. intros.
+
+  have : (sglob_val s2 (f_inst fr) glob_tmp3 = Some (VAL_num (VAL_int64 (Int64.repr y)))).
+  eapply update_global_get_other with (sr:=s1) (j:=glob_tmp4); eauto. discriminate.
+  eapply update_global_get_other with (sr:=s0) (j:=glob_tmp1); eauto. discriminate.
+  eapply update_global_get_other with (sr:=sr) (j:=glob_tmp2); eauto. discriminate. intros.
+
+  destruct (Z_lt_dec xh1' y) as [Hlt | Hge].
+  {            
+    exists s2, xh1', xl1', q1.
+    split. {
+      simpl. separate_instr.
+      dostep_nary' 0. eapply r_global_get; eauto.
+      dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+      unfold Int64.ishl. unfold Int64.shl.
+      rewrite Z.shiftl_mul_pow2. 
+      cbn. rewrite Int64.Z_mod_modulus_eq. rewrite int64_modulus_eq_pow64. reflexivity.
+      by cbn.
+      dostep_nary' 1. rewrite unfold_val_notation. eapply r_global_set; eauto.      
+      dostep_nary' 0. eapply r_global_get; eauto.
+      dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+      unfold Int64.ishl. cbn. reflexivity.
+
+      dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+      dostep_nary_eliml 2 1. apply r_simple. apply rs_binop_success. cbn.
+      unfold Int64.ishr_u. unfold Int64.shru. simpl.
+      rewrite Int64.Z_mod_modulus_eq.
+      rewrite Z.shiftr_div_pow2.
+      reflexivity. lia. 
+      dostep_nary' 2. apply r_simple. apply rs_binop_success.
+      simpl. unfold Int64.ior.      
+      rewrite Int64.shifted_or_is_add. unfold two_p, two_power_pos. cbn.
+      rewrite lt_pow64_mod_modulus_id. rewrite lt_pow64_mod_modulus_id.
+      replace (9223372036854775808)%Z with (2^63)%Z by now cbn. rewrite int64_modulus_eq_pow64. reflexivity.
+      rewrite int64_modulus_eq_pow64. lia. cbn in Hli1; lia. now cbn.
+      cbn. unfold two_power_pos; cbn. rewrite lt_pow64_mod_modulus_id.
+      rewrite int64_modulus_eq_pow64. lia. rewrite int64_modulus_eq_pow64. lia.      
+      dostep_nary' 1. rewrite unfold_val_notation. eapply r_global_set; eauto.            
+      dostep_nary' 0. eapply r_global_get; eauto.
+      dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+      unfold Int64.ishl. unfold Int64.shl. rewrite Z.shiftl_mul_pow2.
+      cbn.
+      rewrite Int64.Z_mod_modulus_id. reflexivity. rewrite int64_modulus_eq_pow64.
+      split. lia. assert (2^i < 2^64)%Z. apply Z.pow_lt_mono_r. lia. lia. lia. lia. by cbn.      
+      dostep_nary' 1. rewrite unfold_val_notation. replace (q0 * 2)%Z with q1. eapply r_global_set; eauto. by subst q1.
+      dostep_nary' 0. eapply r_global_get; eauto.
+      dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+      dostep_nary' 2. apply r_simple. apply rs_relop.
+      dostep_nary' 1. apply r_simple. apply rs_if_false. cbn.
+      unfold Int64.ltu. rewrite zlt_true. reflexivity.
+      cbn. rewrite Int64.Z_mod_modulus_id. rewrite Int64.Z_mod_modulus_id. auto.
+      rewrite Int64.modulus_twice_half_modulus. lia. rewrite Int64.modulus_twice_half_modulus. lia.
+      dostep_nary' 0. eapply r_block with (t1s:=[::]) (t2s:=[:: ])(vs:=[::]); eauto.
+      dostep_nary' 0. apply r_simple. apply rs_label_const; cbn; auto. apply rt_refl. }
+    split; auto.
+    split; auto.
+    erewrite <-(update_global_preserves_funcs s1 s2 fr); eauto.
+    erewrite <-(update_global_preserves_funcs s0 s1 fr); eauto.
+    erewrite <-(update_global_preserves_funcs sr s0 fr); eauto.
+    split; auto.
+    erewrite <-(update_global_preserves_memory s1 s2); eauto.
+    erewrite <-(update_global_preserves_memory s0 s1); eauto.
+    erewrite <-(update_global_preserves_memory sr s0); eauto.
+    split; auto.
+    eapply update_global_get_other with (sr:=s1) (j:=glob_tmp4); eauto. discriminate.
+    eapply update_global_get_other with (sr:=s0) (j:=glob_tmp1); eauto. discriminate.
+    eapply update_global_get_other with (sr:=sr) (j:=glob_tmp2); eauto. discriminate.
+    split; auto.    
+    { 
+      assert ((xl * 2 ^ (i + 1)) mod 2 ^ 64 = ((xl * 2^(i + 1)) mod 2^65) mod 2^64)%Z.     
+      replace (2^65)%Z with (2 * 2^64)%Z by lia.
+      rewrite Zaux.Zmod_mod_mult. reflexivity.
+      lia. lia.
+      split; auto.
+      split; auto.
+      split; auto.
+      split; auto.
+      split; auto.
+      split; auto. lia.
+      split. split. lia. subst q1. replace (2^(i + 1))%Z with (2^i * 2)%Z. lia.
+      rewrite Z.pow_add_r. reflexivity. lia. lia. split.
+      subst xl1'. rewrite Hli4.
+      rewrite [((xl * 2^i) mod 2^64 * 2)%Z] Z.mul_comm.
+      rewrite <-Zmult_mod_distr_l.
+      rewrite [(2 * (xl * 2^i))%Z] Z.mul_comm.      
+      replace (xl * 2^i * 2)%Z with (xl * (2^i * 2^1))%Z by lia.
+      rewrite <- Z.pow_add_r.
+      replace (2 * 2^64)%Z with (2^65)%Z by now cbn.
+      now rewrite H5. lia. lia.
+      subst q1.
+      subst xh1'. 
+      replace (q0 * 2 * y + (xh0' * 2 + xl1' mod 2 ^ 64 / 2 ^ 63))%Z with
+        (2 * (q0 * y + xh0') + xl1' mod 2 ^ 64 / 2 ^ 63)%Z by lia.
+      replace ((2 * (q0 * y + xh0') + xl1' mod 2 ^ 64 / 2 ^ 63) * 2^(63 - (i + 1)))%Z
+        with (2 * (q0 * y + xh0') * 2^(63 - (i + 1)) + ( xl1' mod 2 ^ 64 / 2 ^ 63) * 2^(63 - (i + 1)))%Z by lia.
+      replace (2 * (q0 * y + xh0') * 2^(63 - (i + 1)))%Z with ((q0 * y + xh0') * 2^(63-i))%Z.
+      2: { rewrite [(2 * _ * 2^(63 - (i + 1)))%Z] Z.mul_comm.
+           rewrite Z.mul_assoc.
+           replace (2^(63 - (i + 1)) * 2)%Z with (2^1 * 2^(63 - (i + 1)))%Z by lia.
+           rewrite <- Z.pow_add_r.
+           replace (1 + (63 - (i + 1)))%Z with (63 - i)%Z by lia.
+           lia. lia. lia. }
+      subst xl1'.
+      rewrite Hli4. 
+      replace ((xl * 2 ^ i) mod 2 ^ 64 * 2)%Z with ((xl * 2 ^ (i + 1)) mod (2 ^ 65))%Z.
+      2: {
+        rewrite <- Z.mul_mod_distr_r.
+        rewrite Z.pow_add_r.  lia. lia. lia. lia. lia. }
+      rewrite <-H5.
+      replace ((xl * 2 ^ (i + 1)) mod 2 ^ 64 / 2 ^ 63)%Z with ((xl mod 2 ^ (63 - i)) / 2 ^ (63 - (i + 1)))%Z.
+      2: {
+        assert (2^(i + 1) * (xl mod 2^(64 - (i + 1))) = (xl * 2^(i + 1) mod 2^64))%Z.
+        rewrite <-Z.mul_mod_distr_l.
+        rewrite [(2 ^ (i + 1) * xl)%Z] Z.mul_comm.
+        replace (2 ^ (i + 1) * 2 ^ (64 - (i + 1)))%Z with (2 ^ (i + 1 + (64 - (i + 1))))%Z.
+        2: { rewrite <-Z.pow_add_r. reflexivity. lia. lia. }
+        replace (i + 1 + (64 - (i + 1)))%Z with 64%Z by lia. reflexivity. lia. lia.
+        rewrite <-H6.
+        replace (64 - (i + 1))%Z with (63 - i)%Z by lia.
+        replace (2^63)%Z with (2^(i + 1) * 2^(63 - (i + 1)))%Z.
+        rewrite Z.div_mul_cancel_l. reflexivity.
+        lia. lia. rewrite <-Z.pow_add_r.
+        replace (i + 1 + (63 - (i + 1)))%Z with 63%Z by lia. reflexivity. lia. lia. }
+      have Hxldivmod := Z_div_mod_eq_full (xl mod 2^(63-i))%Z (2^(63 - (i + 1)))%Z. 
+      assert (xl mod 2^(63 - (i + 1)) = (xl mod 2^(63 - i)) mod 2^(63-(i+1)))%Z. {
+        replace (2 ^ (63 - i))%Z with (2 * 2^(63 - (i + 1)))%Z.
+        rewrite Zaux.Zmod_mod_mult. reflexivity. lia. lia. 
+        replace (2 * 2^(63 - (i + 1)))%Z with (2^1 * 2 ^ (63 - (i  + 1)))%Z.
+        rewrite <-Z.pow_add_r.    replace (1 + (63 - (i + 1)))%Z with (63 - i)%Z. reflexivity.
+        by lia. lia. lia. 
+        reflexivity. }
+      rewrite H6.
+      replace ((q0 * y + xh0') * 2 ^ (63 - i) + xl mod 2 ^ (63 - i) / 2 ^ (63 - (i + 1)) * 2 ^ (63 - (i + 1)) +
+                                                                                                 (xl mod 2 ^ (63 - i)) mod 2 ^ (63 - (i + 1)))%Z with
+        ((q0 * y + xh0') * 2 ^ (63 - i) + xl mod 2^(63-i))%Z.
+      assumption.
+      rewrite <- Z.add_assoc.
+      rewrite [(xl mod 2 ^ (63 - i) / 2 ^ (63 - (i + 1)) * 2 ^ (63 - (i + 1)))%Z] Z.mul_comm.
+      rewrite <- Hxldivmod. reflexivity. }
+    eapply update_global_get_other with (sr:=s1) (j:=glob_tmp4); eauto. discriminate.
+    eapply update_global_get_other with (sr:=s0) (j:=glob_tmp1); eauto. discriminate.
+    eapply update_global_get_other with (sr:=sr) (j:=glob_tmp2); eauto. discriminate. }
+  {
+    set (q2 := (q1 + 1)%Z).
+    have I := HINV2. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]]].
+    destruct (Hw glob_tmp4 Hglob_tmp4 (VAL_int64 (Int64.repr q2))) as [s3 Hupd3]. 
+    assert (Hg4v : sglob_val s3 (f_inst fr) glob_tmp4 = Some (VAL_num (VAL_int64 (Int64.repr q2)))).
+    by eapply update_global_get_same; eauto.
+    have Hs3m := update_global_preserves_memory _ _ _ _ _ Hupd3. symmetry in Hs3m. rewrite Hs2m in Hs3m.
+    have : INV s3 fr.
+    eapply update_global_preserves_INV with (sr:=s2) (i:=glob_tmp4) (num:=(VAL_int64 (Int64.repr q2))); eauto.
+    discriminate. now intros. now intros.
+    intros HINV3. clear Hw.
+ 
+    set (xh2' := (xh1' - y)%Z).
+    have I := HINV3. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]]].
+    destruct (Hw glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr xh2'))) as [s4 Hupd4]. 
+    assert (Hg5v : sglob_val s4 (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh2')))).
+    by eapply update_global_get_same; eauto.
+    have Hs4m := update_global_preserves_memory _ _ _ _ _ Hupd4. symmetry in Hs4m. rewrite Hs3m in Hs4m.
+    have : INV s4 fr.
+    eapply update_global_preserves_INV with (sr:=s3) (i:=glob_tmp1) (num:=(VAL_int64 (Int64.repr xh2'))); eauto.
+    discriminate. now intros. now intros.
+    intros HINV4. clear Hw.
+
+    have : (sglob_val s3 (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh1')))).
+    eapply update_global_get_other with (sr:=s2) (j:=glob_tmp4); eauto. discriminate. intros.
+    have : (sglob_val s3 (f_inst fr) glob_tmp3 = Some (VAL_num (VAL_int64 (Int64.repr y)))).
+    eapply update_global_get_other with (sr:=s2) (j:=glob_tmp4); eauto. discriminate. intros.
+
+    exists s4, xh2', xl1', q2.
+    split. {
+      simpl. separate_instr.
+      dostep_nary' 0. eapply r_global_get; eauto.
+      dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+      unfold Int64.ishl. unfold Int64.shl.
+      rewrite Z.shiftl_mul_pow2. 
+      cbn. rewrite Int64.Z_mod_modulus_eq. rewrite int64_modulus_eq_pow64. reflexivity.
+      by cbn.
+      dostep_nary' 1. rewrite unfold_val_notation. eapply r_global_set; eauto.      
+      dostep_nary' 0. eapply r_global_get; eauto.
+      dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+      unfold Int64.ishl. cbn. reflexivity.
+
+      dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+      dostep_nary_eliml 2 1. apply r_simple. apply rs_binop_success. cbn.
+      unfold Int64.ishr_u. unfold Int64.shru. simpl.
+      rewrite Int64.Z_mod_modulus_eq.
+      rewrite Z.shiftr_div_pow2.
+      reflexivity. lia. 
+      dostep_nary' 2. apply r_simple. apply rs_binop_success.
+      simpl. unfold Int64.ior.      
+      rewrite Int64.shifted_or_is_add. unfold two_p, two_power_pos. cbn.
+      rewrite lt_pow64_mod_modulus_id. rewrite lt_pow64_mod_modulus_id.
+      replace (9223372036854775808)%Z with (2^63)%Z by now cbn. rewrite int64_modulus_eq_pow64. reflexivity.
+      rewrite int64_modulus_eq_pow64. lia. cbn in Hli1; lia. now cbn.
+      cbn. unfold two_power_pos; cbn. rewrite lt_pow64_mod_modulus_id.
+      rewrite int64_modulus_eq_pow64. lia. rewrite int64_modulus_eq_pow64. lia.      
+      dostep_nary' 1. rewrite unfold_val_notation. eapply r_global_set; eauto.            
+      dostep_nary' 0. eapply r_global_get; eauto.
+      dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+      unfold Int64.ishl. unfold Int64.shl. rewrite Z.shiftl_mul_pow2.
+      cbn.
+      rewrite Int64.Z_mod_modulus_id. reflexivity. rewrite int64_modulus_eq_pow64.
+      split. lia. assert (2^i < 2^64)%Z. apply Z.pow_lt_mono_r. lia. lia. lia. lia. by cbn.      
+      dostep_nary' 1. rewrite unfold_val_notation. replace (q0 * 2)%Z with q1. eapply r_global_set; eauto. by subst q1.
+      dostep_nary' 0. eapply r_global_get; eauto.
+      dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+      dostep_nary' 2. apply r_simple. apply rs_relop.
+      dostep_nary' 1. apply r_simple. apply rs_if_true. cbn.
+      unfold Int64.ltu. rewrite zlt_false. discriminate.
+      cbn. rewrite Int64.Z_mod_modulus_id. rewrite Int64.Z_mod_modulus_id. auto. rewrite int64_modulus_eq_pow64. cbn in Hli1. lia. rewrite int64_modulus_eq_pow64. cbn in Hli1. lia.
+      dostep_nary' 0. eapply r_block with (t1s:=[::]) (t2s:=[:: ])(vs:=[::]); eauto.
+      simpl.
+      eapply rt_trans with (y :=(state, s4, fr, [ AI_label 0 [] []])).
+      apply reduce_trans_label0.
+      separate_instr.
+      dostep_nary' 0. eapply r_global_get; eauto.
+      dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+      unfold Int64.ior.
+      replace (Int64.repr q1) with (Int64.shl (Int64.repr q0) (Int64.repr 1)).
+      rewrite Int64.shifted_or_is_add. unfold two_p, two_power_pos. cbn.
+      rewrite Int64.Z_mod_modulus_id. reflexivity. rewrite int64_modulus_eq_pow64.
+      split. lia. assert (2^i < 2^64)%Z. apply Z.pow_lt_mono_r. lia. lia. lia. lia. by cbn.
+      by cbn. unfold Int64.shl. rewrite Z.shiftl_mul_pow2. cbn.
+      rewrite Int64.Z_mod_modulus_id. reflexivity. rewrite int64_modulus_eq_pow64.
+      split. lia. assert (2^i < 2^64)%Z. apply Z.pow_lt_mono_r. lia. lia. lia. lia. by cbn.      
+      dostep_nary' 1. rewrite unfold_val_notation. replace (q0 * 2 + 1)%Z with q2. eapply r_global_set; eauto. by subst q2. 
+      dostep_nary' 0. eapply r_global_get; eauto.
+      dostep_nary_eliml 0 1. eapply r_global_get; eauto.
+      dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+      unfold Int64.isub. unfold Int64.sub.
+      cbn. rewrite Int64.Z_mod_modulus_id. rewrite Int64.Z_mod_modulus_id. reflexivity.
+      rewrite int64_modulus_eq_pow64. cbn in Hli1; lia.
+      rewrite int64_modulus_eq_pow64.
+      assert (xh0' * 2 < y * 2)%Z. lia. assert (y * 2 < 2^64 - 1)%Z. 
+      cbn in Hli1. lia.
+      assert (xl1' mod 2^64 / 2^63 < 2)%Z. lia. lia.
+      dostep_nary' 1. rewrite unfold_val_notation. replace (xh1' - y)%Z with xh2'. eapply r_global_set; eauto. by subst xh2'.
+      apply rt_refl.
+      apply rt_step. apply r_simple. apply rs_label_const; cbn; auto. }
+    split; auto.
+    split; auto.
+    erewrite <-(update_global_preserves_funcs s3 s4 fr); eauto.
+    erewrite <-(update_global_preserves_funcs s2 s3 fr); eauto.
+    erewrite <-(update_global_preserves_funcs s1 s2 fr); eauto.
+    erewrite <-(update_global_preserves_funcs s0 s1 fr); eauto.
+    erewrite <-(update_global_preserves_funcs sr s0 fr); eauto.
+    split; auto.    
+    erewrite <-(update_global_preserves_memory s3 s4); eauto.
+    erewrite <-(update_global_preserves_memory s2 s3); eauto.
+    erewrite <-(update_global_preserves_memory s1 s2); eauto.
+    erewrite <-(update_global_preserves_memory s0 s1); eauto.
+    erewrite <-(update_global_preserves_memory sr s0); eauto.
+    split; auto.
+    eapply update_global_get_other with (sr:=s3) (j:=glob_tmp1); eauto. discriminate.
+    eapply update_global_get_other with (sr:=s2) (j:=glob_tmp4); eauto. discriminate.
+    eapply update_global_get_other with (sr:=s1) (j:=glob_tmp4); eauto. discriminate.
+    eapply update_global_get_other with (sr:=s0) (j:=glob_tmp1); eauto. discriminate.
+    eapply update_global_get_other with (sr:=sr) (j:=glob_tmp2); eauto. discriminate.
+    split; auto.    
+    { 
+      assert ((xl * 2 ^ (i + 1)) mod 2 ^ 64 = ((xl * 2^(i + 1)) mod 2^65) mod 2^64)%Z.     
+      replace (2^65)%Z with (2 * 2^64)%Z by lia.
+      rewrite Zaux.Zmod_mod_mult. reflexivity.
+      lia. lia.
+      split; auto.
+      split; auto.
+      eapply update_global_get_other with (sr:=s3) (j:=glob_tmp1); eauto. discriminate.
+      eapply update_global_get_other with (sr:=s2) (j:=glob_tmp4); eauto. discriminate.
+      split; auto.
+      eapply update_global_get_other with (sr:=s3) (j:=glob_tmp1); eauto. discriminate.
+      split; auto.
+      eapply update_global_get_other with (sr:=s3) (j:=glob_tmp1); eauto. discriminate.
+      split; auto.
+      split; auto. lia.
+      split. split. lia. subst q1. replace (2^(i + 1))%Z with (2^i * 2)%Z. lia.
+      rewrite Z.pow_add_r. reflexivity. lia. lia. split.
+      subst xl1'. rewrite Hli4.
+      rewrite [((xl * 2^i) mod 2^64 * 2)%Z] Z.mul_comm.
+      rewrite <-Zmult_mod_distr_l.
+      rewrite [(2 * (xl * 2^i))%Z] Z.mul_comm.      
+      replace (xl * 2^i * 2)%Z with (xl * (2^i * 2^1))%Z by lia.
+      rewrite <- Z.pow_add_r.
+      replace (2 * 2^64)%Z with (2^65)%Z by now cbn.
+      now rewrite H7. lia. lia.
+      have Hxldivmod := Z_div_mod_eq_full (xl mod 2^(63-i))%Z (2^(63 - (i + 1)))%Z. 
+      assert (xl mod 2^(63 - (i + 1)) = (xl mod 2^(63 - i)) mod 2^(63-(i+1)))%Z. {
+        replace (2 ^ (63 - i))%Z with (2 * 2^(63 - (i + 1)))%Z.
+        rewrite Zaux.Zmod_mod_mult. reflexivity. lia. lia. 
+        replace (2 * 2^(63 - (i + 1)))%Z with (2^1 * 2 ^ (63 - (i  + 1)))%Z.
+        rewrite <-Z.pow_add_r.    replace (1 + (63 - (i + 1)))%Z with (63 - i)%Z. reflexivity.
+        by lia. lia. lia. 
+        reflexivity. }
+      subst q2.
+      replace ((q1 + 1) * y)%Z with (q1 * y + y)%Z by lia.
+      subst xh2'. 
+      replace (q1 * y + y + (xh1' - y))%Z with (q1 * y + xh1')%Z by lia.            
+      subst q1.
+      subst xh1'. 
+      replace (q0 * 2 * y + (xh0' * 2 + xl1' mod 2 ^ 64 / 2 ^ 63))%Z with
+        (2 * (q0 * y + xh0') + xl1' mod 2 ^ 64 / 2 ^ 63)%Z by lia.
+      replace ((2 * (q0 * y + xh0') + xl1' mod 2 ^ 64 / 2 ^ 63) * 2^(63 - (i + 1)))%Z
+        with (2 * (q0 * y + xh0') * 2^(63 - (i + 1)) + ( xl1' mod 2 ^ 64 / 2 ^ 63) * 2^(63 - (i + 1)))%Z by lia.
+      replace (2 * (q0 * y + xh0') * 2^(63 - (i + 1)))%Z with ((q0 * y + xh0') * 2^(63-i))%Z.
+      2: { rewrite [(2 * _ * 2^(63 - (i + 1)))%Z] Z.mul_comm.
+           rewrite Z.mul_assoc.
+           replace (2^(63 - (i + 1)) * 2)%Z with (2^1 * 2^(63 - (i + 1)))%Z by lia.
+           rewrite <- Z.pow_add_r.
+           replace (1 + (63 - (i + 1)))%Z with (63 - i)%Z by lia.
+           lia. lia. lia. }
+      subst xl1'.
+      rewrite Hli4. 
+      replace ((xl * 2 ^ i) mod 2 ^ 64 * 2)%Z with ((xl * 2 ^ (i + 1)) mod (2 ^ 65))%Z.
+      2: {
+        rewrite <- Z.mul_mod_distr_r.
+        rewrite Z.pow_add_r.  lia. lia. lia. lia. lia. }
+      rewrite <-H7.
+      replace ((xl * 2 ^ (i + 1)) mod 2 ^ 64 / 2 ^ 63)%Z with ((xl mod 2 ^ (63 - i)) / 2 ^ (63 - (i + 1)))%Z.
+      2: {
+        assert (2^(i + 1) * (xl mod 2^(64 - (i + 1))) = (xl * 2^(i + 1) mod 2^64))%Z.
+        rewrite <-Z.mul_mod_distr_l.
+        rewrite [(2 ^ (i + 1) * xl)%Z] Z.mul_comm.
+        replace (2 ^ (i + 1) * 2 ^ (64 - (i + 1)))%Z with (2 ^ (i + 1 + (64 - (i + 1))))%Z.
+        2: { rewrite <-Z.pow_add_r. reflexivity. lia. lia. }
+        replace (i + 1 + (64 - (i + 1)))%Z with 64%Z by lia. reflexivity. lia. lia.
+        rewrite <-H9.
+        replace (64 - (i + 1))%Z with (63 - i)%Z by lia.
+        replace (2^63)%Z with (2^(i + 1) * 2^(63 - (i + 1)))%Z.
+        rewrite Z.div_mul_cancel_l. reflexivity.        
+        Search (_ ^ _ <> _)%Z.
+        apply pow2_nz.
+        lia. apply pow2_nz. lia.
+        rewrite <-Z.pow_add_r.
+        replace (i + 1 + (63 - (i + 1)))%Z with 63%Z by lia. reflexivity. lia. lia. }
+      rewrite H8.
+      replace ((q0 * y + xh0') * 2 ^ (63 - i) + xl mod 2 ^ (63 - i) / 2 ^ (63 - (i + 1)) * 2 ^ (63 - (i + 1)) +
+                                                                                                 (xl mod 2 ^ (63 - i)) mod 2 ^ (63 - (i + 1)))%Z with
+        ((q0 * y + xh0') * 2 ^ (63 - i) + xl mod 2^(63-i))%Z.
+      assumption.
+      rewrite <- Z.add_assoc.
+      rewrite [(xl mod 2 ^ (63 - i) / 2 ^ (63 - (i + 1)) * 2 ^ (63 - (i + 1)))%Z] Z.mul_comm.
+      rewrite <- Hxldivmod. reflexivity. }
+    eapply update_global_get_other with (sr:=s3) (j:=glob_tmp1); eauto. discriminate.
+    eapply update_global_get_other with (sr:=s2) (j:=glob_tmp4); eauto. discriminate.
+    eapply update_global_get_other with (sr:=s1) (j:=glob_tmp4); eauto. discriminate.
+    eapply update_global_get_other with (sr:=s0) (j:=glob_tmp1); eauto. discriminate.
+    eapply update_global_get_other with (sr:=sr) (j:=glob_tmp2); eauto. discriminate. }
+Qed.
+
+Lemma div21_loop_reduce_full :
+  forall d state sr fr m gmp i xh xl xh0' xl0' q0 y,
+    INV sr fr ->
+    smem sr (f_inst fr) = Some m ->
+    sglob_val sr (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp))) ->
+    div21_loop_invariant sr fr i xh xl xh0' xl0' y q0 ->
+    sglob_val sr (f_inst fr) constr_alloc_ptr = Some (VAL_num (VAL_int32 (Int32.repr i))) ->
+    (0 <= i <= 63)%Z ->
+    d = Z.to_nat (63 - i) ->
+    exists sr' xh1' xl1' q1,
+      reduce_trans
+        (state, sr, fr,
+          [ AI_basic (BI_loop (BT_valtype None) (diveucl_21_loop constr_alloc_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63%Z))]) 
+        (state, sr', fr, [])
+      /\ INV sr' fr
+      /\ s_funcs sr = s_funcs sr'
+      /\ smem sr' (f_inst fr) = Some m
+      /\ sglob_val sr' (f_inst fr) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp)))
+      /\ div21_loop_invariant sr' fr 63%Z xh xl xh1' xl1' y q1      
+      /\ sglob_val sr' (f_inst fr) constr_alloc_ptr = Some (VAL_num (VAL_int32 (Int32.repr 63))).
+Proof.
+  intro d.
+  induction d as [|d'].
+  { intros state sr fr m gmp i xh xl xh0' xl0' q0 y.
+    intros HINV Hmem Hgmp HLoopINV Hival Hi Hd.
+    assert (Heq : i = 63) by lia.
+    exists sr, xh0', xl0', q0.
+    split.
+    eapply div21_loop_reduce_stop; eauto. simpl_modulus. cbn; lia. lia.
+    split; auto.
+    split; auto.
+    split; auto.
+    split; auto.
+    split; auto. by subst i.
+    by subst i. }
+  { intros state sr fr m gmp i xh xl xh0' xl0' q0 y.
+    intros HINV Hmem Hgmp HLoopINV Hival Hi Hd.
+    assert (Hi' : (i < 63)%Z) by lia.
+    destruct (div21_loop_body_reduce
+                glob_tmp1 (* TODO: remove *)
+                state sr fr m gmp i xh xl xh0' xl0' q0 y)
+      as [sr' [xh1' [xl1' [q1 [HredBody [HINV' [Hsfs' [Hmem' [Hgmp' [HLoopINV' Hival']]]]]]]]]]; auto.  
+    destruct (div21_loop_reduce_continue state sr sr' fr m gmp i xh xl xh0' xl0' xh1' xl1' q0 q1 y) as [sr'' [HredLoop [HLoopInvariant'' [Hival'' [HINV'' [Hmem'' [Hsfs'' Hgmp'']]]]]]]; auto.
+    lia.
+    destruct (IHd' state sr'' fr m gmp (i + 1)%Z xh xl xh1' xl1' q1 y) as [srIH [xh2' [xl2' [q2 [HredIH [HINV_IH [HsfsIH [HgmpIH [HLoopInvIH HivalIH]]]]]]]]]; auto.
+    lia.
+    lia.
+    exists srIH, xh2', xl2', q2.
+    split. {
+      eapply rt_trans with (y:=(state, sr'', fr, ?[es])).
+      apply HredLoop.
+      apply HredIH. }
+    split; auto.
+    split; auto.
+    by rewrite Hsfs'' HsfsIH. }
+Qed.
 
 Lemma primitive_operation_reduces : forall lenv pfs state s f fds f' (x : var) (x' : localidx) (p : prim) op_name str b op_arr op
                                            (ys : list var) (e : exp) (vs : list val) (rho : env) (v : val) instrs mem,
@@ -7344,7 +7967,529 @@ Proof.
            lia.
          }
         now exists (Val_ptr (gmp_v + 16)%N). } }
-  { (* Ternary operations *) admit. }
+  {
+    (* Ternary operations *)   
+    rename H into Hrepr_arg1, H0 into Hrepr_arg2, H1 into Hrepr_arg3, H2 into Hrepr_primop.
+    assert (exists n1 n2 n3,
+               rho ! x = Some (Vprim (primInt n1))
+               /\ rho ! y = Some (Vprim (primInt n2))
+               /\ rho ! z = Some (Vprim (primInt n3))
+               /\ vs = [ Vprim (primInt n1) ; Vprim (primInt n2) ; Vprim (primInt n3) ]
+           ). {
+      destruct Hpfs' as  [? [? [? [? [? [? [? [? [? [? [? [? [Hres _]]]]]]]]]]]]].
+      unfold get_list in *.
+      destruct (rho ! x) eqn:Hrho_x. 2: discriminate.
+      destruct (rho ! y) eqn:Hrho_y. 2: discriminate.
+      destruct (rho ! z) eqn:Hrho_z. 2: discriminate.
+      assert (Hin1 : List.In v0 vs) by (inv Hys_vs; now constructor).
+      assert (Hin2 : List.In v1 vs) by (inv Hys_vs; right; now constructor).
+      assert (Hin3 : List.In v2 vs) by (inv Hys_vs; right; right; now constructor).
+      destruct (apply_primop_only_defined_on_primInts _ vs v _ _ _ _ _ _ _ _ Hres v0 Hin1) as [n1 Hn1].
+      destruct (apply_primop_only_defined_on_primInts _ vs v _ _ _ _ _ _ _ _ Hres v1 Hin2) as [n2 Hn2].
+      destruct (apply_primop_only_defined_on_primInts _ vs v _ _ _ _ _ _ _ _ Hres v2 Hin3) as [n3 Hn3].
+      exists n1, n2, n3.
+      split; subst; auto.
+      split; subst; auto.
+      split; subst; auto.
+      congruence. }
+    destruct H as [n1 [n2 [n3 [Hrho_x [Hrho_y [Hrho_z Hvs]]]]]].
+    assert (exists wal1,
+               stored_in_locals (lenv:=lenv) x wal1 f /\ repr_val_LambdaANF_Wasm (Vprim ( primInt n1)) s (f_inst f) wal1). {
+      destruct HrelE as [_ [_ Hvars]].
+      assert (occurs_free (Eprim x0 p [:: x ; y ; z ] e) x) by now (constructor; constructor).
+      assert (HfdsNone_x: find_def x fds = None). {
+        inv Hrepr_arg1.
+        unfold translate_var in H0.
+        destruct (lenv ! x) eqn:Hx. 2: now rewrite Hx in H0.
+        unfold domains_disjoint in Hdisjoint.
+        apply Hdisjoint in Hx.
+        apply HfenvWf_None with (f:=x) in HfenvWf. now rewrite HfenvWf.
+      }
+      have Hx := Hvars _ H HfdsNone_x. destruct Hx as [v1' [w1 [Hrho_x' [Hloc_x Hval_x]]]].
+      exists w1; split; auto.
+      now replace v1' with (Vprim (primInt n1)) in Hval_x by now rewrite Hrho_x in Hrho_x'; inv Hrho_x'.
+    }
+    destruct H as [wal1 [Hloc_x Hval_x]].
+    assert (exists wal2,
+               stored_in_locals (lenv:=lenv) y wal2 f /\ repr_val_LambdaANF_Wasm (Vprim (primInt n2)) s (f_inst f) wal2). {
+      destruct HrelE as [_ [_ Hvars]].
+      assert (occurs_free (Eprim x0 p [:: x ; y ; z ] e) y) by now (constructor; right; constructor).
+      assert (HfdsNone_y: find_def y fds = None). {
+        inv Hrepr_arg2.
+        unfold translate_var in H0.
+        destruct (lenv ! y) eqn:Hy. 2: now rewrite Hy in H0.
+        unfold domains_disjoint in Hdisjoint.
+        apply Hdisjoint in Hy.
+        apply HfenvWf_None with (f:=y) in HfenvWf. now rewrite HfenvWf.
+      }
+      have Hy := Hvars _ H HfdsNone_y. destruct Hy as [v2' [w2 [Hrho_y' [Hloc_y Hval_y]]]].
+      exists w2; split; auto.
+      now replace v2' with (Vprim (primInt n2)) in Hval_y by now rewrite Hrho_y in Hrho_y'; inv Hrho_y'.
+    }
+    destruct H as [wal2 [Hloc_y Hval_y]].
+    assert (exists wal3,
+               stored_in_locals (lenv:=lenv) z wal3 f /\ repr_val_LambdaANF_Wasm (Vprim (primInt n3)) s (f_inst f) wal3). {
+      destruct HrelE as [_ [_ Hvars]].
+      assert (occurs_free (Eprim x0 p [:: x ; y ; z ] e) z) by now (constructor; right; right; constructor).
+      assert (HfdsNone_z: find_def z fds = None). {
+        inv Hrepr_arg3.
+        unfold translate_var in H0.
+        destruct (lenv ! z) eqn:Hz. 2: now rewrite Hz in H0.
+        unfold domains_disjoint in Hdisjoint.
+        apply Hdisjoint in Hz.
+        apply HfenvWf_None with (f:=z) in HfenvWf. now rewrite HfenvWf.
+      }
+      have Hz := Hvars _ H HfdsNone_z. destruct Hz as [v3' [w3 [Hrho_z' [Hloc_z Hval_z]]]].
+      exists w3; split; auto.
+      now replace v3' with (Vprim (primInt n3)) in Hval_z by now rewrite Hrho_z in Hrho_z'; inv Hrho_z'.
+    }
+    destruct H as [wal3 [Hloc_z Hval_z]].
+    destruct Hloc_x as [? [Htrans Hx']].
+    assert (x1 = x'). {
+      inv Hrepr_arg1.
+      have H' := Htrans err_str.
+      unfold translate_var in *.
+      destruct (lenv ! x) eqn:Hx.
+      congruence.
+      now rewrite Hx in H.
+    }
+    subst x1. clear Htrans.
+    destruct Hloc_y as [? [Htrans Hy']].
+    assert (x1 = y'). {
+      inv Hrepr_arg2.
+      have H' := Htrans err_str.
+      unfold translate_var in *.
+      destruct (lenv ! y) eqn:Hy.
+      congruence.
+      now rewrite Hy in H.
+    }
+    subst x1. clear Htrans.
+    destruct Hloc_z as [? [Htrans Hz']].
+    assert (x1 = z'). {
+      inv Hrepr_arg3.
+      have H' := Htrans err_str.
+      unfold translate_var in *.
+      destruct (lenv ! z) eqn:Hz.
+      congruence.
+      now rewrite Hz in H.
+    }
+    subst x1. clear Htrans.
+    assert (Hrv1: exists addr1, wal1 = Val_ptr addr1
+               /\ load_i64 m addr1 = Some (VAL_int64 (Z_to_i64 (to_Z n1)))). {
+      inv Hval_x. replace m with m0 by congruence. exists addr. split; auto.
+      remember (primInt n) as p1; remember (primInt n1) as p2.
+      inversion H5; subst p1 p2.
+      now replace n1 with n by now apply inj_pair2 in H7.
+    }
+    destruct Hrv1 as [addr1 Hload1].
+    destruct Hload1 as [? Hload1]. subst wal1.
+    unfold load_i64 in Hload1. destruct (load m addr1 0%N 8) eqn:Hload1'. 2: discriminate.
+    assert (Haddr1: addr1 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr1)))). {
+      cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
+      inv Hval_x. lia. }
+    assert (Hrv2: exists addr2, wal2 = Val_ptr addr2
+               /\ load_i64 m addr2 = Some (VAL_int64 (Z_to_i64 (to_Z n2)))). {
+      inv Hval_y. replace m with m0 by congruence. exists addr. split; auto.
+      remember (primInt n) as p1; remember (primInt n2) as p2.
+      inversion H5; subst p1 p2.
+      now replace n2 with n by now apply inj_pair2 in H7.
+    }
+    destruct Hrv2 as [addr2 Hload2].
+    destruct Hload2 as [? Hload2]. subst wal2.
+    unfold load_i64 in Hload2. destruct (load m addr2 0%N 8) eqn:Hload2'. 2: discriminate.
+    assert (Haddr2: addr2 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr2)))). {
+      cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
+      inv Hval_y. lia. }
+    assert (Hrv3: exists addr3, wal3 = Val_ptr addr3
+               /\ load_i64 m addr3 = Some (VAL_int64 (Z_to_i64 (to_Z n3)))). {
+      inv Hval_z. replace m with m0 by congruence. exists addr. split; auto.
+      remember (primInt n) as p1; remember (primInt n3) as p2.
+      inversion H5; subst p1 p2.
+      now replace n3 with n by now apply inj_pair2 in H7.
+    }
+    destruct Hrv3 as [addr3 Hload3].
+    destruct Hload3 as [? Hload3]. subst wal3.
+    unfold load_i64 in Hload3. destruct (load m addr3 0%N 8) eqn:Hload3'. 2: discriminate.
+    assert (Haddr3 : addr3 = (Wasm_int.N_of_uint i32m (wasm_value_to_i32 (Val_ptr addr3)))). {
+      cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. now rewrite N2Z.id.
+      inv Hval_z. lia. }
+    destruct Hpfs' as
+      [true_tag [false_tag [bool_tag [eq_tag [lt_tag [gt_tag [comp_tag [c0_tag [c1_tag [carry_tag [pair_tag [prod_tag [Hres [Htrue [Hfalse [Heq [Hlt [Hgt [Hc0 [Hc1 Hpair]]]]]]]]]]]]]]]]]]]].
+    assert (Hflocs: N.to_nat x0' < Datatypes.length (f_locs f)) by now eapply HlocsInBounds; eauto.
+    assert (HgmpBounds: (Z.of_N gmp_v + Z.of_N 52 <= Z.of_N (mem_length m) < Int32.modulus)%Z). {
+      apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
+      simpl_modulus. cbn. cbn in HenoughM. lia. }
+    rewrite Hvs in Hres.
+    unfold apply_LambdaANF_primInt_operator in Hres.
+    destruct op;
+      ltac:(match goal with | [ H : None = Some _  |- _ ] => discriminate | _ => idtac end).
+    { (* diveucl_21 *)
+      inversion Hres as [Hv_div21].
+      clear Hres.
+      clear Htrue Hfalse Hc0 Hc1 Heq Hlt Hgt true_tag false_tag bool_tag eq_tag lt_tag gt_tag comp_tag carry_tag c0_tag c1_tag. 
+      rename x into arg1, y into arg2, z into arg3.
+      rename n1 into xh, n2 into xl, n3 into y.
+      have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ [_ Hi64tempsW]]]]]]]]]]]]]]]].
+      assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor.
+      assert (Hglob_tmp2: i64_glob glob_tmp2) by now right; constructor.
+      assert (Hglob_tmp3: i64_glob glob_tmp3) by now right; right; constructor.
+      assert (Hglob_tmp4: i64_glob glob_tmp4) by now right; right; right; constructor.          
+      About make_product_reduce.
+      assert (Hrelations : forall sr gidx1 gidx2,
+                 INV sr f ->
+                 i64_glob gidx1 -> i64_glob gidx2 ->
+                 sglob_val sr (f_inst f) gidx1 = Some (VAL_num (VAL_int64 (Int64.repr (to_Z (fst (diveucl_21 xh xl y)%uint63))))) ->
+                 sglob_val sr (f_inst f) gidx2 = Some (VAL_num (VAL_int64 (Int64.repr (to_Z (snd (diveucl_21 xh xl y)%uint63))))) ->
+                 sglob_val sr (f_inst f) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp_v))) ->
+                 s_funcs s = s_funcs sr ->
+                 smem sr (f_inst f) = Some m ->
+                 exists s' fr,
+                   reduce_trans
+                        (state, sr, f, map AI_basic (make_product global_mem_ptr gidx1 gidx2))
+                        (state, s', f, [:: $V VAL_num (VAL_int32 (N_to_i32 (gmp_v + 16)))])
+                   /\ reduce_trans
+                        (state, s', f, [:: $V VAL_num (VAL_int32 (N_to_i32 (gmp_v + 16)))] ++ [AI_basic (BI_local_set x0')])
+                        (state, s', fr, [])
+                   /\ INV s' fr
+                   /\ f_inst f = f_inst fr
+                   /\ s_funcs s = s_funcs s'
+                   /\ min_available_memory s' (f_inst f) mem
+                   /\    @rel_env_LambdaANF_Wasm lenv e
+                           (M.set x0 (LambdaANF_primInt_diveucl_21 pair_tag xh xl y) rho) s' fr fds
+                   /\  (forall (wal : wasm_value) (val : val),
+                         repr_val_LambdaANF_Wasm val s (f_inst f) wal ->
+                         repr_val_LambdaANF_Wasm val s' (f_inst fr) wal)
+                   /\ (exists wal : wasm_value,
+                          fr =
+                            {| f_locs :=
+                                set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 wal))) 
+                                  (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 wal)));
+                              f_inst := f_inst f
+                            |}
+                          /\
+                            repr_val_LambdaANF_Wasm (LambdaANF_primInt_diveucl_21 pair_tag xh xl y) s'
+                              (f_inst fr) wal)).
+      { intros sr gidx1 gidx2 HINV_sr Hgidx1 Hgidx2 Hp1 Hp2 Hgmp_sr Hsf_sr Hmem_sr.
+        have HmakeProdReduce := make_product_reduce gidx1 gidx2 state sr f m gmp_v _ _ Hgidx1 Hgidx2 HINV_sr Hmem_sr Hgmp_sr HgmpBounds Hp1 Hp2.
+        destruct HmakeProdReduce as [sr' [m' [Hred [HINV' [Hmem' [Hgmp' [Hloadp1 [Hloadp2 [Hloadord [Hloadp1addr [Hloadp2addr [Hloadi32s [Hloadi64s [Hsfuncs Hmemlen']]]]]]]]]]]]]].        
+        rewrite <- Hsf_sr in Hsfuncs.
+      assert (Hrange' : (-1 < Z.of_N gmp_v < Int32.modulus)%Z) by lia.
+      destruct (Hmult2 gmp_v m Hmem2 Hgmp Hrange') as [n0 Hn0].
+        remember
+       {| f_locs :=
+           set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 16)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 16)%N))));
+         f_inst := f_inst f
+       |} as fr'.
+        assert (f_inst f = f_inst fr') by now subst fr'.
+        assert (Hlocx0'_fr' : N.to_nat x0' < length (f_locs fr')). {
+          assert (length (f_locs fr') = length (f_locs f)). {
+            subst fr'.
+            eapply set_nth_length.
+            apply /ssrnat.leP. lia. }
+          replace (length (f_locs fr')) with (length (f_locs f)).
+          now eapply (HlocsInBounds x0 x0' Hrepr_x). }
+        assert (HlocsLe: ssrnat.leq (S (N.to_nat x0')) (Datatypes.length (f_locs f))) by now apply /ssrnat.leP; lia.
+        assert (HnewframeLoc: f_locs fr' = set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 16)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 16)%N))))) by now subst fr'.
+        assert (HvalRelp1 : repr_val_LambdaANF_Wasm (Vprim (AstCommon.primInt ; fst (diveucl_21 xh xl y))) sr' (f_inst fr') (Val_ptr gmp_v)). {
+          unfold page_size in *.
+          apply Rprim_v with (sr:=sr') (gmp:=(gmp_v + 28)%N) (m:=m') (addr:=gmp_v); subst fr'; auto; try lia.
+          exists n0; lia. }
+        assert (HvalRelp2 : repr_val_LambdaANF_Wasm (Vprim (AstCommon.primInt ; snd (diveucl_21 xh xl y))) sr' (f_inst fr') (Val_ptr (gmp_v + 8)%N)). {
+          unfold page_size in *.
+          apply Rprim_v with (sr:=sr') (gmp:=(gmp_v + 28)%N) (m:=m') (addr:=(gmp_v+8)%N); subst fr'; auto; try lia.
+          exists (n0+4)%N; lia. }
+        assert (HvalsPreserved : forall wal val,
+                   repr_val_LambdaANF_Wasm val s (f_inst f) wal -> repr_val_LambdaANF_Wasm val sr' (f_inst fr') wal). {
+          intros.
+          unfold page_size in *.
+          eapply val_relation_depends_on_mem_smaller_than_gmp_and_funcs with (sr:=s) (m:=m) (gmp:=gmp_v) (gmp':=(gmp_v + 28)%N); subst fr'; eauto; try lia.  }
+        assert (HvalRelPair : repr_val_LambdaANF_Wasm (LambdaANF_primInt_diveucl_21 pair_tag xh xl y) sr' (f_inst fr') (Val_ptr (gmp_v + 16)%N)). {
+          unfold page_size in *.
+          apply Rconstr_boxed_v with (v:=N_to_i32 pair_ord) (gmp:=(gmp_v+28)%N) (m:=m') (arity:=2) (ord:=0%N); subst fr'; auto; try lia.
+          unfold get_ctor_ord; now rewrite Hpair.
+          unfold get_ctor_arity; now rewrite Hpair.
+          exists (n0 + 8)%N; lia.
+          apply Rcons_l with (wal:=Val_ptr gmp_v) (m:=m') (addr:=(4 + (gmp_v+16))%N) (gmp:=(gmp_v+28)%N); auto; try lia.
+          replace (4 + (gmp_v + 16))%N with (gmp_v + 20)%N by lia. unfold wasm_value_to_i32, wasm_value_to_u32. now unfold N_to_i32 in Hloadp1addr.
+          apply Rcons_l with (wal:=Val_ptr (gmp_v + 8)%N) (m:=m') (addr:=(4 + (4 + (gmp_v+16)))%N) (gmp:=(gmp_v+28)%N); auto; try lia.
+          replace (4 + (4 + (gmp_v + 16)))%N with (gmp_v + 24)%N by lia. unfold wasm_value_to_i32, wasm_value_to_u32. now unfold N_to_i32 in Hloadp2addr.
+          now apply Rnil_l. }
+        assert (HINV'' : INV sr' fr') by now eapply update_local_preserves_INV; eauto.
+        assert (HrelE' : rel_env_LambdaANF_Wasm (lenv:=lenv) e (M.set x0 (LambdaANF_primInt_diveucl_21 pair_tag xh xl y) rho) sr' fr' fds). {
+          have Hl := HlocsInBounds _ _ Hrepr_x.
+          apply nth_error_Some in Hl.
+          apply notNone_Some in Hl. destruct Hl as [? Hlx].
+          unfold rel_env_LambdaANF_Wasm.
+          destruct HrelE as [Hfun1 [Hfun2 Hvar]].
+          split. {
+            intros ????? Hrho Hv'.
+            destruct (var_dec x0 x1).
+            - (* x0 = x1 *) (* v0 can never be a function value, by assumption on primops *)
+              subst x1. rewrite M.gss in Hrho; eauto.
+              inversion Hrho as [Hv_diveucl_21']. subst v0. rewrite Hv_div21 in Hv'.
+              have H'' := Hnofunval rho' fds' f0.
+              contradiction.
+            - (* x0 <> x1 *) rewrite M.gso in Hrho; eauto.
+          } split. {
+            intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd.
+            destruct Hnfd as [i' [Htrans HvalFun]].
+            exists i'. split. assumption.
+            apply val_relation_func_depends_on_funcs with (s:=s); subst fr'; auto.
+          } {
+            intros x2 Hx2free Hx2notfun.
+            destruct (var_dec x0 x2).
+            { (* x = x1 *)
+              subst x2.
+              exists v, (Val_ptr (gmp_v+16)%N).
+              rewrite M.gss. split; auto. congruence.
+              split.
+              exists x0'. cbn. split. intros.
+              inv Hrepr_x.  unfold translate_var. unfold translate_var in H0.
+              destruct (lenv ! x0) eqn:Hx; rewrite Hx in H0=>//. injection H0 as ->.
+              now rewrite Hx.
+              unfold lookup_N; cbn; auto.
+              subst fr'. cbn.
+              eapply set_nth_nth_error_same; eauto. rewrite <-Hv_div21. assumption.
+            }
+            { (* x <> x1 *)
+              assert (Hocc : occurs_free (Eprim x0 p [:: arg1 ; arg2 ; arg3] e) x2) by now apply Free_Eprim2.
+              have H' := Hvar _ Hocc Hx2notfun.
+              destruct H' as [val' [wal' [Hrho [Hloc Hval']]]].
+              exists val', wal'. split.
+              rewrite M.gso; auto. split.
+              destruct Hloc as [i' [Hl1 Hl2]].
+              unfold stored_in_locals. exists i'. split; auto.
+              unfold lookup_N.
+              subst fr'; rewrite set_nth_nth_error_other; auto.
+              inv Hrepr_x.
+              specialize Hl1 with err_str.
+              intro. assert (x0' = i') by lia. subst x0'.
+              unfold translate_var in Hl1, H0.
+              destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in Hl1=>//.
+              destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H0=>//.
+              have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. congruence.
+              now apply HvalsPreserved.
+        } } }
+        exists sr', fr'.
+        split; auto.
+        split. apply rt_step. eapply r_local_set; eauto.
+        split; auto.
+        split; auto.
+        split; auto.
+        split; auto.
+        { (* minimum mem *)
+           intros ?????.
+           solve_eq m' m0.
+           assert (gmp = gmp_v + 28)%N. {
+             rewrite Hgmp' in H1.
+             inv H1. now simpl_eq. } subst gmp.
+           lia.
+        }
+        split; auto.
+        split; auto.
+        now exists (Val_ptr (gmp_v + 16)%N). }
+      destruct (Z_le_dec (to_Z y) (to_Z xh)) as [Hle | Hnle].
+      { (* y <= xh *)
+        destruct (Hi64tempsW glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr (to_Z 0)))) as [s0 Hupd].
+        assert (Hgvals : sglob_val s0 (f_inst f) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr (to_Z 0))))). by eapply update_global_get_same; eauto.
+        assert (Hfst : to_Z (fst (diveucl_21 xh xl y)) = to_Z 0). admit. 
+        assert (Hsnd : to_Z (snd (diveucl_21 xh xl y)) = to_Z 0). admit.
+        destruct (Hrelations s0 glob_tmp1 glob_tmp1) as [sr' [fr' [Hred1 [Hred2 Hresult]]]]; auto.
+        eapply update_global_preserves_INV with (sr:=s) (sr':=s0) (i:=glob_tmp1) (num:=(VAL_int64 (Int64.repr (to_Z 0)))); eauto; [discriminate|now intros|now intros].
+        rewrite Hfst; auto.
+        rewrite Hsnd; auto.
+        eapply update_global_get_other; eauto. discriminate.
+        eapply update_global_preserves_funcs; eauto.
+        rewrite <-Hmem2. symmetry.
+        eapply update_global_preserves_memory; eauto.
+        exists sr', fr'.
+        split; auto.
+        { inversion Hrepr_primop.          
+          unfold diveucl_21_instrs.
+          remember (make_product global_mem_ptr glob_tmp1 glob_tmp1) as mkprod_instrs.
+          remember (make_product global_mem_ptr glob_tmp4 glob_tmp1) as mkprod_instrs'.
+          remember (diveucl_21_loop constr_alloc_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63) as loop_instrs.
+          separate_instr.          
+          dostep_nary 0. eapply r_local_get; eauto.
+          dostep_nary 1. eapply r_load_success; eauto.
+          rewrite <-Haddr3. simpl. apply Hload3'. replace (wasm_deserialise b2 T_i64) with (VAL_int64 (Int64.repr (to_Z y))) by congruence.
+          dostep_nary_eliml 0 1.  eapply r_local_get; eauto.
+          dostep_nary_eliml 1 1. eapply r_load_success; eauto.
+          rewrite <-Haddr1. simpl. apply Hload1'. replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Int64.repr (to_Z xh))) by congruence.
+          dostep_nary 2. apply r_simple. apply rs_relop. simpl.
+          dostep_nary 1. apply r_simple. apply rs_if_true. simpl.
+          unfold Int64.ltu. rewrite zlt_false. discriminate.
+          rewrite uint63_unsigned_id uint63_unsigned_id. lia.
+          dostep_nary 0. rewrite <-cat0s. eapply r_block with (t1s:=[::]) (t2s:=[T_num T_i32])(vs:=[::]); eauto.
+          simpl. rewrite <-cat1s.
+          eapply rt_trans with (y:=(state, sr', f, [AI_label 1 [] [:: $V (VAL_num (VAL_int32 (N_to_i32 (gmp_v + 16))))]] ++ [AI_basic (BI_local_set x0')])).                        
+          apply app_trans.                        
+          apply reduce_trans_label1.
+          separate_instr.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          replace (to_e_list mkprod_instrs) with (map AI_basic mkprod_instrs) by (subst mkprod_instrs; reflexivity).
+          apply Hred1.
+          dostep_nary 0. apply r_simple. apply rs_label_const; auto.
+          rewrite unfold_val_notation. apply Hred2. } }
+      { (* xh < y *)
+        destruct (Hi64tempsW glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr (to_Z xh)))) as [s0 Hupd0].
+        assert (Hg1v : sglob_val s0 (f_inst f) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr (to_Z xh))))).
+        by eapply update_global_get_same; eauto.
+        have Hs0m := update_global_preserves_memory _ _ _ _ _ Hupd0. symmetry in Hs0m. rewrite Hmem2 in Hs0m.
+        have : INV s0 f.
+        eapply update_global_preserves_INV; eauto. right; split; auto. discriminate. now intros. now intros.
+        intros HINV0. have I := HINV0. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64w0]]]]]]]]]]]]]]]].
+        destruct (Hi64w0 glob_tmp2 Hglob_tmp2 (VAL_int64 (Int64.repr (to_Z xl)))) as [s1 Hupd1]. clear Hi64w0.
+        have Hs1m := update_global_preserves_memory _ _ _ _ _ Hupd1. symmetry in Hs1m. rewrite Hs0m in Hs1m.
+        have : INV s1 f.
+        eapply update_global_preserves_INV with (sr:=s0) (i:=glob_tmp2) (num:=VAL_int64 (Int64.repr (to_Z xl))); eauto.
+        discriminate. now intros. now intros.
+        intros HINV1. have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64w1]]]]]]]]]]]]]]]].
+        destruct (Hi64w1 glob_tmp3 Hglob_tmp3 (VAL_int64 (Int64.repr (to_Z y)))) as [s2 Hupd2]. clear Hi64w1.
+        have Hs2m := update_global_preserves_memory _ _ _ _ _ Hupd2. symmetry in Hs2m. rewrite Hs1m in Hs2m.
+        have : INV s2 f.
+        eapply update_global_preserves_INV with (sr:=s1) (i:=glob_tmp3) (num:=VAL_int64 (Int64.repr (to_Z y))); eauto.
+        discriminate. now intros. now intros.
+        intros HINV2. have I := HINV2. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64w2]]]]]]]]]]]]]]]].
+        destruct (Hi64w2 glob_tmp4 Hglob_tmp4 (VAL_int64 (Int64.repr 0))) as [s3 Hupd3]. clear Hi64w2.
+        have Hs3m := update_global_preserves_memory _ _ _ _ _ Hupd3. symmetry in Hs3m. rewrite Hs2m in Hs3m.
+        have : INV s3 f.
+        eapply update_global_preserves_INV with (sr:=s2) (i:=glob_tmp4) (num:=VAL_int64 (Int64.repr 0)); eauto.
+        discriminate. now intros. now intros.
+        intros HINV3. have I := HINV3. destruct I as [_ [_ [_ [_ [Hcap _]]]]].
+        destruct (Hcap (VAL_int32 (Int32.repr 0))) as [s4 Hupd4]. clear Hcap.
+        have Hs4m := update_global_preserves_memory _ _ _ _ _ Hupd4. symmetry in Hs4m. rewrite Hs3m in Hs4m.
+        have : INV s4 f.
+        eapply update_global_preserves_INV with (sr:=s3) (i:=constr_alloc_ptr) (num:=VAL_int32 (Int32.repr 0)); eauto.
+        left; split; auto. apply cap_i32_glob. discriminate. now intros. now intros. 
+        intro HINV4.        
+        have : (sglob_val s4 (f_inst f) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr (to_Z xh))))).
+        eapply update_global_get_other with (sr:=s3) (j:=constr_alloc_ptr); eauto. discriminate. 
+        eapply update_global_get_other with (sr:=s2) (j:=glob_tmp4); eauto. discriminate.
+        eapply update_global_get_other with (sr:=s1) (j:=glob_tmp3); eauto. discriminate.
+        eapply update_global_get_other with (sr:=s0) (j:=glob_tmp2); eauto. discriminate.
+        have : (sglob_val s4 (f_inst f) glob_tmp2 = Some (VAL_num (VAL_int64 (Int64.repr (to_Z xl))))).
+        eapply update_global_get_other with (sr:=s3) (j:=constr_alloc_ptr); eauto. discriminate. 
+        eapply update_global_get_other with (sr:=s2) (j:=glob_tmp4); eauto. discriminate.
+        eapply update_global_get_other with (sr:=s1) (j:=glob_tmp3); eauto. discriminate.
+        eapply update_global_get_same; eauto.
+        have : (sglob_val s4 (f_inst f) glob_tmp3 = Some (VAL_num (VAL_int64 (Int64.repr (to_Z y))))).
+        eapply update_global_get_other with (sr:=s3) (j:=constr_alloc_ptr); eauto. discriminate. 
+        eapply update_global_get_other with (sr:=s2) (j:=glob_tmp4); eauto. discriminate.
+        eapply update_global_get_same; eauto.
+        have : (sglob_val s4 (f_inst f) glob_tmp4 = Some (VAL_num (VAL_int64 (Int64.repr 0)))).
+        eapply update_global_get_other with (sr:=s3) (j:=constr_alloc_ptr); eauto. discriminate. 
+        eapply update_global_get_same; eauto.
+        have : (sglob_val s4 (f_inst f) constr_alloc_ptr = Some (VAL_num (VAL_int32 (Int32.repr 0)))).
+        eapply update_global_get_same; eauto.
+        intros Hg_counter Hg_q Hg_y Hg_xl Hg_xh.
+        have : (sglob_val s4 (f_inst f) global_mem_ptr = Some (VAL_num (VAL_int32 (N_to_i32 gmp_v)))).
+        eapply update_global_get_other with (sr:=s3) (j:=constr_alloc_ptr); eauto. discriminate. 
+        eapply update_global_get_other with (sr:=s2) (j:=glob_tmp4); eauto. discriminate.
+        eapply update_global_get_other with (sr:=s1) (j:=glob_tmp3); eauto. discriminate.
+        eapply update_global_get_other with (sr:=s0) (j:=glob_tmp2); eauto. discriminate.
+        eapply update_global_get_other with (sr:=s) (j:=glob_tmp1); eauto. discriminate.
+        intro Hgmps4.
+        destruct (div21_loop_reduce_full 63 state s4 f m gmp_v 0%Z (to_Z xh) (to_Z xl) (to_Z xh) (to_Z xl) 0%Z (to_Z y)) as [sr' [xh' [xl' [q HloopRed]]]]; auto.
+        split; auto. 
+        split; auto.
+        split; auto.
+        split; auto.
+        replace Int64.half_modulus with Uint63.wB.
+        replace Int64.modulus with (2 * Uint63.wB)%Z.
+        split; auto. apply to_Z_bounded.
+        split; auto. Search (~ (_ <= _)%Z). split. by destruct (to_Z_bounded xh). lia.
+        split; auto. split. by destruct (to_Z_bounded xl). destruct (to_Z_bounded xl). lia. 
+        split; auto. cbn; lia.
+        split. replace ((to_Z xl) * 2^0)%Z with (to_Z xl) by lia.
+        rewrite Z.mod_small. reflexivity. destruct (to_Z_bounded xl). cbn in H0; lia.
+        replace (2^(63 - 0))%Z with (2^63)%Z by lia.
+        replace (0 * to_Z y + to_Z xh)%Z with (to_Z xh) by lia.
+        replace ((to_Z xh) mod (to_Z y))%Z with (to_Z xh).
+        rewrite Z.mod_small. reflexivity. by destruct (to_Z_bounded xl).
+        rewrite Z.mod_small. reflexivity. split. by destruct (to_Z_bounded xh). lia.
+        by rewrite int64_modulus_eq_pow64. 
+        by cbn.
+        lia.
+        destruct HloopRed as [HloopRed [HINVLoop [HsfsLoop [HmemLoop [HgmpLoop [HLoopInvariant _]]]]]].        
+        unfold div21_loop_invariant in HLoopInvariant.
+        destruct HLoopInvariant as [Hxh' [Hxl' [Hy [Hq' [_ [Hxh_lt_y [Hxl_range [Hq_range [Hxl_eq Hdivmod]]]]]]]]].
+        have Hdiv21_spec := (diveucl_21_spec xh xl y).
+        destruct (diveucl_21 xh xl y) as [d21_q d21_r] eqn:Hd21.
+        replace d21_q with (fst (diveucl_21 xh xl y)) in * by now rewrite Hd21.
+        replace d21_r with (snd (diveucl_21 xh xl y)) in * by now rewrite Hd21.
+        have : (to_Z xh < to_Z y)%Z. lia.
+        intro Hxh_lt_y'.
+        destruct (Z.div_eucl ((to_Z xh) * wB + (to_Z xl)) (to_Z y)) as [dq' dr'] eqn:Hde.
+        destruct (Hdiv21_spec Hxh_lt_y') as [Hd21_fst Hd21_snd].
+        simpl in Hdivmod. replace ((to_Z xl) mod 1)%Z with 0%Z in Hdivmod by lia.
+        rewrite Z.add_0_r in Hdivmod. rewrite Z.mul_1_r in Hdivmod.
+        replace (Z.pow_pos 2 63)%Z with wB in Hdivmod by now cbn.
+        rewrite Z.mod_small in Hdivmod. 2: split; [by destruct (to_Z_bounded xh)|lia].
+        have Hdivmod' := Z_div_mod ((to_Z xh) * wB + (to_Z xl)) (to_Z y).
+        rewrite Hde in Hdivmod'.
+        assert (to_Z y > 0)%Z by lia.
+        destruct (Hdivmod' H) as [Hquot Hrem].
+        replace dq' with q in Hd21_fst by (rewrite Hquot in Hdivmod; nia).
+        replace dr' with xh' in Hd21_snd by lia.
+        clear Hdiv21_spec Hdivmod Hdivmod' Hquot H Hrem Hd21.
+        destruct (Hrelations sr' glob_tmp4 glob_tmp1) as [sr_prod [fr' [Hred1 [Hred2 Hresult]]]]; auto; auto.
+        simpl. rewrite Hd21_fst; auto.
+        simpl. rewrite Hd21_snd; auto.
+        erewrite <-(update_global_preserves_funcs s3 s4) in HsfsLoop; eauto.
+        erewrite <-(update_global_preserves_funcs s2 s3) in HsfsLoop; eauto.
+        erewrite <-(update_global_preserves_funcs s1 s2) in HsfsLoop; eauto.
+        erewrite <-(update_global_preserves_funcs s0 s1) in HsfsLoop; eauto.
+        erewrite <-(update_global_preserves_funcs s s0) in HsfsLoop; eauto.        
+        exists sr_prod, fr'.
+        split. { inversion Hrepr_primop.          
+          unfold diveucl_21_instrs.
+          remember (make_product global_mem_ptr glob_tmp1 glob_tmp1) as mkprod_instrs.
+          remember (make_product global_mem_ptr glob_tmp4 glob_tmp1) as mkprod_instrs'.
+          remember (diveucl_21_loop constr_alloc_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63) as loop_instrs.
+          separate_instr.          
+          dostep_nary 0. eapply r_local_get; eauto.
+          dostep_nary 1. eapply r_load_success; eauto.
+          rewrite <-Haddr3. simpl. apply Hload3'. replace (wasm_deserialise b2 T_i64) with (VAL_int64 (Int64.repr (to_Z y))) by congruence.
+          dostep_nary_eliml 0 1.  eapply r_local_get; eauto.
+          dostep_nary_eliml 1 1. eapply r_load_success; eauto.
+          rewrite <-Haddr1. simpl. apply Hload1'. replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Int64.repr (to_Z xh))) by congruence.
+          dostep_nary 2. apply r_simple. apply rs_relop. simpl.
+          dostep_nary 1. apply r_simple. apply rs_if_false. simpl.
+          unfold Int64.ltu. rewrite zlt_true. reflexivity.
+          rewrite uint63_unsigned_id uint63_unsigned_id. lia.
+          dostep_nary 0. rewrite <-cat0s. eapply r_block with (t1s:=[::]) (t2s:=[T_num T_i32])(vs:=[::]); eauto.
+          simpl. rewrite <-cat1s.
+          eapply rt_trans with (y:=(state, sr_prod, f, [AI_label 1 [] [:: $V (VAL_num (VAL_int32 (N_to_i32 (gmp_v + 16))))]] ++ [AI_basic (BI_local_set x0')])).                        
+          apply app_trans.                        
+          apply reduce_trans_label1.
+          separate_instr.
+          dostep_nary 0. eapply r_local_get; eauto.
+          dostep_nary 1. eapply r_load_success; eauto.
+          rewrite <-Haddr1. simpl. apply Hload1'. replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Int64.repr (to_Z xh))) by congruence.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 0. eapply r_local_get; eauto.
+          dostep_nary 1. eapply r_load_success; eauto.
+          rewrite <-Haddr2. simpl. apply Hload2'. replace (wasm_deserialise b1 T_i64) with (VAL_int64 (Int64.repr (to_Z xl))) by congruence.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 0. eapply r_local_get; eauto.
+          dostep_nary 1. eapply r_load_success; eauto.
+          rewrite <-Haddr3. simpl. apply Hload3'. replace (wasm_deserialise b2 T_i64) with (VAL_int64 (Int64.repr (to_Z y))) by congruence.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          dostep_nary 1. rewrite unfold_val_notation. eapply r_global_set; eauto.
+          rewrite cat0s.
+          replace (state, sr_prod, f, [:: $VN VAL_int32 (N_to_i32 (gmp_v + 16))]) with (state, sr_prod, f, [] ++ [:: $VN VAL_int32 (N_to_i32 (gmp_v + 16))]) by reflexivity.
+          eapply rt_trans with (y:=(state,sr',f,[] ++ ?[es])).
+          apply app_trans.
+          apply HloopRed.
+          rewrite cat0s. rewrite cat0s.
+          apply Hred1.
+          dostep_nary' 0. apply r_simple. apply rs_label_const; cbn; auto.
+          apply Hred2. }
+        auto. } }
+    { (* addmuldiv *) admit. }
+    admit. }
 Admitted. (* Qed. *)
 
 
