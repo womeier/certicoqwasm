@@ -1447,8 +1447,15 @@ Proof.
   now apply H0.
   assert (0 <= a)%Z. apply H0; auto. now constructor. 
   have Htwop := two_p_gt_ZERO a H3.
-  assert (2 ^i <= Zbits.powerserie l)%Z. apply IHl; auto. lia.
+  assert (2^i <= Zbits.powerserie l)%Z. apply IHl; auto. lia.
 Qed.
+
+Lemma in_Z_one_bits_last : forall x h i,
+    (0 <= x < two_power_nat 64)
+    h ++ [i] = Zbits.Z_one_bits 64 x 0 ->
+    (x < 2^(i+1))%Z.
+Proof.
+Admitted
 
 Lemma clz_spec_alt : forall x,
     (0 < x < Int64.modulus)%Z ->
