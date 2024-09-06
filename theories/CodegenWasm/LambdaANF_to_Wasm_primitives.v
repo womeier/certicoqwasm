@@ -1457,6 +1457,851 @@ Lemma in_Z_one_bits_last : forall x h i,
 Proof.
 Admitted
 
+
+(*
+Lemma in_Z_one_bits_pow' : forall l i,
+    (0 < i)%Z ->
+    (forall j, In j l -> (0 <= 2^j + Zbits.powerserie l < 2^(i + 1)))%Z ->
+    (Zbits.powerserie l < 2^i)%Z.
+Proof.
+  induction l. intros. cbn. lia.
+intros.
+cbn. auto.
+  rewrite two_p_equiv. 
+  cbn. auto.
+ (* Hin Hj1 Hj2. *)  
+  cbn in Hin.
+  cbn. lia.
+  cbn.
+
+assert (0 <= 2^a + Zbits.powerserie l < 2^(n + 1))%Z. 
+assert (Zbits.powerserie l = Zbits.powerserie (filter (fun x => x != a) (a ::l))). {
+  f_equal.
+  cbn.  
+  assert (zeq a a). 
+  unfold zeq. destruct (Z.eq_dec a a). auto. auto. 
+  assert (~~ zeq a a = false). unfold negb. now rewrite H.
+  rewrite H0.
+  rewrite filter_for_all. auto.
+  rewrite list_all_forall.  intro.
+  rewrite -List_In_in_mem => I. admit. }
+  (* subst a0. *)
+  (* cbn in Huniq. *)
+  (* unfold negb in Huniq. *)
+  (* rewrite I in Huniq. discriminate. } *)
+
+(* assert (~~ zeq a a).  *)
+(* Search (~~ _)%Z. *)
+
+(*   rewrite Z_eqP *)
+(*   About zeq. *)
+(*   unfold zeq. *)
+  
+(*   destruct (Z.eq_dec a a); auto. *)
+(*   assert (zeq a a).   *)
+(*   rewrite zeq_false. *)
+(*   rewrite filter_for_all. auto. *)
+(*   rewrite list_all_forall.  intro. *)
+(*   rewrite -List_In_in_mem => I. apply /eqP => ?.  *)
+(*   subst a0. *)
+(*   cbn in Huniq. *)
+(*   unfold negb in Huniq. *)
+(*   rewrite I in Huniq. discriminate. } *)
+assert (forall j : Z_eqType,
+        In j l ->
+        (0 <= 2 ^ j + Zbits.powerserie (filter (fun x => x != j) l) < 2 ^ (n + 1))%Z).
+{ admit. }
+assert (Huniq' : uniq l). admit.
+have IH := IHl n Hn Huniq' H0.
+
+assert (
+ Search (_ + _ < _)%Z.
+have H
+
+intros.
+assert (In j (a :: l)). cbn. right; auto.
+have Hinn := Hin j  H2.
+assert 
+rewrite H in H0. 
+
+
+
+rewrite <-List_In_in_mem in H0.
+cbn in H0.
+cbn in H0.
+
+assert (Zbits.powerserie l = Zbits.powerserie (filter (fun x => x != a) l)). {
+  f_equal.
+  rewrite filter_for_all. auto.
+  rewrite list_all_forall.  intro.
+  rewrite -List_In_in_mem => I. apply /eqP => ?. 
+  subst a0.
+  cbn in Huniq.
+  unfold negb in Huniq.
+  rewrite I in Huniq. discriminate. }
+
+rewrite H.
+apply Hin. cbn. left; auto.
+assert (uniq l). admit.
+assert (forall j, In j l -> (0 <= j < n))%Z. intros. apply Hin. cbn. right; auto. 
+have IH := IHl n Hn H0 H1. Search (_ + _ < _)%Z.
+cbn.
+Search uniq.
+cbn in Huniq. unfold "&&" in Huniq. 
+  contradiction.
+  unfold Zbits.powerserie.
+
+  fold Zbits.powerserie.  
+  destruct (Z.eq_dec i a).
+  rewrite <-e in *.
+  have Hj1' := Hj1 i Hin.
+  have Hj2' := Hj2 i Hin.
+  unfold Zbits.powerserie in Hj2'.
+  fold Zbits.powerserie in Hj2'.  
+  rewrite two_p_equiv in Hj2'.
+  replace (2^i + Zbits.powerserie l + 2^i)%Z with (2 * 2^i + Zbits.powerserie l)%Z in Hj2' by lia.
+  rewrite Z.add_comm.
+  rewrite Z.mul_add_distr_l.
+  rewrite <-Z.pow_add_r.
+  replace (n - i - 1 + i)%Z with (n - 1)%Z by lia.
+  Search (_ * _ < _)%Z.
+  Zbits.powrser
+  
+  
+ rewrite Z.pow_sub_r. lia. lia. lia. lia. lia. lia.   
+  rewrite 
+  rewrite Z.mul_add_distr-
+  rewrite <-e.
+  rewrite two_p_equiv.
+  assert (0 <= Zbits.powerserie l)%Z. apply powserie_nonneg; auto.
+  assert (forall x, In x l -> 0 <= x)%Z.
+  intros.
+  assert (In x (a :: l)). right. assumption.
+  now apply H0.
+  assumption.
+  lia.
+  fold Zbits.powerserie.
+  assert (i \in l).
+  have H' := in_cons a l i.
+  have Hrefl := reflect_iff.
+  have H''' := eqP.
+  specialize (H''' _ i a).
+  specialize (Hrefl _ _ H''').
+  destruct Hrefl.
+  destruct (i == a)%Z eqn:Heqb. specialize (H2 Logic.eq_refl). contradiction.  
+  rewrite orb_false_l in H'. auto.
+  rewrite <-H'. assumption.
+  assert (forall x, In x l -> 0 <= x)%Z.
+  intros.
+  assert (In x (a :: l)). right. assumption.
+  now apply H0.
+  assert (0 <= a)%Z. apply H0; auto. now constructor. 
+  have Htwop := two_p_gt_ZERO a H3.
+  assert (2 ^i <= Zbits.powerserie l)%Z. apply IHl; auto. lia.
+Qed.
+
+Require ZifyComparison.
+
+Add Zify BinOp ZifyInst.Op_Z_pow.
+  Search Z.pow.
+Add Zify Saturate ZifyInst.SatPowNonneg.
+Add Zify Saturate ZifyInst.SatPowPos.
+
+Lemma head_Z_one_bits_pow_eq : forall t n x i,
+    (0 <= x < two_power_nat n)%Z ->
+    i :: t = rev (Zbits.Z_one_bits n x 0) ->
+    (x = 2^i + Zbits.powerserie t)%Z.
+Proof.
+  intros.
+  assert (x = Zbits.powerserie (Zbits.Z_one_bits n x 0)).
+  (* assert (0 <= x < 2^64)%Z. *)
+  (* rewrite Htpn' in H. auto. *)
+
+
+  apply Zbits.Z_one_bits_powerserie. lia.
+  assert (forall l k, 
+             Zbits.powerserie (l ++ [k]) = Zbits.powerserie (k :: l))%Z. {
+    intro. induction l. intros. cbn. reflexivity.
+    intros.
+    cbn.
+    assert (two_p a + Zbits.powerserie l = (Zbits.powerserie (a :: l)))%Z. now cbn.
+    rewrite H2. rewrite IHl. cbn. lia. }
+  assert (forall m y j,
+             Zbits.powerserie (Zbits.Z_one_bits m y j) = Zbits.powerserie (rev (Zbits.Z_one_bits m y j)))%Z. {
+    intro. induction m. intros. cbn. unfold Zbits.powerserie. unfold rev. now cbn.
+    intros.
+    cbn.
+    destruct (Z.odd y).
+    unfold rev.  cbn. rewrite catrevE.
+    assert (two_p j + Zbits.powerserie (Zbits.Z_one_bits m (Z.div2 y) (j + 1)) = Zbits.powerserie (j :: (Zbits.Z_one_bits m (Z.div2 y) (j + 1))))%Z. now cbn.
+    rewrite H3.
+    rewrite H2. cbn. now rewrite IHm.  apply IHm. }
+  have Hp := H3 n x 0%Z. 
+replace (Zbits.powerserie (Zbits.Z_one_bits n x 0)) with x in Hp.
+rewrite <-H0 in Hp. simpl in Hp.
+now rewrite <-two_p_equiv. 
+Qed.
+
+Lemma head_Z_one_bits_pow_lt : forall n t x i j,
+    (0 <= x < two_power_nat n)%Z ->
+    (0 <= i < two_power_nat n)%Z ->
+    (forall j, In j (Zbits.Z_one_bits n x j) -> 0 <= j < two_power_nat n)%Z ->
+    (Zbits.Z_one_bits n x j) = t ++ [i] ->
+    (2^(n - 1 - i) * Zbits.powerserie (Zbits.Z_one_bits n x j) < 2^n)%Z. 
+Proof.
+  induction n; intros.
+  (* have Hx := head_Z_one_bits_pow_eq _ _ _ _ H H0.  *)
+  (* symmetry in H0. *)
+  (* apply rev_move in H0. unfold rev in H0. replace (catrev [i] []) with [i] in H0 by now cbn. *)
+  cbn. lia.
+  assert (0 <= i < Z.of_nat n)%Z. eapply Zbits.Z_one_bits_range with (x:=x); eauto.  
+  rewrite <-H0. cbn. left. auto.
+  rewrite <-H0. unfold Zbits.powerserie.
+  rewrite two_p_equiv.
+  replace (2^i + 0)%Z with (2^i)%Z by lia. 
+  rewrite <-Z.pow_add_r. 
+  replace (n - 1 - i + i)%Z with (n - 1)%Z. rewrite Z.pow_sub_r. lia. lia. lia. lia. lia. lia. 
+  
+  have Hx := head_Z_one_bits_pow_eq _ _ _ _ H H0.
+
+ 
+  symmetry in H0.
+  apply rev_move in H0. unfold rev in H0. replace (catrev [i] []) with [i] in H0 by now cbn.
+
+  assert (0 <= i < Z.of_nat n)%Z. eapply Zbits.Z_one_bits_range with (x:=x); eauto.  
+  
+
+  rewrite two
+
+  symmetry in H0. 
+  rewrite H0. cbn. left; auto. lia. lia.
+
+  assert (x = Zbits.powerserie (Zbits.Z_one_bits n x 0)).
+
+rewrite H1 in Hp.
+
+  rewrite H0 in H2. cbn in H2.
+  rewrite two_p_equiv in H2. replace x with (2^i)%Z by lia.
+  rewrite Z.pow_add_r. lia. lia. lia.
+
+
+
+Lemma head_Z_one_bits_upper_bound : forall t x i,
+    (0 <= x < two_power_nat 64)%Z ->
+    i :: t = rev (Zbits.Z_one_bits 64 x 0) ->
+    (x < 2^(i + 1))%Z.
+Proof.
+  assert (Htpn: two_power_nat 64 = Int64.modulus). {
+    rewrite two_power_nat_two_p. replace (Z.of_nat 64) with Int64.zwordsize. rewrite <-Int64.modulus_power. reflexivity. now cbn. }
+  assert (Htpn' : two_power_nat 64 = (2^64)%Z) by now rewrite int64_modulus_eq_pow64 in Htpn.
+  
+  induction t; intros.
+  symmetry in H0.
+  apply rev_move in H0. unfold rev in H0. replace (catrev [i] []) with [i] in H0 by now cbn.
+  assert (0 <= i < Z.of_nat 64)%Z. eapply Zbits.Z_one_bits_range with (x:=x); eauto.  
+  rewrite H0. cbn. left; auto.
+  assert (x = Zbits.powerserie (Zbits.Z_one_bits 64 x 0)).
+  assert (0 <= x < 2^64)%Z.
+  rewrite Htpn' in H. auto.
+
+
+  apply Zbits.Z_one_bits_powerserie. lia.
+  rewrite H0 in H2. cbn in H2.
+  rewrite two_p_equiv in H2. replace x with (2^i)%Z by lia.
+  rewrite Z.pow_add_r. lia. lia. lia.
+  remember 64 as n. destruct n. cbn in H0. discriminate. cbn in H0. 
+  have Hodd := Zdiv2_odd_eqn x.
+  destruct (Z.odd x) eqn:Hxodd.  
+  assert (Z.div2 x = (x - 1) / 2)%Z by lia.
+  
+  
+  assert (0 <= i < Z.of_nat 64)%Z. eapply Zbits.Z_one_bits_range with (x:=x); eauto.  
+  rewrite H0. cbn. left; auto. lia. lia.
+  assert (Z.of_nat 64 = 64%Z). lia. rewrite H3 in H2. 
+  rewrite H1.
+
+ lia. lia. lia. 
+  rewrite 
+  rewrite two_p_equiv in H3. rewrite two_p_equiv in H3.
+  unfold Zbits.powerserie in H3.
+  fold Zbits.powerserie in H3.
+  rewrite two_p_equiv in H3. rewrite two_p_equiv in H3.
+  rewrite  Htpn' in H.
+  assert (forall j, In j t -> 0 <= j)%Z.
+    intros.
+    assert (In j (Zbits.Z_one_bits 64 x 0))%Z. {
+
+  cbn in H0.
+  have Hodd := Zdiv2_odd_eqn x.
+  destruct (Z.odd x) eqn:Hxodd.  
+  assert (Z.div2 x = (x - 1) / 2)%Z by lia.
+  assert (rev (i :: t) = j%Z :: (Zbits.Z_one_bits n (Z.div2 x) (j + 1))). {
+    symmetry in H0.
+    apply rev_move in H0. auto. 
+    
+}
+replace (j :: Zbits.Z_one_bits n (Z.div2 x) (j + 1)) with ([j] ++ Zbits.Z_one_bits n (Z.div2 x) (j + 1)) in H0.
+2: { rewrite cat1s. reflexivity.}
+rewrite rev_cat in H0. replace (rev [j]) with [j] in H0 by now unfold rev.
+assert (rev (i :: t) = rev t ++ [i])%Z. rewrite <-cat1s. rewrite rev_cat. now unfold rev.
+assert (t = Zbits.Z_one_bits n (Z.div2 x)
+unfold rev in H0. cbn in H0. 
+cbn in H0.
+ rewrite rev_cat.
+assert (Zbits.Z_one_bits n 
+  assert (Zbits.Z_one_bits n (Z.div2 x) 0)
+i :: t
+           
+ rewrite unfold Z.div2.
+  2 * 
+  assert ((x - 1)
+n = (2 * Z.div2 n + (if Z.odd n then 1 else 0))%Z
+  destruct (Z.odd x).  
+  assert (rev (i :: t) = 0%Z :: (Zbits.Z_one_bits n (Z.div2 x) 1)). {
+    symmetry in H0.
+    apply rev_move in H0. auto. }
+  have H' := Zbits.Z_one_bits_powerserie n.
+  Search Z.div2.
+ (Z.div2 x) H1.
+
+  assert (
+  
+rewrite 
+    unfold rev. cbn. rewrite catrevE. 
+  unfold rev in H0.  cbn in H0. rewrite catrevE in H0.
+  rewrite 
+p
+  cbn in H0.
+  Search two_power_nat.
+  rewrite two_power_nat_S in H.  
+  assert (0<= Z.div2 x < two_power_nat n)%Z. lia.
+  have H' := Zbits.Z_one_bits_powerserie n (Z.div2 x) H1.
+  assert (forall l k, 
+             Zbits.powerserie (l ++ [k]) = Zbits.powerserie (k :: l))%Z. {
+    intro. induction l. intros. cbn. reflexivity.
+    intros.
+    cbn.
+    assert (two_p a + Zbits.powerserie l = (Zbits.powerserie (a :: l)))%Z. now cbn.
+    rewrite H2. rewrite IHl. cbn. lia. }
+  assert (forall m y j,
+             Zbits.powerserie (Zbits.Z_one_bits m y j) = Zbits.powerserie (rev (Zbits.Z_one_bits m y j)))%Z. {
+    intro. induction m. intros. cbn. unfold Zbits.powerserie. unfold rev. now cbn.
+    intros.
+    cbn.
+    destruct (Z.odd y).
+    unfold rev.  cbn. rewrite catrevE.
+    assert (two_p j0 + Zbits.powerserie (Zbits.Z_one_bits m (Z.div2 y) (j0 + 1)) = Zbits.powerserie (j0 :: (Zbits.Z_one_bits m (Z.div2 y) (j0 + 1))))%Z. now cbn.
+    rewrite H3.
+    rewrite H2. cbn. now rewrite IHm.  apply IHm. }
+  cbn in H0.
+  assert (
+  have IH := IHn t (Z.div2 x) i (j + 1)%Z H1 H0.
+  assert (forall n l z j, (0 <= z < two_power_nat n)%Z -> j :: l = Zbits.Z_one_bits n z 0 -> l = Zbits.Z_one_bits 64 (z - 2^j) 0).  {
+
+  
+  
+  assert (forall m y, 
+             Zbits.powerserie 
+  (* assert (x = Zbits.powerserie (Zbits.Z_one_bits 64 x 0)). *)
+  
+  (* assert (0 < x < 2^n)%Z. *)
+  (* rewrite Htpn' in H. auto. *)
+  apply Zbits.Z_one_bits_powerserie. lia. 
+  rewrite <-H0 in H1.
+  cbn in H1.
+
+  replace (two_p i + 0)%Z with (2^i)%Z in H1.
+
+unfold two_power_nat in H.
+  (* assert (x = Zbits.powerserie (Zbits.Z_one_bits 64 x 0)). *)
+  
+  (* assert (0 < x < 2^n)%Z. *)
+  (* rewrite Htpn' in H. auto. *)
+  apply Zbits.Z_one_bits_powerserie. lia. 
+  rewrite <-H0 in H1.
+  cbn in H1.
+  replace (two_p i + 0)%Z with (2^i)%Z in H1.
+  assert (0 <= i < Z.of_nat 64)%Z. eapply Zbits.Z_one_bits_range with (x:=x); eauto.
+  rewrite <-H0. cbn. left; auto.
+  assert (Z.of_nat 64 = 64%Z). lia. rewrite H3 in H2. 
+  rewrite H1.
+  rewrite H1 in H. rewrite Htpn' in H.
+  assert (2^(i + 1) = 2^i * 2)%Z. rewrite Z.pow_add_r. lia. lia. lia. 
+  rewrite H4. lia.
+  rewrite two_p_equiv. lia.
+  assert (0 <= i < Z.of_nat 64)%Z. eapply Zbits.Z_one_bits_range with (x:=x); eauto.
+  rewrite <-H0. unfold In. left; auto.
+  assert (0 <= a < Z.of_nat 64)%Z. eapply Zbits.Z_one_bits_range with (x:=x); eauto.
+  rewrite <-H0. unfold In. right; left; auto.
+  assert (x = Zbits.powerserie (Zbits.Z_one_bits 64 x 0)).
+  assert (0 < x < 2^64)%Z.
+  rewrite Htpn' in H. auto.
+  apply Zbits.Z_one_bits_powerserie. lia. 
+  rewrite <-H0 in H3.
+  unfold Zbits.powerserie in H3.
+  fold Zbits.powerserie in H3.
+  rewrite two_p_equiv in H3. rewrite two_p_equiv in H3.
+  rewrite  Htpn' in H.
+  assert (forall j, In j t -> 0 <= j)%Z.
+    intros.
+    assert (In j (Zbits.Z_one_bits 64 x 0))%Z. {
+      rewrite <-H0.
+      unfold In. unfold In in H4.
+      right;right;auto. }
+    have H' := Zbits.Z_one_bits_range.
+    specialize (H' 64 x j H5). lia. 
+  have H' := powserie_nonneg t H4.
+  remember (x - 2^i)%Z as y.
+  assert (y = (2 ^ a + Zbits.powerserie t))%Z. lia.
+  assert (y < x)%Z. lia.
+  assert (y < 2^64)%Z. lia.
+  assert (0 < y)%Z. 
+  subst y. rewrite H3. lia.
+  assert (0 < 2^a)%Z. lia.
+  assert (0 < y)%Z. lia.
+  assert (0 < y < 2^64)%Z. lia.
+  have H'' := IHt y a H11.
+  assert (forall n l z j, (0 <= z < two_power_nat n)%Z -> j :: l = Zbits.Z_one_bits n z 0 -> l = Zbits.Z_one_bits 64 (z - 2^j) 0).  {
+    induction n; intros; auto.
+    cbn in H13. discriminate.
+    unfold Zbits.Z_one_bits in H13.
+    destruct (Z.odd z).
+    fold Zbits.Z_one_bits in H13.
+    
+      assert (z = Zbits.powerserie (Zbits.Z_one_bits 64 z 0)).
+      assert (0 < z < 2^64)%Z.
+      rewrite Htpn' in H12. auto.
+      apply Zbits.Z_one_bits_powerserie. lia. 
+      rewrite <-H13 in H14. 
+      unfold Zbits.powerserie in H14.
+      (* fold Zbits.powerserie in H3. *)
+      rewrite two_p_equiv in H14.
+      rewrite  Htpn' in H12.
+      rewrite H14.
+      replace (2^j + 0 - 2^j)%Z with 0%Z. now cbn.
+      lia.
+      assert (forall j', In j' l -> 0 <= j')%Z.
+      intros.
+      assert (In j' (Zbits.Z_one_bits 64 z 0))%Z. {
+        rewrite <-H13.
+        unfold In. unfold In in H14.
+        right;right;auto. }
+      have Hr := Zbits.Z_one_bits_range.
+      specialize (Hr 64 z j' H15). lia. 
+      have Hr' := powserie_nonneg l H14.
+      assert (z - 2^j  = (2 ^ a0 + Zbits.powerserie l))%Z.
+      assert (z = Zbits.powerserie (Zbits.Z_one_bits 64 z 0)).
+      assert (0 < z < 2^64)%Z.
+      rewrite Htpn' in H12. auto.
+      apply Zbits.Z_one_bits_powerserie. lia. 
+      rewrite <-H13 in H15. 
+      unfold Zbits.powerserie in H15.
+      (* fold Zbits.powerserie in H3. *)
+      rewrite two_p_equiv in H15. rewrite two_p_equiv in H15.
+      rewrite  Htpn' in H12.
+      fold Zbits.powerserie in H15.
+      rewrite H15.
+      lia.
+      assert (0 <= (z - 2^j) < 2^64)%Z. lia. 
+      rewrite <-Htpn' in H16.
+      have Hj := Zbits.Z_one_bits_powerserie 64 (z - 2^j)%Z H16.
+      assert (z - 2^j = Zbits.powerserie (a0 :: l))%Z. unfold Zbits.powerserie. fold Zbits.powerserie. rewrite two_p_equiv. auto.
+      rewrite Hj in H17. 
+      destruct (Zbits.Z_one_bits 64 (z - 2^j)%Z 0). cbn in H17. rewrite two_p_equiv in H17. 
+      About f_equal.
+      assert (
+      remember 64 as n.
+      unfold Zbits.Z_one_bits. 
+      inv H17.
+apply f_equal in H17.
+      auto
+      f_equal.
+      apply f_equal in Hj.
+      assert (a0 = z - Z.
+      rewrite H15.
+      replace (2^j + 0 - 2^j)%Z with 0%Z. now cbn.
+
+ rewrite 
+        
+lia.
+      assert (y < x)%Z. lia.
+      assert (y < 2^64)%Z. lia.
+      assert (0 < y)%Z. 
+      subst y. rewrite H3. lia.
+      assert (0 < 2^a)%Z. lia.
+      assert (0 < y)%Z. lia.
+      assert (0 < y < 2^64)%Z. lia.
+
+      assert (
+      have Ha0 := IHl (
+
+
+    
+    intros.
+             
+a :: t = Zbits.Z_one_bits 64 y 0)%Z.
+  
+  unfold Zbits.Z_one_bits.
+
+  asser
+             
+  
+  assert (Zbits.powerserie
+  assert (0 <= y < two_power_nat 64)%Z. rewrite Htpn'.
+
+  transitivity x.
+  subst y
+  
+  remember ((2 ^ a + Zbits.powerserie t)%Z)
+
+  remember 
+  rew
+
+  rewrite <-H0 in H1.
+  unfold Zbits.powerserie in H1.
+  cbn in H1.
+  replace (two_p i + 0)%Z with (2^i)%Z in H1.
+  assert (0 <= i < Z.of_nat 64)%Z. eapply Zbits.Z_one_bits_range with (x:=x); eauto.
+
+  
+
+
+  rewrite Z.pow_add
+
+
+2^64
+2^(63 - i) * x < 2^(64 - i)
+
+
+
+< 2^(64 - i + 1)
+2^(i - 1)
+2^((63 - i) - 1
+ 
+
+  assert (0 <= i < 64)%Z. 
+  assert (two_p i + 0
+  assert (
+
+  
+  
+    (i \in (Zbits.Z_one_bits 64 x 0)) ->
+    (2^i <= x < two_power_nat 64)%Z.
+    
+
+
+63 <= 2^i * x
+
+              
+2^i * x < 2^(64-(63-i)) * x
+2^(63-i) * x < 2^(1 + i)
+
+
+  
+
+
+Lemma in_Z_one_bits : forall x i,
+    (0 < x < two_power_nat 64)%Z -> (* < two_power_nat n)%Z -> *)
+    (i \in (Zbits.Z_one_bits 64 x 0)) ->
+    (2^i <= x < two_power_nat 64)%Z.
+Proof.
+  intros x i Hx Hi.
+  assert (Hi' : (i \in (Zbits.Z_one_bits 64 x 0)) = true) by auto.
+  assert (forall j, In j (Zbits.Z_one_bits 64 x 0) -> 0 <= j)%Z. {
+    intros j Hj. 
+    have H := Zbits.Z_one_bits_range _ _ _ Hj; lia. }
+  assert (Hx': (0 <= x < two_power_nat 64)%Z) by lia.
+  have Hpow := Zbits.Z_one_bits_powerserie 64 x Hx'. 
+  assert (2^i <= x)%Z. {
+    rewrite Hpow.
+    apply in_Z_one_bits_pow; auto. }
+  lia.
+Qed.
+
+(* Lemma not_in_Z_one_bits_pow : forall l i, *)
+(*     (0 <= i < 64)%Z -> *)
+(*     0 < length l -> *)
+(*     (forall x, In x l -> 0 <= x < i)%Z -> *)
+(*     (2^(63 - i) <= Zbits.powerserie l < 2^(64-i))%Z. *)
+(* Proof. *)
+(*   induction l; intros. cbn in H0. lia. *)
+(*   unfold Zbits.powerserie. *)
+(*   fold Zbits.powerserie. *)
+(*   rename a into j. *)
+(*   replace (two_p j) with (2^j)%Z. *)
+(*   assert (0 <= j < i)%Z. apply H1. now constructor. *)
+
+(*   apply H1 in H0. lia. *)
+(*   Search two_p. *)
+(*   now rewrite two_p_equiv. *)
+(* Qed. *)
+(*   rewrite Z.two_p_correct. *)
+(*   assert (2^a < 2^i)%Z. admit.   *)
+(*   replace (two_p a) with (2^a)%Z. *)
+(*   assert (Zbits.powerserie l < 2^(64 - i))%Z. apply IHl. lia. intros. apply H0. right. assumption. *)
+  
+(*   Search Z.log2. *)
+  
+  
+(*   apply IHl with (i:=a). *)
+(*   unfold  *)
+(*   discriminate. *)
+(*   unfold Zbits.powerserie. *)
+(*   destruct (Z.eq_dec i a). *)
+(*   fold Zbits.powerserie.   *)
+(*   rewrite <-e. *)
+(*   rewrite two_p_equiv. *)
+(*   assert (0 <= Zbits.powerserie l)%Z. apply powserie_nonneg; auto. *)
+(*   assert (forall x, In x l -> 0 <= x)%Z. *)
+(*   intros. *)
+(*   assert (In x (a :: l)). right. assumption. *)
+(*   now apply H0. *)
+(*   assumption. *)
+(*   lia. *)
+(*   fold Zbits.powerserie. *)
+(*   assert (i \in l). *)
+(*   have H' := in_cons a l i. *)
+(*   have Hrefl := reflect_iff. *)
+(*   have H''' := eqP. *)
+(*   specialize (H''' _ i a). *)
+(*   specialize (Hrefl _ _ H'''). *)
+(*   destruct Hrefl. *)
+(*   destruct (i == a)%Z eqn:Heqb. specialize (H2 Logic.eq_refl). contradiction.   *)
+(*   rewrite orb_false_l in H'. auto. *)
+(*   rewrite <-H'. assumption. *)
+(*   assert (forall x, In x l -> 0 <= x)%Z. *)
+(*   intros. *)
+(*   assert (In x (a :: l)). right. assumption. *)
+(*   now apply H0. *)
+(*   assert (0 <= a)%Z. apply H0; auto. now constructor.  *)
+(*   have Htwop := two_p_gt_ZERO a H3. *)
+(*   assert (2 ^i <= Zbits.powerserie l)%Z. apply IHl; auto. lia. *)
+(* Qed. *)
+
+
+(* Lemma not_in_Z_one_bits : forall x i, *)
+(*     (0 < x < two_power_nat 64)%Z -> *)
+(*     (0 <= i < 64)%Z ->  *)
+(*     (forall j, (i <= j < 64)%Z -> ~ (In j (Zbits.Z_one_bits 64 x 0))) -> *)
+(*     (x < 2^(64-i))%Z. *)
+(* Proof. *)
+(*   intros x i Hx Hi Hj. *)
+(*   assert (Hi' : ~ (In i (Zbits.Z_one_bits 64 x 0))). *)
+(*   apply Hj. lia. *)
+(*   assert  *)
+(*   assert (forall j, In j (Zbits.Z_one_bits 64 x 0) -> 0 <= j)%Z. { *)
+(*     intros j Hj.  *)
+(*     have H := Zbits.Z_one_bits_range _ _ _ Hj; lia. } *)
+(*   assert (Hx': (0 <= x < two_power_nat 64)%Z) by lia. *)
+(*   have Hpow := Zbits.Z_one_bits_powerserie 64 x Hx'.  *)
+(*   assert (2^i <= x)%Z. { *)
+(*     rewrite Hpow. *)
+(*     apply in_Z_one_bits_pow; auto. } *)
+(*   lia. *)
+(* Qed. *)
+
+Lemma clz_spec : forall x i,
+    (0 < x < Int64.modulus)%Z ->
+    i = Int64.unsigned (Int64.clz (Int64.repr x)) ->
+    (* (i = 63 - Z.log2 x)%Z. *)
+    (2^63 <= 2^i * x < 2^64)%Z.
+Proof.
+  intros x i Hx Hi.
+  assert (Hws: Int64.wordsize = 64) by (unfold Int64.wordsize, Integers.Wordsize_64.wordsize; reflexivity).
+  assert (Htpn: two_power_nat 64 = Int64.modulus). {
+    rewrite two_power_nat_two_p. replace (Z.of_nat 64) with Int64.zwordsize. rewrite <-Int64.modulus_power. reflexivity. now cbn. }
+  assert (Htpn' : two_power_nat 64 = (2^64)%Z) by now rewrite int64_modulus_eq_pow64 in Htpn.
+  assert (Int64.intval x = x)%Z. {
+    cbn. rewrite Int64.Z_mod_modulus_id; auto; lia. }
+  assert (0 < i < 64)%Z. admit.
+(* 63 <= i + log2 x < 64 *)
+(* 63 - log2 x <= i < 64 - log2 x *)
+
+
+(* 63 - i <= log2 x + i *)
+(* 63 <= log2 x + 2i < 64 + i *)
+
+(* 63 - i <= log2 x < 64 *)
+
+(* 63 <= log2 x + i < 64 + i *)
+(* 63 <= log2 x + i < 64 *)
+ 
+  assert (Hi' : (63 - i)%Z \in (Zbits.Z_one_bits 64 x 0)). {    
+    unfold Int64.clz in Hi.    
+    have: (has (fun b => b == true) (Int64.convert_to_bits (Int64.repr x))).
+    rewrite has_find. rewrite Int64.power_index_to_bits_size. 
+    rewrite Hws. Search (Int64.unsigned _ = _). rewrite lt_pow64_unsigned_id in Hi; auto.
+    assert (S (find (fun b : bool_eqType => b == true) (Int64.convert_to_bits (Z_to_i64 x))) <= 64). lia.
+    have Hrefl := ssrnat.leP.
+    have Hrefl' := reflect_iff _ _ (Hrefl (S (find (fun b : bool_eqType => b == true) (Int64.convert_to_bits (Z_to_i64 x)))) 64).
+    rewrite Hrefl' in H1. auto.
+    have Hsize := Int64.convert_to_bits_size (Int64.repr x). rewrite Hws in Hsize.
+    have Hfind_size := find_size (fun b : bool_eqType => b == true) (Int64.convert_to_bits (Z_to_i64 x)). 
+    assert (0 <= find (fun b : bool_eqType => b == true) (Int64.convert_to_bits (Z_to_i64 x))).
+    unfold find. destruct (Int64.convert_to_bits (Z_to_i64 x)); lia.
+    rewrite Hsize in Hfind_size.
+    have Hfd := (ssrnat.leP Hfind_size). lia.
+    intro.
+    assert (Z.of_nat (Int64.wordsize - (Z.to_nat i) - 1) \in Zbits.Z_one_bits Int64.wordsize (Int64.intval x) 0).
+    assert (seq.nth false (Int64.convert_to_bits (Int64.repr x)) (Z.to_nat i) = true).  (* = (64 - (Z.to_nat i) - 1)%Z \in (Zbits.Z_one_bits 64 x 0)). { *)
+
+    apply nth_find with (x0:=false) (a:=(fun b : bool_eqType => b == true)) (s:=(Int64.convert_to_bits (Z_to_i64 x))) in H1.
+    rewrite lt_pow64_unsigned_id in Hi; auto.
+    rewrite Hi.
+    rewrite Nat2Z.id. auto.
+    unfold is_true in H1.
+    auto.
+    have HeqP := eqP H1.
+    auto.
+    have Hsize := Int64.convert_to_bits_size (Int64.repr x). rewrite Hws in Hsize.
+    have Hfind_size := find_size (fun b : bool_eqType => b == true) (Int64.convert_to_bits (Z_to_i64 x)). 
+    assert (0 <= find (fun b : bool_eqType => b == true) (Int64.convert_to_bits (Z_to_i64 x))).
+    unfold find. destruct (Int64.convert_to_bits (Z_to_i64 x)); lia.
+    rewrite Hsize in Hfind_size.
+    have Hfd := (ssrnat.leP Hfind_size). lia.
+    assert (ssrnat.subn (ssrnat.subn Int64.wordsize (Z.to_nat i)) 1 = Int64.wordsize - Z.to_nat i - 1) by auto.
+    rewrite <-H3.
+    rewrite Int64.convert_to_bits_nth in H2.
+    rewrite H.
+    replace (Int64.intval (Int64.repr x)) with x in H2.
+    auto.
+    rewrite Hws.
+    assert (S (Z.to_nat i) <= 64) by lia.    
+    now eapply (introT ssrnat.leP) in H2.
+    rewrite Hws in H2.
+    replace (64 - Z.to_nat i - 1) with (63 - Z.to_nat i) in H2 by lia.
+    replace (Z.of_nat (63 - Z.to_nat i)) with (63 - i)%Z in H2 by lia.
+    rewrite H in H2. assumption. }
+  assert (0 < x < two_power_nat 64)%Z by auto.
+  have Hbounds := in_Z_one_bits x (63 - i)%Z H1 Hi'.
+  rewrite Htpn' in Hbounds.
+  clear H1.
+  split.
+  destruct Hbounds.
+  assert (2^(63 - i) = 2^63/2^i)%Z.
+  rewrite Z.pow_sub_r; lia.
+  assert ((2^i * x) / 2^i = x)%Z.
+  rewrite Z.mul_comm. rewrite Z_div_mult. reflexivity.
+  lia.
+  (* rewrite <- H4 in H1. *)
+  (* rewrite H3 in H1. *)
+  assert ((2^(63-i)) * 2^i = 2^63)%Z. 
+
+assert (63 = (63 - i) + i)%Z. lia.
+assert (2^63 = 2^((63 - i) + i))%Z. pattern (2^63-i + i)%Z. rewrite <- H5. reflexivity.
+rewrite H6.
+
+rewrite <-Z.pow_add_r. reflexivity. lia. lia.
+rewrite Z.mul_comm.
+rewrite <-H5.
+apply Zmult_le_compat. assumption. lia. lia. lia. 
+destruct Hbounds. 
+assert (2^(63 - i) < 2^64)%Z. lia.
+assert (2^i * x < 2^i * 2^64)%Z. nia.
+assert (2^64 < 2^i * 2^64)%Z.
+assert (1 < 2^i)%Z.
+assert (0 < i)%Z by lia.
+assert (1 <= i)%Z by lia.
+assert (1 < 2^1)%Z by lia.
+Search Z.pow.
+apply Zpow_facts.Zpower_gt_1.
+lia.
+lia. lia.
+assert (2^64 = 2^i * 2^(64 - i))%Z. 
+rewrite <-Z.pow_add_r. 
+replace (i + (64 - i))%Z with 64%Z by lia. reflexivity.
+lia. lia. 
+assert (Z.log2 x < 64)%Z.
+apply Z.log2_lt_pow2. lia. lia. 
+assert (0 <= Z.log2 x)%Z.
+apply Z.log2_nonneg.
+assert (0 <= Z.log2 x < Z.of_nat 64)%Z. lia.
+assert (Zbits.Z_one_bits 64 (two_p (Z.log2 x)) i = [(i + Z.log2 x)%Z]). {
+  apply Zbits.Z_one_bits_two_p. lia. }
+    assert (forall n x i j,
+               In j (Zbits.Z_one_bits n x i) -> (i <= j < i + Z.of_nat n)%Z).
+  {
+  induction n; simpl In.
+  tauto.
+  intros x0 i0 j0. rewrite Nat2Z.inj_succ.
+  assert (In j0 (Zbits.Z_one_bits n (Z.div2 x0) (i0 + 1)) -> (i0 <= j0 < i0 + Z.succ (Z.of_nat n))%Z).
+    intros. exploit IHn; eauto. lia.
+  destruct (Z.odd x0); simpl.
+  intros [A|B]. subst j0. lia. auto.
+  auto.
+  }
+
+assert (In (i + Z.log2 x)%Z (Zbits.Z_one_bits 64 (two_p (Z.log2 x)) i))%Z. {
+  unfold In.
+  destruct (Zbits.Z_one_bits 64 (two_p (Z.log2 x)) i)%Z. discriminate.
+  left. congruence. }
+  apply H11 in H12.
+assert (Z.log2 x < i + Z.log2 x)%Z. {
+lia. }
+assert (In (i + Z.log2 x)%Z (Zbits.Z_one_bits 64 (two_p (Z.log2 x)) 0))%Z. {
+  unfold In.
+  Search (2 ^ (Z.log2 _))%Z.
+  destruct (Zbits.Z_one_bits 64 (two_p (Z.log2 x)) i)%Z. discriminate.
+  left. congruence. }
+  apply H11 in H12.
+assert (Z.log2 x < i + Z.log2 x)%Z. {
+lia. }
+
+assert (Zbits.Z_one_bits
+
+  
+  simpl.
+  cbn.
+  Search In.
+  apply in_eq.
+  have H11' := H11 64 ((two_p (Z.log2 x))) i (i + Z.log2 x)%Z.
+  constructor
+assert (i <= i + Z.log2 < i + 
+  assert (x = two_p (Z.log2 x)). {
+    Search two_p.
+Search Z.pow.
+Search Z.log2.
+  
+About Z.log2_le_mono.
+Search (Z.log2 _ < Z.log2 _)%Z.
+Search Z.pow.
+assert (Z.log2 (2^64) = 64)%Z. 
+Search Z.pow.
+rewrite Z.log2_pow2. lia. lia.
+Search (Z.log2 _ < _)%Z.
+
+
+  assert (Hlog1: (Z.log2 (2^63) <= Z.log2 (2 ^ (Int64.unsigned (Int64.clz (Int64.repr x))) * x))%Z) by (apply Z.log2_le_mono; assumption).    
+  assert (Hlog2: (Z.log2 (2 ^ (Int64.unsigned (Int64.clz (Int64.repr x))) * x) < 64)%Z) by (apply Z.log2_lt_pow2; lia).
+  replace (2 ^ (Int64.unsigned (Int64.clz (Int64.repr x))) * x)%Z with (x * 2 ^ (Int64.unsigned (Int64.clz (Int64.repr x))))%Z in Hlog1, Hlog2 by lia.
+ 
+Sear
+assert (i + Z.log2 x < 64)%Z. {
+
+assert (2^i * x < 2^i * 2^64)%Z. lia.
+destruct (Z_lt_dec (2^i * x) (2^64))%Z. assumption.
+have Hnot := Znot_lt_ge.
+specialize (Hnot _ _ n). 
+assert (2^64 <= 2^i * x)%Z by lia.
+assert (2^(64 - i) < 2^64)%Z. by lia.
+replace (2 ^ i * 2 ^ 64)%Z with (2 ^ 64 * 2^i)%Z in H4 by now (rewrite Z.mul_comm). 
+rewrite <-Z.pow_add_r in H4.
+2^i (2^0 + 2^ + ... ) + 2^i * 
+
+Zbits.Z_one_bits 64 x 0 = i :: l
+
+log2 x
+log2 x + i < 64
+2^i * x < 2^64
+
+
+
+
+x = 2^i * 
+*)
+
+
+
 Lemma clz_spec_alt : forall x,
     (0 < x < Int64.modulus)%Z ->
     Int64.unsigned (Int64.clz (Int64.repr x)) = (63 - Z.log2 (Int64.unsigned (Int64.repr x)))%Z.
