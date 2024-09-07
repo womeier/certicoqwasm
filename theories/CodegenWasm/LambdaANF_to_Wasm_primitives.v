@@ -1450,12 +1450,195 @@ Proof.
   assert (2^i <= Zbits.powerserie l)%Z. apply IHl; auto. lia.
 Qed.
 
+
+
+(* the following is for in_Z_one_bits_last, there must be a better way :| *)
+#[local] Fixpoint increasing (idx : nat) (len : nat) :=
+  match len with
+  | 0 => []
+  | S len' => Z.of_nat idx :: increasing (S idx) len'
+  end.
+
+#[local] Lemma increasing_snoc : forall len idx,
+  increasing idx len ++ [Z.of_nat (idx + len)] = increasing idx (S len).
+Proof.
+  induction len; intros.
+  - now rewrite Nat.add_0_r.
+  - replace  (idx + S len) with (S idx + len) by lia.
+  cbn. now rewrite IHlen.
+Qed.
+
+#[local] Lemma increasing_ge_idx : forall len idx (y:Z),
+  In y (increasing idx len) -> (y >= idx)%Z.
+Proof.
+  induction len; intros=>//.
+  cbn in H. destruct H as [H|H].
+  - lia.
+  - apply IHlen in H. lia.
+Qed.
+
+#[local] Lemma increasing_concat : forall  len idx,
+  increasing 0 idx ++ increasing idx len = increasing 0 (idx + len).
+Proof.
+  induction len; intros.
+  - cbn. now rewrite cats0 Nat.add_0_r.
+  - cbn. replace (idx + S len) with (S idx + len) by lia.
+    rewrite -IHlen. cbn.
+    replace (Z.of_nat idx :: increasing (S idx) len) with
+            ([Z.of_nat idx] ++ increasing (S idx) len) by now cbn.
+    rewrite catA. now rewrite increasing_snoc.
+Qed.
+
+#[local] Lemma increasing_in : forall len idx (y : Z),
+  (Z.of_nat idx <= y < Z.of_nat idx + Z.of_nat len)%Z ->
+  In y (increasing idx len).
+Proof.
+  induction len; intros; first lia.
+  cbn.
+  destruct (Z.eqb_spec idx y); first now left. right.
+  apply IHlen. lia.
+Qed.
+
+#[local] Lemma powerserie_concat : forall l1 l2,
+  Zbits.powerserie (l1 ++ l2) = (Zbits.powerserie l1 + Zbits.powerserie l2)%Z.
+Proof.
+  induction l1; intros=>//.
+  cbn. rewrite IHl1. lia.
+Qed.
+
+
+#[local] Lemma powerserie_increasing : forall len,
+  (Zbits.powerserie (increasing 0 len) = 2 ^ len - 1)%Z.
+Proof.
+  intros.
+  induction len; intros=>//.
+  rewrite -increasing_snoc.
+  rewrite powerserie_concat. rewrite IHlen.
+  remember (S len) as slen. cbn. rewrite two_p_equiv.
+  enough (2 ^ len + 2 ^ len = 2 ^ slen)%Z by lia. subst.
+  replace (S len) with (1 + len) by lia.
+  enough (2 ^ len + 2 ^ len = 2 ^ (1 + len))%Z by lia.
+  rewrite Zpower_exp; lia.
+Qed.
+
+
+#[local] Lemma powerserie_incl : forall l1 l2,
+  (forall x, In x (l1 ++ l2) -> x >= 0)%Z ->
+  NoDup l1 ->
+  incl l1 l2 ->
+  (Zbits.powerserie l1 <= Zbits.powerserie l2)%Z.
+Proof.
+  induction l1; intros. cbn.
+  { induction l2=>//. cbn. cbn in IHl2.
+    assert (a >= 0)%Z. apply H. now left. assert (0 <= a)%Z by lia. apply two_p_gt_ZERO in H3.
+    enough (0 <= Zbits.powerserie l2)%Z by lia. apply IHl2=>//.
+    intros. apply H. now right.
+    }
+  { cbn. assert (In a l2). { apply H1. now left. }
+    apply in_split in H2. destruct H2 as [l3 [l4 Heq]].
+    inv H0. rewrite powerserie_concat. cbn.
+    enough (Zbits.powerserie l1 <= Zbits.powerserie l3 + Zbits.powerserie l4)%Z by lia.
+    rewrite -powerserie_concat.
+    apply IHl1; auto.
+    - intros. apply H. right.
+      apply in_app in H0. destruct H0 as [H0|H0]. now apply in_app.
+      apply in_app in H0. destruct H0 as [H0|H0]. apply in_app. right. now apply in_app.
+      apply in_app. right. apply in_app. right. now right.
+    - intros ??.
+      assert (In a0 (a :: l1)) by now right.
+      have H' := H1 a0 H2.
+      apply in_app in H'. destruct H'. apply in_app. now left.
+      cbn in H3. destruct H3 as [-> |H3]=>//. apply in_app. now right. }
+Qed.
+
+(* from https://github.com/VeriNum/LAProof/blob/main/mathcomp_compat/CommonSSR.v#L417 *)
+Lemma in_mem_In: forall {A: eqType} (l: list A) x,
+  x \in l <-> In x l.
+Proof.
+  move => A l x. elim: l => [//| h t IH /=].
+  rewrite in_cons -IH eq_sym. split => [/orP[/eqP Hx | Ht]| [Hx | Hlt]]. by left. by right.
+  subst. by rewrite eq_refl. by rewrite Hlt orbT.
+Qed.
+
+Lemma uniq_NoDup: forall {A: eqType} (l: list A),
+  uniq l <-> NoDup l.
+Proof.
+  move => A l. elim : l => [//=|h t IH].
+  - split =>[H{H}|//]. by apply NoDup_nil.
+  - rewrite /=. split => [/andP[Hnotin Hun]| ].
+    constructor. rewrite -in_mem_In. move => Hin. by move : Hin Hnotin ->.
+    by apply IH.
+    move => Hnod. inversion Hnod as [|x l Hnotin Hnodup] ; subst.
+    have->: h \notin t. case Hin: (h\in t). have: h\in t by []. by rewrite in_mem_In =>{} Hin.
+    by []. by rewrite IH.
+Qed.
+
+Lemma Z_one_bits_lowerbound : forall n l x idx y,
+  l = Zbits.Z_one_bits n x idx ->
+  In y l ->
+  (y >= idx)%Z.
+Proof.
+  induction n; intros.
+  - cbn in H. subst l=>//.
+  - cbn in H. destruct (Z.odd x).
+    2:{ apply (IHn _ _ _ y) in H=>//. lia. }
+    destruct l=>//. injection H as ->.
+    destruct H0. lia.
+    apply (IHn _ _ _ y) in H=>//. lia.
+Qed.
+
+Lemma Z_one_bits_monotone : forall n l x idx i j i' j' ,
+  l = Zbits.Z_one_bits n x idx ->
+  i > j ->
+  nth_error l i = Some i' ->
+  nth_error l j = Some j' ->
+  (i' >= j')%Z.
+Proof.
+  induction n; intros.
+  - cbn in H. subst l. now destruct i.
+  - cbn in H. destruct (Z.odd x).
+    + destruct l=>//. injection H as ->.
+      have IH := IHn _ _ _ _ _ _ _ H.
+      destruct i. lia. destruct j. injection H2 as <-. cbn in H1.
+      apply nth_error_In in H1. apply Z_one_bits_lowerbound with (y:=i') in H=>//. lia.
+      assert (i > j) by lia. eapply IH; eassumption.
+    + eapply IHn; eassumption.
+Qed.
+
 Lemma in_Z_one_bits_last : forall x h i,
-    (0 <= x < two_power_nat 64)
+    (0 <= x < two_power_nat 64)%Z ->
     h ++ [i] = Zbits.Z_one_bits 64 x 0 ->
     (x < 2^(i+1))%Z.
 Proof.
-Admitted
+  intros ??? Hbound Hbits.
+  have Huniq := Int64.Zbits_Z_one_bits_uniq x 0.
+  have Hrange := Zbits.Z_one_bits_range 64 x. rewrite -Hbits in Huniq, Hrange.
+  assert (Hincl: incl (h ++ [i]) (increasing 0 (Z.to_nat (i + 1)))). {
+    intros ??.
+    apply increasing_in. cbn.
+    apply In_nth_error in H. destruct H as [n Hn].
+    assert (nth_error (h ++ [i]) (length h) = Some i). {
+      rewrite nth_error_app2=>//. now replace (_ - _) with 0 by lia. }
+    assert (Ha: (a >= 0)%Z). { apply nth_error_In in Hn. apply Hrange in Hn. lia. }
+    destruct (Nat.eqb_spec n (length h)).
+    - subst n. assert (a = i) by congruence. subst. lia.
+    - assert (Hlen: nth_error (h ++ [i]) n <> None) by congruence.
+      apply nth_error_Some in Hlen. rewrite app_length in Hlen. cbn in Hlen.
+      assert (Hlen': Datatypes.length h > n) by lia. clear Hlen.
+      have H' := Z_one_bits_monotone _ _ _ _ _ _ _ _ Hbits Hlen' H Hn. lia. }
+  assert (Hnodup: NoDup (h ++ [i])) by apply uniq_NoDup=>//.
+  assert (Hge0: forall x : Z, In x ((h ++ [i]) ++ increasing 0 (Z.to_nat (i + 1))) -> (x >= 0)%Z). {
+    intros ? Hin. apply in_app in Hin. destruct Hin as [Hin |Hin].
+    - apply Hrange in Hin. lia.
+    - apply increasing_ge_idx in Hin. lia. }
+  have H' := powerserie_incl _ _ Hge0 Hnodup Hincl.
+  rewrite powerserie_increasing in H'.
+  apply Zbits.Z_one_bits_powerserie in Hbound.
+  rewrite Hbits -Hbound in H'.
+  rewrite Z2Nat.id in H'. lia.
+  assert (0 <= i)%Z. { apply Hrange. apply in_app. right. cbn. now left. }
+  lia.
+Qed.
 
 
 (*
