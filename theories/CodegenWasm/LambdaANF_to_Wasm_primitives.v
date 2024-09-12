@@ -589,8 +589,15 @@ Definition LambdaANF_primInt_prod_fun (f : uint63 -> uint63 -> prod uint63 uint6
 
 Definition LambdaANF_primInt_unop_fun (f : uint63 -> uint63) x := Vprim (primInt (f x)).
 
+(* TODO: Consider what to do for the case where xh < y
+   When the dividend (xh * 2^63 + xl) is too large, the quotient will overflow,
+   but the behavior of diveucl_21 in that case is not specified as an axiom,
+   but all VM/ native implementations return (0, 0) *)
 Definition LambdaANF_primInt_diveucl_21 xh xl y :=
-  Vconstr pair_tag [ Vprim (primInt (fst (diveucl_21 xh xl y))) ; Vprim (primInt (snd (diveucl_21 xh xl y))) ].
+  if (y <=? xh)%uint63 then
+    Vconstr pair_tag [ Vprim (primInt 0%uint63) ; Vprim (primInt 0%uint63) ]
+  else
+    Vconstr pair_tag [ Vprim (primInt (fst (diveucl_21 xh xl y))) ; Vprim (primInt (snd (diveucl_21 xh xl y))) ].
 
 Definition LambdaANF_primInt_addmuldiv p x y := Vprim (primInt (addmuldiv p x y)).
 
@@ -648,6 +655,8 @@ Ltac dep_destruct_primint v p x :=
 Section CORRECTNESS.
 
 Context `{ho : host}.
+
+Context {glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 : globalidx}.
 
 Ltac Zify.zify_post_hook ::= Z.div_mod_to_equations.
 
@@ -733,6 +742,8 @@ Corollary uint63_unsigned_id : forall (x : uint63), Int64.unsigned (to_Z x) = to
 Proof. intros; auto. Qed.
 
 Hint Resolve uint63_unsigned_id : core.
+
+Hint Resolve Z.mod_pos_bound : core.
 
 Lemma Z_bitmask_modulo_equivalent :
   forall (n : Z), Z.land n maxuint63 = Z.modulo n wB.
@@ -960,6 +971,21 @@ Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : loca
     /\ load m (N_of_uint i32m addr) 0%N (N.to_nat (tnum_length T_i64)) = Some bs
     /\ wasm_deserialise bs T_i64 = (VAL_int64 val).
 
+(* diveucl_21 *)
+
+Definition div21_loop_invariant sr fr i xh xl xh' xl' y q :=  
+  sglob_val sr (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh')))
+  /\ sglob_val sr (f_inst fr) glob_tmp2 = Some (VAL_num (VAL_int64 (Int64.repr xl')))
+  /\ sglob_val sr (f_inst fr) glob_tmp3 = Some (VAL_num (VAL_int64 (Int64.repr y)))
+  /\ sglob_val sr (f_inst fr) glob_tmp4 = Some (VAL_num (VAL_int64 (Int64.repr q)))
+  /\ (0 <= y < 2^63)%Z
+  /\ (0 <= xh' < y)%Z
+  /\ (0 <= q < 2^i)%Z
+  /\ (xl' mod 2^64 = (xl * 2^i) mod 2^64)%Z
+  /\ ((q * y + xh') * 2^(63 - i) + (xl mod 2^(63 - i)) = (xh mod y) * 2^63 + xl)%Z.
+
+(* mulc *)
+
 Lemma Z_bitmask_modulo32_equivalent :
   forall (n : Z), Z.land n 4294967295%Z = Z.modulo n (2^32)%Z.
 Proof.
@@ -970,7 +996,7 @@ Ltac unfold_modulus64 := unfold Int64.modulus, Int64.half_modulus, two_power_nat
 
 Ltac solve_unsigned_id := cbn; rewrite Int64.Z_mod_modulus_id; now replace Int64.modulus with (2^64)%Z.
 
-Hint Resolve Z.mod_pos_bound : core.
+
 
 Lemma lt_pow32_mod_modulus_id : forall x, (0 <= x < 2^32)%Z -> Int64.Z_mod_modulus x = x.
 Proof.

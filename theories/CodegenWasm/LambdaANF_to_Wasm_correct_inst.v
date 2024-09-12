@@ -277,21 +277,20 @@ Proof.
   { (* Ternary operations *)
       inv H2; unfold addmuldiv_instrs, diveucl_21_instrs, load_local_i64.
       - { (* diveucl_21 *)
-          (* Avoid unfolding too much too avoid slowdown *)
-          repeat match goal with
+       remember (diveucl_21_loop constr_alloc_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63) as loop_es.
+   (* Avoid unfolding too much too avoid slowdown *)
+       
+   repeat match goal with
                  | |- context C [?x :: ?l] =>
                      lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
                  end;
-            repeat rewrite catA; repeat eapply bet_composition'.
-          10: { apply bet_if_wasm with (tn:=[])=>//.
-                prepare_solve_bet; try (solve_bet Hcontext'; eauto) || (eapply Hinc_gmp; eauto).
-                (* Avoid unfolding too much to avoid slowdown *)
-                repeat match goal with
-                       | |- context C [?x :: ?l] =>
-                           lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-                       end;
-                  repeat rewrite catA; repeat eapply bet_composition'; eauto; solve_bet Hcontext' || (eapply Hmake_product; eauto). }
-          all: solve_bet Hcontext'; eauto. }
+     repeat rewrite catA; repeat eapply bet_composition'; try (solve_bet Hcontext'; eauto).
+   subst loop_es.
+   eapply bet_loop with (tn:=[]). reflexivity.
+   cbn. unfold diveucl_21_loop.
+   prepare_solve_bet; try (solve_bet Hcontext0; eauto).
+   cbn.
+   eapply bet_br with (t1s:=[]) (ts:=[]) (t2s:=[]). cbn. reflexivity. }
       - (* addmuldiv *) prepare_solve_bet; (eapply Hinc_gmp; eauto) || solve_bet Hcontext'; eauto. }
 Qed.
 
