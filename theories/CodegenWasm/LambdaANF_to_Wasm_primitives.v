@@ -210,19 +210,19 @@ Definition make_boolean_valued_comparison x y relop : list basic_instruction :=
 
 Definition compare_instrs x y : list basic_instruction :=
   [ BI_local_get x
-    ; BI_load T_i64 None 2%N 0%N
-    ; BI_local_get y
-    ; BI_load T_i64 None 2%N 0%N
-    ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-    ; BI_if (BT_valtype (Some (T_num T_i32)))
-        [ BI_const_num (N_to_VAL_i32 (2 * Lt_ord + 1)) ]
-        (load_local_i64 x ++
-           load_local_i64 y ++
-           [ BI_relop T_i64 (Relop_i ROI_eq)
-           ; BI_if (BT_valtype (Some (T_num T_i32)))
-               [ BI_const_num (N_to_VAL_i32 (2 * Eq_ord + 1)) ]
-               [ BI_const_num (N_to_VAL_i32 (2 * Gt_ord + 1)) ]
-           ])
+  ; BI_load T_i64 None 2%N 0%N
+  ; BI_local_get y
+  ; BI_load T_i64 None 2%N 0%N
+  ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
+  ; BI_if (BT_valtype (Some (T_num T_i32)))
+      [ BI_const_num (N_to_VAL_i32 (2 * Lt_ord + 1)) ]
+      (load_local_i64 x ++
+       load_local_i64 y ++
+       [ BI_relop T_i64 (Relop_i ROI_eq)
+       ; BI_if (BT_valtype (Some (T_num T_i32)))
+           [ BI_const_num (N_to_VAL_i32 (2 * Eq_ord + 1)) ]
+           [ BI_const_num (N_to_VAL_i32 (2 * Gt_ord + 1)) ]
+       ])
   ].
 
 Definition div_instrs (x y : localidx) : list basic_instruction :=
@@ -255,9 +255,9 @@ Definition shift_instrs (x y : localidx) shiftop (mask : bool) : list basic_inst
     ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
     ; BI_if (BT_valtype (Some (T_num T_i64)))
         (load_local_i64 x ++
-           load_local_i64 y ++
-           BI_binop T_i64 (Binop_i shiftop) ::
-           (if mask then bitmask_instrs else []))
+         load_local_i64 y ++
+         BI_binop T_i64 (Binop_i shiftop) ::
+         (if mask then bitmask_instrs else []))
         [ BI_const_num 0%Z ]
     ; BI_store T_i64 None 2%N 0%N
     ; BI_global_get global_mem_ptr
@@ -411,59 +411,60 @@ Definition translate_primitive_unary_op op (x : localidx) : error (list basic_in
 
 Definition diveucl_21_loop_body glob_xh glob_xl glob_y glob_q :=
   [ BI_global_get glob_xl
-    ; BI_const_num 1%Z
-    ; BI_binop T_i64 (Binop_i BOI_shl)
-    ; BI_global_set glob_xl
-    (* xl := xl << 1 *)
+  ; BI_const_num 1%Z
+  ; BI_binop T_i64 (Binop_i BOI_shl)
+  ; BI_global_set glob_xl
+  (* xl := xl << 1 *)
 
-    ; BI_global_get glob_xh
-    ; BI_const_num 1%Z
-    ; BI_binop T_i64 (Binop_i BOI_shl)
-    ; BI_global_get glob_xl
-    ; BI_const_num 63%Z
-    ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
-    ; BI_binop T_i64 (Binop_i BOI_or)
-    ; BI_global_set glob_xh
-    (* xh := (xh << 1) || (xl >> 63) *) 
+  ; BI_global_get glob_xh
+  ; BI_const_num 1%Z
+  ; BI_binop T_i64 (Binop_i BOI_shl)
+  ; BI_global_get glob_xl
+  ; BI_const_num 63%Z
+  ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
+  ; BI_binop T_i64 (Binop_i BOI_or)
+  ; BI_global_set glob_xh
+  (* xh := (xh << 1) || (xl >> 63) *)
 
-    ; BI_global_get glob_q
-    ; BI_const_num 1%Z
-    ; BI_binop T_i64 (Binop_i BOI_shl)
-    ; BI_global_set glob_q
-    (* q := q << 1 *)
+  ; BI_global_get glob_q
+  ; BI_const_num 1%Z
+  ; BI_binop T_i64 (Binop_i BOI_shl)
+  ; BI_global_set glob_q
+  (* q := q << 1 *)
 
-    ; BI_global_get glob_xh
-    ; BI_global_get glob_y
-    ; BI_relop T_i64 (Relop_i (ROI_ge SX_U))
-    (* if xh >= y: *) 
-    ; BI_if (BT_valtype None)
-        ([ BI_global_get glob_q
-           ; BI_const_num 1%Z
-           ; BI_binop T_i64 (Binop_i BOI_or)
-           ; BI_global_set glob_q
-          (* q := q || 1 *)
-          ] ++ 
-          [ BI_global_get glob_xh
-          ; BI_global_get glob_y
-          ; BI_binop T_i64 (Binop_i BOI_sub)
-          ; BI_global_set glob_xh
-          (* xh := xh - y *)
-          ])
-        []
+  ; BI_global_get glob_xh
+  ; BI_global_get glob_y
+  ; BI_relop T_i64 (Relop_i (ROI_ge SX_U))
+  (* if xh >= y: *)
+  ; BI_if (BT_valtype None)
+      ([ BI_global_get glob_q
+       ; BI_const_num 1%Z
+       ; BI_binop T_i64 (Binop_i BOI_or)
+       ; BI_global_set glob_q
+       (* q := q || 1 *)
+       ] ++
+       [ BI_global_get glob_xh
+       ; BI_global_get glob_y
+       ; BI_binop T_i64 (Binop_i BOI_sub)
+       ; BI_global_set glob_xh
+       (* xh := xh - y *)
+       ])
+      []
   ].
 
 Definition diveucl_21_loop glob_xh glob_xl glob_y glob_q iterations :=
   [ BI_global_get loop_counter
-    ; BI_const_num (VAL_int32 (Int32.repr iterations))
-    ; BI_relop T_i32 (Relop_i (ROI_lt SX_U))
-    ; BI_if (BT_valtype None)
-        ((diveucl_21_loop_body glob_xh glob_xl glob_y glob_q) ++ 
-           [ BI_global_get loop_counter
-             ; BI_const_num (VAL_int32 (Int32.repr 1))
-             ; BI_binop T_i32 (Binop_i BOI_add)
-             ; BI_global_set loop_counter
-             ; BI_br 1%N ])
-        []
+  ; BI_const_num (VAL_int32 (Int32.repr iterations))
+  ; BI_relop T_i32 (Relop_i (ROI_lt SX_U))
+  ; BI_if (BT_valtype None)
+      ((diveucl_21_loop_body glob_xh glob_xl glob_y glob_q) ++
+       [ BI_global_get loop_counter
+       ; BI_const_num (VAL_int32 (Int32.repr 1))
+       ; BI_binop T_i32 (Binop_i BOI_add)
+       ; BI_global_set loop_counter
+       ; BI_br 1%N
+       ])
+      []
   ].
 
 Definition diveucl_21_instrs (xh xl y : localidx) : list basic_instruction :=
@@ -471,39 +472,24 @@ Definition diveucl_21_instrs (xh xl y : localidx) : list basic_instruction :=
     load_local_i64 xh ++
     [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
     ; BI_if (BT_valtype (Some (T_num T_i32)))
-        (* if y <= xh, then the result is always 0 *)    
-        ([ BI_const_num 0%Z ; BI_global_set glob_tmp1] ++
-           make_product glob_tmp1 glob_tmp1)
+        (* if y <= xh, then the result is always 0 *)
+        ([ BI_const_num 0%Z ; BI_global_set glob_tmp1] ++ make_product glob_tmp1 glob_tmp1)
         ( (* glob_tmp1 = xh *)
           load_local_i64 xh ++ [ BI_global_set glob_tmp1 ] ++
           (* glob_tmp2 = xl *)
           load_local_i64 xl ++ [ BI_global_set glob_tmp2 ] ++
           (* glob_tmp3 = y *)
-          load_local_i64 y ++ [ BI_global_set glob_tmp3 ] ++
+          load_local_i64 y  ++ [ BI_global_set glob_tmp3 ] ++
           [ (* glob_tmp4 = q (the quotient, initialised to 0) *)
-            BI_const_num (VAL_int64 (Int64.repr 0%Z))
-            ; BI_global_set glob_tmp4
-            (* Initialise the loop counter to 0 *)
-            ; BI_const_num (VAL_int32 (Int32.repr 0%Z))
-            ; BI_global_set loop_counter
+          BI_const_num (VAL_int64 (Int64.repr 0%Z))
+          ; BI_global_set glob_tmp4
+          (* Initialise the loop counter to 0 *)
+          ; BI_const_num (VAL_int32 (Int32.repr 0%Z))
+          ; BI_global_set loop_counter
 
-            (* execute 62 iterations of the loop *)
-             ; BI_loop (BT_valtype None) (diveucl_21_loop glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63%Z)
-
-            (* glob_tmp1 = 64-bit remainder *)
-             (* ; BI_global_get glob_tmp1 *)
-             (* ; BI_const_num maxuint63 *)
-             (* ; BI_binop T_i64 (Binop_i BOI_and) *)
-             (* ; BI_global_set glob_tmp1 *)
-            (* glob_tmp1 = 63-bit remainder *)
-
-            (* glob_tmp4 = lower 64-bit of quotient *)
-             (* ; BI_global_get glob_tmp4 *)
-             (* ; BI_const_num maxuint63 *)
-             (* ; BI_binop T_i64 (Binop_i BOI_and) *)
-             (* ; BI_global_set glob_tmp4 *)
-            (* glob_tmp4 = lower 63-bit of quotient *)
-           ] ++ (make_product glob_tmp4 glob_tmp1))
+          (* execute 62 iterations of the loop *)
+          ; BI_loop (BT_valtype None) (diveucl_21_loop glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63%Z)
+          ] ++ (make_product glob_tmp4 glob_tmp1))
     ].
 
 
@@ -973,7 +959,7 @@ Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : loca
 
 (* diveucl_21 *)
 
-Definition div21_loop_invariant sr fr i xh xl xh' xl' y q :=  
+Definition div21_loop_invariant sr fr i xh xl xh' xl' y q :=
   sglob_val sr (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh')))
   /\ sglob_val sr (f_inst fr) glob_tmp2 = Some (VAL_num (VAL_int64 (Int64.repr xl')))
   /\ sglob_val sr (f_inst fr) glob_tmp3 = Some (VAL_num (VAL_int64 (Int64.repr y)))
