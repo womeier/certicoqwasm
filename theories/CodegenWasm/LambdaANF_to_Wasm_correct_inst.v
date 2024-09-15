@@ -2774,7 +2774,7 @@ Proof.
 Unshelve. all: auto.
 Qed.
 
-(* Eval compute in "Assumptions of 'LambdaANF_Wasm_related' (Wasm backend, main correctness)"%bs. *)
-(* Print Assumptions LambdaANF_Wasm_related. *)
+Eval compute in "Assumptions Wasm backend"%bs.
+Print Assumptions LambdaANF_Wasm_related.
 
 End TOPLEVEL.
