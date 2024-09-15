@@ -903,7 +903,7 @@ Lemma translate_functions_type_bound {fenv} : forall fds fns fn eAny,
              expression_restricted cenv e')%Z ->
   translate_functions nenv cenv fenv penv fds = Ret fns ->
   In fn fns ->
-  (type fn <= 20)%N.
+  (type fn <= Z.to_N max_function_args)%N.
 Proof.
   induction fds. 2:{ intros. by inv H1. }
   intros ??? Hnodup Hrestr Htrans Hin. cbn in Htrans.
@@ -1025,8 +1025,8 @@ Qed.
 
 Lemma gen_fun_instance_simplify_eq : forall fns mi,
   (Z.of_nat (length fns) <= max_num_functions)%Z ->
-  (forall fn, In fn fns -> type fn <= 20)%N ->
-  inst_types mi = list_function_types (Pos.to_nat 20) ->
+  (forall fn, In fn fns -> type fn <= 100)%N ->
+  inst_types mi = list_function_types (Pos.to_nat 100) ->
   [seq gen_func_instance {| modfunc_type := type fn; modfunc_locals := locals fn; modfunc_body := body fn |}
          mi
      | fn <- fns] =
@@ -1037,7 +1037,7 @@ Lemma gen_fun_instance_simplify_eq : forall fns mi,
 Proof.
   induction fns; intros=>//. cbn. f_equal.
   - unfold gen_func_instance. rewrite H1.
-    assert (type a <= 20)%N by (apply H0; cbn; auto).
+    assert (type a <= 100)%N by (apply H0; cbn; auto).
     unfold lookup_N. cbn. rewrite (nth_error_nth' _ (Tf [] [])). 2:{ rewrite length_list_function_types. lia. }
     rewrite nth_list_function_types; try lia=>//. reflexivity.
   - cbn in H. apply IHfns; eauto; try lia.
@@ -1653,7 +1653,7 @@ Proof.
   (* main fn *)
   destruct (add_func initial_store _) eqn:HaddF'.
   unfold add_func, gen_func_instance in HaddF'. rewrite F6 in HaddF'.
-  replace (Pos.to_nat 20) with 20 in HaddF' by reflexivity. cbn in HaddF'.
+  replace (Pos.to_nat 100) with 100 in HaddF' by reflexivity. cbn in HaddF'.
   replace (Pos.to_nat 1) with 1 in HaddF' by reflexivity. cbn in HaddF'.
   injection HaddF' as <- <- <- <- <- <-.
 
@@ -1825,7 +1825,7 @@ Proof.
     erewrite mapi_nth_error; eauto.
     cbn. f_equal. unfold gen_func_instance.
     rewrite F6. cbn. f_equal. rewrite H4.
-    assert (HtypeBound : (type func <= 20)%N). {
+    assert (HtypeBound : (type func <= 100)%N). {
       inv HeRestr.
       eapply translate_functions_type_bound; eauto.
     }
