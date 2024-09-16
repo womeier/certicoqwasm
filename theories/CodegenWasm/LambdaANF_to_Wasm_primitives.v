@@ -36,6 +36,7 @@ Definition max_num_functions := 1_000_000%Z. (* should be possible to vary witho
 Definition max_constr_args   := 50%Z.      (* should be possible to vary without breaking much *)
 
 (* base id of type struct: add number of elems *)
+(* max_function_args *)
 Definition struct_type_base_idx : N := (Z.to_N max_function_args + 3)%N.
 Definition struct_type_constr_idx : N := (struct_type_base_idx - 2)%N. (* {tag: i32, args: struct}*)
 Definition struct_type_prim_idx : N := (struct_type_base_idx - 1)%N. (* { i64 } *)
@@ -140,6 +141,7 @@ Definition make_carry (ord : N) (gidx : globalidx) : list basic_instruction:=
 
   ; BI_global_get gidx
   ; BI_struct_new struct_type_prim_idx
+  ; BI_struct_new (struct_type_base_idx + 1)%N
 
   ; BI_struct_new struct_type_constr_idx
   ].
@@ -188,7 +190,9 @@ Definition apply_sub_carry_operation (x y : localidx) (subone : bool) : list bas
     load_local_i64 y ++
     load_local_i64 x ++
     [ BI_relop T_i64 (Relop_i ((if subone then ROI_lt else ROI_le) SX_U))
-    ; BI_if (BT_valtype (Some (T_ref (T_heap (T_abs T_eqref)))))  (make_carry C0_ord glob_tmp1) (make_carry C1_ord glob_tmp1)
+    ; BI_if (BT_valtype (Some (T_ref (T_heap (T_abs T_eqref)))))
+        (make_carry C0_ord glob_tmp1)
+        (make_carry C1_ord glob_tmp1)
     ].
 
 (* Assume 1st element is stored in global gidx1, 2nd element in global gidx2 *)
