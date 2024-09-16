@@ -394,8 +394,7 @@ Definition diveucl_instrs (x y : localidx) : list basic_instruction :=
       ]
 
       (load_local_i64 y ++
-      [ BI_struct_get struct_type_prim_idx 0%N
-      ; BI_testop T_i64 TO_eqz
+      [ BI_testop T_i64 TO_eqz
       ; BI_if (BT_valtype None)
           ([ BI_const_num (VAL_int64 (Z_to_i64 0))
           ; BI_global_set glob_tmp1
