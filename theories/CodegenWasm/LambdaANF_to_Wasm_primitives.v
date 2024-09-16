@@ -137,12 +137,11 @@ Definition apply_binop_and_store_i64 (op : binop_i) (x y : localidx) (apply_bitm
 (* Assume argument is stored in global gidx *)
 Definition make_carry (ord : N) (gidx : globalidx) : list basic_instruction:=
   [ BI_const_num (N_to_VAL_i32 ord)
-  ; BI_ref_i31
 
   ; BI_global_get gidx
   ; BI_struct_new struct_type_prim_idx
 
-  ; BI_struct_new (struct_type_base_idx + 2)%N
+  ; BI_struct_new struct_type_constr_idx
   ].
 
 (*
@@ -195,15 +194,14 @@ Definition apply_sub_carry_operation (x y : localidx) (subone : bool) : list bas
 (* Assume 1st element is stored in global gidx1, 2nd element in global gidx2 *)
 Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
   [ BI_const_num (N_to_VAL_i32 pair_ord)
-  ; BI_ref_i31
 
   ; BI_global_get gidx1
   ; BI_struct_new struct_type_prim_idx
-
   ; BI_global_get gidx2
   ; BI_struct_new struct_type_prim_idx
-
   ; BI_struct_new (struct_type_base_idx + 2)%N
+
+  ; BI_struct_new struct_type_constr_idx
   ].
 
   (* [ BI_global_get global_mem_ptr
