@@ -503,10 +503,7 @@ Definition addmuldiv_instrs p x y :=
         (* Compute x << p on the stack *)
         (load_local_i64 x ++
            load_local_i64 p ++
-           [ BI_binop T_i64 (Binop_i BOI_shl)
-           ; BI_const_num maxuint63
-           ; BI_binop T_i64 (Binop_i BOI_and)
-           ] ++
+           [ BI_binop T_i64 (Binop_i BOI_shl) ] ++
            (* Put y on the stack *)
            load_local_i64 y ++
            (* Compute 63 - p on the stack *)
@@ -517,6 +514,8 @@ Definition addmuldiv_instrs p x y :=
            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
            (* Finally, compute (x << p) | (y >> (63 - p)) on the stack *)
            ; BI_binop T_i64 (Binop_i BOI_or)
+           ; BI_const_num maxuint63
+           ; BI_binop T_i64 (Binop_i BOI_and)
            ])
     ; BI_store T_i64 None 2%N 0%N
     ; BI_global_get global_mem_ptr
