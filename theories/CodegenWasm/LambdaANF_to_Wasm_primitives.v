@@ -122,7 +122,7 @@ Definition primop_map : KernameMap.t primop :=
     (KernameMap.empty primop)))))))))))))))))))))))).
 
 Definition load_local_i64 (i : localidx) : list basic_instruction :=
-  [ BI_local_get i ; BI_struct_get struct_type_prim_idx 0%N ].
+  [ BI_local_get i ; BI_ref_cast (T_index struct_type_prim_idx); BI_struct_get struct_type_prim_idx 0%N ].
 
 Definition bitmask_instrs := [ BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ].
 
@@ -137,11 +137,12 @@ Definition apply_binop_and_store_i64 (op : binop_i) (x y : localidx) (apply_bitm
 (* Assume argument is stored in global gidx *)
 Definition make_carry (ord : N) (gidx : globalidx) : list basic_instruction:=
   [ BI_const_num (N_to_VAL_i32 ord)
+  ; BI_ref_i31
 
   ; BI_global_get gidx
   ; BI_struct_new struct_type_prim_idx
 
-  ; BI_struct_new (struct_type_base_idx + 1)%N
+  ; BI_struct_new (struct_type_base_idx + 2)%N
   ].
 
 (*
@@ -172,7 +173,9 @@ Definition apply_add_carry_operation (x y : localidx) (addone : bool) : list bas
     [BI_global_set glob_tmp1 ;BI_global_get glob_tmp1 ] ++
     load_local_i64 x ++
     [ BI_relop T_i64 (Relop_i ((if addone then ROI_le else ROI_lt) SX_U))
-    ; BI_if (BT_valtype (Some (T_num T_i32))) (make_carry C1_ord glob_tmp1) (make_carry C0_ord glob_tmp1)
+    ; BI_if (BT_valtype (Some (T_ref (T_heap (T_abs T_eqref)))))
+        (make_carry C1_ord glob_tmp1)
+        (make_carry C0_ord glob_tmp1)
     ].
 
 Definition apply_sub_carry_operation (x y : localidx) (subone : bool) : list basic_instruction :=
@@ -186,12 +189,13 @@ Definition apply_sub_carry_operation (x y : localidx) (subone : bool) : list bas
     load_local_i64 y ++
     load_local_i64 x ++
     [ BI_relop T_i64 (Relop_i ((if subone then ROI_lt else ROI_le) SX_U))
-    ; BI_if (BT_valtype (Some (T_num T_i32))) (make_carry C0_ord glob_tmp1) (make_carry C1_ord glob_tmp1)
+    ; BI_if (BT_valtype (Some (T_ref (T_heap (T_abs T_eqref)))))  (make_carry C0_ord glob_tmp1) (make_carry C1_ord glob_tmp1)
     ].
 
 (* Assume 1st element is stored in global gidx1, 2nd element in global gidx2 *)
 Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
   [ BI_const_num (N_to_VAL_i32 pair_ord)
+  ; BI_ref_i31
 
   ; BI_global_get gidx1
   ; BI_struct_new struct_type_prim_idx
@@ -236,14 +240,12 @@ Definition make_boolean_valued_comparison x y relop : list basic_instruction :=
   ; BI_if (BT_valtype (Some (T_num T_i32)))
       [ BI_const_num (N_to_VAL_i32 (2 * true_ord + 1)) ]
       [ BI_const_num (N_to_VAL_i32 (2 * false_ord + 1)) ]
+  ; BI_ref_i31
   ].
 
 Definition compare_instrs x y : list basic_instruction :=
-  [ BI_local_get x
-  ; BI_load T_i64 None 2%N 0%N
-  ; BI_local_get y
-  ; BI_load T_i64 None 2%N 0%N
-  ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
+  load_local_i64 x ++ load_local_i64 y ++
+  [ BI_relop T_i64 (Relop_i (ROI_lt SX_U))
   ; BI_if (BT_valtype (Some (T_num T_i32)))
       [ BI_const_num (N_to_VAL_i32 (2 * Lt_ord + 1)) ]
       (load_local_i64 x ++
@@ -253,6 +255,7 @@ Definition compare_instrs x y : list basic_instruction :=
            [ BI_const_num (N_to_VAL_i32 (2 * Eq_ord + 1)) ]
            [ BI_const_num (N_to_VAL_i32 (2 * Gt_ord + 1)) ]
        ])
+  ; BI_ref_i31
   ].
 
 (* Definition div_instrs (x y : localidx) : list basic_instruction :=
@@ -394,12 +397,10 @@ Definition diveucl_instrs (x y : localidx) : list basic_instruction :=
       ; BI_struct_get struct_type_prim_idx 0%N
       ; BI_testop T_i64 TO_eqz
       ; BI_if (BT_valtype None)
-          [ BI_const_num (VAL_int64 (Z_to_i64 0))
+          ([ BI_const_num (VAL_int64 (Z_to_i64 0))
           ; BI_global_set glob_tmp1
-          ; BI_local_get x
-          ; BI_load T_i64 None 2%N 0%N
-          ; BI_global_set glob_tmp2
-          ]
+          ] ++ load_local_i64 x ++ [ BI_global_set glob_tmp2 ])
+
           (load_local_i64 x ++
              load_local_i64 y ++
              [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ; BI_global_set glob_tmp1 ] ++
@@ -524,7 +525,7 @@ Definition diveucl_21_instrs (xh xl y : localidx) : list basic_instruction :=
   load_local_i64 y ++
     load_local_i64 xh ++
     [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
-    ; BI_if (BT_valtype (Some (T_num T_i32)))
+    ; BI_if (BT_valtype (Some (T_ref (T_heap (T_abs T_eqref)))))
         (* if y <= xh, then the result is always 0 *)
         ([ BI_const_num 0%Z ; BI_global_set glob_tmp1] ++ make_product glob_tmp1 glob_tmp1)
         ( (* glob_tmp1 = xh *)
