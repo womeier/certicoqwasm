@@ -1,5 +1,6 @@
 From Wasm Require Import datatypes operations.
 From CertiCoq Require Import LambdaANF.toplevel LambdaANF.cps_util.
+From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm_primitives.
 
 From CertiCoq Require Import Common.Common Common.compM Common.Pipeline_utils.
 Require Import ExtLib.Structures.Monad.
@@ -20,13 +21,16 @@ Import MonadNotation.
 Definition max_mem_pages     := 30000%N.
 
 (* ***** RESTRICTIONS ON lANF EXPRESSIONS ****** *)
+(*
 Definition max_function_args := 20%Z.        (* should be possible to vary without breaking much *)
 Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
 Definition max_constr_args   := 50%Z.      (* should be possible to vary without breaking much *)
 
 (* base id of type struct: add number of elems *)
-Definition struct_type_base_idx : N := (Z.to_N max_function_args + 2)%N.
-Definition struct_type_constr_idx : N := (struct_type_base_idx - 1)%N. (* {tag: i32, args: struct}*)
+Definition struct_type_base_idx : N := (Z.to_N max_function_args + 3)%N.
+Definition struct_type_constr_idx : N := (struct_type_base_idx - 2)%N. (* {tag: i32, args: struct}*)
+Definition struct_type_prim_idx : N := (struct_type_base_idx - 1)%N. (* { i64 } *)
+ *)
 
 Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes, don't change this *)
 
@@ -108,7 +112,14 @@ Definition main_function_idx : funcidx := 3%N.
 Definition num_custom_funs := 4.
 
 (* global vars *)
-Definition result_var        : globalidx := 0%N. (* final result *)
+Definition result_var : globalidx := 0%N. (* final result *)
+
+Definition glob_tmp1 : globalidx := 1%N. (* globals for primitive integer ops *)
+Definition glob_tmp2 : globalidx := 2%N.
+Definition glob_tmp3 : globalidx := 3%N.
+Definition glob_tmp4 : globalidx := 4%N.
+
+Definition glob_loop : globalidx := 5%N. (* loop counter for divucl 21 *)
 
 (* ***** MAPPINGS ****** *)
 Definition localvar_env := M.tree localidx. (* maps variables to their id (id=index in list of local vars) *)
@@ -220,82 +231,35 @@ Definition translate_primitive_value (p : AstCommon.primitive) : error Wasm_int.
   | AstCommon.primFloat => fun f => Err "TODO"
   end (projT2 p).
 
+
 (* **** TRANSLATE PRIMITIVE OPERATIONS **** *)
 
-Definition primInt63ModPath : Kernames.modpath :=
-  Kernames.MPfile ["Coq"%bs ; "Numbers"%bs ; "Cyclic"%bs ; "Int63"%bs ; "PrimInt63"%bs ].
+(* Check @translate_primitive_ternary_op. *)
+(* actual translation in _primitives file *)
+Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (p : (kername * string * bool * nat)) (args : list var) : error (list basic_instruction) :=
+  let '(op_name, _, _, _) := p in
+  match KernameMap.find op_name primop_map with
+  | Some op =>
+      match args with
+      | [ x ] =>
+          x_var <- translate_var nenv lenv x "translate primitive unop operand";;
+          translate_primitive_unary_op op x_var
 
+      | [ x ; y ] =>
+          x_var <- translate_var nenv lenv x "translate primitive binary operator 1st operand";;
+          y_var <- translate_var nenv lenv y "translate primitive binary operator 2nd operand";;
+          translate_primitive_binary_op glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 op x_var y_var
 
-Definition primInt63Add  : Kernames.kername := (primInt63ModPath, "add"%bs).
-Definition primInt63Sub  : Kernames.kername := (primInt63ModPath, "sub"%bs).
-Definition primInt63Mul  : Kernames.kername := (primInt63ModPath, "mul"%bs).
-Definition primInt63Div  : Kernames.kername := (primInt63ModPath, "div"%bs).
-Definition primInt63Mod  : Kernames.kername := (primInt63ModPath, "mod"%bs).
-Definition primInt63Land : Kernames.kername := (primInt63ModPath, "land"%bs).
-Definition primInt63Lor  : Kernames.kername := (primInt63ModPath, "lor"%bs).
-Definition primInt63Lxor : Kernames.kername := (primInt63ModPath, "lxor"%bs).
-Definition primInt63Lsl  : Kernames.kername := (primInt63ModPath, "lsl"%bs).
-Definition primInt63Lsr  : Kernames.kername := (primInt63ModPath, "lsr"%bs).
+      | [ x ; y ; z ] =>
+          x_var <- translate_var nenv lenv x "translate primitive ternary operator 1st operand" ;;
+          y_var <- translate_var nenv lenv y "translate primitive ternary operator 2nd operand" ;;
+          z_var <- translate_var nenv lenv z "translate primitive ternary operator 3rd operand" ;;
+          translate_primitive_ternary_op glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 glob_loop op x_var y_var z_var
 
-(*Definition apply_binop_and_store_i64 (op : basic_instruction) y1 y2 :=
-  [ BI_global_get global_mem_ptr (* Address to store the result of the operation *)
-  ; BI_local_get y1
-  ; BI_ref_cast (T_abs T_i31ref)
-  ; BI_i31_get_u
-  ; BI_load T_i64 None 2%N 0%N
-  ; BI_local_get y2
-  ; BI_ref_cast (T_abs T_i31ref)
-  ; BI_i31_get_u
-  ; BI_load T_i64 None 2%N 0%N
-  ; op
-  (* Ensure that value fits in 63 bits *)
-  ; BI_const_num (VAL_int64 (Wasm_int.Int64.repr Wasm_int.Int64.half_modulus))
-  ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-  ; BI_store T_i64 None 2%N 0%N
-  ; BI_global_get global_mem_ptr (* value to be stored in the let binding ('return value') *)
-  ; BI_ref_i31
-  (* Increment global memory pointer to next free memory segment  *)
-  ; BI_global_get global_mem_ptr
-  ; BI_const_num (nat_to_value 8)
-  ; BI_binop T_i32 (Binop_i BOI_add)
-  ; BI_global_set global_mem_ptr ].
-
-Definition translate_primitive_arith_op nenv lenv kname y1 y2 : error (list basic_instruction) :=
-    y1_var <- translate_var nenv lenv y1 "translate primitive integer arithmetic operation 1st argument" ;;
-    y2_var <- translate_var nenv lenv y2 "translate primitive integer arithmetic operation 2nd argument" ;;
-    if Kername.eqb kname primInt63Add then
-      Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_add)) y1_var y2_var)
-          (* else if Kername.eqb kname primInt63Sub then *)
-          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_sub)) y1_var y2_var) *)
-          (* else if Kername.eqb kname primInt63Mul then *)
-          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_mul)) y1_var y2_var) *)
-          (* else if Kername.eqb kname primInt63Div then *)
-          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_div SX_U))) y1_var y2_var) *)
-          (* else if Kername.eqb kname primInt63Mod then *)
-          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_rem SX_U))) y1_var y2_var) *)
-          (* else if Kername.eqb kname primInt63Land then *)
-          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_and)) y1_var y2_var) *)
-          (* else if Kername.eqb kname primInt63Lor then *)
-          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_or)) y1_var y2_var) *)
-          (* else if Kername.eqb kname primInt63Lxor then *)
-          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_xor)) y1_var y2_var) *)
-          (* else if Kername.eqb kname primInt63Lsl then *)
-          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i BOI_shl)) y1_var y2_var) *)
-          (* else if Kername.eqb kname primInt63Lsr then *)
-          (*        Ret (apply_binop_and_store_i64 (BI_binop T_i64 (Binop_i (BOI_shr SX_U))) y1_var y2_var) *)
-    else
-      Err ("Unknown primitive arithmetic operator: " ++ (Kernames.string_of_kername kname))%bs.
-
-
-Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env) (x_var : localidx) (p : (kername * string * bool * nat)) (args : list var) : error (list basic_instruction) :=
-  let '(kname, _, _, _) := p in
-  match args with
-  | [ y1 ; y2 ] =>
-      op_instrs <- translate_primitive_arith_op nenv lenv kname y1 y2 ;;
-      Ret (op_instrs ++ [ BI_local_set x_var ])
-  | _ =>
-      Err "Only primitive operations with two arguments are supported"
-  end. *)
+      | _ => Err "Only primitive operations with 1, 2 or 3 arguments are supported"
+      end
+  | _ => Err ("Unsupported primitive operator: " ++ (Kernames.string_of_kername op_name))
+  end.
 
 Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N * list basic_instruction)) : list basic_instruction :=
   match es with
@@ -395,54 +359,28 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
 
    | Eapp f ft ys => translate_call nenv lenv fenv f ys true
 
-(*
    | Eprim_val x p e' =>
        following_instrs <- translate_body nenv cenv lenv fenv penv e' ;;
        x_var <- translate_var nenv lenv x "translate_body prim val" ;;
        val <- translate_primitive_value p ;;
-       Ret ([ BI_const_num (N_to_value page_size)
-            ; BI_ref_i31
-            ; BI_call grow_mem_function_idx
-            ; BI_global_get result_out_of_mem
-            ; BI_const_num (nat_to_value 1)
-            ; BI_relop T_i32 (Relop_i ROI_eq)
-            ; BI_if (BT_valtype None)
-                [ BI_return ]
-                []
-            ; BI_global_get global_mem_ptr
-            ; BI_const_num (VAL_int64 val)
-            ; BI_store T_i64 None 2%N 0%N
-            ; BI_global_get global_mem_ptr
-            ; BI_ref_i31
+       Ret ([ BI_const_num (VAL_int64 val)
+            ; BI_struct_new struct_type_prim_idx
             ; BI_local_set x_var
-            ; BI_global_get global_mem_ptr
-            ; BI_const_num (nat_to_value 8)
-            ; BI_binop T_i32 (Binop_i BOI_add)
-            ; BI_global_set global_mem_ptr
-            ] ++ following_instrs) *)
+            ] ++ following_instrs)
 
-            (*   | Eprim x p ys e' => (* Err "temp" *)
+   | Eprim x p ys e' =>
        match M.get p penv with
        | None => Err "Primitive operation not found in prim_env"
        | Some p' =>
-           following_instrs <- translate_body nenv cenv lenv fenv penv e';;
            x_var <- translate_var nenv lenv x "translate_exp prim op" ;;
-           instrs <- translate_primitive_operation nenv lenv x_var p' ys ;;
-           Ret ( [ BI_const_num (N_to_value page_size)
-                 ; BI_ref_i31
-                 ; BI_call grow_mem_function_idx
-                 ; BI_global_get result_out_of_mem
-                 ; BI_const_num (nat_to_value 1)
-                 ; BI_relop T_i32 (Relop_i ROI_eq)
-                 ; BI_if (BT_valtype None)
-                     [ BI_return ]
-                     []
-               ] ++ instrs ++ following_instrs)
-               end *)
+           prim_op_instrs <- translate_primitive_operation nenv lenv p' ys ;;
+           following_instr <- translate_body nenv cenv lenv fenv penv e' ;;
+           Ret (prim_op_instrs ++ [ BI_local_set x_var ]  ++ following_instr)
+       end
+
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_body halt";;
      Ret [ BI_local_get x_var; BI_global_set result_var; BI_return ]
-   | _ => Err "not supported yet"
    end.
 
 
@@ -603,7 +541,9 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
   let module :=
       {| mod_types := map CT_func (list_function_types (Z.to_nat max_function_args)) (* more than required, doesn't hurt*)
         ++ CT_struct (Ts [Build_field_type MUT_const (T_num T_i32); Build_field_type MUT_const (T_ref (T_heap (T_abs T_eqref)))]) (* tag + args *)
-        :: map CT_struct (list_struct_types (Z.to_nat max_constr_args))
+        :: CT_struct (Ts [Build_field_type MUT_const (T_num T_i64)])
+        :: (map CT_struct (list_struct_types (Z.to_nat max_constr_args) (* struct types *)
+            )) (* struct with one i64 for prim vals *)
 
        ; mod_funcs := functions_final
        ; mod_tables := [ {| modtab_type := {| tt_limits := {| lim_min := N.of_nat (List.length fns + num_custom_funs)
@@ -613,7 +553,22 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
 
        ; mod_globals := {| modglob_type := {| tg_mut := MUT_var; tg_t := T_ref (T_heap (T_abs T_eqref))|}  (* result_var *)
                          ; modglob_init := [BI_const_num (Z_to_value (-1)); BI_ref_i31]
-                         |} :: nil
+                         |} ::
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* glob_tmp1 *)
+                         ; modglob_init := [BI_const_num (Z_to_VAL_i64 0)]
+                         |} ::
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* glob_tmp2 *)
+                         ; modglob_init := [BI_const_num (Z_to_VAL_i64 0)]
+                         |} ::
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* glob_tmp3 *)
+                         ; modglob_init := [BI_const_num (Z_to_VAL_i64 0)]
+                         |} ::
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* glob_tmp4 *)
+                         ; modglob_init := [BI_const_num (Z_to_VAL_i64 0)]
+                         |} ::
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* glob_loop *)
+                         ; modglob_init := [BI_const_num (Z_to_value 0)]
+                         |}:: nil
 
        ; mod_elems := elements
        ; mod_mems := []
