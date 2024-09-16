@@ -384,17 +384,17 @@ Definition mulc_instrs (x y : localidx) : list basic_instruction :=
 
 
 Definition diveucl_instrs (x y : localidx) : list basic_instruction :=
-  [ BI_local_get x
-  ; BI_struct_get struct_type_prim_idx 0%N
-  ; BI_testop T_i64 TO_eqz
+  load_local_i64 x ++
+  [ BI_testop T_i64 TO_eqz
   ; BI_if (BT_valtype None)
       [ BI_const_num (VAL_int64 (Z_to_i64 0))
       ; BI_global_set glob_tmp1
       ; BI_const_num 0%Z
       ; BI_global_set glob_tmp2
       ]
-      [ BI_local_get y
-      ; BI_struct_get struct_type_prim_idx 0%N
+
+      (load_local_i64 y ++
+      [ BI_struct_get struct_type_prim_idx 0%N
       ; BI_testop T_i64 TO_eqz
       ; BI_if (BT_valtype None)
           ([ BI_const_num (VAL_int64 (Z_to_i64 0))
@@ -407,7 +407,7 @@ Definition diveucl_instrs (x y : localidx) : list basic_instruction :=
              load_local_i64 x ++
              load_local_i64 y ++
              [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ; BI_global_set glob_tmp2 ])
-      ]
+      ])
   ] ++ make_product glob_tmp1 glob_tmp2.
 
 Definition translate_primitive_binary_op op (x y : localidx) : error (list basic_instruction) :=
