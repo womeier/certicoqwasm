@@ -20,7 +20,7 @@ for f in files:
         [
             "node",
 #            "--experimental-wasm-assume-ref-cast-succeeds",
-            "--experimental-wasm-return_call",
+            # "--experimental-wasm-return_call",
             "--stack-size=1000000",
             "js/run_wasm_external_pp.js",
             "./",
