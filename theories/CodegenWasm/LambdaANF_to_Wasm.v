@@ -311,7 +311,7 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
           x_var <- translate_var nenv lenv x "translate primitive ternary operator 1st operand" ;;
           y_var <- translate_var nenv lenv y "translate primitive ternary operator 2nd operand" ;;
           z_var <- translate_var nenv lenv z "translate primitive ternary operator 3rd operand" ;;
-          translate_primitive_ternary_op global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 op x_var y_var z_var
+          translate_primitive_ternary_op global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 constr_alloc_ptr op x_var y_var z_var
 
       | _ => Err "Only primitive operations with 1, 2 or 3 arguments are supported"
       end

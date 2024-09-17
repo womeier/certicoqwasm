@@ -31,7 +31,7 @@ Opaque Uint63.to_Z.
 
 Section TRANSLATION.
 
-Variables global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 : globalidx.
+Variables global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 loop_counter : globalidx.
 
 Definition maxuint31 := 2147483647%Z.
 Definition maxuint63 := 9223372036854775807%Z.
@@ -210,19 +210,19 @@ Definition make_boolean_valued_comparison x y relop : list basic_instruction :=
 
 Definition compare_instrs x y : list basic_instruction :=
   [ BI_local_get x
-    ; BI_load T_i64 None 2%N 0%N
-    ; BI_local_get y
-    ; BI_load T_i64 None 2%N 0%N
-    ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
-    ; BI_if (BT_valtype (Some (T_num T_i32)))
-        [ BI_const_num (N_to_VAL_i32 (2 * Lt_ord + 1)) ]
-        (load_local_i64 x ++
-           load_local_i64 y ++
-           [ BI_relop T_i64 (Relop_i ROI_eq)
-           ; BI_if (BT_valtype (Some (T_num T_i32)))
-               [ BI_const_num (N_to_VAL_i32 (2 * Eq_ord + 1)) ]
-               [ BI_const_num (N_to_VAL_i32 (2 * Gt_ord + 1)) ]
-           ])
+  ; BI_load T_i64 None 2%N 0%N
+  ; BI_local_get y
+  ; BI_load T_i64 None 2%N 0%N
+  ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
+  ; BI_if (BT_valtype (Some (T_num T_i32)))
+      [ BI_const_num (N_to_VAL_i32 (2 * Lt_ord + 1)) ]
+      (load_local_i64 x ++
+       load_local_i64 y ++
+       [ BI_relop T_i64 (Relop_i ROI_eq)
+       ; BI_if (BT_valtype (Some (T_num T_i32)))
+           [ BI_const_num (N_to_VAL_i32 (2 * Eq_ord + 1)) ]
+           [ BI_const_num (N_to_VAL_i32 (2 * Gt_ord + 1)) ]
+       ])
   ].
 
 Definition div_instrs (x y : localidx) : list basic_instruction :=
@@ -255,9 +255,9 @@ Definition shift_instrs (x y : localidx) shiftop (mask : bool) : list basic_inst
     ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
     ; BI_if (BT_valtype (Some (T_num T_i64)))
         (load_local_i64 x ++
-           load_local_i64 y ++
-           BI_binop T_i64 (Binop_i shiftop) ::
-           (if mask then bitmask_instrs else []))
+         load_local_i64 y ++
+         BI_binop T_i64 (Binop_i shiftop) ::
+         (if mask then bitmask_instrs else []))
         [ BI_const_num 0%Z ]
     ; BI_store T_i64 None 2%N 0%N
     ; BI_global_get global_mem_ptr
@@ -409,64 +409,87 @@ Definition translate_primitive_unary_op op (x : localidx) : error (list basic_in
   | _ => Err "Unknown primitive unary operator"
   end.
 
-Definition diveucl_21_loop_body :=
-  [ BI_global_get glob_tmp1
+Definition diveucl_21_loop_body glob_xh glob_xl glob_y glob_q :=
+  [ BI_global_get glob_xl
   ; BI_const_num 1%Z
   ; BI_binop T_i64 (Binop_i BOI_shl)
-  ; BI_global_get glob_tmp2
-  ; BI_const_num 62%Z
+  ; BI_global_set glob_xl
+  (* xl := xl << 1 *)
+
+  ; BI_global_get glob_xh
+  ; BI_const_num 1%Z
+  ; BI_binop T_i64 (Binop_i BOI_shl)
+  ; BI_global_get glob_xl
+  ; BI_const_num 63%Z
   ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
   ; BI_binop T_i64 (Binop_i BOI_or)
-  ; BI_global_set glob_tmp1
+  ; BI_global_set glob_xh
+  (* xh := (xh << 1) || (xl >> 63) *)
 
-  ; BI_global_get glob_tmp2
+  ; BI_global_get glob_q
   ; BI_const_num 1%Z
   ; BI_binop T_i64 (Binop_i BOI_shl)
-  ; BI_const_num maxuint63
-  ; BI_binop T_i64 (Binop_i (BOI_rem SX_U))
-  ; BI_global_set glob_tmp2
+  ; BI_global_set glob_q
+  (* q := q << 1 *)
 
-  ; BI_global_get glob_tmp3
-  ; BI_const_num 1%Z
-  ; BI_binop T_i64 (Binop_i BOI_shl)
-  ; BI_const_num maxuint63
-  ; BI_binop T_i64 (Binop_i BOI_and)
-  ; BI_global_set glob_tmp3
-
-  ; BI_global_get glob_tmp1
-  ; BI_global_get glob_tmp4
+  ; BI_global_get glob_xh
+  ; BI_global_get glob_y
   ; BI_relop T_i64 (Relop_i (ROI_ge SX_U))
+  (* if xh >= y: *)
   ; BI_if (BT_valtype None)
-      [ BI_global_get glob_tmp3
-      ; BI_const_num 1%Z
-      ; BI_binop T_i64 (Binop_i BOI_or)
-      ; BI_global_set glob_tmp3
-      ; BI_global_get glob_tmp1
-      ; BI_global_get glob_tmp4
-      ; BI_binop T_i64 (Binop_i BOI_sub)
-      ; BI_global_set glob_tmp1
-      ]
-      [ ]
+      ([ BI_global_get glob_q
+       ; BI_const_num 1%Z
+       ; BI_binop T_i64 (Binop_i BOI_or)
+       ; BI_global_set glob_q
+       (* q := q || 1 *)
+       ] ++
+       [ BI_global_get glob_xh
+       ; BI_global_get glob_y
+       ; BI_binop T_i64 (Binop_i BOI_sub)
+       ; BI_global_set glob_xh
+       (* xh := xh - y *)
+       ])
+      []
+  ].
+
+Definition diveucl_21_loop glob_xh glob_xl glob_y glob_q iterations :=
+  [ BI_global_get loop_counter
+  ; BI_const_num (VAL_int32 (Int32.repr iterations))
+  ; BI_relop T_i32 (Relop_i (ROI_lt SX_U))
+  ; BI_if (BT_valtype None)
+      ((diveucl_21_loop_body glob_xh glob_xl glob_y glob_q) ++
+       [ BI_global_get loop_counter
+       ; BI_const_num (VAL_int32 (Int32.repr 1))
+       ; BI_binop T_i32 (Binop_i BOI_add)
+       ; BI_global_set loop_counter
+       ; BI_br 1%N
+       ])
+      []
   ].
 
 Definition diveucl_21_instrs (xh xl y : localidx) : list basic_instruction :=
-  load_local_i64 y ++ [ BI_global_set glob_tmp4 ] ++
-    load_local_i64 xh ++ [ BI_global_set glob_tmp1 ] ++
-    [ BI_global_get glob_tmp4
-    ; BI_global_get glob_tmp1
-    ; BI_relop T_i64 (Relop_i (ROI_le SX_U))
+  load_local_i64 y ++
+    load_local_i64 xh ++
+    [ BI_relop T_i64 (Relop_i (ROI_le SX_U))
     ; BI_if (BT_valtype (Some (T_num T_i32)))
-        ([ BI_const_num 0%Z ; BI_global_set glob_tmp1 ] ++ make_product glob_tmp1 glob_tmp1)
-        (load_local_i64 xl ++
-           [ BI_global_set glob_tmp2
-           ; BI_const_num 0%Z
-           ; BI_global_set glob_tmp3
-           ] ++ (List.flat_map (fun x => x) (List.repeat diveucl_21_loop_body 63)) ++
-           [ BI_global_get glob_tmp1
-           ; BI_const_num maxuint63
-           ; BI_binop T_i64 (Binop_i BOI_and)
-           ; BI_global_set glob_tmp1
-           ] ++ (make_product glob_tmp3 glob_tmp1))
+        (* if y <= xh, then the result is always 0 *)
+        ([ BI_const_num 0%Z ; BI_global_set glob_tmp1] ++ make_product glob_tmp1 glob_tmp1)
+        ( (* glob_tmp1 = xh *)
+          load_local_i64 xh ++ [ BI_global_set glob_tmp1 ] ++
+          (* glob_tmp2 = xl *)
+          load_local_i64 xl ++ [ BI_global_set glob_tmp2 ] ++
+          (* glob_tmp3 = y *)
+          load_local_i64 y  ++ [ BI_global_set glob_tmp3 ] ++
+          [ (* glob_tmp4 = q (the quotient, initialised to 0) *)
+          BI_const_num (VAL_int64 (Int64.repr 0%Z))
+          ; BI_global_set glob_tmp4
+          (* Initialise the loop counter to 0 *)
+          ; BI_const_num (VAL_int32 (Int32.repr 0%Z))
+          ; BI_global_set loop_counter
+
+          (* execute 62 iterations of the loop *)
+          ; BI_loop (BT_valtype None) (diveucl_21_loop glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63%Z)
+          ] ++ (make_product glob_tmp4 glob_tmp1))
     ].
 
 
@@ -480,10 +503,7 @@ Definition addmuldiv_instrs p x y :=
         (* Compute x << p on the stack *)
         (load_local_i64 x ++
            load_local_i64 p ++
-           [ BI_binop T_i64 (Binop_i BOI_shl)
-           ; BI_const_num maxuint63
-           ; BI_binop T_i64 (Binop_i BOI_and)
-           ] ++
+           [ BI_binop T_i64 (Binop_i BOI_shl) ] ++
            (* Put y on the stack *)
            load_local_i64 y ++
            (* Compute 63 - p on the stack *)
@@ -494,6 +514,8 @@ Definition addmuldiv_instrs p x y :=
            ; BI_binop T_i64 (Binop_i (BOI_shr SX_U))
            (* Finally, compute (x << p) | (y >> (63 - p)) on the stack *)
            ; BI_binop T_i64 (Binop_i BOI_or)
+           ; BI_const_num maxuint63
+           ; BI_binop T_i64 (Binop_i BOI_and)
            ])
     ; BI_store T_i64 None 2%N 0%N
     ; BI_global_get global_mem_ptr
@@ -552,9 +574,15 @@ Definition LambdaANF_primInt_prod_fun (f : uint63 -> uint63 -> prod uint63 uint6
 
 Definition LambdaANF_primInt_unop_fun (f : uint63 -> uint63) x := Vprim (primInt (f x)).
 
+(* TODO: Consider what to do for the case where xh < y
+   When the dividend (xh * 2^63 + xl) is too large, the quotient will overflow,
+   but the behavior of diveucl_21 in that case is not specified as an axiom,
+   but all VM/ native implementations return (0, 0) *)
 Definition LambdaANF_primInt_diveucl_21 xh xl y :=
-  let (q, r) := diveucl_21 xh xl y in
-  Vconstr pair_tag [ Vprim (primInt q) ; Vprim (primInt r) ].
+  if (y <=? xh)%uint63 then
+    Vconstr pair_tag [ Vprim (primInt 0%uint63) ; Vprim (primInt 0%uint63) ]
+  else
+    Vconstr pair_tag [ Vprim (primInt (fst (diveucl_21 xh xl y))) ; Vprim (primInt (snd (diveucl_21 xh xl y))) ].
 
 Definition LambdaANF_primInt_addmuldiv p x y := Vprim (primInt (addmuldiv p x y)).
 
@@ -612,6 +640,8 @@ Ltac dep_destruct_primint v p x :=
 Section CORRECTNESS.
 
 Context `{ho : host}.
+
+Context {glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 : globalidx}.
 
 Ltac Zify.zify_post_hook ::= Z.div_mod_to_equations.
 
@@ -697,6 +727,8 @@ Corollary uint63_unsigned_id : forall (x : uint63), Int64.unsigned (to_Z x) = to
 Proof. intros; auto. Qed.
 
 Hint Resolve uint63_unsigned_id : core.
+
+Hint Resolve Z.mod_pos_bound : core.
 
 Lemma Z_bitmask_modulo_equivalent :
   forall (n : Z), Z.land n maxuint63 = Z.modulo n wB.
@@ -924,6 +956,21 @@ Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : loca
     /\ load m (N_of_uint i32m addr) 0%N (N.to_nat (tnum_length T_i64)) = Some bs
     /\ wasm_deserialise bs T_i64 = (VAL_int64 val).
 
+(* diveucl_21 *)
+
+Definition div21_loop_invariant sr fr i xh xl xh' xl' y q :=
+  sglob_val sr (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh')))
+  /\ sglob_val sr (f_inst fr) glob_tmp2 = Some (VAL_num (VAL_int64 (Int64.repr xl')))
+  /\ sglob_val sr (f_inst fr) glob_tmp3 = Some (VAL_num (VAL_int64 (Int64.repr y)))
+  /\ sglob_val sr (f_inst fr) glob_tmp4 = Some (VAL_num (VAL_int64 (Int64.repr q)))
+  /\ (0 <= y < 2^63)%Z
+  /\ (0 <= xh' < y)%Z
+  /\ (0 <= q < 2^i)%Z
+  /\ (xl' mod 2^64 = (xl * 2^i) mod 2^64)%Z
+  /\ ((q * y + xh') * 2^(63 - i) + (xl mod 2^(63 - i)) = (xh mod y) * 2^63 + xl)%Z.
+
+(* mulc *)
+
 Lemma Z_bitmask_modulo32_equivalent :
   forall (n : Z), Z.land n 4294967295%Z = Z.modulo n (2^32)%Z.
 Proof.
@@ -934,7 +981,7 @@ Ltac unfold_modulus64 := unfold Int64.modulus, Int64.half_modulus, two_power_nat
 
 Ltac solve_unsigned_id := cbn; rewrite Int64.Z_mod_modulus_id; now replace Int64.modulus with (2^64)%Z.
 
-Hint Resolve Z.mod_pos_bound : core.
+
 
 Lemma lt_pow32_mod_modulus_id : forall x, (0 <= x < 2^32)%Z -> Int64.Z_mod_modulus x = x.
 Proof.
@@ -1325,5 +1372,957 @@ constructor. apply rs_binop_success.
 unfold app_binop. simpl.
 rewrite int64_high32. reflexivity. lia.
 Qed.
+
+Lemma head0_spec_alt: forall x : uint63, (0 < φ (x)%uint63)%Z -> (to_Z (head0 x) = 62 - Z.log2 (to_Z x))%Z.
+Proof.
+  intros.
+  have H' := head0_spec _ H.
+  replace (wB/2)%Z with (2^62)%Z in H' by now cbn. replace wB with (2^63)%Z in H' by now cbn.  
+  destruct H'.
+  assert (Hlog1: (Z.log2 (2^62) <= Z.log2 (2 ^ (to_Z (head0 x)) * to_Z x))%Z) by now apply Z.log2_le_mono.
+  assert (Hlog2: (Z.log2 (2 ^ (to_Z (head0 x)) * to_Z x) < 63)%Z).
+  apply Z.log2_lt_pow2; lia.
+  replace (2 ^ (to_Z (head0 x)) * to_Z x)%Z with (to_Z x * 2 ^ (to_Z (head0 x)))%Z in Hlog1, Hlog2 by lia.
+  rewrite Z.log2_mul_pow2 in Hlog1, Hlog2. 2: lia. 2: apply to_Z_bounded.
+  replace (Z.log2 (2 ^ 62)) with 62%Z in Hlog1 by now rewrite Z.log2_pow2.
+  lia.
+Qed.
+
+Lemma powserie_nonneg : forall l,
+    (forall x, In x l -> 0 <= x)%Z ->
+    (0 <= Zbits.powerserie l)%Z.
+Proof.
+  induction l.
+  intros.
+  discriminate.
+  intros.
+  unfold Zbits.powerserie.
+  fold Zbits.powerserie.
+  assert (In a (a :: l)) by (constructor; reflexivity).
+  assert (0 <= a)%Z by now apply H.
+  assert (forall x, In x l -> 0 <= x)%Z.
+  intros.
+  assert (In x (a :: l)). right. assumption.
+  now apply H.
+  assert (0 <= Zbits.powerserie l)%Z by now apply IHl.
+  
+  apply Z.add_nonneg_nonneg.
+  have Htwop := two_p_gt_ZERO a H1. lia. lia.
+Qed.
+
+Lemma in_Z_one_bits_pow : forall l i,
+    (i \in l) ->
+    (forall x, In x l -> 0 <= x)%Z ->
+    (2^i <= Zbits.powerserie l)%Z.
+Proof.
+  induction l; intros.
+  discriminate.
+  unfold Zbits.powerserie.
+  destruct (Z.eq_dec i a).
+  fold Zbits.powerserie.  
+  rewrite <-e.
+  rewrite two_p_equiv.
+  assert (0 <= Zbits.powerserie l)%Z. apply powserie_nonneg; auto.
+  assert (forall x, In x l -> 0 <= x)%Z.
+  intros.
+  assert (In x (a :: l)). right. assumption.
+  now apply H0.
+  assumption.
+  lia.
+  fold Zbits.powerserie.
+  assert (i \in l).
+  have H' := in_cons a l i.
+  have Hrefl := reflect_iff.
+  have H''' := eqP.
+  specialize (H''' _ i a).
+  specialize (Hrefl _ _ H''').
+  destruct Hrefl.
+  destruct (i == a)%Z eqn:Heqb. specialize (H2 Logic.eq_refl). contradiction.  
+  rewrite orb_false_l in H'. auto.
+  rewrite <-H'. assumption.
+  assert (forall x, In x l -> 0 <= x)%Z.
+  intros.
+  assert (In x (a :: l)). right. assumption.
+  now apply H0.
+  assert (0 <= a)%Z. apply H0; auto. now constructor. 
+  have Htwop := two_p_gt_ZERO a H3.
+  assert (2^i <= Zbits.powerserie l)%Z. apply IHl; auto. lia.
+Qed.
+
+
+
+(* the following is for in_Z_one_bits_last, there must be a better way :| *)
+#[local] Fixpoint increasing (idx : nat) (len : nat) :=
+  match len with
+  | 0 => []
+  | S len' => Z.of_nat idx :: increasing (S idx) len'
+  end.
+
+#[local] Lemma increasing_snoc : forall len idx,
+  increasing idx len ++ [Z.of_nat (idx + len)] = increasing idx (S len).
+Proof.
+  induction len; intros.
+  - now rewrite Nat.add_0_r.
+  - replace  (idx + S len) with (S idx + len) by lia.
+  cbn. now rewrite IHlen.
+Qed.
+
+#[local] Lemma increasing_ge_idx : forall len idx (y:Z),
+  In y (increasing idx len) -> (y >= idx)%Z.
+Proof.
+  induction len; intros=>//.
+  cbn in H. destruct H as [H|H].
+  - lia.
+  - apply IHlen in H. lia.
+Qed.
+
+#[local] Lemma increasing_concat : forall  len idx,
+  increasing 0 idx ++ increasing idx len = increasing 0 (idx + len).
+Proof.
+  induction len; intros.
+  - cbn. now rewrite cats0 Nat.add_0_r.
+  - cbn. replace (idx + S len) with (S idx + len) by lia.
+    rewrite -IHlen. cbn.
+    replace (Z.of_nat idx :: increasing (S idx) len) with
+            ([Z.of_nat idx] ++ increasing (S idx) len) by now cbn.
+    rewrite catA. now rewrite increasing_snoc.
+Qed.
+
+#[local] Lemma increasing_in : forall len idx (y : Z),
+  (Z.of_nat idx <= y < Z.of_nat idx + Z.of_nat len)%Z ->
+  In y (increasing idx len).
+Proof.
+  induction len; intros; first lia.
+  cbn.
+  destruct (Z.eqb_spec idx y); first now left. right.
+  apply IHlen. lia.
+Qed.
+
+#[local] Lemma powerserie_concat : forall l1 l2,
+  Zbits.powerserie (l1 ++ l2) = (Zbits.powerserie l1 + Zbits.powerserie l2)%Z.
+Proof.
+  induction l1; intros=>//.
+  cbn. rewrite IHl1. lia.
+Qed.
+
+
+#[local] Lemma powerserie_increasing : forall len,
+  (Zbits.powerserie (increasing 0 len) = 2 ^ len - 1)%Z.
+Proof.
+  intros.
+  induction len; intros=>//.
+  rewrite -increasing_snoc.
+  rewrite powerserie_concat. rewrite IHlen.
+  remember (S len) as slen. cbn. rewrite two_p_equiv.
+  enough (2 ^ len + 2 ^ len = 2 ^ slen)%Z by lia. subst.
+  replace (S len) with (1 + len) by lia.
+  enough (2 ^ len + 2 ^ len = 2 ^ (1 + len))%Z by lia.
+  rewrite Zpower_exp; lia.
+Qed.
+
+
+#[local] Lemma powerserie_incl : forall l1 l2,
+  (forall x, In x (l1 ++ l2) -> x >= 0)%Z ->
+  NoDup l1 ->
+  incl l1 l2 ->
+  (Zbits.powerserie l1 <= Zbits.powerserie l2)%Z.
+Proof.
+  induction l1; intros. cbn.
+  { induction l2=>//. cbn. cbn in IHl2.
+    assert (a >= 0)%Z. apply H. now left. assert (0 <= a)%Z by lia. apply two_p_gt_ZERO in H3.
+    enough (0 <= Zbits.powerserie l2)%Z by lia. apply IHl2=>//.
+    intros. apply H. now right.
+    }
+  { cbn. assert (In a l2). { apply H1. now left. }
+    apply in_split in H2. destruct H2 as [l3 [l4 Heq]].
+    inv H0. rewrite powerserie_concat. cbn.
+    enough (Zbits.powerserie l1 <= Zbits.powerserie l3 + Zbits.powerserie l4)%Z by lia.
+    rewrite -powerserie_concat.
+    apply IHl1; auto.
+    - intros. apply H. right.
+      apply in_app in H0. destruct H0 as [H0|H0]. now apply in_app.
+      apply in_app in H0. destruct H0 as [H0|H0]. apply in_app. right. now apply in_app.
+      apply in_app. right. apply in_app. right. now right.
+    - intros ??.
+      assert (In a0 (a :: l1)) by now right.
+      have H' := H1 a0 H2.
+      apply in_app in H'. destruct H'. apply in_app. now left.
+      cbn in H3. destruct H3 as [-> |H3]=>//. apply in_app. now right. }
+Qed.
+
+(* from https://github.com/VeriNum/LAProof/blob/main/mathcomp_compat/CommonSSR.v#L417 *)
+Lemma in_mem_In: forall {A: eqType} (l: list A) x,
+  x \in l <-> In x l.
+Proof.
+  move => A l x. elim: l => [//| h t IH /=].
+  rewrite in_cons -IH eq_sym. split => [/orP[/eqP Hx | Ht]| [Hx | Hlt]]. by left. by right.
+  subst. by rewrite eq_refl. by rewrite Hlt orbT.
+Qed.
+
+Lemma uniq_NoDup: forall {A: eqType} (l: list A),
+  uniq l <-> NoDup l.
+Proof.
+  move => A l. elim : l => [//=|h t IH].
+  - split =>[H{H}|//]. by apply NoDup_nil.
+  - rewrite /=. split => [/andP[Hnotin Hun]| ].
+    constructor. rewrite -in_mem_In. move => Hin. by move : Hin Hnotin ->.
+    by apply IH.
+    move => Hnod. inversion Hnod as [|x l Hnotin Hnodup] ; subst.
+    have->: h \notin t. case Hin: (h\in t). have: h\in t by []. by rewrite in_mem_In =>{} Hin.
+    by []. by rewrite IH.
+Qed.
+
+Lemma Z_one_bits_lowerbound : forall n l x idx y,
+  l = Zbits.Z_one_bits n x idx ->
+  In y l ->
+  (y >= idx)%Z.
+Proof.
+  induction n; intros.
+  - cbn in H. subst l=>//.
+  - cbn in H. destruct (Z.odd x).
+    2:{ apply (IHn _ _ _ y) in H=>//. lia. }
+    destruct l=>//. injection H as ->.
+    destruct H0. lia.
+    apply (IHn _ _ _ y) in H=>//. lia.
+Qed.
+
+Lemma Z_one_bits_monotone : forall n l x idx i j i' j' ,
+  l = Zbits.Z_one_bits n x idx ->
+  i > j ->
+  nth_error l i = Some i' ->
+  nth_error l j = Some j' ->
+  (i' >= j')%Z.
+Proof.
+  induction n; intros.
+  - cbn in H. subst l. now destruct i.
+  - cbn in H. destruct (Z.odd x).
+    + destruct l=>//. injection H as ->.
+      have IH := IHn _ _ _ _ _ _ _ H.
+      destruct i. lia. destruct j. injection H2 as <-. cbn in H1.
+      apply nth_error_In in H1. apply Z_one_bits_lowerbound with (y:=i') in H=>//. lia.
+      assert (i > j) by lia. eapply IH; eassumption.
+    + eapply IHn; eassumption.
+Qed.
+
+Lemma in_Z_one_bits_last : forall x h i,
+    (0 <= x < two_power_nat 64)%Z ->
+    h ++ [i] = Zbits.Z_one_bits 64 x 0 ->
+    (x < 2^(i+1))%Z.
+Proof.
+  intros ??? Hbound Hbits.
+  have Huniq := Int64.Zbits_Z_one_bits_uniq x 0.
+  have Hrange := Zbits.Z_one_bits_range 64 x. rewrite -Hbits in Huniq, Hrange.
+  assert (Hincl: incl (h ++ [i]) (increasing 0 (Z.to_nat (i + 1)))). {
+    intros ??.
+    apply increasing_in. cbn.
+    apply In_nth_error in H. destruct H as [n Hn].
+    assert (nth_error (h ++ [i]) (length h) = Some i). {
+      rewrite nth_error_app2=>//. now replace (_ - _) with 0 by lia. }
+    assert (Ha: (a >= 0)%Z). { apply nth_error_In in Hn. apply Hrange in Hn. lia. }
+    destruct (Nat.eqb_spec n (length h)).
+    - subst n. assert (a = i) by congruence. subst. lia.
+    - assert (Hlen: nth_error (h ++ [i]) n <> None) by congruence.
+      apply nth_error_Some in Hlen. rewrite app_length in Hlen. cbn in Hlen.
+      assert (Hlen': Datatypes.length h > n) by lia. clear Hlen.
+      have H' := Z_one_bits_monotone _ _ _ _ _ _ _ _ Hbits Hlen' H Hn. lia. }
+  assert (Hnodup: NoDup (h ++ [i])) by apply uniq_NoDup=>//.
+  assert (Hge0: forall x : Z, In x ((h ++ [i]) ++ increasing 0 (Z.to_nat (i + 1))) -> (x >= 0)%Z). {
+    intros ? Hin. apply in_app in Hin. destruct Hin as [Hin |Hin].
+    - apply Hrange in Hin. lia.
+    - apply increasing_ge_idx in Hin. lia. }
+  have H' := powerserie_incl _ _ Hge0 Hnodup Hincl.
+  rewrite powerserie_increasing in H'.
+  apply Zbits.Z_one_bits_powerserie in Hbound.
+  rewrite Hbits -Hbound in H'.
+  rewrite Z2Nat.id in H'. lia.
+  assert (0 <= i)%Z. { apply Hrange. apply in_app. right. cbn. now left. }
+  lia.
+Qed.
+
+Lemma one_bits_non_zero : forall n x,
+    0 < n -> 
+    (0 < x < two_power_nat n)%Z ->
+    Zbits.Z_one_bits n x 0%Z <> nil.
+Proof.
+  intros.
+  have Hz := Zbits.Z_one_bits_zero n 0. 
+  intro Hcontra.
+  rewrite <-Hz in Hcontra.
+  have Hps := Zbits.Z_one_bits_powerserie n x. 
+  assert (0 <= x < two_power_nat n)%Z by lia. apply Hps in H1. rewrite Hcontra in H1. rewrite Hz in H1. cbn in H1. lia.
+Qed.
+
+Lemma convert_from_bits_head : forall l i,
+             i < size l ->
+             i = find (fun b => b == true)  l ->
+             (fun b => b == true) (nth false l i) = true ->
+             (forall k, k < i -> (fun b => b == true) (nth false l k) = false) ->
+             (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l) < two_p (Z.of_nat ((size l - i) - 1) + 1))%Z.
+Proof.
+assert (Hhead : forall l i',
+             i' < size l ->
+             i' = find (fun b => b==true) l ->
+             (fun b => b == true) (nth false l i') = true ->
+             (forall k, k < i' -> (fun b => b == true) (nth false l k) = false) ->
+             exists l', Z.of_nat ((seq.size l) - i' - 1) :: l' = Int64.convert_from_bits_to_Z_one_bits l). {
+    induction l.
+    now intros.
+    intros i' Hi1 Hi2 Hi3 Hk.
+    simpl.
+    simpl in Hi1.
+    simpl in Hi2.
+    destruct a. 
+    rewrite Hi2.
+    rewrite Nat.sub_0_r. exists (Int64.convert_from_bits_to_Z_one_bits l).
+    simpl. rewrite Nat.sub_0_r.
+    reflexivity.
+    simpl in Hi2.
+    simpl in IHl.
+    assert (i' - 1 =  (find (fun b => b == true) l)). rewrite Hi2. simpl. rewrite Nat.sub_0_r. reflexivity.
+    assert (forall k, k < (i' - 1) -> (fun b => b == true) (nth false l k) = false). {
+      intros k' Hk'.
+      assert (ssrnat.leq (S k') (find (fun b => b == true) l)). rewrite -?(rwP ssrnat.leP). lia.
+      have Hbf := before_find _ H0.
+      apply Hbf; auto. }
+    destruct (IHl (i' - 1)).
+    simpl in Hi1. rewrite Hi2 in Hi1. rewrite H. simpl in Hi1. lia.
+    rewrite Hi2. now cbn. rewrite Hi2. simpl.
+    rewrite Hi2 in Hi3. simpl in Hi3. rewrite Nat.sub_0_r. assumption. assumption. 
+    assert (size l - (i' - 1) = S (size l) - i'). lia. simpl in H2.
+    rewrite H2 in H1.
+    exists x. assumption. }
+  assert (forall l,             
+             (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l) < two_p (S (size l)))%Z).
+  induction l.
+  cbn. unfold two_power_pos. cbn. lia.
+  destruct a. rewrite two_p_equiv.
+  replace (S (size (true :: l))) with (size l + 2). 
+  simpl. rewrite two_p_equiv in IHl. rewrite two_p_equiv. replace  (S (size l)) with (size l + 1) in IHl.
+  replace (2^ ((size l) + 1)%nat)%Z with (2^(Z.of_nat (size l) + 1))%Z in IHl. 
+  replace (2^ ((size l) + 2)%nat)%Z with (2^(Z.of_nat (size l) + 2))%Z.
+  assert (2 ^ (size l) +  2 ^ (Z.of_nat (size l) + 1) < 2^ (Z.of_nat (size l) + 2))%Z. {
+
+    replace (2^ (Z.of_nat (size l)) + 2^(Z.of_nat (size l) + 1))%Z with (2^(size l) * 3)%Z.
+    replace (2^(Z.of_nat (size l) + 2))%Z with (2^(size l) * 4)%Z.
+
+    apply Zmult_lt_compat_l. lia. lia. replace 4%Z with (2 * 2)%Z by lia.
+    replace (2 * 2)%Z with (2^2)%Z by lia. rewrite Z.pow_add_r. reflexivity. lia. lia.
+    replace 3%Z with (1 + 2)%Z.
+
+    rewrite Z.mul_add_distr_l.
+    replace (2 ^ (size l) * 2)%Z with (2^(size l + 1))%Z. rewrite Z.mul_1_r. reflexivity.
+    rewrite Z.pow_add_r. lia. lia. lia. lia. }
+  lia. lia. lia. lia. simpl. lia.
+  replace (S (size (false  :: l))) with (size l + 2).
+  replace (Z.of_nat (size l + 2))%Z with ((Z.of_nat (size l) + 2))%Z.
+  rewrite two_p_equiv.
+  simpl. rewrite two_p_equiv in IHl. replace (2^ (S (size l))%nat)%Z with (2^(Z.of_nat (size l) + 1))%Z in IHl.
+  assert (2^ (Z.of_nat (size l) + 1) < 2^ (Z.of_nat (size l)  + 2))%Z.
+  replace (2^ (Z.of_nat (size l) + 1))%Z with (2^(Z.of_nat (size l)) * 2)%Z.
+  replace (2^ (Z.of_nat (size l) + 2))%Z with (2^(Z.of_nat (size l)) * 4)%Z.
+  apply Zmult_lt_compat_l. lia. lia. replace 4%Z with (2 * 2)%Z by lia. 
+  replace (2 * 2)%Z with (2^2)%Z by lia. rewrite Z.pow_add_r. reflexivity. lia. lia.
+  rewrite Z.pow_add_r. lia. lia. lia. lia. lia. lia. cbn. lia.  
+
+
+  assert (forall xs x,
+             (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits (x :: xs)) < two_p (size (x :: xs)))%Z). {
+    induction xs. intros.
+    cbn.
+    destruct x. cbn. unfold two_power_pos. cbn. lia. cbn. unfold two_power_pos. lia.
+    intros.
+    specialize (IHxs a).
+    destruct x.
+    assert (Z.of_nat (size (true :: a :: xs)) = Z.of_nat (size (a :: xs)) + 1)%Z. unfold size. fold (size xs). rewrite <-Nat.add_1_l. rewrite Nat2Z.inj_add. rewrite Z.add_comm. reflexivity.
+    rewrite H0.
+    unfold Int64.convert_from_bits_to_Z_one_bits. fold (Int64.convert_from_bits_to_Z_one_bits (a :: xs)).
+    unfold Zbits.powerserie. fold (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits (a :: xs))).
+    assert (two_p (Z.of_nat (size (a :: xs))) < two_p (Z.of_nat (size (a :: xs)) + 1))%Z.
+    rewrite two_p_equiv.
+    rewrite two_p_equiv.    
+    rewrite Z.pow_add_r.
+    lia.
+    lia. lia.
+    assert (forall x y y' z, y < y' -> x + y' < z -> x + y < z)%Z. intros. lia.
+    assert (forall x y z, x < y -> z = 2 * y -> x + y  < z)%Z. intros. lia.
+    assert (two_p (Z.of_nat (size (a :: xs)) + 1) = 2 * two_p (Z.of_nat (size (a :: xs))))%Z.
+    rewrite two_p_equiv.
+    rewrite two_p_equiv.    
+    rewrite Z.pow_add_r.
+    lia.
+    lia. lia.
+    rewrite Z.add_comm.
+    apply H3.
+    assumption.
+    assumption.
+    assert (Z.of_nat (size (false :: a :: xs)) = Z.of_nat (size (a :: xs)) + 1)%Z. unfold size. fold (size xs). rewrite <-Nat.add_1_l. rewrite Nat2Z.inj_add. rewrite Z.add_comm. reflexivity. rewrite H0.
+
+    assert (two_p (Z.of_nat (size (a :: xs))) < two_p (Z.of_nat (size (a :: xs)) + 1))%Z.
+    rewrite two_p_equiv.
+    rewrite two_p_equiv.    
+    rewrite Z.pow_add_r.
+    lia.
+    lia. lia.
+    unfold Int64.convert_from_bits_to_Z_one_bits. fold (Int64.convert_from_bits_to_Z_one_bits (a :: xs)). lia. }
+  induction l. now intros.
+  intros i Hi1 Hi2 Hi3 Hk.
+  have Hds := H0 l a.  
+  simpl in Hi1.
+  simpl in Hi2.
+  simpl in Hi3.
+  remember (a :: l) as xs.
+  destruct a.
+  simpl in *. rewrite Hi2.
+  simpl.
+  rewrite Nat.sub_0_r.
+  assert (two_p (Z.of_nat (size xs)) = two_power_pos (Pos.of_succ_nat (size l))). subst xs. cbn. reflexivity.
+  rewrite <-H1 in Hds.
+  assert (size xs - 1 = size l). subst xs. cbn. lia.
+  rewrite H2. rewrite Heqxs. simpl. assert (Z.of_nat (size l) + 1 = Z.of_nat (size xs))%Z. subst xs. simpl. lia. rewrite H3. assumption.
+  simpl in Hds.
+  assert (two_p (Z.of_nat (size xs)) = two_power_pos (Pos.of_succ_nat (size l))). subst xs. cbn. reflexivity.
+  simpl in H1.
+  rewrite <-H1 in Hds.
+  simpl.
+  assert (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits xs) = Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l)). {
+    subst xs. cbn. reflexivity. }
+  rewrite H2.
+  simpl in Hi2.
+  assert (i - 1 < size l). rewrite Hi2. simpl. rewrite Nat.sub_0_r. lia.
+  assert (i - 1 = find (fun b => b == true) l). subst i. cbn. lia.
+  assert ((nth false l (i - 1) == true) = true).
+  rewrite Hi2. simpl. rewrite Nat.sub_0_r.
+  rewrite Hi2 in Hi3. simpl in Hi3. assumption.
+  assert (forall k, k < (i - 1) -> (nth false l k == true) = false).
+  intros k Hk'.
+  assert (ssrnat.leq (S k) (find (fun b => b == true) l)). rewrite -?(rwP ssrnat.leP). lia.      have Hbf := before_find _ H6.
+  simpl in Hbf. apply Hbf.
+  have IH := IHl (i - 1) H3 H4 H5 H6.
+  simpl in IH.
+  assert (size l - (i - 1) = size l + 1 - i). lia. rewrite H7 in IH.
+  assert (size xs = size l + 1). subst xs. cbn. lia. rewrite H8.
+  assumption.
+Qed.
+
+Lemma clz_last : forall x i,
+    i < Int64.wordsize ->
+    i = Z.to_nat (Int64.intval (Int64.clz x)) ->
+    (Int64.intval x < two_p (Z.of_nat (Int64.wordsize - i)))%Z.
+Proof.
+  intros x i Hi Hclz.
+  unfold Int64.clz in Hclz.
+  remember (Z.of_nat (Int64.wordsize - i - 1)) as j eqn:Hj.
+  remember (Z.of_nat (ssrnat.subn (ssrnat.subn Int64.wordsize i) 1)) as j' eqn:Hj'.
+  assert (j = j') by now rewrite <- ssrnat.minusE in Hj'.
+  remember (fun b : bool_eqType => b == true) as a eqn:Ha.
+  remember (Int64.intval x) as x' eqn:Hx'.
+  remember (Int64.wordsize) as n eqn:Hn.
+  remember (j' \in Zbits.Z_one_bits n x' 0) as inbits eqn:Hinbits.
+  assert (nth false (Int64.convert_to_bits x) i = inbits). {
+    rewrite Hinbits. rewrite  Hj'. rewrite Hn. rewrite  Hx'.
+    apply Int64.convert_to_bits_nth. rewrite Hn in Hi.
+    rewrite -?(rwP ssrnat.leP). lia.  }
+  remember (Int64.convert_to_bits x) as s eqn:Hs.
+  have Hsize := Int64.convert_to_bits_size x. rewrite <-Hs in Hsize.
+  have : Int64.wordsize = 64. by unfold Int64.wordsize, Integers.Wordsize_64.wordsize.
+  intro Hws.
+  have : find a s <= 64. 
+  have Hsize' := find_size a s. rewrite <-Hws.
+  rewrite -?(rwP ssrnat.leP) in Hsize'. simpl in Hsize'. rewrite Hsize in  Hsize'. auto.
+  intro Hfindleq. simpl in Hfindleq.
+  have : (Int64.intval (Z_to_i64 (find a s)) = Z.of_nat (find a s)).
+  unfold Z_to_i64. simpl.
+  rewrite Int64.Z_mod_modulus_id. reflexivity.  
+  rewrite int64_modulus_eq_pow64. cbn. lia.
+  intro Hint.
+  have : (i = find a s).
+  rewrite Hint in Hclz. by rewrite Nat2Z.id in Hclz.
+  intro Hieq. simpl in Hieq.
+  have : has a s. rewrite has_find. rewrite -?(rwP ssrnat.leP). simpl. rewrite <-Hieq. rewrite ->Hsize, ->Hws. lia.
+  intro Hhas.  
+  have :  a inbits.
+  rewrite Hj' in Hinbits. rewrite Hn in Hinbits. rewrite Hx' in Hinbits.
+  rewrite <-Int64.convert_to_bits_nth in Hinbits. rewrite Hieq in Hinbits. rewrite  Hs in Hinbits.
+  rewrite Hinbits.
+  apply nth_find. by subst s.
+  rewrite -?(rwP ssrnat.leP). rewrite Hws. lia.
+  intro Hinbits'.
+  rewrite Ha in Hinbits'. rewrite eqb_id in Hinbits'.  
+  have Hsize' := find_size a s. rewrite (rwP ssrnat.leP) in Hfindleq.
+  have : forall k, k < i -> a (nth false s k) = false. intros k Hk.
+  have : (ssrnat.leq (S k) (find a s)). rewrite -?(rwP ssrnat.leP). simpl. rewrite <- Hieq. lia.
+  intro.
+  now apply before_find.
+  intro Hbefore.
+  assert (a (nth false s i) = true).
+  rewrite Hieq.
+  apply nth_find.
+  assumption.  
+  have Hkl := convert_from_bits_head s i.
+  assert (i < size s).
+  rewrite has_find in Hhas. rewrite -?(rwP ssrnat.leP) in Hhas. lia.  
+  simpl in Hkl.
+  rewrite Ha in Hieq. rewrite Ha in H1. rewrite Ha in Hbefore.
+  specialize (Hkl H2 Hieq H1 Hbefore).
+  rewrite Hsize in Hkl. rewrite Hws in Hkl.
+  rewrite Hsize in H2.
+  rewrite Hws in H2.
+  rewrite Hn.
+  rewrite Hws.
+  assert (Z.of_nat (64 - i - 1) = Z.of_nat (63 - i))%Z. lia. rewrite H3 in Hkl.
+  assert (Z.of_nat (63 - i) + 1 = Z.of_nat (64 - i))%Z. lia. rewrite H4 in Hkl.
+  assert (two_p (Z.of_nat (64 - i)) <= Int64.modulus)%Z.
+  rewrite two_p_equiv in Hkl.
+  rewrite int64_modulus_eq_pow64. rewrite Nat2Z.inj_sub in Hkl. replace (Z.of_nat 64) with 64%Z in Hkl by lia.
+  rewrite two_p_equiv.
+  
+  replace (Z.of_nat (64 - i))%Z with (64 - Z.of_nat i)%Z by lia.
+  apply Z.pow_le_mono_r. lia. lia. lia. 
+  assert (forall l,
+             0 <= Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l))%Z. {
+    induction l.
+    cbn. lia.
+    cbn.
+    destruct a0.
+    cbn.
+    assert (two_p (Z.of_nat (size l)) > 0)%Z. apply two_p_gt_ZERO. lia. lia. lia. }
+
+  assert (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits s) < Int64.modulus)%Z by lia.
+  have Hlow := H6 s.
+  assert (Int64.intval (Int64.repr (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits s))) = (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits s))). {
+    simpl. rewrite Int64.Z_mod_modulus_id. reflexivity. lia. }
+  assert (x' = Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits s)).
+    have : x = Int64.convert_from_bits (Int64.convert_to_bits x).
+    apply Int64.convert_to_from_bits.
+    intro Htofrom.
+    unfold Int64.convert_from_bits in Htofrom.
+    rewrite Hx'. rewrite Htofrom.
+    rewrite Hs. rewrite Hs in H8.
+    rewrite H8. reflexivity.
+    rewrite H9. assumption.
+Qed.
+  
+Lemma clz_lowerbound : forall x i,
+    (-1 < Int64.intval x < Int64.modulus)%Z ->
+    i < Int64.wordsize ->
+    i = Z.to_nat (Int64.intval (Int64.clz x)) ->
+    (two_power_nat (Int64.wordsize - i - 1) <= Int64.intval x)%Z.
+Proof.
+  intros x i Hrange Hi Hclz.
+  unfold Int64.clz in Hclz.
+  remember (Z.of_nat (Int64.wordsize - i - 1)) as j eqn:Hj.
+  remember (Z.of_nat (ssrnat.subn (ssrnat.subn Int64.wordsize i) 1)) as j' eqn:Hj'.
+  assert (j = j') by now rewrite <- ssrnat.minusE in Hj'.
+  remember (fun b : bool_eqType => b == true) as a eqn:Ha.
+  remember (Int64.intval x) as x' eqn:Hx'.
+  remember (Int64.wordsize) as n eqn:Hn.
+  remember (j' \in Zbits.Z_one_bits n x' 0) as inbits eqn:Hinbits.
+  assert (nth false (Int64.convert_to_bits x) i = inbits). {
+    rewrite Hinbits. rewrite  Hj'. rewrite Hn. rewrite  Hx'.
+    apply Int64.convert_to_bits_nth. rewrite Hn in Hi.
+    rewrite -?(rwP ssrnat.leP). lia.  }
+  remember (Int64.convert_to_bits x) as s eqn:Hs.
+  have Hsize := Int64.convert_to_bits_size x. rewrite <-Hs in Hsize.
+  have : Int64.wordsize = 64. by unfold Int64.wordsize, Integers.Wordsize_64.wordsize.
+  intro Hws.
+  have : find a s <= 64. 
+  have Hsize' := find_size a s. rewrite <-Hws.
+  rewrite -?(rwP ssrnat.leP) in Hsize'. simpl in Hsize'. rewrite Hsize in  Hsize'. auto.
+  intro Hfindleq. simpl in Hfindleq.
+  have : (Int64.intval (Z_to_i64 (find a s)) = Z.of_nat (find a s)).
+  unfold Z_to_i64. simpl.
+  rewrite Int64.Z_mod_modulus_id. reflexivity.  
+  rewrite int64_modulus_eq_pow64. cbn. lia.
+  intro Hint.
+  have : (i = find a s).
+  rewrite Hint in Hclz. by rewrite Nat2Z.id in Hclz.
+  intro Hieq. simpl in Hieq.
+  have : has a s. rewrite has_find. rewrite -?(rwP ssrnat.leP). simpl. rewrite <-Hieq. rewrite ->Hsize, ->Hws. lia.
+  intro Hhas.  
+  have :  a inbits.
+  rewrite Hj' in Hinbits. rewrite Hn in Hinbits. rewrite Hx' in Hinbits.
+  rewrite <-Int64.convert_to_bits_nth in Hinbits. rewrite Hieq in Hinbits. rewrite  Hs in Hinbits.
+  rewrite Hinbits.
+  apply nth_find. by subst s.
+  rewrite -?(rwP ssrnat.leP). rewrite Hws. lia.
+  intro Hinbits'.
+  rewrite Ha in Hinbits'. rewrite eqb_id in Hinbits'.  
+  have Hsize' := find_size a s. rewrite (rwP ssrnat.leP) in Hfindleq.
+  assert (forall k, In k (Zbits.Z_one_bits Int64.wordsize (Int64.intval x) 0) -> 0 <= k)%Z. {
+    intros k Hk. 
+    have Hk' := Zbits.Z_one_bits_range _ _ _ Hk; lia. }
+  assert (Hx'': (0 <= (Int64.intval x) < two_power_nat Int64.wordsize)%Z).
+  rewrite two_power_nat_equiv. unfold Int64.wordsize, Integers.Wordsize_64.wordsize. rewrite int64_modulus_eq_pow64 in Hrange. lia. 
+  have Hpow := Zbits.Z_one_bits_powerserie 64 (Int64.intval x) Hx''. 
+  rewrite two_power_nat_equiv.
+  rewrite Hx'. rewrite Hpow.
+  have Hpow' := in_Z_one_bits_pow.
+  specialize (Hpow' (Zbits.Z_one_bits 64 (Int64.intval x) 0)).
+  specialize (Hpow' j).
+  rewrite <-H in Hinbits. rewrite Hinbits in Hinbits'.
+  rewrite Hn in Hinbits'. rewrite Hws in Hinbits'. rewrite Hx' in Hinbits'.
+  specialize (Hpow' Hinbits').
+  rewrite Hws in H1.
+  specialize (Hpow' H1).
+  rewrite <-Hj . assumption.
+Qed.
+
+Lemma clz_spec : forall x,
+    (0 < x < Int64.modulus)%Z ->
+    (2^63 <= 2^(Int64.intval (Int64.clz (Int64.repr x))) * x < 2^64)%Z.
+Proof.
+intros x Hx.
+have Hclz_last := clz_last.
+assert (Hsize : size (Int64.convert_to_bits (Z_to_i64 x)) = Int64.wordsize).
+apply Int64.convert_to_bits_size.
+remember (Int64.intval (Int64.clz (Z_to_i64 x))) as i eqn:Hi.
+assert (0 <= Int64.intval (Int64.clz (Z_to_i64 x)) < Int64.wordsize)%Z.
+have Hi' := Hi.
+unfold Int64.clz in Hi.
+remember (Int64.convert_to_bits (Z_to_i64 x)) as bits eqn:Hc2b.
+remember (fun b => b == true) as a eqn:Ha.
+assert (0 <= Z.of_nat (find a bits))%Z. lia. 
+assert (ssrnat.leq (find a bits) Int64.wordsize)%Z.
+rewrite <-Hsize. apply find_size.
+rewrite -?(rwP ssrnat.leP) in H0.
+unfold Int64.clz.
+rewrite <- Hc2b. rewrite <-Ha.
+destruct (le_lt_eq_dec (find a bits) Int64.wordsize) as [Hlt|Heq]. assumption.
+simpl.
+rewrite Int64.Z_mod_modulus_id. unfold Int64.wordsize, Integers.Wordsize_64.wordsize in Hlt. simpl in Hlt. lia.
+unfold Int64.wordsize, Integers.Wordsize_64.wordsize in Hlt. simpl in Hlt.
+rewrite int64_modulus_eq_pow64. lia.
+rewrite Heq in Hi.
+simpl in Hi. 
+assert (Int64.repr x = Int64.repr 0).
+apply Int64.clz_wordsize.
+remember (Int64.clz (Z_to_i64 x)) as clz eqn:Hclz.
+assert (Int64.intval (Z_to_i64 i) = (Int64.intval clz)).
+rewrite Hi'. simpl.
+rewrite Int64.Z_mod_modulus_id. reflexivity. rewrite <-Hi'. rewrite Hi. rewrite int64_modulus_eq_pow64. lia.
+
+apply Int64.eq_T_intval in H1.
+rewrite <-H1. simpl. now rewrite Hi.
+apply Int64.repr_inv in H1. lia. lia. lia.
+assert (Z.to_nat i < Int64.wordsize). lia.
+specialize (Hclz_last (Int64.repr x) (Z.to_nat i) H0).
+rewrite <-Hi in Hclz_last. specialize (Hclz_last Logic.eq_refl).
+replace (Int64.intval (Z_to_i64 x)) with x in Hclz_last. 2: simpl; rewrite Int64.Z_mod_modulus_id; lia.
+rewrite Nat2Z.inj_sub in Hclz_last. 2: lia.
+
+rewrite Z2Nat.id in Hclz_last.
+replace (Z.of_nat Int64.wordsize) with 64%Z in Hclz_last by now cbn.
+rewrite two_p_equiv in Hclz_last.
+assert (2^i * x < 2^64)%Z.
+replace (2^64)%Z with (2^i * 2^(64 - i))%Z.
+apply Zmult_lt_compat_l. lia. lia.
+rewrite <-Z.pow_add_r. replace (i + (64 - i))%Z with 64%Z by lia. reflexivity. lia.
+unfold Int64.wordsize, Integers.Wordsize_64.wordsize in H0. lia.
+assert (2^63 <= 2^i * x)%Z.
+have Hlower := clz_lowerbound.
+assert (-1 < Int64.intval x < Int64.modulus)%Z. simpl. rewrite Int64.Z_mod_modulus_id; lia.
+specialize (Hlower (Int64.repr x) (Z.to_nat i) H2 H0).
+rewrite <-Hi in Hlower.
+specialize (Hlower Logic.eq_refl).
+rewrite two_power_nat_equiv in Hlower.
+replace (Int64.intval (Int64.repr x)) with x in Hlower.
+unfold Int64.wordsize, Integers.Wordsize_64.wordsize in Hlower.
+assert (Z.of_nat (64 - Z.to_nat i - 1) = 63 - i)%Z. rewrite Nat2Z.inj_sub. rewrite Nat2Z.inj_sub. lia. unfold Int64.wordsize, Integers.Wordsize_64.wordsize in H0. lia. unfold Int64.wordsize, Integers.Wordsize_64.wordsize in H0. lia.
+rewrite H3 in Hlower.
+assert (2^(63 - i) = 2^63/2^i)%Z.
+rewrite Z.pow_sub_r; lia.
+assert ((2^i * x) / 2^i = x)%Z.
+rewrite Z.mul_comm. rewrite Z_div_mult. reflexivity.
+lia.
+assert (63 = (63 - i) + i)%Z. lia.
+rewrite H6.
+rewrite Z.pow_add_r.
+rewrite Z.mul_comm.
+apply Zmult_le_compat. lia.  assumption.  lia.  lia. lia.
+lia.
+simpl. rewrite Int64.Z_mod_modulus_id; lia.
+lia. lia.
+Qed.
+
+Lemma clz_spec_alt : forall x,
+    (0 < x < Int64.modulus)%Z ->
+    Int64.intval (Int64.clz (Int64.repr x)) = (63 - Z.log2 (Int64.intval (Int64.repr x)))%Z.
+Proof.
+  intros.
+  have H' := clz_spec _ H.  
+  destruct H' as [Hle1 Hle2].
+  assert (Hlog1: (Z.log2 (2^63) <= Z.log2 (2 ^ (Int64.intval (Int64.clz (Int64.repr x))) * x))%Z) by (apply Z.log2_le_mono; assumption).
+  assert (Hlog2: (Z.log2 (2 ^ (Int64.intval (Int64.clz (Int64.repr x))) * x) < 64)%Z) by (apply Z.log2_lt_pow2; lia).
+  replace (2 ^ (Int64.intval (Int64.clz (Int64.repr x))) * x)%Z with (x * 2 ^ (Int64.intval (Int64.clz (Int64.repr x))))%Z in Hlog1, Hlog2 by lia.
+  rewrite Z.log2_mul_pow2 in Hlog1, Hlog2.
+  replace (Z.log2 (2 ^ 63)) with 63%Z in Hlog1 by (rewrite Z.log2_pow2; lia).
+  replace (Int64.intval (Z_to_i64 x)) with x.
+  lia.
+  simpl. rewrite Int64.Z_mod_modulus_id; lia. lia.
+  unfold Int64.clz.
+  assert (forall n, 0 <= Int64.intval (Z_to_i64 (Z.of_nat n)))%Z. intro. simpl.
+  rewrite Int64.Z_mod_modulus_eq. lia.
+  apply H0.
+Qed.
+
+Lemma head0_int64_clz : forall x,
+    (0 < to_Z x)%Z ->  
+    to_Z (head0 x) = (Int64.unsigned (Int64.clz (Int64.repr (to_Z x))) - 1)%Z.
+Proof.
+  intros.
+  unfold Int64.unsigned.
+  rewrite clz_spec_alt.
+  replace (63 - Z.log2 (Int64.intval (Z_to_i64 φ (x)%uint63)) - 1)%Z with (62 - Z.log2 (Int64.intval (Z_to_i64 φ (x)%uint63)))%Z by lia.
+  replace (Int64.intval (Z_to_i64 (to_Z x))) with (to_Z  x). rewrite head0_spec_alt; auto.
+  simpl. rewrite uint63_mod_modulus_id.
+  reflexivity. auto.
+  rewrite int64_modulus_eq_pow64. split; auto. apply uint63_lt_pow64. 
+Qed.
+
+Lemma powerserie_convert_from_bits_rev : forall l i,
+    i < size l ->
+    i = find (fun b => b == true)  (rev l) ->
+    (fun b => b == true) (nth false (rev l) i) = true ->
+    (forall k, k < i -> (fun b => b == true) (nth false (rev l) k) = false) ->
+    exists c,
+      Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l) = (c * 2^i)%Z.
+Proof.
+  induction l.
+  now intros.
+  intros i Hsize Hfind Hnth Hbefore.
+  assert (ssrnat.leq (S i) (size (a :: l))).  
+  simpl. simpl in Hsize.
+  rewrite -?(rwP ssrnat.leP). lia.
+  destruct (size l - i) eqn:Hdiff.
+  { (* Special case? is is the index of the _last_ 1 bit in (a :: l), i.e. i = size l *)
+    have Hnth' := Hnth.
+    rewrite nth_rev in Hnth'.
+    assert (Hsize' : i = size l). simpl in Hsize, Hdiff |-*. lia.
+    unfold ssrnat.subn, ssrnat.subn_rec in Hnth'; simpl in Hnth'. 
+    rewrite Hdiff in Hnth'.
+    simpl in Hnth'.
+    rewrite eqb_id in Hnth'. rewrite Hnth'. 
+    simpl. rewrite two_p_equiv. rewrite Hsize'.
+    remember (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l)) as ps eqn:Hps.
+    have Hbefore' := Hbefore.    
+    assert (Hps0 : forall l' i',
+               i' = size l' ->
+               (forall k : nat, k < i' -> (nth false (rev l') k == true) = false) ->
+               Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l') = 0). {
+      induction l'. now intros.
+      intros.
+      have : (nth false (a0 :: l') 0 == true) = false.
+      assert ((i' - 1) < i'). simpl in H0. simpl. lia.
+      apply H1 in H2.
+      rewrite nth_rev in H2. rewrite <-H0 in H2.      
+      unfold ssrnat.subn, ssrnat.subn_rec in H2. simpl in H2.
+      assert (i' - S (i' - 1) = 0). lia. rewrite H3 in H2. assumption.
+      rewrite -(rwP ssrnat.leP). simpl in H0 |- *. lia.
+      intro Ha0.      
+      rewrite eqb_id in Ha0. simpl in Ha0. 
+      rewrite Ha0. simpl.
+      apply IHl' with (i' - 1). simpl in H0 |- *. lia. 
+      intros k Hk.
+      have Hrcons := rev_cons a0 l'.
+      have Hnc := nth_rcons false (rev l') a0 k.
+      assert (Hk' : k < i'). lia.
+      have Hbf' := H1 k Hk'.
+      rewrite Hrcons in Hbf'.
+      assert (ssrnat.leq (S k) (size (rev l'))).
+      rewrite -(rwP ssrnat.leP). simpl. rewrite size_rev. simpl in H0. lia.
+      rewrite H2 in Hnc. rewrite <- Hnc. assumption.  }
+    
+    have : ps = 0%Z.
+    rewrite Hps. apply Hps0 with (i':=i); auto.
+    intros k Hk.
+    have Hrcons := rev_cons a l.
+    have Hnc := nth_rcons false (rev l) a k.
+    assert (Hk' : k < i). lia.
+    have Hbf' := Hbefore k Hk'.
+    rewrite Hrcons in Hbf'.
+    assert (ssrnat.leq (S k) (size (rev l))).
+    rewrite -(rwP ssrnat.leP). simpl. rewrite size_rev. simpl. simpl in Hsize'. rewrite <-Hsize'. lia.
+    rewrite H0 in Hnc.
+    simpl. simpl in Hnc.
+    rewrite <- Hnc. assumption.
+    intro Hps0'. exists 1%Z.
+    rewrite Z.mul_1_l.
+    rewrite Hps0'.
+    simpl. lia.
+    rewrite -(rwP ssrnat.leP). simpl. simpl in Hsize. lia. }
+  { (* inductive case: i < size l *)
+  assert (Hsize' : i = size l - S n). lia. assert (Hn : n < size l). lia.
+  assert (Hnth' : (nth false (rev l) i) == true).
+  assert (Hsize'' : (size l) - (S n) = i). by rewrite Hsize'. 
+  assert (Hsize''' :n = (size l) - (S i)). lia. 
+  rewrite nth_rev in Hnth; auto.
+  rewrite nth_rev.
+  rewrite ssrnat.subnE in Hnth |- *. simpl in Hnth |- *.
+  unfold ssrnat.subn_rec in Hnth |- *.
+  rewrite eqb_id in Hnth.
+  simpl in Hnth.
+  rewrite Hdiff in Hnth. simpl in Hnth. simpl in Hsize'''. rewrite <-Hsize'''. rewrite eqb_id. assumption.
+  rewrite -(rwP ssrnat.leP). simpl in Hsize', Hsize''. simpl in Hsize', Hdiff. lia.
+  assert (Hfind' : i = find (fun b => b == true) (rev l)).
+  rewrite <-cat1s in Hfind.
+  rewrite rev_cat in Hfind. rewrite find_cat in Hfind.
+  unfold ssrnat.addn, ssrnat.addn_rec in Hfind.
+  destruct (has (fun b => b == true) (rev l)). assumption.
+  simpl in Hfind. destruct a; simpl in Hfind. rewrite size_rev in Hfind. simpl in Hdiff, Hsize'. lia. rewrite size_rev in Hfind. simpl in Hdiff, Hsize'. lia.
+  assert (Hbefore' : forall k, k < i -> (nth false (rev l) k == true) = false).
+  intros k Hk.
+  have Hbf := before_find.
+  assert (ssrnat.leq (S k) i). rewrite -(rwP ssrnat.leP). lia. rewrite Hfind' in H0. apply Hbf with (x0:=false) in H0. assumption.  
+  assert (Hsizei : i < (size l)). lia.
+  have IH := IHl i Hsizei Hfind' Hnth' Hbefore'.
+  destruct IH as [c Hc].
+  simpl. destruct a.
+  exists (2^(size l - i) + c)%Z. simpl. rewrite two_p_equiv.
+  rewrite Z.mul_add_distr_r.
+  rewrite <- Z.pow_add_r.
+  rewrite Z.sub_add. rewrite Hc. reflexivity. simpl in Hsize'.  lia. lia.
+  exists c. assumption. }
+Qed.
+
+Lemma to_from_bits_modulus : forall x,
+    (-1 < x < Int64.modulus)%Z -> 
+    x = Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits (Int64.convert_to_bits (Int64.repr x))).
+Proof.
+  intros x Hx.
+  rewrite Int64.convert_from_bits_to_Z_one_bits_power_index_to_bits.
+  have E: filter (fun x => Coqlib.zlt x Int64.wordsize) (Zbits.Z_one_bits Int64.wordsize (Int64.intval x) 0) = Zbits.Z_one_bits Int64.wordsize (Int64.intval x) 0.
+  rewrite filter_for_all => //.
+  rewrite list_all_forall => e. rewrite -List_In_in_mem => I.
+  apply Int64.Zbits_Z_one_bits_range in I. destruct Coqlib.zlt => //. lia.
+  rewrite E.
+  replace (Int64.intval (Z_to_i64_co x)) with x.
+  apply Zbits.Z_one_bits_powerserie.
+  rewrite int64_modulus_eq_pow64 in Hx. unfold Int64.wordsize, Integers.Wordsize_64.wordsize. 
+  unfold two_power_nat. simpl. lia.
+  simpl. rewrite Int64.Z_mod_modulus_id; lia.
+  by apply Int64.Zbits_Z_one_bits_uniq.
+Qed.
+
+Lemma ctz_non_zero : forall x i,
+    (0 < x < Int64.modulus)%Z ->
+    i < Int64.wordsize ->
+    i = Z.to_nat (Int64.intval (Int64.ctz (Int64.repr x))) ->
+    exists c,
+      (x = c * 2^i)%Z.
+Proof.
+  intros x i Hx Hi Hctz.
+  unfold Int64.ctz in Hctz.
+  remember (Int64.convert_to_bits (Int64.repr x)) as s eqn:Hs.
+  have Hsize := Int64.convert_to_bits_size (Int64.repr x). rewrite <-Hs in Hsize.
+  have : Int64.wordsize = 64. by unfold Int64.wordsize, Integers.Wordsize_64.wordsize.
+  intro Hws.
+  have : i = find (fun b => b == true) (rev s).
+  rewrite Hctz. cbn. rewrite Int64.Z_mod_modulus_id.
+  rewrite Nat2Z.id. reflexivity.
+  have : find (fun b => b == true) (rev s) <= size (rev s).
+  rewrite (rwP ssrnat.leP). 
+  apply find_size.
+  rewrite size_rev.
+  cbn.
+  intro Hfindsize.
+  rewrite int64_modulus_eq_pow64.
+  lia.
+  have Hex := powerserie_convert_from_bits_rev.  
+  assert (Hleq : ssrnat.leq (S i) (size (rev s))).
+  rewrite -(rwP ssrnat.leP).
+  rewrite size_rev. rewrite Hsize.  rewrite Hws in Hi. lia.
+  intro Hifind.
+  have Hnth := Hleq.  
+  rewrite Hifind in Hnth.
+  rewrite <-has_find in Hnth.
+  apply nth_find with (x0:=false) in Hnth.
+  assert ((nth false (rev s) i == true) = true).
+  rewrite Hifind. auto.
+  have Hbefore := before_find.
+  assert (Hbf: forall k, k < i -> (nth false (rev s) k == true) = false). {
+    intros k Hk.    
+    specialize (Hbefore (Equality.sort bool_eqType) false (fun b => b == true) (rev s) k).
+    rewrite <-Hifind in Hbefore.    
+    apply Hbefore.
+    rewrite -(rwP ssrnat.leP). lia. }
+  assert (Hisize : i < size s). rewrite Hws in Hi. lia.  
+  assert (Hinth : (nth false (rev s) i == true) = true). rewrite Hifind; auto.
+  specialize (Hex s i Hisize Hifind Hinth Hbf).
+  destruct Hex as [c Hc].  
+  assert (x = Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits s)).
+  rewrite Hs. apply to_from_bits_modulus. lia. 
+  exists c. now subst x.
+Qed.
+
+Lemma ctz_spec : forall x,
+    (0 < x < Int64.modulus)%Z ->
+    exists c,
+      (x = c * 2^(Int64.unsigned (Int64.ctz (Int64.repr x))))%Z.
+Proof.
+intros x Hx.
+have Hctz := ctz_non_zero.
+assert (Hsize : size (Int64.convert_to_bits (Z_to_i64 x)) = Int64.wordsize).
+apply Int64.convert_to_bits_size.
+remember (Int64.intval (Int64.ctz (Z_to_i64 x))) as i eqn:Hi.
+assert (0 <= Int64.intval (Int64.ctz (Z_to_i64 x)) < Int64.wordsize)%Z.
+have Hi' := Hi.
+unfold Int64.ctz in Hi.
+remember (Int64.convert_to_bits (Z_to_i64 x)) as bits eqn:Hc2b.
+remember (fun b => b == true) as a eqn:Ha.
+assert (0 <= Z.of_nat (find a (rev bits)))%Z. lia. 
+assert (ssrnat.leq (find a (rev bits)) Int64.wordsize)%Z.
+rewrite <-Hsize. rewrite <-size_rev.  apply find_size.
+rewrite -?(rwP ssrnat.leP) in H0.
+unfold Int64.ctz.
+rewrite <- Hc2b. rewrite <-Ha.
+destruct (le_lt_eq_dec (find a (rev bits)) Int64.wordsize) as [Hlt|Heq]. assumption.
+cbn.
+rewrite Int64.Z_mod_modulus_id. unfold Int64.wordsize, Integers.Wordsize_64.wordsize in Hlt. cbn in Hlt. lia.
+unfold Int64.wordsize, Integers.Wordsize_64.wordsize in Hlt. cbn in Hlt.
+rewrite int64_modulus_eq_pow64. lia.
+rewrite Heq in Hi.
+cbn in Hi. 
+assert (Int64.repr x = Int64.repr 0).
+apply Int64.ctz_wordsize.
+remember (Int64.ctz (Z_to_i64 x)) as ctz eqn:Hctzv.
+assert (Int64.intval (Z_to_i64 i) = (Int64.intval ctz)).
+rewrite Hi'. cbn.
+rewrite Int64.Z_mod_modulus_id. reflexivity. rewrite <-Hi'. rewrite Hi. rewrite int64_modulus_eq_pow64. lia.
+apply Int64.eq_T_intval in H1.
+rewrite <-H1. simpl. now rewrite Hi.
+apply Int64.repr_inv in H1. lia. lia. lia.
+assert (Z.to_nat i < Int64.wordsize). lia.
+specialize (Hctz x (Z.to_nat i) Hx H0).
+rewrite Hi in Hctz. specialize (Hctz Logic.eq_refl).
+replace (Int64.intval (Z_to_i64 x)) with x in Hctz. 2: cbn; rewrite Int64.Z_mod_modulus_id; lia.
+rewrite Z2Nat.id in Hctz.
+destruct Hctz as [c Hc].
+unfold Int64.unsigned.
+exists c. exact Hc.
+lia.
+Qed.
+
+Lemma tail0_int64_ctz : forall x,
+    (0 < to_Z x)%Z ->  
+    Int64.repr (to_Z (tail0 x)) = (Int64.ctz (Int64.repr (to_Z x))).
+Proof.
+  intros.
+  have HxBounded := to_Z_bounded x.
+  destruct (ctz_spec (to_Z x)) as [c Hc]; auto. rewrite int64_modulus_eq_pow64. cbn in HxBounded. lia.
+  assert (Hmod1 : ((to_Z x) mod (2^(to_Z (tail0 x))) = 0)%Z). {
+    destruct (tail0_spec x H) as [y [Hy Hy']].
+    assert (Htail : (2^(to_Z (tail0 x)) <> 0)%Z). lia.
+    have Hdiv := Zmod_divides (to_Z x) (2^(to_Z (tail0 x))) Htail.
+    apply Hdiv. exists (2 * y + 1)%Z. lia. }
+  assert (Hmod2 : ((to_Z x) mod (2^(Int64.unsigned (Int64.ctz (Int64.repr (to_Z x))))) = 0)%Z). {
+    assert (Hctz : (2^(Int64.unsigned (Int64.ctz (Int64.repr (to_Z x)))) <> 0)%Z). lia.
+    have Hdiv := Zmod_divides (to_Z x) (2^(Int64.unsigned (Int64.ctz (Int64.repr (to_Z x))))) Hctz.
+    apply Hdiv. exists c. lia. }
+  have Hdivmod1 := Z_div_mod_eq_full (to_Z x) (2 ^ to_Z (tail0 x)).
+  have Hdivmod2 := Z_div_mod_eq_full (to_Z x) (2^(Int64.unsigned (Int64.ctz (Int64.repr (to_Z x))))).
+  rewrite Hmod1 in Hdivmod1.
+  rewrite Hmod2 in Hdivmod2. rewrite Z.add_0_r in Hdivmod2. rewrite Z.add_0_r in Hdivmod1.
+  assert (2 ^ Int64.unsigned (Int64.ctz (Z_to_i64 (to_Z x))) * (to_Z x / 2 ^ Int64.unsigned (Int64.ctz (Int64.repr (to_Z x)))) = (2 ^ to_Z (tail0 x) * (to_Z x / 2 ^ to_Z (tail0 x))))%Z. lia.
+Admitted.  
 
 End CORRECTNESS.
