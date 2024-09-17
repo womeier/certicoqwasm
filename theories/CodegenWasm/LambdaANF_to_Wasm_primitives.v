@@ -2049,10 +2049,8 @@ Lemma clz_spec_alt : forall x,
     Int64.intval (Int64.clz (Int64.repr x)) = (63 - Z.log2 (Int64.intval (Int64.repr x)))%Z.
 Proof.
   intros.
-  (* replace Int64.modulus with (2^64)%Z in H; auto; lia. *)
   have H' := clz_spec _ H.  
   destruct H' as [Hle1 Hle2].
-  (* have H' := (Int64.clz (Int64.repr x)). *)
   assert (Hlog1: (Z.log2 (2^63) <= Z.log2 (2 ^ (Int64.intval (Int64.clz (Int64.repr x))) * x))%Z) by (apply Z.log2_le_mono; assumption).
   assert (Hlog2: (Z.log2 (2 ^ (Int64.intval (Int64.clz (Int64.repr x))) * x) < 64)%Z) by (apply Z.log2_lt_pow2; lia).
   replace (2 ^ (Int64.intval (Int64.clz (Int64.repr x))) * x)%Z with (x * 2 ^ (Int64.intval (Int64.clz (Int64.repr x))))%Z in Hlog1, Hlog2 by lia.
@@ -2080,15 +2078,6 @@ Proof.
   reflexivity. auto.
   rewrite int64_modulus_eq_pow64. split; auto. apply uint63_lt_pow64. 
 Qed.
-
-Print Int64.convert_from_bits_to_Z_one_bits.
-
-(* Lemma powerserie_convert_from_bits_rev : forall l', *)
-(*     Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l') = *)
-(*       Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits (rev l'))). *)
-
-(*   { *)
-
 
 Lemma powerserie_convert_from_bits_rev : forall l i,
     i < size l ->
@@ -2195,5 +2184,145 @@ Proof.
   exists c. assumption. }
 Qed.
 
+Lemma to_from_bits_modulus : forall x,
+    (-1 < x < Int64.modulus)%Z -> 
+    x = Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits (Int64.convert_to_bits (Int64.repr x))).
+Proof.
+  intros x Hx.
+  rewrite Int64.convert_from_bits_to_Z_one_bits_power_index_to_bits.
+  have E: filter (fun x => Coqlib.zlt x Int64.wordsize) (Zbits.Z_one_bits Int64.wordsize (Int64.intval x) 0) = Zbits.Z_one_bits Int64.wordsize (Int64.intval x) 0.
+  rewrite filter_for_all => //.
+  rewrite list_all_forall => e. rewrite -List_In_in_mem => I.
+  apply Int64.Zbits_Z_one_bits_range in I. destruct Coqlib.zlt => //. lia.
+  rewrite E.
+  replace (Int64.intval (Z_to_i64_co x)) with x.
+  apply Zbits.Z_one_bits_powerserie.
+  rewrite int64_modulus_eq_pow64 in Hx. unfold Int64.wordsize, Integers.Wordsize_64.wordsize. 
+  unfold two_power_nat. simpl. lia.
+  simpl. rewrite Int64.Z_mod_modulus_id; lia.
+  by apply Int64.Zbits_Z_one_bits_uniq.
+Qed.
+
+Lemma ctz_non_zero : forall x i,
+    (0 < x < Int64.modulus)%Z ->
+    i < Int64.wordsize ->
+    i = Z.to_nat (Int64.intval (Int64.ctz (Int64.repr x))) ->
+    exists c,
+      (x = c * 2^i)%Z.
+Proof.
+  intros x i Hx Hi Hctz.
+  unfold Int64.ctz in Hctz.
+  remember (Int64.convert_to_bits (Int64.repr x)) as s eqn:Hs.
+  have Hsize := Int64.convert_to_bits_size (Int64.repr x). rewrite <-Hs in Hsize.
+  have : Int64.wordsize = 64. by unfold Int64.wordsize, Integers.Wordsize_64.wordsize.
+  intro Hws.
+  have : i = find (fun b => b == true) (rev s).
+  rewrite Hctz. cbn. rewrite Int64.Z_mod_modulus_id.
+  rewrite Nat2Z.id. reflexivity.
+  have : find (fun b => b == true) (rev s) <= size (rev s).
+  rewrite (rwP ssrnat.leP). 
+  apply find_size.
+  rewrite size_rev.
+  cbn.
+  intro Hfindsize.
+  rewrite int64_modulus_eq_pow64.
+  lia.
+  have Hex := powerserie_convert_from_bits_rev.  
+  assert (Hleq : ssrnat.leq (S i) (size (rev s))).
+  rewrite -(rwP ssrnat.leP).
+  rewrite size_rev. rewrite Hsize.  rewrite Hws in Hi. lia.
+  intro Hifind.
+  have Hnth := Hleq.  
+  rewrite Hifind in Hnth.
+  rewrite <-has_find in Hnth.
+  apply nth_find with (x0:=false) in Hnth.
+  assert ((nth false (rev s) i == true) = true).
+  rewrite Hifind. auto.
+  have Hbefore := before_find.
+  assert (Hbf: forall k, k < i -> (nth false (rev s) k == true) = false). {
+    intros k Hk.    
+    specialize (Hbefore (Equality.sort bool_eqType) false (fun b => b == true) (rev s) k).
+    rewrite <-Hifind in Hbefore.    
+    apply Hbefore.
+    rewrite -(rwP ssrnat.leP). lia. }
+  assert (Hisize : i < size s). rewrite Hws in Hi. lia.  
+  assert (Hinth : (nth false (rev s) i == true) = true). rewrite Hifind; auto.
+  specialize (Hex s i Hisize Hifind Hinth Hbf).
+  destruct Hex as [c Hc].  
+  assert (x = Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits s)).
+  rewrite Hs. apply to_from_bits_modulus. lia. 
+  exists c. now subst x.
+Qed.
+
+Lemma ctz_spec : forall x,
+    (0 < x < Int64.modulus)%Z ->
+    exists c,
+      (x = c * 2^(Int64.unsigned (Int64.ctz (Int64.repr x))))%Z.
+Proof.
+intros x Hx.
+have Hctz := ctz_non_zero.
+assert (Hsize : size (Int64.convert_to_bits (Z_to_i64 x)) = Int64.wordsize).
+apply Int64.convert_to_bits_size.
+remember (Int64.intval (Int64.ctz (Z_to_i64 x))) as i eqn:Hi.
+assert (0 <= Int64.intval (Int64.ctz (Z_to_i64 x)) < Int64.wordsize)%Z.
+have Hi' := Hi.
+unfold Int64.ctz in Hi.
+remember (Int64.convert_to_bits (Z_to_i64 x)) as bits eqn:Hc2b.
+remember (fun b => b == true) as a eqn:Ha.
+assert (0 <= Z.of_nat (find a (rev bits)))%Z. lia. 
+assert (ssrnat.leq (find a (rev bits)) Int64.wordsize)%Z.
+rewrite <-Hsize. rewrite <-size_rev.  apply find_size.
+rewrite -?(rwP ssrnat.leP) in H0.
+unfold Int64.ctz.
+rewrite <- Hc2b. rewrite <-Ha.
+destruct (le_lt_eq_dec (find a (rev bits)) Int64.wordsize) as [Hlt|Heq]. assumption.
+cbn.
+rewrite Int64.Z_mod_modulus_id. unfold Int64.wordsize, Integers.Wordsize_64.wordsize in Hlt. cbn in Hlt. lia.
+unfold Int64.wordsize, Integers.Wordsize_64.wordsize in Hlt. cbn in Hlt.
+rewrite int64_modulus_eq_pow64. lia.
+rewrite Heq in Hi.
+cbn in Hi. 
+assert (Int64.repr x = Int64.repr 0).
+apply Int64.ctz_wordsize.
+remember (Int64.ctz (Z_to_i64 x)) as ctz eqn:Hctzv.
+assert (Int64.intval (Z_to_i64 i) = (Int64.intval ctz)).
+rewrite Hi'. cbn.
+rewrite Int64.Z_mod_modulus_id. reflexivity. rewrite <-Hi'. rewrite Hi. rewrite int64_modulus_eq_pow64. lia.
+apply Int64.eq_T_intval in H1.
+rewrite <-H1. simpl. now rewrite Hi.
+apply Int64.repr_inv in H1. lia. lia. lia.
+assert (Z.to_nat i < Int64.wordsize). lia.
+specialize (Hctz x (Z.to_nat i) Hx H0).
+rewrite Hi in Hctz. specialize (Hctz Logic.eq_refl).
+replace (Int64.intval (Z_to_i64 x)) with x in Hctz. 2: cbn; rewrite Int64.Z_mod_modulus_id; lia.
+rewrite Z2Nat.id in Hctz.
+destruct Hctz as [c Hc].
+unfold Int64.unsigned.
+exists c. exact Hc.
+lia.
+Qed.
+
+Lemma tail0_int64_ctz : forall x,
+    (0 < to_Z x)%Z ->  
+    to_Z (tail0 x) = Int64.unsigned (Int64.ctz (Int64.repr (to_Z x))).
+Proof.
+  intros.
+  have HxBounded := to_Z_bounded x.
+  destruct (ctz_spec (to_Z x)) as [c Hc]; auto. rewrite int64_modulus_eq_pow64. cbn in HxBounded. lia.
+  assert (Hmod1 : ((to_Z x) mod (2^(to_Z (tail0 x))) = 0)%Z). {
+    destruct (tail0_spec x H) as [y [Hy Hy']].
+    assert (Htail : (2^(to_Z (tail0 x)) <> 0)%Z). lia.
+    have Hdiv := Zmod_divides (to_Z x) (2^(to_Z (tail0 x))) Htail.
+    apply Hdiv. exists (2 * y + 1)%Z. lia. }
+  assert (Hmod2 : ((to_Z x) mod (2^(Int64.unsigned (Int64.ctz (Int64.repr (to_Z x))))) = 0)%Z). {
+    assert (Hctz : (2^(Int64.unsigned (Int64.ctz (Int64.repr (to_Z x)))) <> 0)%Z). lia.
+    have Hdiv := Zmod_divides (to_Z x) (2^(Int64.unsigned (Int64.ctz (Int64.repr (to_Z x))))) Hctz.
+    apply Hdiv. exists c. lia. }
+  have Hdivmod1 := Z_div_mod_eq_full (to_Z x) (2 ^ to_Z (tail0 x)).
+  have Hdivmod2 := Z_div_mod_eq_full (to_Z x) (2^(Int64.unsigned (Int64.ctz (Int64.repr (to_Z x))))).
+  rewrite Hmod1 in Hdivmod1.
+  rewrite Hmod2 in Hdivmod2. rewrite Z.add_0_r in Hdivmod2. rewrite Z.add_0_r in Hdivmod1.
+  assert (2 ^ Int64.unsigned (Int64.ctz (Z_to_i64 (to_Z x))) * (to_Z x / 2 ^ Int64.unsigned (Int64.ctz (Int64.repr (to_Z x)))) = (2 ^ to_Z (tail0 x) * (to_Z x / 2 ^ to_Z (tail0 x))))%Z. lia.
+Admitted.  
 
 End CORRECTNESS.
