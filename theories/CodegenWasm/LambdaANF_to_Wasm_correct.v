@@ -6001,6 +6001,227 @@ Proof.
     by rewrite Hsfs'' HsfsIH. }
 Qed.
 
+Compute (1 / 2)%Z.
+Search Z.log2.
+Compute (Z.log2 62).
+
+Locate Z.divide.
+
+Goal forall x, ((to_Z x) mod (2^(to_Z (tail0 x))) = 0)%Z.
+Proof.
+  intro x.
+  destruct (Z.eq_dec (to_Z x) 0). {
+    rewrite (tail00_spec x). rewrite e. replace (to_Z digits) with 63%Z. lia.
+    unfold digits; reflexivity. assumption.
+  }
+  have Hx := to_Z_bounded x.
+  assert (Hgt0: (0 < to_Z x)%Z). lia.  
+  destruct (tail0_spec x Hgt0) as [y [Hy Hy']].
+  assert (Htail : (2^(to_Z (tail0 x)) <> 0)%Z). lia.
+  have Hdiv := Zmod_divides (to_Z x) (2^(to_Z (tail0 x))) Htail.
+  apply Hdiv. exists (2 * y + 1)%Z. lia. 
+
+  Print Zbits.powerserie.
+Qed.
+
+Goal forall l i,
+    i < size l ->
+    i = find (fun b => b == true)  (rev l) ->
+    (fun b => b == true) (nth false (rev l) i) = true ->
+    (forall k, k < i -> (fun b => b == true) (nth false (rev l) k) = false) ->
+    exists c,
+      Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l) = (c * 2^i)%Z.
+Proof.
+  induction l.
+  now intros.
+  intros i Hsize Hfind Hnth Hbefore.
+  simpl.
+  destruct a.
+  simpl. rewrite two_p_equiv.
+  simpl in Hsize.
+  simpl in Hfind. simpl in Hnth.
+  Search (rev (_ :: _)).
+  rewrite rev_cons in Hfind.
+  Search rcons.
+  rewrite <-cats1 in Hfind.
+  rewrite find_cat in Hfind.
+  rewrite rev_cons in Hnth.
+  rewrite <-cats1 in Hnth.
+  rewrite rev_cons in Hbefore.
+  rewrite <-cats1 in Hbefore. simpl in Hfind.
+  Search (nth _ (_ ++ _) _).
+  rewrite nth_cat in Hnth.
+  destruct (has (fun b => b == true) (rev l)).
+  rewrite size_rev in Hfind.
+  unfold ssrnat.addn in Hfind. unfold ssrnat.addn_rec in Hfind. rewrite Nat.add_0_r in Hfind.
+  destruct (lt_dec i (size l)).
+  assert (ssrnat.leq (S i) (size (rev l))). 
+  rewrite -(rwP ssrnat.leP). rewrite size_rev. lia. rewrite H in Hnth.
+  rewrite has_rev in Hfind.
+  destruct (has (fun b : bool => b == true) l) eqn:Hhas.
+  2: { simpl in Hfind. simpl in l0. lia. }
+  simpl in IHl.
+  have IH := IHl i l0 Hfind Hnth.
+  assert (Hbefore' : forall k, k < i -> (nth false (rev l) k == true) = false). {
+    simpl in Hbefore.
+    intros k Hk.
+    About nth_cat.
+    have Hb := Hbefore k Hk.
+    rewrite nth_cat in Hb.
+    assert (ssrnat.leq (S k) (size (rev l))).
+    rewrite -(rwP ssrnat.leP). rewrite size_rev. lia. rewrite H0 in Hb. assumption. }
+  specialize (IH Hbefore').
+  destruct IH as [c Hc].
+  exists (2^(size l - i) + c)%Z.
+  rewrite Z.mul_add_distr_r.
+  rewrite Hc.
+  rewrite <-Z.pow_add_r.
+  Set Printing Coercions.
+  replace (Z.of_nat (size l) - Z.of_nat i + Z.of_nat i)%Z with (Z.of_nat (size l)) by lia. reflexivity.
+  lia.
+  lia.
+  simpl in Hnth.
+  destruct (ssrnat.leq (S i) (size (rev l))) eqn:Hleq. 
+  rewrite size_rev in Hleq. move/ssrnat.leP in Hleq.  lia.
+  rewrite Hleq in Hnth. simpl in Hfind.
+  assert (i = size l). Set Printing All.
+  simpl. simpl in n. lia. simpl in n. simpl in H. simpl in Hleq.
+  Unset Printing All.
+  rewrite H.
+  Search (?a + _ = ?a)%Z.
+  rewrite H in Hnth. rewrite size_rev in Hnth.  
+  exists 1%Z.  
+  rewrite Z.mul_1_l.
+  assert (forall l',
+             (forall j, j < size l' -> (nth false (rev l') j == true) = false) ->
+             Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l') = 0%Z).
+  {
+    induction l'. now intros.
+    intros Hjnth. 
+    simpl.      
+    have Hnthrev := nth_rev.
+    assert (a = false).
+    assert (1 <= S (size l')). lia.
+    move/ssrnat.leP in H0.
+    assert (0 < S (size l')). lia.
+    have Hjn := Hjnth 0 H1. erewrite Hnthrev in Hjn.
+    simpl in Hjn. unfold ssrnat.subn, ssrnat.subn_rec in Hjn. simpl in Hjn. rewrite Nat.sub_0_r in Hjn. destruct a.
+    Search nth. 
+    simpl in Hjn. rewrite eqb_id in Hjn.
+    have Hnthrev := nth_rev.  
+    
+    destruct a.
+    simpl.
+    rewrite 
+
+    assert (a = false). destruct a.
+    assert (0 < S (size l')) by (cbn; lia).
+    have Hjn := Hjnth 0 H0. simpl in Hjn. rewrite eqb_id in Hjn.
+    have Hnthrev := nth_rev.  
+    discriminate. reflexivity.
+    rewrite H0.
+    assert (forall j : nat, j < size l' -> (nth false l' j == true) = false).
+    intros.
+    simpl in Hjnth.
+    assert ((j + 1) < S (size l')). lia.    
+    have Hjn := Hjnth (j + 1) H2. rewrite Nat.add_comm in Hjn. cbn in Hjn. cbn. assumption. apply IHl'. assumption. }
+  rewrite H0. lia. rewrite H in Hbefore.
+  intros.
+  have Hbf := Hbefore j H1.
+  Search (nth _ (rev _) _). simpl in Hbf.
+  assert ([ true ] = rev [ true ]) by reflexivity. rewrite H2 in Hbf.
+  rewrite <-rev_cat in Hbf.
+  have Hnthrev := nth_rev. assert (ssrnat.leq (S j) (size l)). rewrite -(rwP ssrnat.leP). simpl. lia.
+  erewrite Hnthrev in Hbf.
+  simpl in Hbf.
+  unfold ssrnat.subn in Hbf. unfold ssrnat.subn_rec in Hbf. simpl in Hbf.
+  
+  
+  destruct (
+  assert ((j + 1) < S (size l')). lia.    
+  have Hjn := Hjnth (j + 1) H2. rewrite Nat.add_comm in Hjn. cbn in Hjn. cbn. assumption. apply IHl'. assumption. }
+
+    
+    induction j. intro.
+    rewrite <-cat1s in Hjnth. cbn in Hjnth.
+    assert (0 < S (size l')) by lia.
+    have Hjn := Hjnth 0 H2. cbn in Hjn. 
+    destruct 
+    rewrite nth_cat in Hjnth.
+    intro j. intro Hj.
+    simpl in Hjnth.
+    assert (j < S (size l')). lia.    
+    have Hjn := Hjnth j H1.
+    Search (nth _ (_ :: _) _). 
+    
+    rewrite H0 in Hjn. simpl in Hjn.
+    destruct j. simpl in Hjn. rewrite H0 in Hjn. rewrite eqb_id in Hjn. 
+    
+    apply (Hjnth 0).
+    simpl. 
+  simpl. simpl in Hnth.
+  
+  assert (forall a b, 0 < a -> a + b = a -> b = 0)%Z. intros. lia.
+  assert (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l) = 0)%Z. 
+  destruct (has (fun b : bool => b == true) l) eqn:Hhas.
+
+  rewrite Hhas in Hfind.
+  rewrite Hhas in Hfind.
+  
+  rewrite has_find in Hhas.  
+  move/ssrnat.leP in Hhas. 
+  rewrite 
+  rewrite <-(rwP ssrnat.leP) in Hleq. lia.
+  rewrite H in Hnth.
+  (2^l + c * 2^i) = (2^(l - i) + c)
+    
+    rewrite <-nth_cat in Hbefore.
+                                                       
+  assert ( has (fun b => b == true) l). simpl. 
+  assert (i = find (fun b => b == true) (rev l)).
+  destruct Hfind.
+  rewrite (rwP findP).
+
+  rewrite has_find in Hfind. simpl in Hfind.
+  rewrite -(rwP hasP) in Hfind.
+  destruct (has (fun b => b==true) (rev l)).
+  unfold ssr
+  simpl in Hnth.
+  Search (_ < S _).
+  assert (i <= size l). apply Nat.lt_succ_r. assumption.
+  destruct (ssrnat.leq (S i) (
+  assert (ssrnat.leq (S i) (size (rev l)) -> True).
+  intro.
+  rewrite -(rwP ssrnat.leP) in H. rewrite size_rev in H. 
+  Search (find (
+  simpl in Hfind.
+    (0 < x < Int64.modulus)%Z ->
+    Int64.repr i = Int64.ctz (Int64.repr x) ->
+    exists c,
+      (x = c * 2^i)%Z.
+  intros.
+  Search seq.rev.
+  unfold Int64.ctz in H0.
+  unfold Int64.convert_to_bits in H0.
+           
+  Search Zbits.powerserie.
+  have : x = Zbits.powerserie (Zbits.Z_one_bits n x 0).
+  apply Zbits.Z_one_bits_powerserie.
+  lia.
+  intro Hb.
+  rewrite <-H1 in Hb.
+  simpl in Hb.
+  
+  have 
+  assert 
+
+
+  Int64.ctz x = i ->
+  
+  
+  
+  
+
 Lemma primitive_operation_reduces : forall lenv pfs state s f fds f' (x : var) (x' : localidx) (p : prim) op_name str b op_arr op
                                            (ys : list var) (e : exp) (vs : list val) (rho : env) (v : val) instrs mem,
     prim_funs_env_wellformed cenv penv pfs ->

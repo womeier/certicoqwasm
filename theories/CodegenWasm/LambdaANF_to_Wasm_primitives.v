@@ -2081,6 +2081,142 @@ Proof.
   rewrite int64_modulus_eq_pow64. split; auto. apply uint63_lt_pow64. 
 Qed.
 
+Print Int64.convert_from_bits_to_Z_one_bits.
+
+(* Lemma powerserie_convert_from_bits_rev : forall l', *)
+(*     Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l') = *)
+(*       Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits (rev l'))). *)
+
+(*   { *)
+
+
+
+
+Goal forall l i,
+    i < size l ->
+    i = find (fun b => b == true)  (rev l) ->
+    (fun b => b == true) (nth false (rev l) i) = true ->
+    (forall k, k < i -> (fun b => b == true) (nth false (rev l) k) = false) ->
+    exists c,
+      Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l) = (c * 2^i)%Z.
+Proof.
+  induction l.
+  now intros.
+  intros i Hsize Hfind Hnth Hbefore.
+  Set Printing Implicit.
+  Set Printing Parentheses.
+  assert (ssrnat.leq (S i) (size (a :: l))).  
+  simpl. simpl in Hsize.
+  rewrite -?(rwP ssrnat.leP). lia.
+  have Hconv := convert_from_bits_head (rev (a :: l)) i.
+  rewrite <-size_rev in Hsize.
+  specialize (Hconv Hsize Hfind Hnth Hbefore).
+  assert (forall l', Zbits.powerserie l' = Zbits.powerserie (rev l')). 
+  { induction l'.
+    reflexivity.
+    simpl. rewrite <-cat1s. rewrite rev_cat. rewrite powerserie_concat. rewrite IHl'. simpl. lia. }
+  assert (i <= size l). simpl. rewrite size_rev in Hsize. simpl in Hsize. lia. 
+  
+
+
+  destruct (size l - i) eqn:Hdiff.
+  admit.
+  (* rewrite size_rev in Hconv. simpl in Hconv. assert (S (size l) - i - 1 = 0). rewrite <-Nat.add_1_l. *)
+  (* assert ((1 + size l) - i = 1). Search ((_ + _) - _). replace i with (size l) by lia.  *)
+  (* rewrite Nat.add_sub. reflexivity. *)
+  (* rewrite H2. lia. rewrite H2 in Hconv. simpl in Hconv. unfold two_power_pos in Hconv. simpl in Hconv. *)
+  (* assert (forall l', *)
+  (*            Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l') = *)
+  (*              Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits (rev l'))). *)
+
+  (* { *)
+    (* induction l'. *)
+    (* reflexivity. *)
+    (* About rev_move. *)
+    (* replace (Int64.convert_from_bits_to_Z_one_bits (a0 :: l')) with (Int64.convert_from_bits_to_Z_one_bits (rev (rev (a0 :: l')))). *)
+    (* rewrite <-cat1s. rewrite rev_cat. *)
+    (* rewrite  *)
+    (* simpl. *)
+    (* rewrite -[(Int64.convert_from_bits_to_Z_one_bits (a0 :: l'))] revK. *)
+    
+    (* rewrite H0 *)
+    (* assert (rev (rev  *)
+    (* assert ( *)
+    (* rewrite H0.  *)
+    (* rewrite <-cat1s. rewrite rev_cat. simpl. destruct a0. *)
+    (* rewrite H0. *)
+    
+    (* simpl. rewrite IHl'. simpl. *)
+    (* replace (rev [true]) with ([true]) by reflexivity. *)
+    
+    (* assert (Zbits.powerserie ( *)
+    (* admit. *)
+  (* assert (a = true). *)
+  (* rewrite nth_rev in Hnth; auto. *)
+  (* rewrite ssrnat.subnE in Hnth. simpl in Hnth. *)
+  (* unfold ssrnat.subn_rec in Hnth. simpl in Hsize. *)
+  (* simpl in Hnth. *)
+  (* rewrite eqb_id in Hnth. rewrite Hdiff in Hnth. simpl in Hnth. assumption. *)
+  (* rewrite H3. simpl. *)
+  (* rewrite two_p_equiv. assert (size l = i). simpl. simpl in Hdiff. simpl in H1. lia. *)
+  (* rewrite H4. *)
+  (* rewrite H3 in Hconv. *)
+  (* assert (2^i *)
+  (* (* assert (forall l' b, *) *)
+  (* (*            Int64.convert_from_bits_to_Z_one_bits (rev (b :: l')) *) *)
+  (* (*            = Int64.convert_from_bits_to_Z_one_bits (rev l') ++ *) *)
+  (* (*                (if b then [0%Z] else [])). *) *)
+  (* (* { *) *)
+  (*   induction l'; intros. simpl. reflexivity. *)
+  (*   have IH := IHl' a0.  *)
+  (*   rewrite <-cat1s. rewrite rev_cat. rewrite IH. *)
+  (*   rewrite  *)
+  (*   simpl. destru *)
+  (* rewrite revK in Hconv. rewrite H4 in Hconv; simpl in Hconv.  *)
+  (* rewrite two_p_equiv in Hconv. rewrite H5 in Hconv. *)
+  (* rewrite two_p_equiv in Hps. *)
+  (* rewrite Hps in Hconv. *)
+  (* assert (2^i = 1)%Z. simpl in Hconv. lia. lia. *)
+
+  (* assert (Zbits.powerserie (Int64.convert_from_bits_to_Z_one_bits l) = 0). *)
+  (* assert (2^i = 1)%Z. simpl in Hconv. lia. lia. *)
+  (* rewrite H7. exists 1. lia. *)
+  assert (i = size l - S n). lia. assert (n < size l). lia.
+  assert ((nth false (rev l) i) == true). (* admit.   *)
+  assert ((size l) - (S n) = i). by rewrite H2. 
+  assert (n = (size l) - (S i)). lia. 
+  rewrite nth_rev in Hnth; auto.
+  rewrite nth_rev.
+  rewrite ssrnat.subnE in Hnth |- *. simpl in Hnth |- *.
+  unfold ssrnat.subn_rec in Hnth |- *. (* simpl in Hsize. *)
+  (* simpl in Hnth. *)
+  rewrite eqb_id in Hnth.
+  simpl in Hnth.
+  rewrite Hdiff in Hnth. simpl in Hnth. simpl in H5. rewrite <-H5. rewrite eqb_id. assumption.
+  rewrite -(rwP ssrnat.leP). simpl in H2, H4. simpl in H1, Hdiff. lia.
+  assert (i = find (fun b => b == true) (rev l)).
+  Search find.
+  rewrite <-cat1s in Hfind.
+  rewrite rev_cat in Hfind. rewrite find_cat in Hfind.
+  unfold ssrnat.addn, ssrnat.addn_rec in Hfind.
+  destruct (has (fun b => b == true) (rev l)). assumption.
+  simpl in Hfind. destruct a; simpl in Hfind. rewrite size_rev in Hfind. simpl in Hdiff, H2. lia. rewrite size_rev in Hfind. simpl in Hdiff, H2. lia.
+  assert (forall k, k < i -> (nth false (rev l) k == true) = false).
+  intros k Hk.
+  have Hbf := before_find.
+  assert (ssrnat.leq (S k) i). rewrite -(rwP ssrnat.leP). lia. rewrite H5 in H6. apply Hbf with (x0:=false) in H6. assumption.  
+  (* simpl in Hbf. *)
+  assert (i < (size l)). lia.
+  have IH := IHl i H7 H5 H4 H6.
+  destruct IH as [c Hc].
+  simpl. destruct a.
+  exists (2^(size l - i) + c)%Z. simpl. rewrite two_p_equiv.
+  rewrite Z.mul_add_distr_r.
+  rewrite <- Z.pow_add_r.
+  rewrite Z.sub_add. rewrite Hc. reflexivity. simpl in H2.  lia. lia.
+  exists c. assumption.
+Admitted.
+
 
 
 End CORRECTNESS.
