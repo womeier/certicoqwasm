@@ -2755,7 +2755,7 @@ Proof.
   remember ({| f_locs := [::]; f_inst := f_inst fr |}) as frameInit.
 
   subst lenv.
-  have HMAIN := repr_bs_LambdaANF_Wasm_related cenv funenv fenv nenv penv _
+  have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
                    _ _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
                   HenvsDisjoint Logic.eq_refl Hnodup'' HfenvWf HfenvRho
                   HeRestr' Hunbound Hstep hs sr _ _ Hfds HlocInBound Hinv_before_IH HmemAvail Hexpr HrelE.
@@ -2773,7 +2773,7 @@ Proof.
 Unshelve. all: auto.
 Qed.
 
-(* Eval compute in "Assumptions of 'LambdaANF_Wasm_related' (Wasm backend, main correctness)"%bs. *)
-(* Print Assumptions LambdaANF_Wasm_related. *)
+Eval compute in "Assumptions of 'LambdaANF_Wasm_related' (Wasm backend, main correctness)"%bs.
+Print Assumptions LambdaANF_Wasm_related.
 
 End TOPLEVEL.

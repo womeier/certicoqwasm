@@ -6477,9 +6477,9 @@ Proof.
       rewrite Heq0. unfold Int64.eq. rewrite to_Z_0. cbn. discriminate.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i64])(vs:=[::]); auto.
       dostep_nary 0. apply r_simple. apply rs_label_const; auto.
-      replace 63%Z with (to_Z (tail0 xp)). 2: admit.
-      unfold LambdaANF_to_Wasm_primitives.Z_to_i64val_co.
+      replace 63%Z with (to_Z (tail0 xp)).
       apply rt_refl.
+      rewrite tail00_spec. unfold digits. cbn. reflexivity. rewrite to_Z_0 in Heq0. exact.
       dostep_nary 1. apply r_simple. apply rs_if_false. simpl.
       unfold Int64.eq. rewrite zeq_false. reflexivity.
       rewrite uint63_unsigned_id. cbn. rewrite to_Z_0 in Hneq0. lia.
@@ -6489,11 +6489,14 @@ Proof.
       dostep_nary 0. eapply r_local_get; eassumption.
       dostep_nary 1. eapply r_load_success; eauto. rewrite <- Haddrx. simpl; eauto.
       replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Int64.repr (to_Z xp))) by now inversion Hloadx.
-      dostep_nary' 1. apply r_simple. apply rs_unop. 
-      cbn. apply rt_refl.
-      replace ($VN VAL_int64 (Int64.ctz (Int64.repr (to_Z xp)))) with ($VN VAL_int64 (Int64.repr (to_Z (tail0 xp)))).
+      dostep_nary' 1. apply r_simple. apply rs_unop. unfold app_unop. simpl.
+      apply rt_refl.
       dostep_nary 0. apply r_simple. apply rs_label_const; auto.
-      apply rt_refl. admit. apply rt_refl.
+      rewrite tail0_int64_ctz; eauto.
+      apply rt_refl.
+      have Hb := to_Z_bounded xp. 
+      rewrite to_Z_0 in Hneq0. lia.
+      apply rt_refl.
       dostep_nary 2. eapply r_store_success; eauto.
       apply Hstep. } }
   { (* Binary operations *)
@@ -9302,7 +9305,7 @@ Proof.
       apply rt_refl.
       dostep_nary' 2. eapply r_store_success; eauto.
       apply Hstep. } } 
-Admitted. (* Qed. *)
+Qed.
 
 
 (* GENERALIZED CORRECTNESS THEOREM *)

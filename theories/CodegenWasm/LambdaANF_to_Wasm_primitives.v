@@ -2304,7 +2304,7 @@ Qed.
 
 Lemma tail0_int64_ctz : forall x,
     (0 < to_Z x)%Z ->  
-    to_Z (tail0 x) = Int64.unsigned (Int64.ctz (Int64.repr (to_Z x))).
+    Int64.repr (to_Z (tail0 x)) = (Int64.ctz (Int64.repr (to_Z x))).
 Proof.
   intros.
   have HxBounded := to_Z_bounded x.
