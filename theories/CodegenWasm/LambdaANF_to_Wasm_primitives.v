@@ -2331,7 +2331,7 @@ Proof.
       replace a with (a * 2^n / 2^n)%Z by nia.
       rewrite <-Hxn. rewrite <-Hxm. reflexivity.
       exists (2^(m - n))%Z. rewrite <-Z.pow_add_r.
-      now rewrite Z.sub_add. lia. lia.}
+      now rewrite Z.sub_add. lia. lia. }
     assert (Z.odd a = true) as Hodda. {
       subst a.
       rewrite Z.add_comm. rewrite Z.odd_add_mul_2.

@@ -6433,7 +6433,6 @@ Proof.
       inversion Hrepr_primop.
       unfold head0_instrs.
       dostep_nary 0. eapply r_global_get; eassumption.
-      (* eapply rt_trans with (y:=(state, s, f, ([$V val_num (VAL_. eapply app_trans_const; auto. *)
       eapply rt_trans. eapply app_trans_const with (hs':=state) (s':=s) (f':=f) (es':=[$VN (VAL_int64 (Int64.repr (to_Z (head0 xp))))] ++ ?[es_after]); eauto.
       dostep_nary 0. eapply r_local_get; eassumption.
       dostep_nary 1. eapply r_load_success; eauto. rewrite <- Haddrx. simpl; eauto.
@@ -6465,7 +6464,6 @@ Proof.
       inversion Hrepr_primop.
       unfold tail0_instrs.
       dostep_nary 0. eapply r_global_get; eassumption.
-      (* eapply rt_trans with (y:=(state, s, f, ([$V val_num (VAL_. eapply app_trans_const; auto. *)
       eapply rt_trans. eapply app_trans_const with (hs':=state) (s':=s) (f':=f) (es':=[$VN (VAL_int64 (Int64.repr (to_Z (tail0 xp))))] ++ ?[es_after]); eauto.
       dostep_nary 0. eapply r_local_get; eassumption.
       dostep_nary 1. eapply r_load_success; eauto. rewrite <- Haddrx. simpl; eauto.
