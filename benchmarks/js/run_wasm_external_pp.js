@@ -15,6 +15,7 @@ const pp_map = {
     "sm_gauss_nat": (val, dataView) => print_option(val, dataView, print_nat_sexp),
     "sm_gauss_N": (val, dataView) => print_option(val, dataView, print_N_sexp),
     "sm_gauss_PrimInt": (val, dataView) => print_option(val, dataView, print_i63),
+    "coqprime": print_bool,
 };
 
 import { readFileSync } from 'fs';

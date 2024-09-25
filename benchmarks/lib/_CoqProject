@@ -10,3 +10,4 @@ sha256.v
 coind.v
 BernsteinYangTermination.v
 stack_machine.v
+coqprime.v

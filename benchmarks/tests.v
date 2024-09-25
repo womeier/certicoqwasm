@@ -4,6 +4,7 @@ Require Import CertiCoq.Benchmarks.lib.Binom.
 Require Import CertiCoq.Benchmarks.lib.Color.
 Require Import CertiCoq.Benchmarks.lib.sha256.
 Require Import CertiCoq.Benchmarks.lib.coind.
+Require Import CertiCoq.Benchmarks.lib.coqprime.
 Require Import CertiCoq.Benchmarks.lib.BernsteinYangTermination.
 Require Import CertiCoq.Benchmarks.lib.stack_machine.
 From MetaCoq.Utils Require Import bytestring MCString.
@@ -233,7 +234,8 @@ Definition sm_gauss_PrimInt :=
   end.
 
 CertiCoq Compile Wasm sm_gauss_nat.
-
 CertiCoq Compile Wasm sm_gauss_N.
-
 CertiCoq Compile Wasm sm_gauss_PrimInt.
+
+Definition coqprime := check_cert3.
+CertiCoq Compile Wasm coqprime.
