@@ -1,19 +1,23 @@
-From compcert Require Import Coqlib.
+From compcert Require Import
+  Coqlib
+  lib.Integers common.Memory.
 
-Require Import LambdaANF.cps LambdaANF.eval LambdaANF.cps_util LambdaANF.List_util
-               LambdaANF.identifiers.
+From CertiCoq Require Import
+  LambdaANF.cps LambdaANF.eval LambdaANF.cps_util
+  LambdaANF.List_util LambdaANF.identifiers
+  CodegenWasm.LambdaANF_to_Wasm
+  CodegenWasm.LambdaANF_to_Wasm_primitives
+  Libraries.maps_util.
 
-Require Import Lia.
-Require Import Coq.Logic.Decidable Coq.Lists.ListDec
-               Coq.Relations.Relations Relations.Relation_Operators.
+From Wasm Require Import
+  datatypes operations host instantiation_spec
+  instantiation_properties memory_list opsem properties.
 
-Require Import compcert.lib.Integers compcert.common.Memory.
-From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm LambdaANF_to_Wasm_primitives.
-
-From Wasm Require Import datatypes operations host instantiation_spec instantiation_properties memory_list opsem properties.
-
-Require Import Libraries.maps_util.
-From Coq Require Import List.
+From Coq Require Import
+  List ListDec
+  Logic.Decidable
+  Relations.Relations Relations.Relation_Operators
+  Lia.
 
 Import Common.compM Common.Pipeline_utils.
 Import bytestring.

@@ -1,18 +1,25 @@
 From Wasm Require Import datatypes operations.
-From CertiCoq Require Import LambdaANF.toplevel LambdaANF.cps_util.
 
-From CertiCoq Require Import Common.Common Common.compM Common.Pipeline_utils.
-Require Import ExtLib.Structures.Monad.
+From Coq Require Import
+  FMapAVL MSetAVL
+  POrderedType
+  ZArith BinNat List Lia.
+
+From ExtLib Require Import Structures.Monad.
+
+From CertiCoq Require Import
+  LambdaANF.toplevel
+  LambdaANF.cps_util
+  Common.Pipeline_utils
+  Common.Common
+  LambdaANF.cps
+  LambdaANF.cps_show
+  CodegenWasm.LambdaANF_to_Wasm_primitives.
+
 From MetaCoq.Utils Require Import bytestring MCString.
-From Coq Require Import ZArith BinNat List Lia.
 
-Require Import MSets.MSetAVL.
-From Coq Require Import FMapAVL.
-Require Import POrderedType.
+Import MonadNotation compM.
 
-Require Import LambdaANF.cps LambdaANF.cps_show.
-Require Import CodegenWasm.LambdaANF_to_Wasm_primitives.
-Import MonadNotation.
 
 (* Main file for compiler backend targeting Wasm. *)
 
@@ -666,7 +673,6 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                         {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i64 |}  (* glob_tmp4 *)
                          ; modglob_init := [BI_const_num (nat_to_value64 0)]
                          |} :: nil
-
 
        ; mod_elems := elements
        ; mod_datas := []
