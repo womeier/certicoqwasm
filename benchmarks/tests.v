@@ -233,9 +233,11 @@ Definition sm_gauss_PrimInt :=
   | _ => None
   end.
 
+Eval compute in "Compiling sm_gauss".
 CertiCoq Compile Wasm sm_gauss_nat.
 CertiCoq Compile Wasm sm_gauss_N.
 CertiCoq Compile Wasm sm_gauss_PrimInt.
 
 Definition coqprime := check_cert3.
+Eval compute in "Compiling coqprime".
 CertiCoq Compile Wasm coqprime.
