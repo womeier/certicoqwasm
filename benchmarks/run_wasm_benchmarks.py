@@ -19,7 +19,7 @@ for f in files:
     r = subprocess.run(
         [
             "node",
-            "--stack-size=1000000",
+            "--stack-size=10000000",
             "js/run_wasm_external_pp.js",
             "./",
             f,

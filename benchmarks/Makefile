@@ -46,4 +46,4 @@ tests: tests.v
 primitive_unit_tests:
 	@coqc -quiet -R ./ CertiCoq.Benchmarks uint63_unit_tests.v
 	@ulimit -s unlimited
-	@node --stack-size=100000 js/run_uint63_unit_tests.js
+	@node --stack-size=10000000 js/run_uint63_unit_tests.js
