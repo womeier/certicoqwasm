@@ -1,7 +1,6 @@
 (* coq prime benchmark *)
 From Coqprime Require Import PocklingtonRefl.
 From MetaCoq.Utils Require Import bytestring MCString.
-From CertiCoq.Plugin Require Import CertiCoq.
 
 Local Open Scope positive_scope.
 Open Scope bs.
