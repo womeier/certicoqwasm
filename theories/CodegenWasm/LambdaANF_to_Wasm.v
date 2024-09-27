@@ -14,6 +14,7 @@ From CertiCoq Require Import
   Common.Common
   LambdaANF.cps
   LambdaANF.cps_show
+  CodegenWasm.LambdaANF_to_Wasm_restrictions
   CodegenWasm.LambdaANF_to_Wasm_primitives.
 
 From MetaCoq.Utils Require Import bytestring MCString.
@@ -26,63 +27,6 @@ Import MonadNotation compM.
 (* memory can grow to at most 64KB * max_mem_pages *)
 Definition max_mem_pages     := 30000%N.
 
-(* ***** RESTRICTIONS ON lANF EXPRESSIONS ****** *)
-Definition max_function_args := 100%Z.       (* should be possible to vary without breaking much *)
-Definition max_num_functions := 1_000_000%Z. (* should be possible to vary without breaking much *)
-Definition max_constr_args   := 1024%Z.      (* should be possible to vary without breaking much *)
-
-Definition max_constr_alloc_size := (max_constr_args * 4 + 4)%Z. (* bytes, don't change this *)
-
-Definition assert (b : bool) (err : string) : error Datatypes.unit :=
-  if b then Ret tt else Err err.
-
-Definition get_ctor_ord (cenv : ctor_env) (t : ctor_tag) : error N:=
-  match M.get t cenv with
-  | Some c => Ret (ctor_ordinal c)
-  | None => Err ("Constructor with tag " ++ (string_of_positive t) ++ " in constructor expression not found in constructor environment")%bs
-  end.
-
-
-(* enforces size restrictions on the lambdaANF expression (see the predicate expression_restricted) *)
-Fixpoint check_restrictions (cenv : ctor_env) (e : exp) : error Datatypes.unit :=
-  match e with
-  | Econstr _ t ys e' =>
-      ord <- get_ctor_ord cenv t ;;
-      _ <- assert (Z.of_N ord <? Wasm_int.Int32.half_modulus)%Z "Constructor ordinal too large" ;;
-      _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_constr_args)%Z
-             "found constructor with too many args, check max_constr_args";;
-      check_restrictions cenv e'
-  | Ecase x ms =>
-      (* _ <- check_case_list_ordinals cenv ms;; *)
-      _ <- sequence (map (fun '(t, e') =>
-                            ord <- get_ctor_ord cenv t ;;
-                            _ <- assert (Z.of_N ord <? Wasm_int.Int32.half_modulus)%Z "Constructor ordinal too large" ;;
-                            check_restrictions cenv e') ms) ;;
-      Ret tt
-  | Eproj _ _ _ _ e' => check_restrictions cenv  e'
-  | Eletapp _ _ _ ys e' =>
-      _ <- assert (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
-                "found function application with too many function params, check max_function_args";;
-      check_restrictions cenv e'
-  | Efun fds e' =>
-      _ <- assert (Z.of_nat (numOf_fundefs fds) <=? max_num_functions)%Z
-                "too many functions, check max_num_functions";;
-      _ <- ((fix iter (fds : fundefs) : error Datatypes.unit :=
-              match fds with
-              | Fnil => Ret tt
-              | Fcons _ _ ys e' fds' =>
-                  _ <- assert (Z.of_nat (length ys) <=? max_function_args)%Z
-                       "found fundef with too many function args, check max_function_args";;
-                  _ <- (iter fds');;
-                  check_restrictions cenv e'
-              end) fds);;
-      check_restrictions cenv e'
-  | Eapp _ _ ys => assert (Z.of_nat (Datatypes.length ys) <=? max_function_args)%Z
-                        "found function application with too many function params, check max_function_args"
-  | Eprim_val _ _ e' => check_restrictions cenv e'
-  | Eprim _ _ _ e' => check_restrictions cenv e'
-  | Ehalt _ => Ret tt
-  end.
 
 (* ***** FUNCTIONS and GLOBALS ****** *)
 

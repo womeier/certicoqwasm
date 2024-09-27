@@ -20,7 +20,9 @@ Require Import compcert.lib.Integers compcert.common.Memory.
 
 From MetaCoq Require Import EWcbvEvalNamed. (* for string_of_nat_inj *)
 
-From CertiCoq.CodegenWasm Require Import LambdaANF_to_Wasm LambdaANF_to_Wasm_utils LambdaANF_to_Wasm_correct LambdaANF_to_Wasm_primitives.
+From CertiCoq.CodegenWasm Require Import
+  LambdaANF_to_Wasm LambdaANF_to_Wasm_utils LambdaANF_to_Wasm_correct LambdaANF_to_Wasm_primitives
+  LambdaANF_to_Wasm_restrictions.
 
 From Wasm Require Import datatypes operations host
                          type_preservation instantiation_spec instantiation_properties
@@ -2773,7 +2775,7 @@ Proof.
 Unshelve. all: auto.
 Qed.
 
-Eval compute in "Assumptions of 'LambdaANF_Wasm_related' (Wasm backend, main correctness)"%bs.
-Print Assumptions LambdaANF_Wasm_related.
+(* Eval compute in "Assumptions of 'LambdaANF_Wasm_related' (Wasm backend, main correctness)"%bs. *)
+(* Print Assumptions LambdaANF_Wasm_related. *)
 
 End TOPLEVEL.

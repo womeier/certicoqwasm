@@ -661,15 +661,6 @@ Proof.
   intros p' Hcontra'. subst. inv H.
 Qed.
 
-Lemma find_def_dsubterm_fds_e : forall fds f t ys e,
-   find_def f fds = Some (t, ys, e) ->
-   dsubterm_fds_e e fds.
-Proof.
-  induction fds; intros. 2: inv H.
-  cbn in H. destruct (M.elt_eq f0 v).
-  (* f0=v *) inv H. constructor.
-  (* f0<>v *) constructor. eapply IHfds; eauto.
-Qed.
 
 Lemma dsubterm_fds_e_find_def : forall (fds : fundefs) (e : exp) (eAny : exp),
   NoDup (collect_function_vars (Efun fds eAny)) ->
@@ -730,50 +721,6 @@ Proof.
         destruct (IHxs _ _ _ _ _ Heqn H0 H1) as [k [Hk1 Hk2]]. exists (S k). now cbn.
 Qed.
 
-
-(* TODO: move this to cps_util *)
-Definition Forall_constructors_in_e (P: var -> ctor_tag -> list var -> Prop) (e:exp) :=
-  forall x t  ys e',
-    subterm_or_eq (Econstr x t ys e') e -> P x t ys.
-
-Definition Forall_exp_in_caselist (P: exp -> Prop) (cl:list (ctor_tag * exp)) :=
-  forall g e, List.In (g, e) cl -> P e.
-
-Lemma crt_incl_ct:
-          forall T P e e',
-          clos_trans T P e e' ->
-          clos_refl_trans T P e e'.
-Proof.
-  intros. induction H. constructor; auto.
-  eapply rt_trans; eauto.
-Qed.
-
-Lemma Forall_constructors_subterm:
-  forall P e e' ,
-  Forall_constructors_in_e P e ->
-  subterm_e e' e ->
-  Forall_constructors_in_e P e'.
-Proof.
-  intros. intro; intros.
-  eapply H.
-  assert (subterm_or_eq e' e).
-  apply crt_incl_ct.
-  apply H0.
-  eapply rt_trans; eauto.
-Qed.
-(* END TODO move *)
-
-
-Lemma Forall_constructors_in_constr:
-  forall P x t ys e,
-  Forall_constructors_in_e P (Econstr x t ys e) ->
-  P x t ys.
-Proof.
-  intros.
-  unfold Forall_constructors_in_e in *.
-  eapply H.
-  apply rt_refl.
-Qed.
 
 (* TODO: consider using def_funs_eq, def_funs_neq instead *)
 Lemma def_funs_find_def : forall fds fds' rho f,

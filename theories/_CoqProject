@@ -127,12 +127,13 @@ Codegen/LambdaANF_to_Clight_stack.v
 Codegen/toplevel.v
 
 # CodegenWasm
-CodegenWasm/toplevel.v
-CodegenWasm/LambdaANF_to_Wasm.v
-CodegenWasm/LambdaANF_to_Wasm_correct.v
-CodegenWasm/LambdaANF_to_Wasm_utils.v
-CodegenWasm/LambdaANF_to_Wasm_correct_inst.v
+CodegenWasm/LambdaANF_to_Wasm_restrictions.v
 CodegenWasm/LambdaANF_to_Wasm_primitives.v
+CodegenWasm/LambdaANF_to_Wasm.v
+CodegenWasm/LambdaANF_to_Wasm_utils.v
+CodegenWasm/LambdaANF_to_Wasm_correct.v
+CodegenWasm/LambdaANF_to_Wasm_correct_instantiation.v
+CodegenWasm/toplevel.v
 
 # Glue
 Glue/glue_utils.v
