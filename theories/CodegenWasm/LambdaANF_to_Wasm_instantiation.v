@@ -2396,8 +2396,6 @@ Proof.
   split. (* global_mem_ptr multiple of 2 *)
     unfold INV_global_mem_ptr_multiple_of_two, sglob_val, sglob, sglob_ind, smem.
     rewrite -Hglobals. rewrite -Hmems. assumption.
-  split. (* exists mem_grow_func *)
-    apply I.
   (* inst funcs id mapping *)
   split.
     unfold INV_inst_funcs_id. rewrite -Hfuncs. assumption.

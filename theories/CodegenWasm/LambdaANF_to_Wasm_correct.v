@@ -1096,7 +1096,6 @@ Definition INV (s : store_record) (f : frame) :=
  /\ INV_table_id s f
  /\ INV_types f
  /\ INV_global_mem_ptr_multiple_of_two s f
- /\ (* INV_exists_func_grow_mem s f *) True (* TODO get rid of (Martin) *)
  /\ INV_inst_funcs_id s f
  /\ INV_i64_glob_tmps_writable s f.
 
@@ -1348,7 +1347,7 @@ Corollary update_global_preserves_INV : forall sr sr' i f m num,
   supdate_glob sr (f_inst f) i (VAL_num num) = Some sr' ->
   INV sr' f.
 Proof with eassumption.
-  intros. unfold INV. destruct H0 as [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? [?  ?]]]]]]]]]]]]]]]].
+  intros. unfold INV. destruct H0 as [?[?[?[?[?[?[?[?[?[?[?[?[?[?[??]]]]]]]]]]]]]]].
   split. eapply update_global_preserves_global_var_w...
   split. eapply update_global_preserves_global_var_w...
   split. eapply update_global_preserves_result_var_out_of_mem_is_zero...
@@ -1363,7 +1362,6 @@ Proof with eassumption.
   split. eapply update_global_preserves_table_id...
   split. eapply update_global_preserves_types...
   split. eapply update_global_preserves_global_mem_ptr_multiple_of_two with (sr:=sr); eauto.
-  split. auto.
   split. eapply update_global_preserves_inst_funcs_id...
   eapply update_global_preserves_i64_glob_tmps_writable...
 Qed.
@@ -1376,7 +1374,7 @@ Corollary update_local_preserves_INV : forall sr f f' x' v,
         |} ->
   INV sr f'.
 Proof with eauto.
-  intros. unfold INV. destruct H as [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]. subst.
+  intros. unfold INV. destruct H as [?[?[?[?[?[?[?[?[?[?[??]]]]]]]]]]]. subst.
   repeat (split; auto).
   { unfold INV_locals_all_i32 in *. cbn. intros.
     destruct (Nat.eq_dec x' i).
@@ -1393,7 +1391,7 @@ Corollary change_locals_preserves_INV : forall sr f f' l,
         |} ->
   INV sr f'.
 Proof with eauto.
-  intros. unfold INV. destruct H as [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]. subst.
+  intros. unfold INV. destruct H as [?[?[?[?[?[?[?[?[?[?[?[?[?[?[??]]]]]]]]]]]]]]]. subst.
   repeat (split; auto).
 Qed.
 
@@ -1632,7 +1630,7 @@ Corollary update_mem_preserves_INV : forall s s' f m m' vd,
   INV s' f.
 Proof with eassumption.
   intros. unfold INV.
-  destruct H as [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? [? ?]]]]]]]]]]]]]]]].
+  destruct H as [?[?[?[?[?[?[?[?[?[?[?[?[?[?[??]]]]]]]]]]]]]]].
   split. eapply update_mem_preserves_global_var_w...
   split. eapply update_mem_preserves_global_var_w...
   split. eapply update_mem_preserves_result_var_out_of_mem_is_zero...
@@ -1647,7 +1645,6 @@ Proof with eassumption.
   split. eapply update_mem_preserves_table_id...
   split. eapply update_mem_preserves_types...
   split. eapply update_mem_preserves_global_mem_ptr_multiple_of_two...
-  split. auto.
   split. eapply update_mem_preserves_inst_funcs_id...
   unfold INV_i64_glob_tmps_writable. intros. eapply update_mem_preserves_global_var_w; eauto.
 Qed.
@@ -4454,7 +4451,7 @@ Lemma addc_reduce (x y : localidx) :
              repr_val_LambdaANF_Wasm val sr' (f_inst fr) wal).
 Proof.
   intros state sr fr m gmp addrx addry bsx bsy n1 n2 c0_tag c1_tag it_carry v HINV Hc0 Hc1 Hv Hmem [Hxinframe  [Hloadx Hdesx]] [Hyinframe [Hloady Hdesy]] HgmpBounds Hgmp.
-  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ [_ Hi64tempsW]]]]]]]]]]]]]]]].
+  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ Hi64tempsW]]]]]]]]]]]]]]].
   assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor.
   destruct (Hi64tempsW _ Hglob_tmp1 (VAL_int64 (Int64.repr (to_Z (n1 + n2)%uint63)))) as [sr1 Hsr1].
   assert (HINV1 : INV sr1 fr). {
@@ -4613,7 +4610,7 @@ Lemma addcarryc_reduce (x y : localidx) :
              repr_val_LambdaANF_Wasm val sr' (f_inst fr) wal).
 Proof.
   intros state sr fr m gmp addrx addry bsx bsy n1 n2 c0_tag c1_tag it_carry v HINV Hc0 Hc1 Hv Hmem [Hxinframe  [Hloadx Hdesx]] [Hyinframe [Hloady Hdesy]] HgmpBounds Hgmp.
-  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ [_ Hi64tempsW]]]]]]]]]]]]]]]].
+  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ Hi64tempsW]]]]]]]]]]]]]]].
   assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor.
   destruct (Hi64tempsW _ Hglob_tmp1 (VAL_int64 (Int64.repr (to_Z (n1 + n2 + 1)%uint63)))) as [sr1 Hsr1].
   assert (HINV1 : INV sr1 fr). {
@@ -4769,7 +4766,7 @@ Lemma subc_reduce (x y : localidx) :
              repr_val_LambdaANF_Wasm val sr' (f_inst fr) wal).
 Proof.
   intros state sr fr m gmp addrx addry bsx bsy n1 n2 c0_tag c1_tag it_carry v HINV Hc0 Hc1 Hv Hmem [Hxinframe  [Hloadx Hdesx]] [Hyinframe [Hloady Hdesy]] HgmpBounds Hgmp.
-  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ [_ Hi64tempsW]]]]]]]]]]]]]]]].
+  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ Hi64tempsW]]]]]]]]]]]]]]].
   assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor.
   destruct (Hi64tempsW _ Hglob_tmp1 (VAL_int64 (Int64.repr (to_Z (n1 - n2)%uint63)))) as [sr1 Hsr1].
   assert (HINV1 : INV sr1 fr). {
@@ -4919,7 +4916,7 @@ Lemma subcarryc_reduce (x y : localidx) :
              repr_val_LambdaANF_Wasm val sr' (f_inst fr) wal).
 Proof.
   intros state sr fr m gmp addrx addry bsx bsy n1 n2 c0_tag c1_tag it_carry v HINV Hc0 Hc1 Hv Hmem [Hxinframe  [Hloadx Hdesx]] [Hyinframe [Hloady Hdesy]] HgmpBounds Hgmp.
-  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ [_ Hi64tempsW]]]]]]]]]]]]]]]].
+  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ Hi64tempsW]]]]]]]]]]]]]]].
   assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor.
   destruct (Hi64tempsW _ Hglob_tmp1 (VAL_int64 (Int64.repr (to_Z (n1 - n2 - 1)%uint63)))) as [sr1 Hsr1].
   assert (HINV1 : INV sr1 fr). {
@@ -5419,7 +5416,7 @@ Proof.
   intros state sr fr m gmp i xh xl xh0' xl0' q0 y.
   intros HINV Hmem Hgmp Hival Hi HLoopINV.
   destruct HLoopINV as [Hxh0' [Hxl0' [Hy [Hq0 [Hli1 [Hli2 [Hli3 [Hli4 Hli5]]]]]]]].
-  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoDups [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]]].
+  have I := HINV. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoDups [_ [_ [_ [_ Hw]]]]]]]]]]]]]]].
   assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor.
   assert (Hglob_tmp2: i64_glob glob_tmp2) by now right; constructor.
   assert (Hglob_tmp3: i64_glob glob_tmp3) by now right; right; constructor.
@@ -5435,7 +5432,7 @@ Proof.
   clear Hw. intros HINV0.
 
   set (xh1' := (xh0' * 2 + (xl1' mod 2^64 / (2^63)))%Z).
-  have I := HINV0. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]]].
+  have I := HINV0. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]].
   destruct (Hw glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr xh1'))) as [s1 Hupd1].
   assert (Hg2v : sglob_val s1 (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh1')))).
   by eapply update_global_get_same; eauto.
@@ -5446,7 +5443,7 @@ Proof.
   intros HINV1. clear Hw.
 
   set (q1 := (q0 * 2)%Z).
-  have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]]].
+  have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]].
   destruct (Hw glob_tmp4 Hglob_tmp4 (VAL_int64 (Int64.repr q1))) as [s2 Hupd2].
   assert (Hg3v : sglob_val s2 (f_inst fr) glob_tmp4 = Some (VAL_num (VAL_int64 (Int64.repr q1)))).
   by eapply update_global_get_same; eauto.
@@ -5642,7 +5639,7 @@ Proof.
     eapply update_global_get_other with (sr:=sr) (j:=glob_tmp2); eauto. discriminate. }
   {
     set (q2 := (q1 + 1)%Z).
-    have I := HINV2. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]]].
+    have I := HINV2. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_  Hw]]]]]]]]]]]]]]].
     destruct (Hw glob_tmp4 Hglob_tmp4 (VAL_int64 (Int64.repr q2))) as [s3 Hupd3].
     assert (Hg4v : sglob_val s3 (f_inst fr) glob_tmp4 = Some (VAL_num (VAL_int64 (Int64.repr q2)))).
     by eapply update_global_get_same; eauto.
@@ -5653,7 +5650,7 @@ Proof.
     intros HINV3. clear Hw.
 
     set (xh2' := (xh1' - y)%Z).
-    have I := HINV3. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]]].
+    have I := HINV3. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hw]]]]]]]]]]]]]]].
     destruct (Hw glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr xh2'))) as [s4 Hupd4].
     assert (Hg5v : sglob_val s4 (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh2')))).
     by eapply update_global_get_same; eauto.
@@ -5804,7 +5801,7 @@ Proof.
     split; auto.
     split; auto.
     by rewrite Hsfs'' HsfsIH. }
-Qed.  
+Qed.
 
 Lemma primitive_operation_reduces : forall lenv pfs state s f fds f' (x : var) (x' : localidx) (p : prim) op_name str b op_arr op
                                            (ys : list var) (e : exp) (vs : list val) (rho : env) (v : val) instrs mem,
@@ -5980,7 +5977,7 @@ Proof.
           apply mem_store_preserves_max_pages in Hm'. congruence. }
         eapply update_mem_preserves_INV. apply Hinv. eassumption. erewrite <- H. lia.
         congruence. exists (mem_size m); split; auto. unfold mem_size. congruence. reflexivity. }
-      have I := Hinv'. destruct I as [_ [_ [_ [Hgmp_w' [_ [Hglob_mut [Hlinmem' [Hgmp' [_ [_ [_ [_ [_ [Hgmp_mult_two]]]]]]]]]]]]]].
+      have I := Hinv'. destruct I as [_ [_ [_ [Hgmp_w' [_ [Hglob_mut [Hlinmem' [Hgmp' [_ [_ [_ [_ [_ [Hgmp_mult_two _]]]]]]]]]]]]]].
       destruct Hlinmem' as [Hmem1' [m'' [Hmem2' [size' [Hmem3' [Hmem4' Hmem5']]]]]].
       destruct (Hgmp_w' (VAL_int32 (Wasm_int.Int32.iadd (N_to_i32 gmp_v) (nat_to_i32 8)))) as [s_final Hupd_glob].
       assert (smem s' (f_inst f) = Some m'). {
@@ -6027,7 +6024,7 @@ Proof.
         destruct Hgmp_mult_two with (gmp_v:=gmp_v) (m:=m') as [n0' Hn0]. assumption.
         now subst s'.
         lia.
-        destruct H1 as [Heqn0 Hboundn0].
+        destruct H0 as [Heqn0 Hboundn0].
         replace n0 with (gmp_v + 8)%N. lia.
         inv Heqn0.
         simpl_eq. lia.
@@ -6035,7 +6032,7 @@ Proof.
         destruct Hgmp_mult_two with (gmp_v:=gmp_v) (m:=m') as [n0' Hn0]. assumption.
         now subst s'.
         lia.
-        destruct H1 as [Heqn0 Hboundn0].
+        destruct H0 as [Heqn0 Hboundn0].
         replace n0 with (gmp_v + 8)%N.
         exists (n0' + 4)%N; lia.
         inv Heqn0.
@@ -6077,11 +6074,11 @@ Proof.
         replace (smem sr' (f_inst fr)) with (smem s' (f_inst fr)) by now subst fr; eapply update_global_preserves_memory.
         now subst fr.
         assert ((wasm_deserialise (bits (VAL_int64 (Z_to_i64 (to_Z n)))) T_i64) = (VAL_int64 (Z_to_i64 (to_Z n)))) by now apply deserialise_bits.
-        rewrite -H1.
+        rewrite -H0.
         apply (store_load_i64 m m' gmp_v (bits (VAL_int64 (Z_to_i64 (to_Z n))))); auto.
         assert (Wasm_int.N_of_uint i32m (N_to_i32 gmp_v) = gmp_v). {
           cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
-        rewrite -H2.
+        rewrite -H1.
         apply Hm'. }
       assert (HvalsPreserved : forall (wal : wasm_value) (v : val),
                  repr_val_LambdaANF_Wasm v s (f_inst f) wal -> repr_val_LambdaANF_Wasm v sr' (f_inst fr) wal). {
@@ -6093,7 +6090,7 @@ Proof.
         replace (smem sr' (f_inst fr)) with (smem s' (f_inst fr)) by now subst fr; eapply update_global_preserves_memory.
         now subst fr.
         now subst fr.
-        { simpl_modulus. cbn. simpl_modulus_in H1. cbn in H1. simpl_modulus_in HgmpBound.
+        { simpl_modulus. cbn. simpl_modulus_in H0. cbn in H0. simpl_modulus_in HgmpBound.
           apply mem_length_upper_bound in Hmem5.
           unfold page_size, max_mem_pages in *. lia. }
         apply update_global_get_same with (sr:=s').
@@ -6155,8 +6152,8 @@ Proof.
             rewrite M.gss. split; auto.
             split.
             exists x0'. cbn. split. intros.
-            inv Hrepr_x.  unfold translate_var. unfold translate_var in H3.
-            destruct (lenv ! x0) eqn:Hx; rewrite Hx in H3=>//. injection H3 as ->.
+            inv Hrepr_x.  unfold translate_var. unfold translate_var in H2.
+            destruct (lenv ! x0) eqn:Hx; rewrite Hx in H2=>//. injection H2 as ->.
             now rewrite Hx.
             unfold lookup_N; cbn; auto.
             subst fr. cbn. erewrite set_nth_nth_error_same; eauto.
@@ -6164,7 +6161,7 @@ Proof.
           }
           { (* x <> x1 *)
             assert (Hocc : occurs_free (Eprim x0 p [:: x ] e) x2) by now apply Free_Eprim2.
-            have H' := Hvar _ Hocc H2.
+            have H' := Hvar _ Hocc H1.
             destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
             exists val', wal'. split.
             rewrite M.gso; auto. split.
@@ -6175,9 +6172,9 @@ Proof.
             inv Hrepr_x.
             specialize Hl1 with err_str.
             intro. assert (x0' = i') by lia. subst x0'.
-            unfold translate_var in Hl1, H3.
+            unfold translate_var in Hl1, H2.
             destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in Hl1=>//.
-            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H3=>//.
+            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H2=>//.
             have H'' := HlenvInjective _ _ _ _ n0 Hlx2 Hlx1. congruence.
             now apply HvalsPreserved.
           }
@@ -6219,8 +6216,8 @@ Proof.
       subst m0.
       assert (gmp = gmp_v + 8)%N. {
         apply update_global_get_same in Hglob_sr'.
-        rewrite Hglob_sr' in H2.
-        inv H2. now simpl_eq. } subst gmp.
+        rewrite Hglob_sr' in H1.
+        inv H1. now simpl_eq. } subst gmp.
       apply mem_store_preserves_length in Hm'. lia.
 
       exists (Val_ptr gmp_v).
@@ -7116,6 +7113,7 @@ Proof.
           assert (to_Z 63 <= to_Z n2)%Z as Hle by now destruct (Z.lt_ge_cases (to_Z n2) (to_Z 63)).
           rewrite (uint63_lsr63 _ _ Hle) in Hstore; eauto.
           eassumption. } }
+          (* TODO turn solve_arith_op_aux into a lemma *)
     - (* land *) solve_arith_op_aux v (n1 land n2)%uint63 H1 H2 HloadStep' uint63_land_i64_and.
     - (* lor *) solve_arith_op_aux v (n1 lor n2)%uint63 H1 H2 HloadStep' uint63_lor_i64_or.
     - (* lxor *) solve_arith_op_aux v (n1 lxor n2)%uint63 H1 H2 HloadStep' uint63_lxor_i64_xor.
@@ -7581,7 +7579,7 @@ Proof.
     - { (* mulc *)
         inversion H1; subst x1 y0.
         inversion Hres as [Hv_mulc].
-        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ [_ Hi64tempsW]]]]]]]]]]]]]]]].
+        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ Hi64tempsW]]]]]]]]]]]]]]].
         assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor.
         assert (Hglob_tmp2: i64_glob glob_tmp2) by now right; constructor.
         assert (Hglob_tmp3: i64_glob glob_tmp3) by now right; right; constructor.
@@ -7601,42 +7599,42 @@ Proof.
         destruct (Hi64tempsW glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr (lo (to_Z n1) * lo (to_Z n2))%Z))) as [sr1 HupdGlob1].
         assert (HINV1: INV sr1 f) by now eapply update_global_preserves_INV with (sr:=s) (sr':=sr1) (i:=glob_tmp1) (num:=(VAL_int64 (Int64.repr (lo (to_Z n1) * lo (to_Z n2))%Z))); eauto; [discriminate|now intros|now intros].
         have Hmem_sr1 := update_global_preserves_memory _ _ _ _ _ HupdGlob1. symmetry in Hmem_sr1. rewrite Hmem2 in Hmem_sr1.
-        have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW1]]]]]]]]]]]]]]]].
+        have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW1]]]]]]]]]]]]]]].
         destruct (Hi64tempsW1 glob_tmp2 Hglob_tmp2 (VAL_int64 (Int64.repr (hi (to_Z n1) * lo (to_Z n2))%Z))) as [sr2 HupdGlob2].
         assert (HINV2: INV sr2 f) by now eapply update_global_preserves_INV with (sr:=sr1) (sr':=sr2) (i:=glob_tmp2) (num:=(VAL_int64 (Int64.repr (hi (to_Z n1) * lo (to_Z n2))%Z))); eauto; [discriminate|now intros|now intros].
         have Hmem_sr2 := update_global_preserves_memory _ _ _ _ _ HupdGlob2. symmetry in Hmem_sr2.
         rewrite Hmem_sr1 in Hmem_sr2.
-        have I := HINV2. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW2]]]]]]]]]]]]]]]].
+        have I := HINV2. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW2]]]]]]]]]]]]]]].
         destruct (Hi64tempsW2 glob_tmp3 Hglob_tmp3 (VAL_int64 (Int64.repr (lo (to_Z n1) * hi (to_Z n2))%Z))) as [sr3 HupdGlob3].
         assert (HINV3: INV sr3 f) by now eapply update_global_preserves_INV with (sr:=sr2) (sr':=sr3) (i:=glob_tmp3) (num:=(VAL_int64 (Int64.repr (lo (to_Z n1) * hi (to_Z n2))%Z))); eauto; [discriminate|now intros|now intros].
         have Hmem_sr3 := update_global_preserves_memory _ _ _ _ _ HupdGlob3. symmetry in Hmem_sr3.
         rewrite Hmem_sr2 in Hmem_sr3.
-        have I := HINV3. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW3]]]]]]]]]]]]]]]].
+        have I := HINV3. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW3]]]]]]]]]]]]]]].
         destruct (Hi64tempsW3 glob_tmp4 Hglob_tmp4 (VAL_int64 (Int64.repr (hi (to_Z n1) * hi (to_Z n2))%Z))) as [sr4 HupdGlob4].
         assert (HINV4: INV sr4 f) by now eapply update_global_preserves_INV with (sr:=sr3) (sr':=sr4) (i:=glob_tmp4) (num:=(VAL_int64 (Int64.repr (hi (to_Z n1) * hi (to_Z n2))%Z))); eauto; [discriminate|now intros|now intros].
         have Hmem_sr4 := update_global_preserves_memory _ _ _ _ _ HupdGlob4. symmetry in Hmem_sr4.
         rewrite Hmem_sr3 in Hmem_sr4.
-        have I := HINV4. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW4]]]]]]]]]]]]]]]].
+        have I := HINV4. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW4]]]]]]]]]]]]]]].
         destruct (Hi64tempsW4 glob_tmp3 Hglob_tmp3 (VAL_int64 (Int64.repr crs))) as [sr5 HupdGlob5].
         assert (HINV5: INV sr5 f) by now eapply update_global_preserves_INV with (sr:=sr4) (sr':=sr5) (i:=glob_tmp3) (num:=(VAL_int64 (Int64.repr crs))); eauto; [discriminate|now intros|now intros].
         have Hmem_sr5 := update_global_preserves_memory _ _ _ _ _ HupdGlob5. symmetry in Hmem_sr5.
         rewrite Hmem_sr4 in Hmem_sr5.
-        have I := HINV5. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW5]]]]]]]]]]]]]]]].
+        have I := HINV5. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW5]]]]]]]]]]]]]]].
         destruct (Hi64tempsW5 glob_tmp2 Hglob_tmp2 (VAL_int64 (Int64.repr hi64))) as [sr6 HupdGlob6].
         assert (HINV6: INV sr6 f) by now eapply update_global_preserves_INV with (sr:=sr5) (sr':=sr6) (i:=glob_tmp2) (num:=(VAL_int64 (Int64.repr hi64))); eauto; [discriminate|now intros|now intros].
         have Hmem_sr6 := update_global_preserves_memory _ _ _ _ _ HupdGlob6. symmetry in Hmem_sr6.
         rewrite Hmem_sr5 in Hmem_sr6.
-        have I := HINV6. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW6]]]]]]]]]]]]]]]].
+        have I := HINV6. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW6]]]]]]]]]]]]]]].
         destruct (Hi64tempsW6 glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr lo64))) as [sr7 HupdGlob7].
         assert (HINV7: INV sr7 f) by now eapply update_global_preserves_INV with (sr:=sr6) (sr':=sr7) (i:=glob_tmp1) (num:=(VAL_int64 (Int64.repr lo64))); eauto; [discriminate|now intros|now intros].
         have Hmem_sr7 := update_global_preserves_memory _ _ _ _ _ HupdGlob7. symmetry in Hmem_sr7.
         rewrite Hmem_sr6 in Hmem_sr7.
-        have I := HINV7. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW7]]]]]]]]]]]]]]]].
+        have I := HINV7. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW7]]]]]]]]]]]]]]].
         destruct (Hi64tempsW7 glob_tmp2 Hglob_tmp2 (VAL_int64 (Int64.repr hi63))) as [sr8 HupdGlob8].
         assert (HINV8: INV sr8 f) by now eapply update_global_preserves_INV with (sr:=sr7) (sr':=sr8) (i:=glob_tmp2) (num:=(VAL_int64 (Int64.repr hi63))); eauto; [discriminate|now intros|now intros].
         have Hmem_sr8 := update_global_preserves_memory _ _ _ _ _ HupdGlob8. symmetry in Hmem_sr8.
         rewrite Hmem_sr7 in Hmem_sr8.
-        have I := HINV8. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW8]]]]]]]]]]]]]]]].
+        have I := HINV8. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW8]]]]]]]]]]]]]]].
         destruct (Hi64tempsW8 glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr lo63))) as [sr9 HupdGlob9].
         assert (HINV9: INV sr9 f) by now eapply update_global_preserves_INV with (sr:=sr8) (sr':=sr9) (i:=glob_tmp1) (num:=(VAL_int64 (Int64.repr lo63))); eauto; [discriminate|now intros|now intros].
         have Hmem_sr9 := update_global_preserves_memory _ _ _ _ _ HupdGlob9. symmetry in Hmem_sr9.
@@ -7923,12 +7921,12 @@ Proof.
     - { (* diveucl *)
         inversion H1; subst x1 y0.
         inversion Hres as [Hv_diveucl].
-        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ [_ Hi64tempsW]]]]]]]]]]]]]]]].
+        have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ Hi64tempsW]]]]]]]]]]]]]]].
         assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor. assert (Hglob_tmp2: i64_glob glob_tmp2) by now right; constructor.
         destruct (Hi64tempsW glob_tmp1 Hglob_tmp1 (VAL_int64 (Int64.repr (to_Z (fst (diveucl n1 n2)%uint63))))) as [sr1 HupdGlob1].
         assert (HINV1: INV sr1 f) by now eapply update_global_preserves_INV with (sr:=s) (sr':=sr1) (i:=glob_tmp1) (num:=(VAL_int64 (Int64.repr (to_Z (fst (diveucl n1 n2)%uint63))))); eauto; [discriminate|now intros|now intros].
         have Hmem_sr1 := update_global_preserves_memory _ _ _ _ _ HupdGlob1. symmetry in Hmem_sr1. rewrite Hmem2 in Hmem_sr1.
-        have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW1]]]]]]]]]]]]]]]].
+        have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64tempsW1]]]]]]]]]]]]]]].
         destruct (Hi64tempsW1 glob_tmp2 Hglob_tmp2 (VAL_int64 (Int64.repr (to_Z (snd (diveucl n1 n2)%uint63))))) as [sr2 HupdGlob2].
         assert (Hrange' : (-1 < Z.of_N gmp_v < Int32.modulus)%Z) by lia.
         destruct (Hmult2 gmp_v m Hmem2 Hgmp Hrange') as [n0 Hn0].
@@ -8310,7 +8308,7 @@ Proof.
       clear Htrue Hfalse Hc0 Hc1 Heq Hlt Hgt true_tag false_tag bool_tag eq_tag lt_tag gt_tag comp_tag carry_tag c0_tag c1_tag.
       rename x into arg1, y into arg2, z into arg3.
       rename n1 into xh, n2 into xl, n3 into y.
-      have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ [_ Hi64tempsW]]]]]]]]]]]]]]]].
+      have I := Hinv. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [HnoGlobDups [_ [_ [Hmult2 [_ Hi64tempsW]]]]]]]]]]]]]]].
       assert (Hglob_tmp1: i64_glob glob_tmp1) by now constructor.
       assert (Hglob_tmp2: i64_glob glob_tmp2) by now right; constructor.
       assert (Hglob_tmp3: i64_glob glob_tmp3) by now right; right; constructor.
@@ -8520,19 +8518,19 @@ Proof.
         have Hs0m := update_global_preserves_memory _ _ _ _ _ Hupd0. symmetry in Hs0m. rewrite Hmem2 in Hs0m.
         have : INV s0 f.
         eapply update_global_preserves_INV; eauto. right; split; auto. discriminate. now intros. now intros.
-        intros HINV0. have I := HINV0. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64w0]]]]]]]]]]]]]]]].
+        intros HINV0. have I := HINV0. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64w0]]]]]]]]]]]]]]].
         destruct (Hi64w0 glob_tmp2 Hglob_tmp2 (VAL_int64 (Int64.repr (to_Z xl)))) as [s1 Hupd1]. clear Hi64w0.
         have Hs1m := update_global_preserves_memory _ _ _ _ _ Hupd1. symmetry in Hs1m. rewrite Hs0m in Hs1m.
         have : INV s1 f.
         eapply update_global_preserves_INV with (sr:=s0) (i:=glob_tmp2) (num:=VAL_int64 (Int64.repr (to_Z xl))); eauto.
         discriminate. now intros. now intros.
-        intros HINV1. have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64w1]]]]]]]]]]]]]]]].
+        intros HINV1. have I := HINV1. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64w1]]]]]]]]]]]]]]].
         destruct (Hi64w1 glob_tmp3 Hglob_tmp3 (VAL_int64 (Int64.repr (to_Z y)))) as [s2 Hupd2]. clear Hi64w1.
         have Hs2m := update_global_preserves_memory _ _ _ _ _ Hupd2. symmetry in Hs2m. rewrite Hs1m in Hs2m.
         have : INV s2 f.
         eapply update_global_preserves_INV with (sr:=s1) (i:=glob_tmp3) (num:=VAL_int64 (Int64.repr (to_Z y))); eauto.
         discriminate. now intros. now intros.
-        intros HINV2. have I := HINV2. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64w2]]]]]]]]]]]]]]]].
+        intros HINV2. have I := HINV2. destruct I as [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ [_ Hi64w2]]]]]]]]]]]]]]].
         destruct (Hi64w2 glob_tmp4 Hglob_tmp4 (VAL_int64 (Int64.repr 0))) as [s3 Hupd3]. clear Hi64w2.
         have Hs3m := update_global_preserves_memory _ _ _ _ _ Hupd3. symmetry in Hs3m. rewrite Hs2m in Hs3m.
         have : INV s3 f.
@@ -8732,7 +8730,7 @@ Proof.
           apply mem_store_preserves_max_pages in Hm'. congruence. }
         eapply update_mem_preserves_INV. apply Hinv. eassumption. erewrite <- H. lia.
         congruence. exists (mem_size m); split; auto. unfold mem_size. congruence. reflexivity. }
-      have I := Hinv'. destruct I as [_ [_ [_ [Hgmp_w' [_ [Hglob_mut [Hlinmem' [Hgmp' [_ [_ [_ [_ [_ [Hgmp_mult_two]]]]]]]]]]]]]].
+      have I := Hinv'. destruct I as [_ [_ [_ [Hgmp_w' [_ [Hglob_mut [Hlinmem' [Hgmp' [_ [_ [_ [_ [_ [Hgmp_mult_two _]]]]]]]]]]]]]].
       destruct Hlinmem' as [Hmem1' [m'' [Hmem2' [size' [Hmem3' [Hmem4' Hmem5']]]]]].
       destruct (Hgmp_w' (VAL_int32 (Wasm_int.Int32.iadd (N_to_i32 gmp_v) (nat_to_i32 8)))) as [s_final Hupd_glob].
       assert (smem s' (f_inst f) = Some m'). {
@@ -8779,7 +8777,7 @@ Proof.
         destruct Hgmp_mult_two with (gmp_v:=gmp_v) (m:=m') as [n0' Hn0]. assumption.
         now subst s'.
         lia.
-        destruct H1 as [Heqn0 Hboundn0].
+        destruct H0 as [Heqn0 Hboundn0].
         replace n0 with (gmp_v + 8)%N. lia.
         inv Heqn0.
         simpl_eq. lia.
@@ -8787,7 +8785,7 @@ Proof.
         destruct Hgmp_mult_two with (gmp_v:=gmp_v) (m:=m') as [n0' Hn0]. assumption.
         now subst s'.
         lia.
-        destruct H1 as [Heqn0 Hboundn0].
+        destruct H0 as [Heqn0 Hboundn0].
         replace n0 with (gmp_v + 8)%N.
         exists (n0' + 4)%N; lia.
         inv Heqn0.
@@ -8829,11 +8827,11 @@ Proof.
         replace (smem sr' (f_inst fr)) with (smem s' (f_inst fr)) by now subst fr; eapply update_global_preserves_memory.
         now subst fr.
         assert ((wasm_deserialise (bits (VAL_int64 (Z_to_i64 (to_Z n)))) T_i64) = (VAL_int64 (Z_to_i64 (to_Z n)))) by now apply deserialise_bits.
-        rewrite -H1.
+        rewrite -H0.
         apply (store_load_i64 m m' gmp_v (bits (VAL_int64 (Z_to_i64 (to_Z n))))); auto.
         assert (Wasm_int.N_of_uint i32m (N_to_i32 gmp_v) = gmp_v). {
           cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
-        rewrite -H2.
+        rewrite -H1.
         apply Hm'. }
       assert (HvalsPreserved : forall (wal : wasm_value) (v : val),
                  repr_val_LambdaANF_Wasm v s (f_inst f) wal -> repr_val_LambdaANF_Wasm v sr' (f_inst fr) wal). {
@@ -8845,7 +8843,7 @@ Proof.
         replace (smem sr' (f_inst fr)) with (smem s' (f_inst fr)) by now subst fr; eapply update_global_preserves_memory.
         now subst fr.
         now subst fr.
-        { simpl_modulus. cbn. simpl_modulus_in H1. cbn in H1. simpl_modulus_in HgmpBound.
+        { simpl_modulus. cbn. simpl_modulus_in H0. cbn in H0. simpl_modulus_in HgmpBound.
           apply mem_length_upper_bound in Hmem5.
           unfold page_size, max_mem_pages in *. lia. }
         apply update_global_get_same with (sr:=s').
@@ -8907,8 +8905,8 @@ Proof.
             rewrite M.gss. split; auto.
             split.
             exists x0'. cbn. split. intros.
-            inv Hrepr_x.  unfold translate_var. unfold translate_var in H3.
-            destruct (lenv ! x0) eqn:Hx; rewrite Hx in H3=>//. injection H3 as ->.
+            inv Hrepr_x.  unfold translate_var. unfold translate_var in H2.
+            destruct (lenv ! x0) eqn:Hx; rewrite Hx in H2=>//. injection H2 as ->.
             now rewrite Hx.
             unfold lookup_N; cbn; auto.
             subst fr. cbn. erewrite set_nth_nth_error_same; eauto.
@@ -8916,7 +8914,7 @@ Proof.
           }
           { (* x <> x1 *)
             assert (Hocc : occurs_free (Eprim x0 p [:: x ; y ; z] e) x2) by now apply Free_Eprim2.
-            have H' := Hvar _ Hocc H2.
+            have H' := Hvar _ Hocc H1.
             destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
             exists val', wal'. split.
             rewrite M.gso; auto. split.
@@ -8927,9 +8925,9 @@ Proof.
             inv Hrepr_x.
             specialize Hl1 with err_str.
             intro. assert (x0' = i') by lia. subst x0'.
-            unfold translate_var in Hl1, H3.
+            unfold translate_var in Hl1, H2.
             destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in Hl1=>//.
-            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H3=>//.
+            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H2=>//.
             have H'' := HlenvInjective _ _ _ _ n0 Hlx2 Hlx1. congruence.
             now apply HvalsPreserved.
           }
@@ -8971,8 +8969,8 @@ Proof.
       subst m0.
       assert (gmp = gmp_v + 8)%N. {
         apply update_global_get_same in Hglob_sr'.
-        rewrite Hglob_sr' in H2.
-        inv H2. now simpl_eq. } subst gmp.
+        rewrite Hglob_sr' in H1.
+        inv H1. now simpl_eq. } subst gmp.
       apply mem_store_preserves_length in Hm'. lia.
 
       exists (Val_ptr gmp_v).
