@@ -945,9 +945,9 @@ Definition wasm_value_to_i32 (v : wasm_value) :=
 (* memory *)
 
 Lemma store_load_i32 : forall m m' addr v,
-length v = 4 ->
-store m addr 0%N v 4 = Some m' ->
-load_i32 m' addr = Some (wasm_deserialise v T_i32).
+  length v = 4 ->
+  store m addr 0%N v 4 = Some m' ->
+  load_i32 m' addr = Some (wasm_deserialise v T_i32).
 Proof.
   intros. assert (mem_length m = mem_length m').
   { rewrite <- H in H0. now eapply mem_store_preserves_length. }
@@ -1019,9 +1019,9 @@ Proof.
 Qed.
 
 Lemma store_load_i64 : forall m m' addr v,
-length v = 8 ->
-store m addr 0%N v 8 = Some m' ->
-load_i64 m' addr = Some (wasm_deserialise v T_i64).
+  length v = 8 ->
+  store m addr 0%N v 8 = Some m' ->
+  load_i64 m' addr = Some (wasm_deserialise v T_i64).
 Proof.
   intros. assert (mem_length m = mem_length m').
   { rewrite <- H in H0. now eapply mem_store_preserves_length. }
@@ -1240,12 +1240,9 @@ Proof.
   eauto.
 Qed.
 
-(* kept for compatability, TODO remove *)
-Definition mem_max_opt := fun m => m.(meminst_type).(lim_max).
-
-Lemma mem_store_preserves_max_pages : forall (m m' : meminst) v x l,
+Lemma mem_store_preserves_lim_max : forall (m m' : meminst) v x l,
    store m x 0%N v l = Some m' ->
-   mem_max_opt m = mem_max_opt m'.
+   m.(meminst_type).(lim_max) = m'.(meminst_type).(lim_max).
 Proof.
   intros.
   unfold store in H.
@@ -1262,7 +1259,6 @@ Proof.
   destruct ((mem_size m + sgrow <=? page_limit)%N) eqn:Hari; rewrite Hari in H.
   2: inv H.
   destruct (lim_max (meminst_type m)) eqn:Hmaxpages.
-  (* mem_max_opt = Some n0 *)
   destruct (mem_size m + sgrow <=? u)%N; inv H.
   unfold mem_length. unfold memory_list.mem_length.
   rewrite app_length. rewrite Nat2N.inj_add.
@@ -1280,7 +1276,7 @@ Proof.
   destruct ((mem_size m + sgrow <=? page_limit)%N) eqn:Hari;
     rewrite Hari in H. 2: inv H.
   destruct (lim_max (meminst_type m)) eqn:Hmaxpages; cbn in H.
-  (* mem_max_opt = Some n0 *)
+  (* lim_max = Some n0 *)
   destruct (mem_size m + sgrow <=? u)%N. 2: inv H. inv H.
   unfold mem_size. unfold mem_length. unfold memory_list.mem_length.
   rewrite app_length. rewrite Nat2N.inj_add.
@@ -1288,7 +1284,7 @@ Proof.
   remember (N.of_nat (Datatypes.length (memory_list.ml_data (meminst_data m)))) as len.
   rewrite repeat_length. rewrite N2Nat.id.
   replace (sgrow * (64 * 1024))%N with (sgrow * 65536)%N; reflexivity.
-  (* mem_max_opt = None *)
+  (* lim_max = None *)
   inv H. unfold mem_size. unfold mem_length. unfold memory_list.mem_length.
   rewrite app_length. rewrite Nat2N.inj_add.
   rewrite N.add_comm. unfold page_size. rewrite <- N.div_add_l. 2: intro; lia.
@@ -1298,12 +1294,12 @@ Qed.
 
 Lemma mem_grow_preserves_max_pages : forall n m m' bytes,
   mem_grow m bytes = Some m' ->
-  mem_max_opt m = Some n ->
-  mem_max_opt m' = Some n.
+  m.(meminst_type).(lim_max) = Some n ->
+  m'.(meminst_type).(lim_max) = Some n.
 Proof.
   intros. unfold mem_grow in H.
   destruct ((mem_size m + bytes <=? mem_limit_bound)%N). 2: inv H. cbn in H.
-  unfold mem_max_opt in H0. rewrite H0 in H.
+  rewrite H0 in H.
   destruct ((mem_size m + bytes <=? n)%N). 2: inv H. inv H. reflexivity.
 Qed.
 
@@ -1328,7 +1324,7 @@ Proof.
 Qed.
 
 Lemma mem_grow_preserves_original_values : forall a m m' maxlim,
-  (mem_max_opt m = Some maxlim)%N ->
+  (m.(meminst_type).(lim_max) = Some maxlim)%N ->
   (maxlim <= page_limit)%N ->
   (mem_size m + 1 <= maxlim)%N ->
   mem_grow m 1 = Some m' ->
@@ -1339,7 +1335,7 @@ Proof.
   have Hg := Hgrow. apply mem_grow_increases_length in Hg.
   unfold mem_grow in Hgrow.
   assert (Hlim4: (mem_size m + 1 <= page_limit)%N) by lia. apply N.leb_le in Hlim4, Hlim3.
-  rewrite Hlim4 in Hgrow. unfold mem_max_opt in Hlim1.
+  rewrite Hlim4 in Hgrow.
   rewrite Hlim1 in Hgrow. rewrite Hlim3 in Hgrow. inv Hgrow.
   assert (Hlen: (a + 8 <=?
      mem_length {| meminst_data := {| ml_init := ml_init (meminst_data m);
@@ -1783,6 +1779,201 @@ Proof. auto. Qed.
 Lemma unfold_val_notation : forall v, $VN v = $V (VAL_num v).
 Proof. auto. Qed.
 
+Lemma reduce_trans_label' : forall instr instr' hs hs' sr sr' fr fr' i (lh : lholed i),
+  reduce_trans (hs, sr, fr, instr) (hs', sr', fr', instr') ->
+  reduce_trans (hs,  sr,  fr, lfill lh instr) (hs', sr', fr', lfill lh instr').
+Proof.
+  intros.
+  apply clos_rt_rt1n in H.
+  remember (hs, sr, fr, instr) as x. remember (hs', sr', fr', instr') as x'.
+  generalize dependent hs. generalize dependent hs'.
+  revert fr fr' sr sr' instr instr'.
+  induction H; intros; subst.
+  - inv Heqx. apply rt_refl.
+  - destruct y as [[[? ?] ?] ?].
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])).
+    eapply rt_step. eapply r_label with (k:=i) (lh:=lh); eauto.
+    now apply IHclos_refl_trans_1n.
+Qed.
+
+Lemma reduce_trans_label0 : forall instr instr' hs hs' sr sr' fr fr',
+  reduce_trans (hs,  sr, fr, instr) (hs', sr', fr', instr') ->
+  reduce_trans (hs,  sr, fr, [:: AI_label 0 [::] instr]) (hs', sr', fr', [:: AI_label 0 [::] instr']).
+Proof.
+  intros.
+  remember (LH_rec [] 0 [] (LH_base [] []) []) as lh.
+  have H' := reduce_trans_label' instr instr' _ _ _ _ _ _ _ lh. subst lh. cbn in H'.
+  do 2! rewrite cats0 in H'. eapply rt_trans. eapply H'; auto. eassumption.
+  apply rt_refl.
+Qed.
+
+Lemma reduce_trans_label1 : forall instr instr' hs hs' sr sr' fr fr',
+  reduce_trans (hs,  sr, fr, instr) (hs', sr', fr', instr') ->
+  reduce_trans (hs,  sr, fr, [:: AI_label 1 [::] instr]) (hs', sr', fr', [:: AI_label 1 [::] instr']).
+Proof.
+  intros.
+  remember (LH_rec [] 1 [] (LH_base [] []) []) as lh.
+  have H' := reduce_trans_label' instr instr' _ _ _ _ _ _ _ lh. subst lh. cbn in H'.
+  do 2! rewrite cats0 in H'. eapply rt_trans. eapply H'; auto. eassumption.
+  apply rt_refl.
+Qed.
+
+Lemma reduce_trans_frame : forall instr instr' hs hs' sr sr' fr fr' f0,
+  reduce_trans (hs, sr, fr, instr) (hs', sr', fr', instr') ->
+  reduce_trans (hs, sr, f0, [:: AI_frame 0 fr instr]) (hs', sr', f0, [:: AI_frame 0 fr' instr']).
+Proof.
+  intros.
+  apply clos_rt_rt1n in H.
+  remember (hs, sr, fr, instr) as x. remember (hs', sr', fr', instr') as x'.
+  generalize dependent hs. generalize dependent hs'. revert instr instr' fr fr' f0 sr sr'.
+  induction H; intros; subst.
+  - inv Heqx. apply rt_refl.
+  - destruct y as [[[? ?] ?] ?].
+    have IH := IHclos_refl_trans_1n _ _ _ _ _ _ _ _ Logic.eq_refl _ Logic.eq_refl.
+    eapply rt_trans with (y := (?[hs], ?[sr], f0, [:: AI_frame 0 ?[f'] ?[instr]])).
+    2: by apply IH.
+    eapply rt_step. now eapply r_frame.
+Qed.
+
+Lemma app_trans: forall s f es s' f' es' les hs hs',
+  reduce_trans (hs, s, f, es) (hs', s', f', es') ->
+  reduce_trans (hs, s, f, (es ++ les)) (hs', s', f', (es' ++ les)).
+Proof.
+  intros. apply clos_rt_rt1n in H. remember (hs, s, f, es) as x.
+  remember (hs', s', f', es') as x'. generalize dependent hs. generalize dependent hs'.
+  revert s s' f f' es es'. induction H; intros; subst.
+  - inv Heqx. apply rt_refl.
+  - destruct y as [[[hs0 s0] f0] es0].
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[l])). apply rt_step.
+    eapply r_label with (k:=0) (lh:=LH_base [] les). apply H.
+    reflexivity. reflexivity.
+    apply IHclos_refl_trans_1n; auto.
+Qed.
+
+(** The lemmas [r_eliml] and [r_elimr] are relicts,
+    kept for compatability for now, TODO rework (use new context representation) **)
+Lemma r_eliml : forall hs s f es hs' s' f' es' lconst,
+  const_list lconst ->
+  reduce hs s f es hs' s' f' es' ->
+  reduce hs s f (lconst ++ es) hs' s' f' (lconst ++ es').
+Proof.
+  move => hs s f es hs' s' f' es' lconst HConst H.
+  apply const_es_exists in HConst. destruct HConst as [vs ?].
+  eapply r_label with (lh:=LH_base vs []). eassumption.
+  - cbn. rewrite cats0. congruence.
+  - cbn. rewrite cats0. congruence.
+Qed.
+
+Lemma r_elimr: forall hs s f es hs' s' f' es' les,
+  reduce hs s f es hs' s' f' es' ->
+  reduce hs s f (es ++ les) hs' s' f' (es' ++ les).
+Proof.
+  move => hs s f es hs' s' f' es' les H.
+  eapply r_label with (lh:=LH_base [] les); eauto.
+Qed.
+
+
+Lemma app_trans_const : forall hs hs' s s' f f' es es' lconst,
+  const_list lconst ->
+  reduce_trans (hs, s, f, es) (hs', s', f', es') ->
+  reduce_trans (hs, s, f, (lconst ++ es)) (hs', s', f', (lconst ++ es')).
+Proof.
+  intros ? ? ? ? ? ? ? ? ? Hconst Hred. apply clos_rt_rt1n in Hred.
+  remember (hs, s, f, es) as x. remember (hs', s', f', es') as x'.
+  generalize dependent hs. generalize dependent hs'. generalize dependent lconst.
+  revert s s' f f' es es'.
+  induction Hred; intros; subst.
+  - inv Heqx. apply rt_refl.
+  - destruct y as [[[hs'' s''] f''] es''].
+    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[instr])).
+    apply rt_step. apply r_eliml. cbn. now rewrite Hconst. eassumption.
+    apply IHHred; auto.
+Qed.
+
+
+Lemma decode_int32_bounds : forall b m addr,
+  load m addr 0%N 4 = Some b ->
+  (-1 < decode_int b < Wasm_int.Int32.modulus)%Z.
+Proof.
+  intros.
+  (* length b = 4 bytes *)
+  unfold load, those in H.
+  destruct (addr + (0 + N.of_nat 4) <=? mem_length m)%N. 2: inv H.
+  unfold read_bytes in H. cbn in H.
+  destruct (memory_list.mem_lookup (addr + 0 + 0)%N (meminst_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (addr + 0 + 1)%N (meminst_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (addr + 0 + 2)%N (meminst_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (addr + 0 + 3)%N (meminst_data m)). 2: inv H.
+  inv H.
+  unfold decode_int, int_of_bytes, rev_if_be, Wasm_int.Int32.modulus, two_power_nat.
+  destruct Archi.big_endian;
+    destruct b0, b1, b2, b3; cbn;
+      unfold Byte.modulus, Byte.wordsize, two_power_nat, Wordsize_8.wordsize in *;
+        cbn in *; lia.
+Qed.
+
+Lemma decode_int64_bounds : forall b m addr,
+  load m addr 0%N 8 = Some b ->
+  (-1 < decode_int b < Wasm_int.Int64.modulus)%Z.
+Proof.
+  intros.
+  (* length b = 8 bytes *)
+  unfold load, those in H.
+  destruct (addr + (0 + N.of_nat 8) <=? mem_length m)%N. 2: inv H.
+  unfold read_bytes in H. cbn in H.
+  destruct (memory_list.mem_lookup (addr + 0 + 0)%N (meminst_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (addr + 0 + 1)%N (meminst_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (addr + 0 + 2)%N (meminst_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (addr + 0 + 3)%N (meminst_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (addr + 0 + 4)%N (meminst_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (addr + 0 + 5)%N (meminst_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (addr + 0 + 6)%N (meminst_data m)). 2: inv H.
+  destruct (memory_list.mem_lookup (addr + 0 + 7)%N (meminst_data m)). 2: inv H.
+  inv H.
+  unfold decode_int, int_of_bytes, rev_if_be, Wasm_int.Int64.modulus, two_power_nat.
+  destruct Archi.big_endian;
+    destruct b0, b1, b2, b3, b4, b5, b6, b7; cbn;
+      unfold Byte.modulus, Byte.wordsize, two_power_nat, Wordsize_8.wordsize in *;
+        cbn in *; lia.
+Qed.
+
+Lemma lholed_nested_label : forall k (lh : lholed k) es es',
+  exists k' (lh' : lholed k'),
+  lfill lh ([:: AI_label 0 [::] es] ++ es') = lfill lh' es.
+Proof.
+  intros. induction lh; cbn.
+  - eexists. exists (LH_rec l 0 [] (LH_base [] []) (es' ++ l0)). cbn.
+    by rewrite cats0.
+  - destruct IHlh as [k' [lh' Heq]]. cbn.
+    eexists. exists (LH_rec l n l0 lh' l1). cbn.
+    now rewrite Heq.
+Qed.
+
+Lemma lholed_nested_label2 : forall k (lh : lholed k) es es',
+  exists k' (lh' : lholed k'),
+  lfill lh ([:: AI_label 0 [::] [:: AI_label 0 [::] es]] ++ es') = lfill lh' es.
+Proof.
+  intros. induction lh; cbn.
+  - eexists. exists (LH_rec l 0 [] (LH_rec [] 0 [] (LH_base [] []) []) (es' ++ l0)). cbn.
+    by rewrite cats0.
+  - destruct IHlh as [k' [lh' Heq]]. cbn.
+    eexists. exists (LH_rec l n l0 lh' l1). cbn.
+    now rewrite Heq.
+Qed.
+
+Lemma lholed_tail : forall k (lh : lholed k) es es',
+  exists k' (lh' : lholed k'),
+  lfill lh (es ++ es') = lfill lh' es.
+Proof.
+  intros.
+  induction lh; cbn.
+  - eexists. exists (LH_base l (es' ++ l0)). now rewrite -catA.
+  - destruct IHlh as [k' [lh' Heq]].
+    eexists. rewrite Heq.
+    exists (LH_rec l n l0 lh' l1).
+    reflexivity.
+Qed.
+
 End Wasm.
 
 Section Arith.
@@ -1802,9 +1993,14 @@ Proof.
   have H' := Wasm_int.Int32.Z_mod_modulus_range x. simpl_modulus_in H'. simpl_modulus. cbn. lia.
 Qed.
 
-Lemma N_div_ge0 : forall a b, (b > 0)%N -> (a >= 0)%N -> (a / b >= 0)%N.
+Lemma N_div_ge0 : forall a b,
+  (b > 0)%N ->
+  (a >= 0)%N ->
+  (a / b >= 0)%N.
 Proof.
-  intros. assert (Z.of_N a / Z.of_N b >= 0)%Z. apply Z_div_ge0; lia. lia.
+  intros.
+  assert (Z.of_N a / Z.of_N b >= 0)%Z.
+  apply Z_div_ge0; lia. lia.
 Qed.
 
 Lemma small_signed_repr_n_n : forall n,

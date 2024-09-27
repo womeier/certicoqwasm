@@ -250,11 +250,10 @@ Proof.
       apply bet_weakening with (ts:=[::T_num T_i32]). by apply IHl.
 Qed.
 
-Lemma prim_op_typing {lenv} :
-  forall c ys op instrs,
-    @context_restr lenv c ->
-    @repr_primitive_operation nenv lenv op ys instrs ->
-      be_typing c instrs (Tf [::] [:: T_num T_i32]).
+Lemma prim_op_typing {lenv} : forall c ys op instrs,
+  @context_restr lenv c ->
+  @repr_primitive_operation nenv lenv op ys instrs ->
+  be_typing c instrs (Tf [::] [:: T_num T_i32]).
 Proof.
   intros c ys op instrs Hcontext Hinstrs.
   assert (Hmem:exists m, lookup_N (tc_mems c) 0 = Some m) by now destruct Hcontext as (_ & _ & _ & _ & Hmems &_); destruct (tc_mems c);[contradiction| eexists].
@@ -429,12 +428,14 @@ Definition initial_store :=
  ; s_globals := nil
  |}.
 
-Lemma inductive_eq_dec : forall e, {exists fds e', e = Efun fds e'} + {~exists fds e', e = Efun fds e'}.
+Lemma inductive_eq_dec : forall e,
+  {exists fds e', e = Efun fds e'} + {~exists fds e', e = Efun fds e'}.
 Proof.
    destruct e; try (right; move => [fds' [e' Hcontra]]; inv Hcontra; done). left. eauto.
 Qed.
 
-Lemma eqseq_true {T : eqType} : forall (l1 l2 : seq.seq T), eqseq l1 l2 = true -> l1 = l2.
+Lemma eqseq_true {T : eqType} : forall (l1 l2 : seq.seq T),
+  eqseq l1 l2 = true -> l1 = l2.
 Proof.
   intros. destruct (@eqseqP _ l1 l2); auto. inv H.
 Qed.
@@ -575,9 +576,9 @@ Proof.
 Qed.
 
 Lemma nth_list_function_types : forall m n def,
-    m <= n ->
-    List.nth m (list_function_types n) def =
-    Tf (List.repeat (T_num T_i32) m) [].
+  m <= n ->
+  List.nth m (list_function_types n) def =
+  Tf (List.repeat (T_num T_i32) m) [].
 Proof.
   induction m; intros; try lia.
   - destruct n; try lia; reflexivity.
@@ -628,20 +629,20 @@ Proof.
 Qed.
 
 Lemma add_funcs_effect : forall s' s'' l l1 l2 mi,
-    fold_left
-          (fun '(s, ys) (x : module_func) =>
+  fold_left
+    (fun '(s, ys) (x : module_func) =>
            (add_func s (gen_func_instance x mi),
             N.of_nat (Datatypes.length (s_funcs s)) :: ys)) l
           (s', l1) = (s'', l2) ->
 
-    (s_datas s' = s_datas s'') /\
-    (s_elems s' = s_elems s'') /\
-    (s_globals s' = s_globals s'') /\
-    (s_mems s' = s_mems s'') /\
-    (s_tables s' = s_tables s'') /\
-    (s_funcs s'' = (s_funcs s') ++
-    (map (fun a => gen_func_instance a mi) l ))%list /\
-    l2 = List.app (List.rev (funcidcs (length l) (N.of_nat (length (s_funcs s'))))) l1.
+  (s_datas s' = s_datas s'') /\
+  (s_elems s' = s_elems s'') /\
+  (s_globals s' = s_globals s'') /\
+  (s_mems s' = s_mems s'') /\
+  (s_tables s' = s_tables s'') /\
+  (s_funcs s'' = (s_funcs s') ++
+  (map (fun a => gen_func_instance a mi) l ))%list /\
+  l2 = List.app (List.rev (funcidcs (length l) (N.of_nat (length (s_funcs s'))))) l1.
 Proof.
   intros. generalize dependent l1. revert s' s'' l2.
   induction l; intros.
@@ -658,8 +659,8 @@ Qed.
 
 Lemma translate_fvar_fname_mapping_aux : forall fds e f i n env,
   (forall x j, env ! x = Some j -> j < N.of_nat (numOf_fundefs fds) + n)%N ->
-  (create_var_mapping n (collect_function_vars (Efun fds e))
-        env) ! f = Some i -> (i < N.of_nat (numOf_fundefs fds) + n)%N.
+  (create_var_mapping n (collect_function_vars (Efun fds e)) env) ! f = Some i ->
+  (i < N.of_nat (numOf_fundefs fds) + n)%N.
 Proof.
   induction fds; intros.
   - remember (numOf_fundefs (Fcons v f l e fds)) as len. cbn in Heqlen. destruct len. lia.
@@ -674,8 +675,8 @@ Proof.
 Qed.
 
 Lemma translate_fvar_fname_mapping : forall e f errMsg i,
-    translate_var nenv (create_fname_mapping e) f errMsg = Ret i ->
-    match e with Efun fds _ => N.to_nat i < numOf_fundefs fds + num_custom_funs | _ => True end.
+  translate_var nenv (create_fname_mapping e) f errMsg = Ret i ->
+  match e with Efun fds _ => N.to_nat i < numOf_fundefs fds + num_custom_funs | _ => True end.
 Proof.
   intros. unfold create_fname_mapping, translate_var in H.
   destruct ((create_var_mapping (N.of_nat num_custom_funs) (collect_function_vars e)
@@ -1038,8 +1039,7 @@ Lemma gen_fun_instance_simplify_eq : forall fns mi,
   (Z.of_nat (length fns) <= max_num_functions)%Z ->
   (forall fn, In fn fns -> type fn <= 100)%N ->
   inst_types mi = list_function_types (Pos.to_nat 100) ->
-  [seq gen_func_instance {| modfunc_type := type fn; modfunc_locals := locals fn; modfunc_body := body fn |}
-         mi
+  [seq gen_func_instance {| modfunc_type := type fn; modfunc_locals := locals fn; modfunc_body := body fn |} mi
      | fn <- fns] =
   [seq FC_func_native (Tf (repeat (T_num T_i32) (N.to_nat (type fn))) [::])
          (f_inst {| f_locs := [::]; f_inst := mi |})
