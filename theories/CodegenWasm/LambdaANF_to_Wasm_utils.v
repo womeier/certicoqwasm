@@ -105,18 +105,6 @@ Proof.
     destruct j; cbn; auto. apply IHl. lia. lia.
 Qed.
 
-Lemma nth_error_ext {A} (l l' : list A) :
-  (forall n, nth_error l n = nth_error l' n) -> l = l'.
-Proof.
-  revert l'. induction l as [|a l IHl];
-    intros l' Hnth; destruct l'.
-  - reflexivity.
-  - discriminate (Hnth 0).
-  - discriminate (Hnth 0).
-  - injection (Hnth 0) as ->. f_equal. apply IHl.
-    intro n. exact (Hnth (S n)).
-Qed.
-
 Lemma nthN_nth_error {A} : forall (l : list A) i,
   nthN l (N.of_nat i) = nth_error l i.
 Proof.
@@ -381,10 +369,9 @@ Definition domains_disjoint (m1 m2: M.tree u32) :=
   (forall x v2, m2 ! x = Some v2 -> m1 ! x = None).
 
 Lemma HfenvWf_None {fenv} : forall fds,
-   (forall f : var,
-          (exists res : fun_tag * seq var * exp,
-             find_def f fds = Some res) <->
-          (exists i : N, fenv ! f = Some i)) ->
+  (forall f : var,
+    (exists res : fun_tag * seq var * exp, find_def f fds = Some res) <->
+    (exists i : N, fenv ! f = Some i)) ->
 
   (forall f, find_def f fds = None <-> fenv ! f = None).
 Proof.
@@ -429,13 +416,13 @@ Proof.
   - unfold lookup_N in H0.
     destruct (N.to_nat i)=>//.
   - destruct (var_dec a x).
-    { (* x=a *)
+    + (* x=a *)
       subst. unfold lookup_N in H0.
       destruct (N.to_nat i) eqn:Hi.
-      + cbn. unfold translate_var. rewrite M.gss. f_equal. lia.
-      + cbn in H0. apply nth_error_In in H0.
-        apply NoDup_cons_iff in H. now destruct H. }
-    { (* x<> a *)
+      * cbn. unfold translate_var. rewrite M.gss. f_equal. lia.
+      * cbn in H0. apply nth_error_In in H0.
+        apply NoDup_cons_iff in H. now destruct H.
+    + (* x<> a *)
       (* cbn. rewrite M.gso; auto. cbn. *)
       unfold lookup_N in H0. destruct i; cbn in H0; first by inv H0.
       destruct (Pos.to_nat p) eqn:Hp; try lia. cbn in H0.
@@ -443,7 +430,6 @@ Proof.
       cbn. unfold translate_var. rewrite M.gso; auto.
       inv H. apply IHl; auto.
       rewrite -H0. unfold lookup_N. f_equal. lia.
-    }
 Qed.
 
 Lemma local_variable_mapping_gt_idx : forall l idx x x',
@@ -452,9 +438,11 @@ Proof.
   induction l; intros. inv H.
   cbn in H.
   destruct (Pos.eq_dec a x).
-  { (* a=x *) subst a. rewrite M.gss in H. inv H. lia. }
-  { (* a<>x *) rewrite M.gso in H; auto.
-    apply IHl in H. lia. }
+  - (* a=x *)
+    subst a. rewrite M.gss in H. inv H. lia.
+  - (* a<>x *)
+    rewrite M.gso in H; auto.
+    apply IHl in H. lia.
 Qed.
 
 Lemma variable_mapping_Some_In : forall l x v idx lenv,
@@ -512,15 +500,20 @@ Proof.
   induction l; intros. { cbn. intros ????? H1. inv H1. }
   inv H. cbn. unfold map_injective in *. intros.
   destruct (Pos.eq_dec a x).
-  { (* a=x *) subst a. intro. subst y'.
+  - (* a=x *)
+    subst a. intro. subst y'.
     rewrite M.gss in H0. inv H0. rewrite M.gso in H1; auto.
-    apply local_variable_mapping_gt_idx in H1. lia. }
-  { (* a<>x *) destruct (Pos.eq_dec a y).
-    { (* a=y *) subst a. intro. subst y'. rewrite M.gss in H1. inv H1.
-      rewrite M.gso in H0; auto. apply local_variable_mapping_gt_idx in H0. lia. }
-    { (* a<>y *) rewrite M.gso in H0; auto.
-                 rewrite M.gso in H1; auto.
-                 have H' := IHl _ H3 _ _ _ _ H H0 H1. assumption. } }
+    apply local_variable_mapping_gt_idx in H1. lia.
+  - (* a<>x *)
+    destruct (Pos.eq_dec a y).
+    + (* a=y *)
+      subst a. intro. subst y'. rewrite M.gss in H1. inv H1.
+      rewrite M.gso in H0; auto. apply local_variable_mapping_gt_idx in H0. lia.
+    + (* a<>y *)
+      rewrite M.gso in H0; auto.
+      rewrite M.gso in H1; auto.
+      clear n n0.
+      eapply IHl; eassumption.
 Qed.
 
 End Vars.
@@ -679,15 +672,14 @@ Proof.
   Unshelve. all: assumption.
 Qed.
 
-Lemma set_lists_In:
-  forall {A} x xs (v:A) vs rho rho' ,
-    List.In x xs ->
-    M.get x rho' = Some v ->
-    set_lists xs vs rho = Some rho' ->
-    List.In  v vs.
+Lemma set_lists_In : forall {A} x xs (v:A) vs rho rho' ,
+  In x xs ->
+  M.get x rho' = Some v ->
+  set_lists xs vs rho = Some rho' ->
+  List.In v vs.
 Proof.
   induction xs; intros.
-  -   inv H.
+  - inv H.
   - destruct vs. simpl in H1; inv H1. simpl in H1.
     destruct (set_lists xs vs rho) eqn:Hsl; inv H1.
     destruct (var_dec x a).
@@ -702,27 +694,28 @@ Qed.
 
 (* a bit stronger than set_lists_In *)
 Lemma set_lists_nth_error {A} : forall xs (vs : list A) rho rho' x v,
-  set_lists xs vs rho = Some rho' ->
   In x xs ->
-  rho' ! x = Some v ->
+  M.get x rho' = Some v ->
+  set_lists xs vs rho = Some rho' ->
   exists k, nth_error vs k = Some v /\ nth_error xs k = Some x.
 Proof.
   induction xs; intros.
-  - inv H0.
-  - destruct H0.
+  - inv H.
+  - destruct H.
     + (* a=v *)
-      subst a. destruct vs. inv H. cbn in H. destruct (set_lists xs vs rho) eqn:Heqn; inv H.
-      rewrite M.gss in H1. inv H1. exists 0. now cbn.
+      subst a. destruct vs. inv H1. cbn in H1.
+      destruct (set_lists xs vs rho) eqn:Heqn; inv H1.
+      rewrite M.gss in H0. inv H0. exists 0. now cbn.
     + (* a<>v *)
-      destruct vs. inv H. cbn in H. destruct (set_lists xs vs rho) eqn:Heqn; inv H.
+      destruct vs. inv H1. cbn in H1.
+      destruct (set_lists xs vs rho) eqn:Heqn; inv H1.
       destruct (var_dec a x).
-      * subst. rewrite M.gss in H1; inv H1. exists 0; now cbn.
-      * rewrite M.gso in H1; auto.
-        destruct (IHxs _ _ _ _ _ Heqn H0 H1) as [k [Hk1 Hk2]]. exists (S k). now cbn.
+      * subst. rewrite M.gss in H0; inv H0. exists 0; now cbn.
+      * rewrite M.gso in H0; auto.
+        destruct (IHxs _ _ _ _ _ H H0 Heqn ) as [k [Hk1 Hk2]]. exists (S k). now cbn.
 Qed.
 
 
-(* TODO: consider using def_funs_eq, def_funs_neq instead *)
 Lemma def_funs_find_def : forall fds fds' rho f,
   find_def f fds <> None ->
     (def_funs fds' fds rho rho) ! f = Some (Vfun rho fds' f).
@@ -765,8 +758,8 @@ Proof.
   move/N.ltb_spec0 in Hl; by lias.
 Qed.
 
-(* taken from iriswasm orig name: store_length *)
-Lemma mem_store_preserves_length (m m': meminst) (n: N) (off: static_offset) (bs: bytes) :
+(* taken from iriswasm *)
+Lemma store_length (m m': meminst) (n: N) (off: static_offset) (bs: bytes) :
   store m n off bs (length bs) = Some m' ->
   mem_length m = mem_length m'.
 Proof.
@@ -950,7 +943,7 @@ Lemma store_load_i32 : forall m m' addr v,
   load_i32 m' addr = Some (wasm_deserialise v T_i32).
 Proof.
   intros. assert (mem_length m = mem_length m').
-  { rewrite <- H in H0. now eapply mem_store_preserves_length. }
+  { rewrite <- H in H0. now eapply store_length. }
    unfold store in H. unfold store in H0.
   destruct ((addr + 0 + N.of_nat 4 <=? mem_length m)%N) eqn:Heq. 2: inv H0.
   unfold load_i32. unfold load. cbn. cbn in Heq. unfold store in H0.
@@ -1024,7 +1017,7 @@ Lemma store_load_i64 : forall m m' addr v,
   load_i64 m' addr = Some (wasm_deserialise v T_i64).
 Proof.
   intros. assert (mem_length m = mem_length m').
-  { rewrite <- H in H0. now eapply mem_store_preserves_length. }
+  { rewrite <- H in H0. now eapply store_length. }
    unfold store in H. unfold store in H0.
   destruct ((addr + 0 + N.of_nat 8 <=? mem_length m)%N) eqn:Heq. 2: inv H0.
   unfold load_i64. unfold load. cbn. cbn in Heq. unfold store in H0.
@@ -1185,7 +1178,8 @@ Qed.
 
 
 Lemma enough_space_to_load m k :
-  (k + 4 <= mem_length m)%N -> exists v, load_i32 m k = Some v.
+  (k + 4 <= mem_length m)%N ->
+  exists v, load_i32 m k = Some v.
 Proof.
   intros. unfold load_i32, load.
   assert ((k + (0 + N.of_nat 4) <=? mem_length m)%N). { apply N.leb_le. lia. } rewrite H0.
@@ -1207,7 +1201,8 @@ Proof.
 Qed.
 
 Lemma enough_space_to_load_i64 m k :
-  (k + 8 <= mem_length m)%N -> exists v, load_i64 m k = Some v.
+  (k + 8 <= mem_length m)%N ->
+  exists v, load_i64 m k = Some v.
 Proof.
   intros. unfold load_i64, load.
   assert ((k + (0 + N.of_nat 8) <=? mem_length m)%N). { apply N.leb_le. lia. } rewrite H0.
@@ -1240,7 +1235,7 @@ Proof.
   eauto.
 Qed.
 
-Lemma mem_store_preserves_lim_max : forall (m m' : meminst) v x l,
+Lemma store_lim_max : forall (m m' : meminst) v x l,
    store m x 0%N v l = Some m' ->
    m.(meminst_type).(lim_max) = m'.(meminst_type).(lim_max).
 Proof.
@@ -1251,7 +1246,7 @@ Proof.
   destruct (fold_lefti _ _ _) ; by inversion H.
 Qed.
 
-Lemma mem_grow_increases_length : forall m m' sgrow,
+Lemma mem_grow_length : forall m m' sgrow,
   mem_grow m sgrow = Some m' ->
   mem_length m' = ((sgrow * 65536) + mem_length m)%N.
 Proof.
@@ -1268,7 +1263,7 @@ Proof.
   rewrite repeat_length. unfold page_size. lia.
 Qed.
 
-Lemma mem_grow_increases_size : forall m m' sgrow,
+Lemma mem_grow_mem_size : forall m m' sgrow,
   mem_grow m sgrow = Some m' ->
   mem_size m' = (sgrow + mem_size m)%N.
 Proof.
@@ -1292,7 +1287,7 @@ Proof.
   rewrite repeat_length. lia.
 Qed.
 
-Lemma mem_grow_preserves_max_pages : forall n m m' bytes,
+Lemma mem_grow_lim_max : forall n m m' bytes,
   mem_grow m bytes = Some m' ->
   m.(meminst_type).(lim_max) = Some n ->
   m'.(meminst_type).(lim_max) = Some n.
@@ -1303,7 +1298,7 @@ Proof.
   destruct ((mem_size m + bytes <=? n)%N). 2: inv H. inv H. reflexivity.
 Qed.
 
-Lemma smem_grow_preserves_funcs : forall sr fr bytes sr' size,
+Lemma smem_grow_funcs : forall sr fr bytes sr' size,
   smem_grow sr (f_inst fr) bytes = Some (sr', size) ->
   s_funcs sr = s_funcs sr'.
 Proof.
@@ -1313,7 +1308,7 @@ Proof.
   destruct (mem_grow m0 bytes)=>//. inv H. reflexivity.
 Qed.
 
-Lemma smem_grow_peserves_globals : forall sr fr bytes sr' size var,
+Lemma smem_grow_sglob_val : forall sr fr bytes sr' size var,
   smem_grow sr (f_inst fr) bytes = Some (sr', size) ->
   sglob_val sr (f_inst fr) var = sglob_val sr' (f_inst fr) var.
 Proof.
@@ -1323,7 +1318,7 @@ Proof.
   destruct (mem_grow m0 bytes)=>//. inv H. reflexivity.
 Qed.
 
-Lemma mem_grow_preserves_original_values : forall a m m' maxlim,
+Lemma mem_grow_load_eq : forall a m m' maxlim,
   (m.(meminst_type).(lim_max) = Some maxlim)%N ->
   (maxlim <= page_limit)%N ->
   (mem_size m + 1 <= maxlim)%N ->
@@ -1332,7 +1327,7 @@ Lemma mem_grow_preserves_original_values : forall a m m' maxlim,
   load_i32 m a = load_i32 m' a /\ load_i64 m a = load_i64 m' a.
 Proof.
   intros ? ? ? ? Hlim1 Hlim2 Hlim3 Hgrow Ha.
-  have Hg := Hgrow. apply mem_grow_increases_length in Hg.
+  have Hg := Hgrow. apply mem_grow_length in Hg.
   unfold mem_grow in Hgrow.
   assert (Hlim4: (mem_size m + 1 <= page_limit)%N) by lia. apply N.leb_le in Hlim4, Hlim3.
   rewrite Hlim4 in Hgrow.
@@ -1700,7 +1695,7 @@ Qed.
 
 Lemma update_global_get_same : forall sr sr' i val fr,
   supdate_glob sr (f_inst fr) i val = Some sr' ->
-     sglob_val sr' (f_inst fr) i = Some val.
+  sglob_val sr' (f_inst fr) i = Some val.
 Proof.
   unfold supdate_glob, supdate_glob_s, sglob_val, sglob, sglob_ind. cbn. intros.
   destruct (lookup_N (inst_globals (f_inst fr)) i) eqn:H1. 2: inv H. cbn in H.
@@ -1717,21 +1712,21 @@ Lemma update_global_get_other : forall i j sr sr' fr num val,
   sglob_val sr' (f_inst fr) i = Some (VAL_num val).
 Proof.
   intros ? ? ? ? ? ? ? Hnodup Hneq Hr Hw.
-    unfold supdate_glob, sglob_ind, supdate_glob_s in *.
-    destruct (lookup_N (inst_globals (f_inst fr)) j) eqn:Heqn. 2: inv Hw. cbn in Hw.
-    destruct (lookup_N (s_globals sr) g) eqn:Heqn'. 2: inv Hw. inv Hw.
-    unfold sglob_val, sglob, sglob_ind in *.
-    destruct (lookup_N (inst_globals (f_inst fr)) i) eqn:Heqn''.  2: inv Hr.
-    cbn. cbn in Hr.
-    assert (g <> g1). {
-      intro. subst. rewrite <- Heqn'' in Heqn.
-      apply Hneq. unfold lookup_N in Heqn, Heqn''.
-      eapply NoDup_nth_error in Heqn; eauto. lia.
-      apply nth_error_Some. congruence. }
-    unfold lookup_N in *.
-    erewrite set_nth_nth_error_other; auto; try lia.
-     assert (N.to_nat g < length (s_globals sr)) as Hl. { apply nth_error_Some. intro. congruence. }
-    lia.
+  unfold supdate_glob, sglob_ind, supdate_glob_s in *.
+  destruct (lookup_N (inst_globals (f_inst fr)) j) eqn:Heqn. 2: inv Hw. cbn in Hw.
+  destruct (lookup_N (s_globals sr) g) eqn:Heqn'. 2: inv Hw. inv Hw.
+  unfold sglob_val, sglob, sglob_ind in *.
+  destruct (lookup_N (inst_globals (f_inst fr)) i) eqn:Heqn''.  2: inv Hr.
+  cbn. cbn in Hr.
+  assert (g <> g1). {
+    intro. subst. rewrite <- Heqn'' in Heqn.
+    apply Hneq. unfold lookup_N in Heqn, Heqn''.
+    eapply NoDup_nth_error in Heqn; eauto. lia.
+    apply nth_error_Some. congruence. }
+  unfold lookup_N in *.
+  erewrite set_nth_nth_error_other; auto; try lia.
+  assert (Hl: N.to_nat g < length (s_globals sr)). { apply nth_error_Some. intro. congruence. }
+  lia.
 Qed.
 
 Lemma update_global_preserves_memory : forall sr sr' fr v j,
@@ -1754,34 +1749,38 @@ Proof.
   destruct (lookup_N (s_globals sr) g). inv H. reflexivity. inv H.
 Qed.
 
-Lemma update_memory_preserves_globals (sr : store_record) (fr : frame) :
-  forall g gv sr' m,
-    sglob_val sr (f_inst fr) g = Some gv ->
-    sr' = upd_s_mem sr (set_nth m sr.(s_mems) 0 m) ->
-    sglob_val sr' (f_inst fr) g = Some gv.
+Lemma update_memory_preserves_globals (sr : store_record) (fr : frame) : forall g gv sr' m,
+  sglob_val sr (f_inst fr) g = Some gv ->
+  sr' = upd_s_mem sr (set_nth m sr.(s_mems) 0 m) ->
+  sglob_val sr' (f_inst fr) g = Some gv.
 Proof.
   intros; subst sr'.
   unfold upd_s_mem, sglob_val, sglob, sglob_ind in H |- *; cbn.
   now destruct (lookup_N (inst_globals (f_inst fr))) eqn:Hinstglob.
 Qed.
 
-Lemma store_offset_eq :
-  forall m addr off w,
-    store m addr off (bits w) (Datatypes.length (bits w)) = store m (addr + off) 0%N (bits w) (Datatypes.length (bits w)).
-Proof. intros; unfold store; now replace (addr + off + 0)%N with (addr + off)%N by now cbn. Qed.
+Lemma store_offset_eq : forall m addr off w,
+  store m addr off (bits w) (Datatypes.length (bits w)) = store m (addr + off) 0%N (bits w) (Datatypes.length (bits w)).
+Proof.
+  intros. unfold store.
+  now replace (addr + off + 0)%N with (addr + off)%N by now cbn.
+Qed.
 
-Lemma i32_val_4_bytes : forall v, length (bits (VAL_int32 v)) = 4.
+Lemma i32_val_4_bytes : forall v,
+  length (bits (VAL_int32 v)) = 4.
 Proof. auto. Qed.
 
-Lemma i64_val_8_bytes : forall v, length (bits (VAL_int64 v)) = 8.
+Lemma i64_val_8_bytes : forall v,
+  length (bits (VAL_int64 v)) = 8.
 Proof. auto. Qed.
 
-Lemma unfold_val_notation : forall v, $VN v = $V (VAL_num v).
+Lemma unfold_val_notation : forall v,
+  $VN v = $V (VAL_num v).
 Proof. auto. Qed.
 
-Lemma reduce_trans_label' : forall instr instr' hs hs' sr sr' fr fr' i (lh : lholed i),
+Lemma reduce_trans_label : forall instr instr' hs hs' sr sr' fr fr' i (lh : lholed i),
   reduce_trans (hs, sr, fr, instr) (hs', sr', fr', instr') ->
-  reduce_trans (hs,  sr,  fr, lfill lh instr) (hs', sr', fr', lfill lh instr').
+  reduce_trans (hs, sr, fr, lfill lh instr) (hs', sr', fr', lfill lh instr').
 Proof.
   intros.
   apply clos_rt_rt1n in H.
@@ -1797,12 +1796,12 @@ Proof.
 Qed.
 
 Lemma reduce_trans_label0 : forall instr instr' hs hs' sr sr' fr fr',
-  reduce_trans (hs,  sr, fr, instr) (hs', sr', fr', instr') ->
-  reduce_trans (hs,  sr, fr, [:: AI_label 0 [::] instr]) (hs', sr', fr', [:: AI_label 0 [::] instr']).
+  reduce_trans (hs, sr, fr, instr) (hs', sr', fr', instr') ->
+  reduce_trans (hs, sr, fr, [:: AI_label 0 [::] instr]) (hs', sr', fr', [:: AI_label 0 [::] instr']).
 Proof.
   intros.
   remember (LH_rec [] 0 [] (LH_base [] []) []) as lh.
-  have H' := reduce_trans_label' instr instr' _ _ _ _ _ _ _ lh. subst lh. cbn in H'.
+  have H' := reduce_trans_label instr instr' _ _ _ _ _ _ _ lh. subst lh. cbn in H'.
   do 2! rewrite cats0 in H'. eapply rt_trans. eapply H'; auto. eassumption.
   apply rt_refl.
 Qed.
@@ -1813,7 +1812,7 @@ Lemma reduce_trans_label1 : forall instr instr' hs hs' sr sr' fr fr',
 Proof.
   intros.
   remember (LH_rec [] 1 [] (LH_base [] []) []) as lh.
-  have H' := reduce_trans_label' instr instr' _ _ _ _ _ _ _ lh. subst lh. cbn in H'.
+  have H' := reduce_trans_label instr instr' _ _ _ _ _ _ _ lh. subst lh. cbn in H'.
   do 2! rewrite cats0 in H'. eapply rt_trans. eapply H'; auto. eassumption.
   apply rt_refl.
 Qed.
