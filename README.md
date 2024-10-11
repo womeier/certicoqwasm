@@ -4,7 +4,7 @@ Backend and correctness proof are in `theories/CodegenWasm/`,
 there are no substantial changes to the rest, essentially only adjustments for testing and CI. <br>
 
 ### Basic setup (Linux/Mac)
-Install Node.js ([installation](https://nodejs.org/en/download/package-manager), version 22 or higher), then:
+Install [Node.js](https://nodejs.org/en/download/package-manager) (version 22 or higher), then:
 ```
 opam switch create certicoqwasm ocaml.4.13.1
 git clone https://github.com/womeier/certicoqwasm && cd certicoqwasm
