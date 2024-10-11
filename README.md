@@ -3,8 +3,19 @@ targeting the AST of the [WasmCert](https://github.com/WasmCert/WasmCert-Coq) me
 Backend and correctness proof are in `theories/CodegenWasm/`,
 there are no substantial changes to the rest, essentially only adjustments for testing and CI. <br>
 
-See the Makefile in `benchmarks/` and the GH-actions config for how to use it (generate .wasm file + run in e.g. NodeJS),
-there are also small examples in [certicoqwasm-testing](https://github.com/womeier/certicoqwasm-testing).
+### Basic setup (Linux/Mac)
+Install Node.js ([installation](https://nodejs.org/en/download/package-manager), version 22 or higher), then:
+```
+opam switch create certicoqwasm ocaml.4.13.1
+git clone https://github.com/womeier/certicoqwasm && cd certicoqwasm
+opam pin add .
+
+# ensure it works (should print S-expressions to stdout)  
+cd benchmarks && make
+```
+See [here](https://github.com/womeier/certicoqwasm-testing) for more examples, performance evaluation, usage guide.
+
+
 
 original README:
 ----------------------------------
