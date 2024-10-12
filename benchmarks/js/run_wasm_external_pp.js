@@ -33,22 +33,7 @@ if (path.charAt(path.length - 1) != "/") { path = path + "/" }
 
 const program = args[1];
 
-function write_int (value) {
-    process.stdout.write(value.toString())
-}
-
-function write_char (value) {
-    var chr = String.fromCharCode(value);
-    process.stdout.write(chr);
-}
-
-let importObject = {
-    env: {
-        write_char: write_char,
-        write_int: write_int,
-	write_int64: write_int,
-    }
-};
+let importObject = { env: {} };
 
 (async () => {
     const start_startup = Date.now();

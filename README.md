@@ -13,7 +13,7 @@ opam pin add .
 # ensure it works (should print S-expressions to stdout)  
 cd benchmarks && make
 ```
-See [here](https://github.com/womeier/certicoqwasm-testing) for more examples, performance evaluation, usage guide.
+See [here](https://github.com/womeier/certicoqwasm-testing) for how to use, and performance evaluation.
 
 
 

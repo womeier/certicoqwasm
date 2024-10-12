@@ -15,22 +15,7 @@ if (path.charAt(path.length - 1) != "/") { path = path + "/" }
 
 const program = args[1];
 
-function write_int (value) {
-    process.stdout.write(value.toString())
-}
-
-function write_char (value) {
-    var chr = String.fromCharCode(value);
-    process.stdout.write(chr);
-}
-
-let importObject = {
-    env: {
-        write_char: write_char,
-        write_int: write_int,
-	write_int64: write_int,
-    }
-};
+let importObject = { env: {} };
 
 const carrypattern = /(add|sub)(carry)?c/;
 const boolpattern = /(eq|lt|le)b/;
@@ -54,8 +39,7 @@ else { pp_fun = print_i63 }
     try {
         obj.instance.exports.main_function();
 	let bytes = obj.instance.exports.bytes_used.value;
-	const memory = obj.instance.exports.memory;
-	const dataView = new DataView(memory.buffer);
+	const dataView = new DataView(obj.instance.exports.memory);
 	const res_value = obj.instance.exports.result.value;
 	pp_fun(res_value, dataView);
 	process.stdout.write("\n");
