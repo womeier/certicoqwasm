@@ -102,13 +102,14 @@ export const print_nat_notation = (val, dataView) => {
 }
 
 
+// the constructors of bools are swapped, see https://github.com/CertiCoq/certicoq/pull/100
 export const print_bool = (val, dataView) => {
     if (val & 1) {
 	switch (val >> 1) {
-	case 0:
+	case 1:
 	    process.stdout.write("true");
 	    break;
-	case 1:
+	case 0:
 	    process.stdout.write("false");
 	    break;
 	}
