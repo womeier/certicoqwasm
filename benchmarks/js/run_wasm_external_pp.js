@@ -49,43 +49,42 @@ let importObject = { env: {} };
     const primitive_pattern = /.*_primitive.*$/;
 
     try {
-
 	const start_main = Date.now();
         obj.instance.exports.main_function();
         const stop_main = Date.now();
         const time_main = stop_main - start_main;
 
-	let bytes = obj.instance.exports.bytes_used.value;
-        let time_pp = undefined;
-
-        if (obj.instance.exports.result_out_of_mem.value == 1) {
+        if (obj.instance.exports.out_of_mem.value == 1) {
             console.log("Ran out of memory.");
             console.log(`Benchmark ${path}: {{"time_startup": "${time_startup}", "time_main": "${time_main}", "program": "${program}"}} (in ms)`);
             process.exit(1);
-        } else {
-
-
-	    var pp_fun;
-	    if (prime_pattern.test(program)) { pp_fun = print_bool; }
-	    else if (primitive_pattern.test(program)) { pp_fun = print_bool; }
-	    else { pp_fun = pp_map[program]; }
-	    if (pp_fun) {
-		const memory = obj.instance.exports.memory;
-		const dataView = new DataView(memory.buffer);
-		const res_value = obj.instance.exports.result.value;
-		process.stdout.write(`${program} ====> `);
-
-		const start_pp = Date.now();
-		pp_fun(res_value, dataView);
-		const stop_pp = Date.now();
-		time_pp = stop_pp - start_pp;
-		process.stdout.write("\n");
-
-	    }
-	    else {
-		console.log(`No pretty function defined for program ${program}`);
-	    }
         }
+
+	let bytes = obj.instance.exports.mem_ptr.value;
+        let time_pp = undefined;
+
+	// pretty printing
+	var pp_fun;
+	if (prime_pattern.test(program)) { pp_fun = print_bool; }
+	else if (primitive_pattern.test(program)) { pp_fun = print_bool; }
+	else { pp_fun = pp_map[program]; }
+
+	if (pp_fun) {
+	    const memory = obj.instance.exports.memory;
+	    const dataView = new DataView(memory.buffer);
+	    const res_value = obj.instance.exports.result.value;
+	    process.stdout.write(`${program} ====> `);
+
+	    const start_pp = Date.now();
+	    pp_fun(res_value, dataView);
+	    const stop_pp = Date.now();
+	    time_pp = stop_pp - start_pp;
+	    process.stdout.write("\n");
+
+	} else {
+	    console.log(`No pretty function defined for program ${program}`);
+        }
+
 	if (!(primitive_pattern.test(program))) {
 	    console.log(`Benchmark ${path}: {{"time_startup": "${time_startup}", "time_main": "${time_main}", "time_pp": "${time_pp}", "program": "${program}"}} (in ms)`);
 	}

@@ -45,15 +45,16 @@ Definition main_function_idx : funcidx := 0%N.
 Definition num_custom_funs := 1.
 
 (* global vars *)
-Definition global_mem_ptr    : globalidx := 0%N. (* ptr to next free memory, increased after allocation, there is no GC *)
-Definition constr_alloc_ptr  : globalidx := 1%N. (* ptr to beginning of constr alloc in linear mem *)
-Definition result_var        : globalidx := 2%N. (* final result *)
-Definition result_out_of_mem : globalidx := 3%N. (* ran out of memory *)
+Definition glob_mem_ptr    : globalidx := 0%N. (* ptr to next free memory, increased after allocation, there is no GC *)
+Definition glob_cap        : globalidx := 1%N. (* i32 pointer used during constructor allocation *)
+Definition glob_result     : globalidx := 2%N. (* final result *)
+Definition glob_out_of_mem : globalidx := 3%N. (* ran out of memory *)
+
 (* globals used for primitive ops *)
-Definition glob_tmp1         : globalidx := 4%N.
-Definition glob_tmp2         : globalidx := 5%N.
-Definition glob_tmp3         : globalidx := 6%N.
-Definition glob_tmp4         : globalidx := 7%N.
+Definition glob_tmp1 : globalidx := 4%N.
+Definition glob_tmp2 : globalidx := 5%N.
+Definition glob_tmp3 : globalidx := 6%N.
+Definition glob_tmp4 : globalidx := 7%N.
 
 (* ***** MAPPINGS ****** *)
 Definition localvar_env := M.tree localidx. (* maps variables to their id (id=index in list of local vars) *)
@@ -178,17 +179,17 @@ Fixpoint store_constructor_args (nenv : name_env) (lenv : localvar_env) (fenv : 
       read_y <- instr_local_var_read nenv lenv fenv y;;
       remaining <- store_constructor_args nenv lenv fenv ys (1 + current);;
 
-      Ret ([ BI_global_get constr_alloc_ptr
+      Ret ([ BI_global_get glob_cap
            ; BI_const_num (nat_to_value (4 * (1 + current))) (* plus 1 : skip tag *)
            ; BI_binop T_i32 (Binop_i BOI_add)
            ; read_y
            ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: alignment (irrelevant for semantics) *)
 
            (* increase gmp by 4 *)
-           ; BI_global_get global_mem_ptr
+           ; BI_global_get glob_mem_ptr
            ; BI_const_num (nat_to_value 4)
            ; BI_binop T_i32 (Binop_i BOI_add)
-           ; BI_global_set global_mem_ptr
+           ; BI_global_set glob_mem_ptr
 
            ] ++ remaining)
   end.
@@ -197,18 +198,18 @@ Fixpoint store_constructor_args (nenv : name_env) (lenv : localvar_env) (fenv : 
 Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localvar_env) (fenv : fname_env) (c : ctor_tag) (ys : list cps.var) : error (list basic_instruction) :=
   ord <- get_ctor_ord cenv c ;;
   store_constr_args <- store_constructor_args nenv lenv fenv ys 0;;
-  Ret ([ BI_global_get global_mem_ptr
-       ; BI_global_set constr_alloc_ptr
+  Ret ([ BI_global_get glob_mem_ptr
+       ; BI_global_set glob_cap
 
        (* store tag *)
-       ; BI_global_get constr_alloc_ptr
+       ; BI_global_get glob_cap
        ; BI_const_num (nat_to_value (N.to_nat ord))
        ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: alignment (irrelevant for semantics) *)
        (* increase gmp by 4 *)
-       ; BI_global_get global_mem_ptr
+       ; BI_global_get glob_mem_ptr
        ; BI_const_num (nat_to_value 4)
        ; BI_binop T_i32 (Binop_i BOI_add)
-       ; BI_global_set global_mem_ptr
+       ; BI_global_set glob_mem_ptr
 
        ] ++ store_constr_args).
 
@@ -251,18 +252,18 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
       match args with
       | [ x ] =>
           x_var <- translate_var nenv lenv x "translate primitive unop operand";;
-          translate_primitive_unary_op global_mem_ptr op x_var
+          translate_primitive_unary_op glob_mem_ptr op x_var
 
       | [ x ; y ] =>
           x_var <- translate_var nenv lenv x "translate primitive binary operator 1st operand";;
           y_var <- translate_var nenv lenv y "translate primitive binary operator 2nd operand";;
-          translate_primitive_binary_op global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 op x_var y_var
+          translate_primitive_binary_op glob_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 op x_var y_var
 
       | [ x ; y ; z ] =>
           x_var <- translate_var nenv lenv x "translate primitive ternary operator 1st operand" ;;
           y_var <- translate_var nenv lenv y "translate primitive ternary operator 2nd operand" ;;
           z_var <- translate_var nenv lenv z "translate primitive ternary operator 3rd operand" ;;
-          translate_primitive_ternary_op global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 constr_alloc_ptr op x_var y_var z_var
+          translate_primitive_ternary_op glob_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 glob_cap op x_var y_var z_var
 
       | _ => Err "Only primitive operations with 1, 2 or 3 arguments are supported"
       end
@@ -274,7 +275,7 @@ Definition translate_primitive_operation (nenv : name_env) (lenv : localvar_env)
 (* a page is 2^16 bytes, expected num of required bytes in local 0 *)
 Definition grow_memory_if_necessary : list basic_instruction :=
   (* required number of total pages *)
-  [ BI_global_get global_mem_ptr
+  [ BI_global_get glob_mem_ptr
   ; BI_const_num (N_to_value page_size)
   ; BI_binop T_i32 (Binop_i BOI_add)
   ; BI_const_num (Z_to_value (Z.pow 2 16))
@@ -290,7 +291,7 @@ Definition grow_memory_if_necessary : list basic_instruction :=
       ; BI_const_num (Z_to_value (-1))
       ; BI_relop T_i32 (Relop_i ROI_eq)
       ; BI_if (BT_valtype None)
-         [ BI_const_num (nat_to_value 1); BI_global_set result_out_of_mem; BI_return ] (* out of memory, abort *)
+         [ BI_const_num (nat_to_value 1); BI_global_set glob_out_of_mem; BI_return ] (* out of memory, abort *)
          []
       ]
       []
@@ -327,7 +328,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
           following_instr <- translate_body nenv cenv lenv fenv penv e' mem' ;;
           Ret (grow_mem_instr ++
                store_constr ++
-               [ BI_global_get constr_alloc_ptr
+               [ BI_global_get glob_cap
                ; BI_local_set x_var
                ] ++ following_instr)
       end
@@ -375,11 +376,11 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
       x_var <- translate_var nenv lenv x "translate_body proj x";;
       following_instr <- translate_body nenv cenv lenv fenv penv e' 0%N;; (* after function call, no static guarantees for available memory *)
       instr_call <- translate_call nenv lenv fenv f ys false;;
-      Ret (instr_call ++ [ BI_global_get result_out_of_mem
+      Ret (instr_call ++ [ BI_global_get glob_out_of_mem
                          ; BI_if (BT_valtype None)
                              [ BI_return ]
                              []
-                         ; BI_global_get result_var
+                         ; BI_global_get glob_result
                          ; BI_local_set x_var
                          ] ++ following_instr)
 
@@ -389,15 +390,15 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
        x_var <- translate_var nenv lenv x "translate_body prim val" ;;
        val <- translate_primitive_value p ;;
        let instrs :=
-            [ BI_global_get global_mem_ptr
+            [ BI_global_get glob_mem_ptr
             ; BI_const_num (VAL_int64 val)
             ; BI_store T_i64 None 2%N 0%N
-            ; BI_global_get global_mem_ptr
+            ; BI_global_get glob_mem_ptr
             ; BI_local_set x_var
-            ; BI_global_get global_mem_ptr
+            ; BI_global_get glob_mem_ptr
             ; BI_const_num (nat_to_value 8)
             ; BI_binop T_i32 (Binop_i BOI_add)
-            ; BI_global_set global_mem_ptr
+            ; BI_global_set glob_mem_ptr
             ]
        in
        let p := call_grow_mem_if_necessary mem 32%N in  (* 8 bytes plus 24 for some luft for invariants *)
@@ -419,7 +420,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
        end
    | Ehalt x =>
      x_var <- translate_var nenv lenv x "translate_body halt";;
-     Ret [ BI_local_get x_var; BI_global_set result_var; BI_return ]
+     Ret [ BI_local_get x_var; BI_global_set glob_result; BI_return ]
    end.
 
 
@@ -556,14 +557,14 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
   let exports := map (fun f => {| modexp_name := String.print f.(export_name)
                                 ; modexp_desc := MED_func (f.(fidx))
                                 |}) functions (* function exports for debug names *)
-                 ++ {| modexp_name := String.print "result_out_of_mem"
-                     ; modexp_desc := MED_global result_out_of_mem
+                 ++ {| modexp_name := String.print "out_of_mem"
+                     ; modexp_desc := MED_global glob_out_of_mem
                      |} ::
-                    {| modexp_name := String.print "bytes_used"
-                     ; modexp_desc := MED_global global_mem_ptr
+                    {| modexp_name := String.print "mem_ptr"
+                     ; modexp_desc := MED_global glob_mem_ptr
                      |} ::
                     {| modexp_name := String.print "result"
-                     ; modexp_desc := MED_global result_var
+                     ; modexp_desc := MED_global glob_result
                     |} ::
                     {| modexp_name := String.print "memory"
                      ; modexp_desc := MED_mem 0%N
@@ -593,13 +594,13 @@ Definition LambdaANF_to_Wasm (nenv : name_env) (cenv : ctor_env) (penv : prim_en
                           |}
                       |} :: nil
 
-       ; mod_globals := {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* global_mem_ptr *)
+       ; mod_globals := {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* glob_mem_ptr *)
                          ; modglob_init := [BI_const_num (nat_to_value 0)]
                          |} ::
-                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* constr_alloc_ptr *)
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* glob_cap *)
                          ; modglob_init := [BI_const_num (nat_to_value 0)]
                          |} ::
-                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* result_var *)
+                        {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* glob_result *)
                          ; modglob_init := [BI_const_num (nat_to_value 0)]
                          |} ::
                         {| modglob_type := {| tg_mut := MUT_var; tg_t := T_num T_i32 |}  (* out of memory indicator *)

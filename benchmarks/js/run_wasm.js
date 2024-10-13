@@ -38,7 +38,7 @@ else { pp_fun = print_i63 }
 
     try {
         obj.instance.exports.main_function();
-	let bytes = obj.instance.exports.bytes_used.value;
+	let bytes = obj.instance.exports.mem_ptr.value;
 	const dataView = new DataView(obj.instance.exports.memory);
 	const res_value = obj.instance.exports.result.value;
 	pp_fun(res_value, dataView);

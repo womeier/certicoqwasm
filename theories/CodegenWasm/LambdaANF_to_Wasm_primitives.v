@@ -31,7 +31,7 @@ Opaque Uint63.to_Z.
 
 Section TRANSLATION.
 
-Variables global_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 loop_counter : globalidx.
+Variables glob_mem_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 loop_counter : globalidx.
 
 Definition maxuint31 := 2147483647%Z.
 Definition maxuint63 := 9223372036854775807%Z.
@@ -112,41 +112,41 @@ Definition primop_map : KernameMap.t primop :=
 Definition load_local_i64 (i : localidx) : list basic_instruction :=
   [ BI_local_get i ; BI_load T_i64 None 2%N 0%N ].
 
-Definition increment_global_mem_ptr i :=
-  [ BI_global_get global_mem_ptr
+Definition increment_glob_mem_ptr i :=
+  [ BI_global_get glob_mem_ptr
   ; BI_const_num (N_to_VAL_i32 i)
   ; BI_binop T_i32 (Binop_i BOI_add)
-  ; BI_global_set global_mem_ptr
+  ; BI_global_set glob_mem_ptr
   ].
 
 Definition bitmask_instrs := [ BI_const_num maxuint63 ; BI_binop T_i64 (Binop_i BOI_and) ].
 
 Definition apply_binop_and_store_i64 (op : binop_i) (x y : localidx) (apply_bitmask : bool) : list basic_instruction :=
-  BI_global_get global_mem_ptr ::                   (* Address to store the result of the operation *)
+  BI_global_get glob_mem_ptr ::                   (* Address to store the result of the operation *)
   load_local_i64 x ++                               (* Load the arguments onto the stack *)
   load_local_i64 y ++
   [ BI_binop T_i64 (Binop_i op) ] ++
   (if apply_bitmask then bitmask_instrs else []) ++ (* apply bitmask to zero MSB if necessary *)
   [ BI_store T_i64 None 2%N 0%N                     (* Store the result *)
-  ; BI_global_get global_mem_ptr                    (* Put the result address on the stack *)
+  ; BI_global_get glob_mem_ptr                    (* Put the result address on the stack *)
   ] ++
-  increment_global_mem_ptr 8%N.
+  increment_glob_mem_ptr 8%N.
 
 (* Assume argument is stored in global gidx *)
 Definition make_carry (ord : N) (gidx : globalidx) : list basic_instruction:=
-  [ BI_global_get global_mem_ptr
+  [ BI_global_get glob_mem_ptr
   ; BI_global_get gidx
   ; BI_store T_i64 None 2%N 0%N
-  ; BI_global_get global_mem_ptr
+  ; BI_global_get glob_mem_ptr
   ; BI_const_num (N_to_VAL_i32 ord)
   ; BI_store T_i32 None 2%N 8%N
-  ; BI_global_get global_mem_ptr
-  ; BI_global_get global_mem_ptr
+  ; BI_global_get glob_mem_ptr
+  ; BI_global_get glob_mem_ptr
   ; BI_store T_i32 None 2%N 12%N
-  ; BI_global_get global_mem_ptr
+  ; BI_global_get glob_mem_ptr
   ; BI_const_num (nat_to_VAL_i32 8)
   ; BI_binop T_i32 (Binop_i BOI_add)
-  ] ++ increment_global_mem_ptr 16%N.
+  ] ++ increment_glob_mem_ptr 16%N.
 
 Definition apply_add_carry_operation (x y : localidx) (addone : bool) : list basic_instruction :=
     load_local_i64 x ++ load_local_i64 y ++
@@ -177,27 +177,27 @@ Definition apply_sub_carry_operation (x y : localidx) (subone : bool) : list bas
 
 (* Assume 1st element is stored in global gidx1, 2nd element in global gidx2 *)
 Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
-  [ BI_global_get global_mem_ptr
+  [ BI_global_get glob_mem_ptr
   ; BI_global_get gidx1
   ; BI_store T_i64 None 2%N 0%N
-  ; BI_global_get global_mem_ptr
+  ; BI_global_get glob_mem_ptr
   ; BI_global_get gidx2
   ; BI_store T_i64 None 2%N 8%N
-  ; BI_global_get global_mem_ptr
+  ; BI_global_get glob_mem_ptr
   ; BI_const_num (N_to_VAL_i32 pair_ord)
   ; BI_store T_i32 None 2%N 16%N
-  ; BI_global_get global_mem_ptr
-  ; BI_global_get global_mem_ptr
+  ; BI_global_get glob_mem_ptr
+  ; BI_global_get glob_mem_ptr
   ; BI_store T_i32 None 2%N 20%N
-  ; BI_global_get global_mem_ptr
-  ; BI_global_get global_mem_ptr
+  ; BI_global_get glob_mem_ptr
+  ; BI_global_get glob_mem_ptr
   ; BI_const_num (nat_to_VAL_i32 8)
   ; BI_binop T_i32 (Binop_i BOI_add)
   ; BI_store T_i32 None 2%N 24%N
-  ; BI_global_get global_mem_ptr
+  ; BI_global_get glob_mem_ptr
   ; BI_const_num (nat_to_VAL_i32 16)
   ; BI_binop T_i32 (Binop_i BOI_add)
-  ] ++ increment_global_mem_ptr 28%N.
+  ] ++ increment_glob_mem_ptr 28%N.
 
 Definition make_boolean_valued_comparison x y relop : list basic_instruction :=
   load_local_i64 x ++            (* Load the arguments onto the stack *)
@@ -226,30 +226,30 @@ Definition compare_instrs x y : list basic_instruction :=
   ].
 
 Definition div_instrs (x y : localidx) : list basic_instruction :=
-  BI_global_get global_mem_ptr ::
+  BI_global_get glob_mem_ptr ::
     load_local_i64 y ++
     [ BI_testop T_i64 TO_eqz
     ; BI_if (BT_valtype (Some (T_num T_i64)))
         [ BI_const_num 0%Z ]
         (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ])
     ; BI_store T_i64 None 2%N 0%N
-    ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8%N.
+    ; BI_global_get glob_mem_ptr
+    ] ++ increment_glob_mem_ptr 8%N.
 
 
 Definition mod_instrs (x y : localidx) : list basic_instruction :=
-  BI_global_get global_mem_ptr ::
+  BI_global_get glob_mem_ptr ::
     load_local_i64 y ++
     [ BI_testop T_i64 TO_eqz
     ; BI_if (BT_valtype (Some (T_num T_i64)))
         (load_local_i64 x)
         (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ])
     ; BI_store T_i64 None 2%N 0%N
-    ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8%N.
+    ; BI_global_get glob_mem_ptr
+    ] ++ increment_glob_mem_ptr 8%N.
 
 Definition shift_instrs (x y : localidx) shiftop (mask : bool) : list basic_instruction :=
-  BI_global_get global_mem_ptr ::
+  BI_global_get glob_mem_ptr ::
     load_local_i64 y ++
     [ BI_const_num 63%Z
     ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
@@ -260,8 +260,8 @@ Definition shift_instrs (x y : localidx) shiftop (mask : bool) : list basic_inst
          (if mask then bitmask_instrs else []))
         [ BI_const_num 0%Z ]
     ; BI_store T_i64 None 2%N 0%N
-    ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8%N.
+    ; BI_global_get glob_mem_ptr
+    ] ++ increment_glob_mem_ptr 8%N.
 
 Definition low32 := [ BI_const_num 4294967295%Z ; BI_binop T_i64 (Binop_i BOI_and) ].
 Definition high32 := [ BI_const_num 32%Z ; BI_binop T_i64 (Binop_i (BOI_shr SX_U)) ].
@@ -380,27 +380,27 @@ Definition translate_primitive_binary_op op (x y : localidx) : error (list basic
 (* head0 x computes the leading number of zeros in x
    OBS: need to subtract 1 since we're dealing with 63-bit integers *)
 Definition head0_instrs (x : localidx) : list basic_instruction :=
-  BI_global_get global_mem_ptr ::
+  BI_global_get glob_mem_ptr ::
     load_local_i64 x ++
     [ BI_unop T_i64 (Unop_i UOI_clz)
     ; BI_const_num 1%Z
     ; BI_binop T_i64 (Binop_i BOI_sub)
     ; BI_store T_i64 None 2%N 0%N
-    ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8%N.
+    ; BI_global_get glob_mem_ptr
+    ] ++ increment_glob_mem_ptr 8%N.
 
 (* tail0 x computes the trailing number of zeros in x
    OBS: if x is 0, then result is 63 (can't just use wasm ctz op) ) *)
 Definition tail0_instrs (x : localidx) : list basic_instruction :=
-  BI_global_get global_mem_ptr ::
+  BI_global_get glob_mem_ptr ::
     load_local_i64 x ++
     [ BI_testop T_i64 TO_eqz
     ; BI_if (BT_valtype (Some (T_num T_i64)))
         [ BI_const_num 63%Z ]
         (load_local_i64 x ++ [ BI_unop T_i64 (Unop_i UOI_ctz) ])
     ; BI_store T_i64 None 2%N 0%N
-    ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8%N.
+    ; BI_global_get glob_mem_ptr
+    ] ++ increment_glob_mem_ptr 8%N.
 
 Definition translate_primitive_unary_op op (x : localidx) : error (list basic_instruction) :=
   match op with
@@ -494,7 +494,7 @@ Definition diveucl_21_instrs (xh xl y : localidx) : list basic_instruction :=
 
 
 Definition addmuldiv_instrs p x y :=
-  BI_global_get global_mem_ptr ::
+  BI_global_get glob_mem_ptr ::
     load_local_i64 p ++
     [ BI_const_num 63%Z
     ; BI_relop T_i64 (Relop_i (ROI_gt SX_U))
@@ -518,8 +518,8 @@ Definition addmuldiv_instrs p x y :=
            ; BI_binop T_i64 (Binop_i BOI_and)
            ])
     ; BI_store T_i64 None 2%N 0%N
-    ; BI_global_get global_mem_ptr
-    ] ++ increment_global_mem_ptr 8%N.
+    ; BI_global_get glob_mem_ptr
+    ] ++ increment_glob_mem_ptr 8%N.
 
 Definition translate_primitive_ternary_op op (x y z : localidx) : error (list basic_instruction) :=
   match op with

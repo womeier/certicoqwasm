@@ -67,7 +67,7 @@ Definition context_restr (lenv: localvar_env) (c: t_context) :=
   (* locals in bound, i32 *)
   (forall x x', @repr_var nenv lenv x x' -> lookup_N (tc_locals c) x' = Some (T_num T_i32)) /\
   (* globals i32, mut *)
-  (forall var, In var [global_mem_ptr; constr_alloc_ptr; result_var; result_out_of_mem] ->
+  (forall var, In var [glob_mem_ptr; glob_cap; glob_result; glob_out_of_mem] ->
     lookup_N (tc_globals c) var = Some {| tg_mut:= MUT_var; tg_t:= T_num T_i32|}) /\
   (* globals i64, mut *)
   (forall var, In var [glob_tmp1; glob_tmp2; glob_tmp3; glob_tmp4] ->
@@ -263,11 +263,11 @@ Proof.
   (* Assert some helpers for instruction sequences that are repeated many times *)
   assert (Hinc_gmp: forall c' n,
              context_restr lenv c' ->
-             be_typing c' (increment_global_mem_ptr global_mem_ptr n) (Tf [:: T_num T_i32] [:: T_num T_i32])). {
-    intros c' n Hc'. unfold increment_global_mem_ptr. prepare_solve_bet; solve_bet Hc'. }
+             be_typing c' (increment_glob_mem_ptr glob_mem_ptr n) (Tf [:: T_num T_i32] [:: T_num T_i32])). {
+    intros c' n Hc'. unfold increment_glob_mem_ptr. prepare_solve_bet; solve_bet Hc'. }
   assert (Harith_binop : forall x x' y y' bop mask,
          @repr_var nenv lenv x x' -> @repr_var nenv lenv y y' ->
-         be_typing c (apply_binop_and_store_i64 global_mem_ptr bop x' y' mask) (Tf [::] [:: T_num T_i32])). {
+         be_typing c (apply_binop_and_store_i64 glob_mem_ptr bop x' y' mask) (Tf [::] [:: T_num T_i32])). {
     intros x x' y y' bop mask Hx Hy. unfold apply_binop_and_store_i64.
     destruct mask; prepare_solve_bet; solve_bet Hcontext || eapply Hinc_gmp; eauto. }
   assert(Hloop: forall c',
@@ -287,7 +287,7 @@ Proof.
   { (* Ternary operations *)
       inv H2; unfold addmuldiv_instrs, diveucl_21_instrs, load_local_i64.
       - { (* diveucl_21 *)
-       remember (diveucl_21_loop constr_alloc_ptr glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63) as loop_es.
+       remember (diveucl_21_loop glob_cap glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4 63) as loop_es.
    (* Avoid unfolding too much too avoid slowdown *)
        
    repeat match goal with
@@ -1567,19 +1567,19 @@ Definition INV_instantiation_table_empty s f num_funs :=
    the table is initialised during post-instantiation, so INV_table_id doesn't yet hold here *)
 Definition INV_instantiation (s : store_record) (f : frame) (num_funs : nat) :=
 (* same as INV *)
-    INV_result_var_writable s f
- /\ INV_result_var_out_of_mem_writable s f
- /\ INV_result_var_out_of_mem_is_zero s f
- /\ INV_global_mem_ptr_writable s f
- /\ INV_constr_alloc_ptr_writable s f
+    INV_glob_result_writable s f
+ /\ INV_glob_out_of_mem_writable s f
+ /\ INV_glob_out_of_mem_is_zero s f
+ /\ INV_glob_mem_ptr_writable s f
+ /\ INV_glob_cap_writable s f
  /\ INV_globals_all_mut s f
  /\ INV_linear_memory s f
- /\ INV_global_mem_ptr_in_linear_memory s f
+ /\ INV_glob_mem_ptr_in_linear_memory s f
  /\ INV_locals_all_i32 f
  /\ INV_num_functions_bounds s f
  /\ INV_inst_globals_nodup f
  /\ INV_types f
- /\ INV_global_mem_ptr_multiple_of_two s f
+ /\ INV_glob_mem_ptr_multiple_of_two s f
  /\ INV_inst_funcs_id s f
  /\ INV_i64_glob_tmps_writable s f
 (* additional *)
@@ -1681,20 +1681,20 @@ Proof.
 
   split.
   (* INV *)
-  unfold INV_result_var_writable, INV_result_var_out_of_mem_writable, INV_global_mem_ptr_writable,
-  INV_constr_alloc_ptr_writable, INV_i64_glob_tmps_writable. unfold global_var_w, supdate_glob, supdate_glob_s.
+  unfold INV_glob_result_writable, INV_glob_out_of_mem_writable, INV_glob_mem_ptr_writable,
+  INV_glob_cap_writable, INV_i64_glob_tmps_writable. unfold global_var_w, supdate_glob, supdate_glob_s.
   cbn. rewrite F2.
   (* cbn in Hglobals, Hfuncs, Hmems. rewrite F0. cbn. *)
   split. (* res_var_w *)   eexists. rewrite -E3. reflexivity.
   split. (* res_var_M_w *) eexists. rewrite -E3. reflexivity.
-  split. (* res_var_M_0 *) unfold INV_result_var_out_of_mem_is_zero. unfold sglob_val, sglob.
+  split. (* res_var_M_0 *) unfold INV_glob_out_of_mem_is_zero. unfold sglob_val, sglob.
   cbn. rewrite F2. rewrite -E3. reflexivity.
   split. (* gmp_w *) eexists. rewrite -E3. reflexivity.
   split. (* cap_w *) eexists. rewrite -E3. reflexivity.
   (* globals mut i32 *)
   split. unfold INV_globals_all_mut, globals_all_mut, globals_all_mut32, globals_all_mut64. split; intros. unfold lookup_N in H1.
   {
-    unfold result_var, result_out_of_mem, global_mem_ptr, constr_alloc_ptr in *.
+    unfold glob_result, glob_out_of_mem, glob_mem_ptr, glob_cap in *.
     cbn in H0; try subst gidx; try rewrite F2 in H0; unfold lookup_N in H0.
     rewrite -E3 in H1. cbn in H1.
     destruct (N.to_nat gidx) eqn:Hgidx. cbn in H0.
@@ -1726,7 +1726,7 @@ Proof.
     split. reflexivity. unfold max_mem_pages. rewrite repeat_length. cbn.
     replace (N.of_nat (Pos.to_nat 65536)) with 65536%N by lia. cbn. lia. }
    split. (* gmp in linmem *)
-   { unfold INV_global_mem_ptr_in_linear_memory.
+   { unfold INV_glob_mem_ptr_in_linear_memory.
    unfold sglob_val, sglob. cbn. intros ?? Hm Hm0 Hbound. unfold smem in Hm.
    rewrite F2 in Hm0, Hm. rewrite -E2 in Hm. rewrite -E3 in Hm0.
    rewrite F3 in Hm. inv Hm. inv Hm0.
@@ -1755,9 +1755,9 @@ Proof.
     rewrite nth_list_function_types =>//. lia.
     rewrite length_list_function_types. lia. }
   split. (* gmp multiple of two *)
-  { unfold INV_global_mem_ptr_multiple_of_two.
+  { unfold INV_glob_mem_ptr_multiple_of_two.
     intros ?? Hm Hgmp Hbound. exists 0%N.
-    unfold global_mem_ptr, sglob_val, sglob in Hgmp.
+    unfold glob_mem_ptr, sglob_val, sglob in Hgmp.
     rewrite -E3 in Hgmp. cbn in Hgmp. rewrite F2 in Hgmp. inv Hgmp.
     rewrite Wasm_int.Int32.Z_mod_modulus_id in H0; lia. }
   split. (* inst_funcs_id *)
@@ -2347,31 +2347,31 @@ Proof.
   split=>//.
   (* INV holds now *)
   unfold INV.
-  split. (* result_var writable *)
+  split. (* glob_result writable *)
     intro. intros. destruct (H val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
-    destruct (lookup_N (inst_globals (f_inst fr)) result_var)=>//. cbn. cbn in Hs.
+    destruct (lookup_N (inst_globals (f_inst fr)) glob_result)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
-  split. (* result_out_of_mem writable *)
+  split. (* glob_out_of_mem writable *)
     intro. intros. destruct (H0 val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
-    destruct (lookup_N (inst_globals (f_inst fr)) result_out_of_mem)=>//. cbn. cbn in Hs.
+    destruct (lookup_N (inst_globals (f_inst fr)) glob_out_of_mem)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
-  split. (* result_var is 0 *)
-  unfold INV_result_var_out_of_mem_is_zero, sglob_val, sglob, sglob_ind in *.
+  split. (* glob_result is 0 *)
+  unfold INV_glob_out_of_mem_is_zero, sglob_val, sglob, sglob_ind in *.
     by repeat rewrite <- Hglobals in *.
-  split. (* global_mem_ptr writable *)
+  split. (* glob_mem_ptr writable *)
     intro. intros. destruct (H2 val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
-    destruct (lookup_N (inst_globals (f_inst fr)) global_mem_ptr)=>//. cbn. cbn in Hs.
+    destruct (lookup_N (inst_globals (f_inst fr)) glob_mem_ptr)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
-  split. (* constr_alloc_ptr writable *)
+  split. (* glob_cap writable *)
     intro. intros. destruct (H3 val) as [s Hs].
     unfold global_var_w, supdate_glob, supdate_glob_s, sglob, sglob_ind in *. repeat rewrite Hglobals in Hs.
-    destruct (lookup_N (inst_globals (f_inst fr)) constr_alloc_ptr)=>//. cbn. cbn in Hs.
+    destruct (lookup_N (inst_globals (f_inst fr)) glob_cap)=>//. cbn. cbn in Hs.
     rewrite <- Hglobals in *.
     destruct (lookup_N (s_globals sr) g)=>//. eexists. reflexivity.
   split. (* globals all mut i32s *)
@@ -2379,8 +2379,8 @@ Proof.
     rewrite -Hglobals. assumption.
   split. (* linear memory *)
     unfold INV_linear_memory, smem. by rewrite -Hmems.
-  split. (* global_mem_ptr in linear mem *)
-    unfold INV_global_mem_ptr_in_linear_memory. unfold smem, sglob_val, sglob, sglob_ind.
+  split. (* glob_mem_ptr in linear mem *)
+    unfold INV_glob_mem_ptr_in_linear_memory. unfold smem, sglob_val, sglob, sglob_ind.
     rewrite - Hglobals. by rewrite -Hmems.
   split. (* locals all i32s *)
     assumption.
@@ -2393,8 +2393,8 @@ Proof.
     apply Htab. apply Hfenv in Htrans. lia.
   split. (* types *)
     assumption.
-  split. (* global_mem_ptr multiple of 2 *)
-    unfold INV_global_mem_ptr_multiple_of_two, sglob_val, sglob, sglob_ind, smem.
+  split. (* glob_mem_ptr multiple of 2 *)
+    unfold INV_glob_mem_ptr_multiple_of_two, sglob_val, sglob, sglob_ind, smem.
     rewrite -Hglobals. rewrite -Hmems. assumption.
   (* inst funcs id mapping *)
   split.

@@ -78,22 +78,7 @@ const tests = [
 
 import { readFileSync } from 'fs';
 
-function write_int (value) {
-    process.stdout.write(value.toString())
-}
-
-function write_char (value) {
-    var chr = String.fromCharCode(value);
-    process.stdout.write(chr);
-}
-
-let importObject = {
-    env: {
-        write_char: write_char,
-        write_int: write_int,
-	write_int64: write_int,
-    }
-};
+let importObject = { env: {} };
 
 async function run_test([test, pp_fun, expected]) {
     const bytes = readFileSync(`CertiCoq.Benchmarks.uint63_unit_tests.${test}.wasm`);
