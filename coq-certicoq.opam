@@ -44,7 +44,7 @@ depends: [
 ]
 
 pin-depends: [
-  ["coq-wasm.dev" "git+https://github.com/womeier/wasmcert-coq.git#ce5f3abb5d290cfb25addd5eb1a245e8d7b8aaaf"]
+  ["coq-wasm.dev" "git+https://github.com/womeier/wasmcert-coq.git#88a42ee"]
 ]
 
 synopsis: "A Verified Compiler for Gallina, Written in Gallina "

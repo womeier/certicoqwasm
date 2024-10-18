@@ -151,8 +151,8 @@ Ltac solve_bet Hcontext :=
 (* memory *)
   | H: lookup_N (tc_mems _) 0 = Some _ |- be_typing _ [:: BI_memory_size] (Tf [::] _) => eapply bet_memory_size; apply H
   | H: lookup_N (tc_mems _) 0 = Some _ |- be_typing _ [:: BI_memory_grow] (Tf [:: T_num T_i32] _) => eapply bet_memory_grow; apply H
-  | |- be_typing _ [:: BI_store _ None _ _] (Tf [:: T_num _; T_num _] _) => by eapply bet_store; first eassumption; cbn=>//
-  | |- be_typing _ [:: BI_load _ None _ _] (Tf [:: T_num _] _) => by eapply bet_load; first eassumption; cbn=>//
+  | |- be_typing _ [:: BI_store _ None _] (Tf [:: T_num _; T_num _] _) => by eapply bet_store; first eassumption; cbn=>//
+  | |- be_typing _ [:: BI_load _ None _] (Tf [:: T_num _] _) => by eapply bet_load; first eassumption; cbn=>//
   (* simple if statement *)
   | |- be_typing _ [:: BI_if (BT_valtype None) _ _] _ =>
          apply bet_if_wasm with (tn:=[])=>//; separate_instr; repeat rewrite catA; repeat eapply bet_composition'; try solve_bet Hcontext

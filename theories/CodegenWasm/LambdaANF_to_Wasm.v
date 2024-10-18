@@ -117,12 +117,12 @@ Definition is_function_var (fenv : fname_env) (v : cps.var) : bool :=
 
 Definition instr_local_var_read (nenv : name_env) (lenv : localvar_env) (fenv : fname_env) (v : cps.var)
   : error basic_instruction :=
-  if is_function_var fenv v
-    then fidx <- translate_var nenv fenv v "translate local var read: obtaining function id" ;;
-         Ret (BI_const_num (N_to_value fidx)) (* passing id of function <var_name> *)
-
-    else var <- translate_var nenv lenv v "instr_local_var_read: normal var";;
-         Ret (BI_local_get var).
+  if is_function_var fenv v then
+    fidx <- translate_var nenv fenv v "translate local var read: obtaining function idx" ;;
+    Ret (BI_const_num (N_to_value fidx)) (* passing function idx *)
+  else
+    var <- translate_var nenv lenv v "instr_local_var_read: normal var";;
+    Ret (BI_local_get var).
 
 Definition get_ctor_arity (cenv : ctor_env) (t : ctor_tag) :=
   match M.get t cenv with
@@ -183,7 +183,7 @@ Fixpoint store_constructor_args (nenv : name_env) (lenv : localvar_env) (fenv : 
            ; BI_const_num (nat_to_value (4 * (1 + current))) (* plus 1 : skip tag *)
            ; BI_binop T_i32 (Binop_i BOI_add)
            ; read_y
-           ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: alignment (irrelevant for semantics) *)
+           ; BI_store T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |}
 
            (* increase gmp by 4 *)
            ; BI_global_get glob_mem_ptr
@@ -204,7 +204,7 @@ Definition store_constructor (nenv : name_env) (cenv : ctor_env) (lenv : localva
        (* store tag *)
        ; BI_global_get glob_cap
        ; BI_const_num (nat_to_value (N.to_nat ord))
-       ; BI_store T_i32 None 2%N 0%N (* 0: offset, 2: alignment (irrelevant for semantics) *)
+       ; BI_store T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |}
        (* increase gmp by 4 *)
        ; BI_global_get glob_mem_ptr
        ; BI_const_num (nat_to_value 4)
@@ -221,15 +221,16 @@ Fixpoint create_case_nested_if_chain (boxed : bool) (v : localidx) (es : list (N
          otherwise, the unboxed representation is (ord << 1) + 1 = 2 * ord + 1.
        *)
       BI_local_get v ::
-        (if boxed then
-           [ BI_load T_i32 None 2%N 0%N ; BI_const_num (nat_to_value (N.to_nat ord)) ]
-         else
-           [ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N)) ]) ++
-        [ BI_relop T_i32 (Relop_i ROI_eq)
-        ; BI_if (BT_valtype None)
-            instrs
-            (create_case_nested_if_chain boxed v tl)
-        ]
+      (if boxed then
+         [ BI_load T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |}
+         ; BI_const_num (nat_to_value (N.to_nat ord)) ]
+       else
+         [ BI_const_num (nat_to_value (N.to_nat (2 * ord + 1)%N)) ]) ++
+      [ BI_relop T_i32 (Relop_i ROI_eq)
+      ; BI_if (BT_valtype None)
+          instrs
+          (create_case_nested_if_chain boxed v tl)
+      ]
   end.
 
 
@@ -368,7 +369,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
       Ret ([ BI_local_get y_var
            ; BI_const_num (nat_to_value (((N.to_nat n) + 1) * 4)) (* skip ctor_id and previous constr arguments *)
            ; BI_binop T_i32 (Binop_i BOI_add)
-           ; BI_load T_i32 None 2%N 0%N (* 0: offset, 2: alignment, irrelevant for semantics *)
+           ; BI_load T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |}
            ; BI_local_set x_var
            ] ++ following_instr)
 
@@ -392,7 +393,7 @@ Fixpoint translate_body (nenv : name_env) (cenv : ctor_env) (lenv: localvar_env)
        let instrs :=
             [ BI_global_get glob_mem_ptr
             ; BI_const_num (VAL_int64 val)
-            ; BI_store T_i64 None 2%N 0%N
+            ; BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
             ; BI_global_get glob_mem_ptr
             ; BI_local_set x_var
             ; BI_global_get glob_mem_ptr

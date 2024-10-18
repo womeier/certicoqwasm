@@ -110,7 +110,7 @@ Definition primop_map : KernameMap.t primop :=
     (KernameMap.empty primop)))))))))))))))))))))))).
 
 Definition load_local_i64 (i : localidx) : list basic_instruction :=
-  [ BI_local_get i ; BI_load T_i64 None 2%N 0%N ].
+  [ BI_local_get i ; BI_load T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |} ].
 
 Definition increment_glob_mem_ptr i :=
   [ BI_global_get glob_mem_ptr
@@ -127,7 +127,7 @@ Definition apply_binop_and_store_i64 (op : binop_i) (x y : localidx) (apply_bitm
   load_local_i64 y ++
   [ BI_binop T_i64 (Binop_i op) ] ++
   (if apply_bitmask then bitmask_instrs else []) ++ (* apply bitmask to zero MSB if necessary *)
-  [ BI_store T_i64 None 2%N 0%N                     (* Store the result *)
+  [ BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |} (* Store the result *)
   ; BI_global_get glob_mem_ptr                    (* Put the result address on the stack *)
   ] ++
   increment_glob_mem_ptr 8%N.
@@ -136,13 +136,13 @@ Definition apply_binop_and_store_i64 (op : binop_i) (x y : localidx) (apply_bitm
 Definition make_carry (ord : N) (gidx : globalidx) : list basic_instruction:=
   [ BI_global_get glob_mem_ptr
   ; BI_global_get gidx
-  ; BI_store T_i64 None 2%N 0%N
+  ; BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
   ; BI_global_get glob_mem_ptr
   ; BI_const_num (N_to_VAL_i32 ord)
-  ; BI_store T_i32 None 2%N 8%N
+  ; BI_store T_i32 None {| memarg_offset:=8%N; memarg_align:=2%N |}
   ; BI_global_get glob_mem_ptr
   ; BI_global_get glob_mem_ptr
-  ; BI_store T_i32 None 2%N 12%N
+  ; BI_store T_i32 None {| memarg_offset:=12%N; memarg_align:=2%N |}
   ; BI_global_get glob_mem_ptr
   ; BI_const_num (nat_to_VAL_i32 8)
   ; BI_binop T_i32 (Binop_i BOI_add)
@@ -179,21 +179,21 @@ Definition apply_sub_carry_operation (x y : localidx) (subone : bool) : list bas
 Definition make_product (gidx1 gidx2 : N) : list basic_instruction :=
   [ BI_global_get glob_mem_ptr
   ; BI_global_get gidx1
-  ; BI_store T_i64 None 2%N 0%N
+  ; BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
   ; BI_global_get glob_mem_ptr
   ; BI_global_get gidx2
-  ; BI_store T_i64 None 2%N 8%N
+  ; BI_store T_i64 None {| memarg_offset:=8%N; memarg_align:=2%N |}
   ; BI_global_get glob_mem_ptr
   ; BI_const_num (N_to_VAL_i32 pair_ord)
-  ; BI_store T_i32 None 2%N 16%N
+  ; BI_store T_i32 None {| memarg_offset:=16%N; memarg_align:=2%N |}
   ; BI_global_get glob_mem_ptr
   ; BI_global_get glob_mem_ptr
-  ; BI_store T_i32 None 2%N 20%N
+  ; BI_store T_i32 None {| memarg_offset:=20%N; memarg_align:=2%N |}
   ; BI_global_get glob_mem_ptr
   ; BI_global_get glob_mem_ptr
   ; BI_const_num (nat_to_VAL_i32 8)
   ; BI_binop T_i32 (Binop_i BOI_add)
-  ; BI_store T_i32 None 2%N 24%N
+  ; BI_store T_i32 None {| memarg_offset:=24%N; memarg_align:=2%N |}
   ; BI_global_get glob_mem_ptr
   ; BI_const_num (nat_to_VAL_i32 16)
   ; BI_binop T_i32 (Binop_i BOI_add)
@@ -210,9 +210,9 @@ Definition make_boolean_valued_comparison x y relop : list basic_instruction :=
 
 Definition compare_instrs x y : list basic_instruction :=
   [ BI_local_get x
-  ; BI_load T_i64 None 2%N 0%N
+  ; BI_load T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
   ; BI_local_get y
-  ; BI_load T_i64 None 2%N 0%N
+  ; BI_load T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
   ; BI_relop T_i64 (Relop_i (ROI_lt SX_U))
   ; BI_if (BT_valtype (Some (T_num T_i32)))
       [ BI_const_num (N_to_VAL_i32 (2 * Lt_ord + 1)) ]
@@ -232,7 +232,7 @@ Definition div_instrs (x y : localidx) : list basic_instruction :=
     ; BI_if (BT_valtype (Some (T_num T_i64)))
         [ BI_const_num 0%Z ]
         (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_div SX_U)) ])
-    ; BI_store T_i64 None 2%N 0%N
+    ; BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
     ; BI_global_get glob_mem_ptr
     ] ++ increment_glob_mem_ptr 8%N.
 
@@ -244,7 +244,7 @@ Definition mod_instrs (x y : localidx) : list basic_instruction :=
     ; BI_if (BT_valtype (Some (T_num T_i64)))
         (load_local_i64 x)
         (load_local_i64 x ++ load_local_i64 y ++ [ BI_binop T_i64 (Binop_i (BOI_rem SX_U)) ])
-    ; BI_store T_i64 None 2%N 0%N
+    ; BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
     ; BI_global_get glob_mem_ptr
     ] ++ increment_glob_mem_ptr 8%N.
 
@@ -259,7 +259,7 @@ Definition shift_instrs (x y : localidx) shiftop (mask : bool) : list basic_inst
          BI_binop T_i64 (Binop_i shiftop) ::
          (if mask then bitmask_instrs else []))
         [ BI_const_num 0%Z ]
-    ; BI_store T_i64 None 2%N 0%N
+    ; BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
     ; BI_global_get glob_mem_ptr
     ] ++ increment_glob_mem_ptr 8%N.
 
@@ -325,7 +325,7 @@ Definition mulc_instrs (x y : localidx) : list basic_instruction :=
 
 Definition diveucl_instrs (x y : localidx) : list basic_instruction :=
   [ BI_local_get x
-  ; BI_load T_i64 None 2%N 0%N
+  ; BI_load T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
   ; BI_testop T_i64 TO_eqz
   ; BI_if (BT_valtype None)
       [ BI_const_num (VAL_int64 (Z_to_i64 0))
@@ -334,13 +334,13 @@ Definition diveucl_instrs (x y : localidx) : list basic_instruction :=
       ; BI_global_set glob_tmp2
       ]
       [ BI_local_get y
-      ; BI_load T_i64 None 2%N 0%N
+      ; BI_load T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
       ; BI_testop T_i64 TO_eqz
       ; BI_if (BT_valtype None)
           [ BI_const_num (VAL_int64 (Z_to_i64 0))
           ; BI_global_set glob_tmp1
           ; BI_local_get x
-          ; BI_load T_i64 None 2%N 0%N
+          ; BI_load T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
           ; BI_global_set glob_tmp2
           ]
           (load_local_i64 x ++
@@ -385,7 +385,7 @@ Definition head0_instrs (x : localidx) : list basic_instruction :=
     [ BI_unop T_i64 (Unop_i UOI_clz)
     ; BI_const_num 1%Z
     ; BI_binop T_i64 (Binop_i BOI_sub)
-    ; BI_store T_i64 None 2%N 0%N
+    ; BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
     ; BI_global_get glob_mem_ptr
     ] ++ increment_glob_mem_ptr 8%N.
 
@@ -398,7 +398,7 @@ Definition tail0_instrs (x : localidx) : list basic_instruction :=
     ; BI_if (BT_valtype (Some (T_num T_i64)))
         [ BI_const_num 63%Z ]
         (load_local_i64 x ++ [ BI_unop T_i64 (Unop_i UOI_ctz) ])
-    ; BI_store T_i64 None 2%N 0%N
+    ; BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
     ; BI_global_get glob_mem_ptr
     ] ++ increment_glob_mem_ptr 8%N.
 
@@ -517,7 +517,7 @@ Definition addmuldiv_instrs p x y :=
            ; BI_const_num maxuint63
            ; BI_binop T_i64 (Binop_i BOI_and)
            ])
-    ; BI_store T_i64 None 2%N 0%N
+    ; BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
     ; BI_global_get glob_mem_ptr
     ] ++ increment_glob_mem_ptr 8%N.
 

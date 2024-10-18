@@ -115,7 +115,7 @@ Inductive store_nth_constr_arg {lenv} : nat -> var -> list basic_instruction -> 
       ; BI_const_num (nat_to_value ((1 + n) * 4))
       ; BI_binop T_i32 (Binop_i BOI_add)
       ; instr
-      ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
+      ; BI_store T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |}
       ; BI_global_get glob_mem_ptr
       ; BI_const_num (nat_to_value 4)
       ; BI_binop T_i32 (Binop_i BOI_add)
@@ -153,7 +153,7 @@ Inductive repr_asgn_constr_Wasm {lenv} : localidx -> ctor_tag -> list var -> lis
        ; BI_global_set glob_cap
        ; BI_global_get glob_cap
        ; BI_const_num (nat_to_value (N.to_nat ord))
-       ; BI_store T_i32 None (N_of_nat 2) (N_of_nat 0)
+       ; BI_store T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |}
        ; BI_global_get glob_mem_ptr
        ; BI_const_num (nat_to_value 4)
        ; BI_binop T_i32 (Binop_i BOI_add)
@@ -175,7 +175,7 @@ Inductive repr_case_boxed: localidx -> list (N * list basic_instruction) -> list
     repr_case_boxed v brs instrs_more ->
     repr_case_boxed v ((ord, instrs) :: brs)
       [ BI_local_get v
-      ; BI_load T_i32 None 2%N 0%N
+      ; BI_load T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |}
       ; BI_const_num (nat_to_value (N.to_nat ord))
       ; BI_relop T_i32 (Relop_i ROI_eq)
       ; BI_if (BT_valtype None)
@@ -345,7 +345,7 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> N -> list basic
       ([ BI_local_get y'
        ; BI_const_num (nat_to_value (((N.to_nat n) + 1) * 4))
        ; BI_binop T_i32 (Binop_i BOI_add)
-       ; BI_load T_i32 None (N_of_nat 2) (N_of_nat 0)
+       ; BI_load T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |}
        ; BI_local_set x'
        ] ++ e')
 
@@ -414,7 +414,7 @@ Inductive repr_expr_LambdaANF_Wasm {lenv} : LambdaANF.cps.exp -> N -> list basic
       (instr_grow_mem ++
        [ BI_global_get glob_mem_ptr
        ; BI_const_num (VAL_int64 v)
-       ; BI_store T_i64 None 2%N 0%N
+       ; BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |}
        ; BI_global_get glob_mem_ptr
        ; BI_local_set x'
        ; BI_global_get glob_mem_ptr
@@ -2815,7 +2815,7 @@ Lemma store_constr_reduce {lenv} : forall state s f rho fds ys (vs : list cps.va
       [:: AI_basic (BI_global_set glob_cap)] ++
       [:: AI_basic (BI_global_get glob_cap)] ++
       [:: AI_basic (BI_const_num (nat_to_value (N.to_nat ord)))] ++
-      [:: AI_basic (BI_store T_i32 None 2%N 0%N)] ++
+      [:: AI_basic (BI_store T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |})] ++
       [:: AI_basic (BI_global_get glob_mem_ptr)] ++
       [:: AI_basic (BI_const_num (nat_to_value 4))] ++
       [:: AI_basic (BI_binop T_i32 (Binop_i BOI_add))] ++
@@ -3783,7 +3783,7 @@ Lemma boxed_nested_if_chain_reduces :
     exists e' e'',
       select_nested_if true v ord brs1 =
         [ BI_local_get v
-        ; BI_load T_i32 None 2%N 0%N
+        ; BI_load T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |}
         ; BI_const_num (nat_to_value (N.to_nat ord))
         ; BI_relop T_i32 (Relop_i ROI_eq)
         ; BI_if (BT_valtype None)
@@ -6657,8 +6657,8 @@ Proof.
     assert (HloadStep1: forall es,
                reduce_trans
                  (state, s, f, ([:: AI_basic (BI_local_get x')] ++
-                                  [:: AI_basic (BI_load T_i64 None 2%N 0%N)] ++
-                                  es))
+                                [:: AI_basic (BI_load T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |})] ++
+                                es))
                  (state, s, f, ([:: $V VAL_num (VAL_int64 (Z_to_i64 (to_Z n1))) ] ++ es))). {
       intros.
       dostep_nary 0. apply r_local_get. eassumption.
@@ -6669,8 +6669,8 @@ Proof.
     assert (HloadStep2: forall es,
                reduce_trans
                  (state, s, f, ([:: AI_basic (BI_local_get y')] ++
-                                  [:: AI_basic (BI_load T_i64 None 2%N 0%N)] ++
-                                  es))
+                                [:: AI_basic (BI_load T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |})] ++
+                                es))
                  (state, s, f, ([:: $V VAL_num (VAL_int64 (Z_to_i64 (to_Z n2))) ] ++ es))). {
       intros.
       dostep_nary 0. apply r_local_get. eassumption.
@@ -6680,10 +6680,10 @@ Proof.
     assert (HloadStep': forall es,
                reduce_trans
                  (state, s, f, ([:: AI_basic (BI_local_get x')] ++
-                                  [:: AI_basic (BI_load T_i64 None 2%N 0%N)] ++
-                                  [:: AI_basic (BI_local_get y')] ++
-                                  [:: AI_basic (BI_load T_i64 None 2%N 0%N)] ++
-                                  es))
+                                [:: AI_basic (BI_load T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |})] ++
+                                [:: AI_basic (BI_local_get y')] ++
+                                [:: AI_basic (BI_load T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |})] ++
+                                es))
                  (state, s, f, ([:: $V VAL_num (VAL_int64 (Z_to_i64 (to_Z n1))) ; $V VAL_num (VAL_int64 (Z_to_i64 (to_Z n2))) ] ++ es))). {
       intros.
       eapply rt_trans.
@@ -9665,7 +9665,7 @@ Proof with eauto.
           assert (exists e' e'',
                      select_nested_if true y' ord brs1 =
                        [ BI_local_get y'
-                       ; BI_load T_i32 None 2%N 0%N
+                       ; BI_load T_i32 None {| memarg_offset:=0%N; memarg_align:=2%N |}
                        ; BI_const_num (nat_to_value (N.to_nat ord))
                        ; BI_relop T_i32 (Relop_i ROI_eq)
                        ; BI_if (BT_valtype None)
@@ -10929,7 +10929,8 @@ Proof with eauto.
       } { (* Growing the memory failed *)
         (* hide instrs after return instr in block context, won't be executed *)
         remember ([:: BI_global_get glob_mem_ptr; BI_const_num (VAL_int64 v0);
-                       BI_store T_i64 None 2%N 0%N; BI_global_get glob_mem_ptr;
+                       BI_store T_i64 None {| memarg_offset:=0%N; memarg_align:=2%N |};
+                       BI_global_get glob_mem_ptr;
                        BI_local_set x'; BI_global_get glob_mem_ptr;
                        BI_const_num (nat_to_value 8); BI_binop T_i32 (Binop_i BOI_add);
                        BI_global_set glob_mem_ptr] ++ e') as es_tail.
