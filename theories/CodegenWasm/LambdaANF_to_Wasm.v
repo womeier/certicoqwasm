@@ -25,23 +25,19 @@ Import MonadNotation compM.
 (* Main file for compiler backend targeting Wasm. *)
 
 (* memory can grow to at most 64KB * max_mem_pages *)
-Definition max_mem_pages     := 30000%N.
+Definition max_mem_pages := 30000%N.
 
 
 (* ***** FUNCTIONS and GLOBALS ****** *)
 
-(*  In Wasm, functions and globals are referred to by their index in the order they are listed.
- *  For FFI/debugging, the module exports all functions.
- *  The names of translated lANF functions are prefixed with an underscore, others should not to avoid name clashes.
- *)
+(* In Wasm, functions and globals are referred to by their index in the order they are listed.
+   Function 0 is main, then follow the translated lANF functions.  *)
 
 (* main function: contains the translated main expression *)
 Definition main_function_name := "main_function".
 Definition main_function_idx : funcidx := 0%N.
 
-(* then follow the translated functions,
-   index of first translated lANF fun, a custom fun should be added before, and this var increased by 1
-   (the proof will still break at various places)  *)
+(* Index of the first translated lANF function. *)
 Definition num_custom_funs := 1.
 
 (* global vars *)
