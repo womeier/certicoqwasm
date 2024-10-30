@@ -6,11 +6,19 @@ there are no substantial changes to the rest, essentially only adjustments for t
 ### Basic setup (Linux/Mac)
 Install [Node.js](https://nodejs.org/en/download/package-manager) (version 22 or higher), then:
 ```
-opam switch create certicoqwasm ocaml.4.13.1
-git clone https://github.com/womeier/certicoqwasm && cd certicoqwasm
-opam pin add .
+opam switch create certicoqwasm ocaml.4.14.2
 
-# ensure it works (should print S-expressions to stdout)  
+opam repo add coq-released https://coq.inria.fr/opam/released
+git clone https://github.com/womeier/certicoqwasm && cd certicoqwasm
+
+# just use CertiCoq-Wasm
+opam install .
+
+# setup for development
+opam install . --deps-only
+make && make install
+
+# run benchmarks (prints S-expressions to stdout)
 cd benchmarks && make
 ```
 See [here](https://github.com/womeier/certicoqwasm-testing) for how to use, and performance evaluation.

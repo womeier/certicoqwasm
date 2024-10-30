@@ -38,8 +38,8 @@ Definition maxuint63 := 9223372036854775807%Z.
 
 
 (* Ordinals of constructors *)
-Definition true_ord  := 0%N.
-Definition false_ord := 1%N.
+Definition true_ord  := 1%N.
+Definition false_ord := 0%N.
 
 Definition Eq_ord    := 0%N.
 Definition Lt_ord    := 1%N.
