@@ -2908,9 +2908,9 @@ Proof.
     destruct Hpfs' as
       [true_tag [false_tag [bool_tag [eq_tag [lt_tag [gt_tag [comp_tag [c0_tag [c1_tag [carry_tag [pair_tag [prod_tag [Hres [Htrue [Hfalse [Heq [Hlt [Hgt [Hc0 [Hc1 Hpair]]]]]]]]]]]]]]]]]]]].
     assert (Htrue_arr: get_ctor_arity cenv true_tag = Ret 0) by now unfold get_ctor_arity; rewrite Htrue.
-    assert (Htrue_ord: get_ctor_ord cenv true_tag = Ret 0%N) by now unfold get_ctor_ord; rewrite Htrue.
+    assert (Htrue_ord: get_ctor_ord cenv true_tag = Ret 1%N) by now unfold get_ctor_ord; rewrite Htrue.
     assert (Hfalse_arr: get_ctor_arity cenv false_tag = Ret 0) by now unfold get_ctor_arity; rewrite Hfalse.
-    assert (Hfalse_ord: get_ctor_ord cenv false_tag = Ret 1%N) by now unfold get_ctor_ord; rewrite Hfalse.
+    assert (Hfalse_ord: get_ctor_ord cenv false_tag = Ret 0%N) by now unfold get_ctor_ord; rewrite Hfalse.
 
     (* TODO: Added for carry ops, remove/ clean up when moving/ refactoring *)
     assert (Hflocs: N.to_nat x0' < Datatypes.length (f_locs f)) by now eapply HlocsInBounds; eauto.
@@ -3122,9 +3122,9 @@ Proof.
             rewrite uint63_eq_int64_eq; [discriminate|now rewrite e0].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
-            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
-            - now replace ord with 0%N by congruence.
+            - now replace ord with 1%N by congruence.
             - replace t with true_tag in * by congruence. rewrite Htrue_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
@@ -3149,9 +3149,9 @@ Proof.
             rewrite uint63_neq_int64_neq; [reflexivity|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
-            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
-            - now replace ord with 1%N by congruence.
+            - now replace ord with 0%N by congruence.
             - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
@@ -3179,9 +3179,9 @@ Proof.
             rewrite uint63_lt_int64_lt; [discriminate|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
-            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
-            - now replace ord with 0%N by congruence.
+            - now replace ord with 1%N by congruence.
             - replace t with true_tag in * by congruence. rewrite Htrue_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
@@ -3206,9 +3206,9 @@ Proof.
             rewrite uint63_nlt_int64_nlt; [reflexivity|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
-            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
-            - now replace ord with 1%N by congruence.
+            - now replace ord with 0%N by congruence.
             - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
@@ -3236,9 +3236,9 @@ Proof.
             rewrite uint63_le_int64_le; [discriminate|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
-            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
-            - now replace ord with 0%N by congruence.
+            - now replace ord with 1%N by congruence.
             - replace t with true_tag in * by congruence. rewrite Htrue_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
@@ -3263,9 +3263,9 @@ Proof.
             rewrite uint63_nle_int64_nle; [reflexivity|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
-            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
+            replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 1)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
-            - now replace ord with 1%N by congruence.
+            - now replace ord with 0%N by congruence.
             - replace t with false_tag in * by congruence. rewrite Hfalse_arr in H7; inv H7; lia.
           }
           try repeat (split; auto). all: subst fr; auto.
