@@ -14,6 +14,7 @@ From CertiCoq Require Import
   CodegenWasm.LambdaANF_to_Wasm_utils
   CodegenWasm.LambdaANF_to_Wasm_correct
   CodegenWasm.LambdaANF_to_Wasm_primitives
+  CodegenWasm.LambdaANF_to_Wasm_primitives_correct
   CodegenWasm.LambdaANF_to_Wasm_instantiation
   CodegenWasm.LambdaANF_to_Wasm_restrictions.
 
@@ -278,7 +279,7 @@ Proof.
 
   subst lenv.
   have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
-                   _ _ _ _ _ _ _ _ frameInit _ lh HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
+                   _ _ _ _ _ _ _ _ frameInit _ lh (primitive_operation_reduces_proof cenv fenv nenv penv _ HprimFunsRelated) HcenvRestr HprimFunsRet HlenvInjective
                   HenvsDisjoint Logic.eq_refl Hnodup'' HfenvWf HfenvRho
                   HeRestr' Hunbound Hstep hs sr _ _ Hfds HlocInBound Hinv_before_IH HmemAvail Hexpr HrelE.
   destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn. subst frameInit.
