@@ -147,7 +147,7 @@ Local Ltac reduce_under_label:=
   [try apply app_trans_const; auto|];
   [try eapply reduce_trans_label1|].
 
-(* only used for primitives, thus specialized to 28 bytes of mem usage *)
+(* only used for primitives, thus specialized to 52 bytes of mem usage *)
 Lemma store_preserves_INV (sr : store_record) : forall fr m addr off v,
   INV fenv nenv sr fr ->
   smem sr (f_inst fr) = Some m ->
