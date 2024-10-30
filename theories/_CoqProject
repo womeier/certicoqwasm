@@ -132,6 +132,7 @@ CodegenWasm/LambdaANF_to_Wasm_primitives.v
 CodegenWasm/LambdaANF_to_Wasm.v
 CodegenWasm/LambdaANF_to_Wasm_utils.v
 CodegenWasm/LambdaANF_to_Wasm_correct.v
+CodegenWasm/LambdaANF_to_Wasm_primitives_correct.v
 CodegenWasm/LambdaANF_to_Wasm_instantiation.v
 CodegenWasm/toplevel.v
 CodegenWasm/toplevel_theorem.v
