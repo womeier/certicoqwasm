@@ -1282,7 +1282,6 @@ Proof.
   eapply r_block  with (t1s:=[::]) (t2s:=[:: ])(vs:=[::]); eauto.
   subst LI. simpl.
   apply reduce_trans_label0.
-  Locate to_e_list_cat.
   rewrite to_e_list_cat.
   replace ([:: AI_basic (BI_br 1%N)]) with ([] ++ [:: AI_basic (BI_br 1%N)]) by reflexivity.
   eapply rt_trans.
@@ -1801,19 +1800,6 @@ Proof.
   apply rt_step. rewrite unfold_val_notation. eapply r_local_set. reflexivity.
   rewrite <-(rwP ssrnat.leP). lia. reflexivity.
 Qed.
-
-Local Ltac solve_arith_op_aux v aexp Hrepr_binop Hreduce HloadArgsStep HwasmArithEq :=
-  (inv Hrepr_binop; simpl;
-   destruct (Hreduce aexp) as [s' [s_final [fr [m' [wal [Hwal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]]];
-   exists s_final, fr;
-   replace v with (Vprim ( primInt aexp)) in * by congruence;
-   split; auto;
-   dostep_nary 0; [apply r_global_get; eassumption|];
-   eapply rt_trans; [apply app_trans_const; [auto|apply HloadArgsStep]|];
-   dostep_nary_eliml 2 1;[constructor; apply rs_binop_success; reflexivity|];
-   (try (dostep_nary_eliml 2 1;[constructor; apply rs_binop_success; reflexivity|]));
-   dostep_nary 2; [eapply r_store_success; rewrite HwasmArithEq; eassumption|];
-   eassumption).
 
 Lemma primitive_operation_reduces_proof : primitive_operation_reduces cenv fenv nenv penv.
 Proof.
@@ -2925,7 +2911,10 @@ Proof.
     remember {|f_locs := set_nth (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N)))) (f_locs f) (N.to_nat x0') (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_ptr (gmp_v + 8)%N))));
                f_inst := f_inst f|} as fr_carry_ops.
 
-
+    assert (local_holds_address_to_i64 s f x' (N_to_i32 addr1) (Z_to_i64 φ (n1)%uint63) m b0) as Hlocalx.
+    by unfold local_holds_address_to_i64; auto.
+    assert (local_holds_address_to_i64 s f y' (N_to_i32 addr2) (Z_to_i64 φ (n2)%uint63) m b1) as Hlocaly.
+    by unfold local_holds_address_to_i64; auto.
 
     rewrite Hvs in Hres.
     unfold apply_LambdaANF_primInt_operator in Hres.
@@ -2938,16 +2927,28 @@ Proof.
       destruct (H2 (Uint63.add n1 n2)) as [s' [s_final [fr [m' [wal [Hwal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]]].
       exists s_final, fr.
       replace v with (Vprim (AstCommon.primInt ; (Uint63.add n1 n2))) in * by congruence.
-      split; auto.
-      rewrite Heqinstrs'.
-      rewrite Hfr Hwal.
-      apply simple_arith_binop_reduce with (sr1:=s) (gmpv := gmp_v) (sr2:=s') (mem1:=m) (mem2:=m') (addrx:=N_to_i32 addr1) (addry:=N_to_i32 addr2) (bsx:=b0) (bsy:=b1) (vx:=n1) (vy:=n2) (u63_arith_fun:= Uint63.add) (w:=(Int64.iadd (Int64.repr (to_Z n1)) (Int64.repr (to_Z n2)))); auto.
-      unfold local_holds_address_to_i64; auto.
-      unfold local_holds_address_to_i64; auto.
+      split; auto. rewrite Heqinstrs' Hfr Hwal.
+      apply (simple_arith_binop_reduce state s s' _ f gmp_v m m' x' y' (N_to_i32 addr1) (N_to_i32 addr2) b0 b1 n1 n2 BOI_add Uint63.add true (Int64.iadd (Int64.repr (to_Z n1)) (Int64.repr (to_Z n2))) x0'); auto.
       intro. rewrite uint63_add_i64_add. reflexivity.
       intro; discriminate.
-    - (* sub *) solve_arith_op_aux v (n1 - n2)%uint63 H1 H2 HloadStep' uint63_sub_i64_sub.
-    - (* mul *) solve_arith_op_aux v (n1 * n2)%uint63 H1 H2 HloadStep' uint63_mul_i64_mul.
+    - (* sub *)
+      inversion H1. remember (apply_binop_and_store_i64 glob_mem_ptr BOI_sub x' y' true) as instrs'.
+      destruct (H2 (Uint63.sub n1 n2)) as [s' [s_final [fr [m' [wal [Hwal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]]].
+      exists s_final, fr.
+      replace v with (Vprim (AstCommon.primInt ; (Uint63.sub n1 n2))) in * by congruence.
+      split; auto. rewrite Heqinstrs' Hfr Hwal.
+      apply (simple_arith_binop_reduce state s s' _ f gmp_v m m' x' y' (N_to_i32 addr1) (N_to_i32 addr2) b0 b1 n1 n2 BOI_sub Uint63.sub true (Int64.isub (Int64.repr (to_Z n1)) (Int64.repr (to_Z n2))) x0'); auto.
+      intro. rewrite uint63_sub_i64_sub. reflexivity.
+      intro; discriminate.
+    - (* mul *)
+      inversion H1. remember (apply_binop_and_store_i64 glob_mem_ptr BOI_mul x' y' true) as instrs'.
+      destruct (H2 (Uint63.mul n1 n2)) as [s' [s_final [fr [m' [wal [Hwal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]]].
+      exists s_final, fr.
+      replace v with (Vprim (AstCommon.primInt ; (Uint63.mul n1 n2))) in * by congruence.
+      split; auto. rewrite Heqinstrs' Hfr Hwal.
+      apply (simple_arith_binop_reduce state s s' _ f gmp_v m m' x' y' (N_to_i32 addr1) (N_to_i32 addr2) b0 b1 n1 n2 BOI_mul Uint63.mul true (Int64.imul (Int64.repr (to_Z n1)) (Int64.repr (to_Z n2))) x0'); auto.
+      intro. rewrite uint63_mul_i64_mul. reflexivity.
+      intro; discriminate.
     - { (* div *)
       inv H1; simpl.
       destruct (H2 (n1 / n2)%uint63) as [s' [s_final [fr [m' [wal [Hwal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]]].
@@ -3100,10 +3101,33 @@ Proof.
           assert (to_Z 63 <= to_Z n2)%Z as Hle by now destruct (Z.lt_ge_cases (to_Z n2) (to_Z 63)).
           rewrite (uint63_lsr63 _ _ Hle) in Hstore; eauto.
           eassumption. } }
-          (* TODO turn solve_arith_op_aux into a lemma *)
-    - (* land *) solve_arith_op_aux v (n1 land n2)%uint63 H1 H2 HloadStep' uint63_land_i64_and.
-    - (* lor *) solve_arith_op_aux v (n1 lor n2)%uint63 H1 H2 HloadStep' uint63_lor_i64_or.
-    - (* lxor *) solve_arith_op_aux v (n1 lxor n2)%uint63 H1 H2 HloadStep' uint63_lxor_i64_xor.
+    - (* land *)
+      inversion H1. remember (apply_binop_and_store_i64 glob_mem_ptr BOI_and x' y' false) as instrs'.
+      destruct (H2 (Uint63.land n1 n2)) as [s' [s_final [fr [m' [wal [Hwal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]]].
+      exists s_final, fr.
+      replace v with (Vprim (AstCommon.primInt ; (Uint63.land n1 n2))) in * by congruence.
+      split; auto. rewrite Heqinstrs' Hfr Hwal.
+      apply (simple_arith_binop_reduce state s s' _ f gmp_v m m' x' y' (N_to_i32 addr1) (N_to_i32 addr2) b0 b1 n1 n2 BOI_and Uint63.land false (Int64.iand (Int64.repr (to_Z n1)) (Int64.repr (to_Z n2))) x0'); auto.
+      intro; discriminate.
+      intro. rewrite uint63_land_i64_and. reflexivity.
+    - (* lor *)
+      inversion H1. remember (apply_binop_and_store_i64 glob_mem_ptr BOI_or x' y' false) as instrs'.
+      destruct (H2 (Uint63.lor n1 n2)) as [s' [s_final [fr [m' [wal [Hwal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]]].
+      exists s_final, fr.
+      replace v with (Vprim (AstCommon.primInt ; (Uint63.lor n1 n2))) in * by congruence.
+      split; auto. rewrite Heqinstrs' Hfr Hwal.
+      apply (simple_arith_binop_reduce state s s' _ f gmp_v m m' x' y' (N_to_i32 addr1) (N_to_i32 addr2) b0 b1 n1 n2 BOI_or Uint63.lor false (Int64.ior (Int64.repr (to_Z n1)) (Int64.repr (to_Z n2))) x0'); auto.
+      intro; discriminate.
+      intro. rewrite uint63_lor_i64_or. reflexivity.
+    - (* lxor *)
+      inversion H1. remember (apply_binop_and_store_i64 glob_mem_ptr BOI_xor x' y' false) as instrs'.
+      destruct (H2 (Uint63.lxor n1 n2)) as [s' [s_final [fr [m' [wal [Hwal [Hs' [Hstore [Hfr [Hsmem [Hstep [Hinv1 [Hupd_glob Hr]]]]]]]]]]]]].
+      exists s_final, fr.
+      replace v with (Vprim (AstCommon.primInt ; (Uint63.lxor n1 n2))) in * by congruence.
+      split; auto. rewrite Heqinstrs' Hfr Hwal.
+      apply (simple_arith_binop_reduce state s s' _ f gmp_v m m' x' y' (N_to_i32 addr1) (N_to_i32 addr2) b0 b1 n1 n2 BOI_xor Uint63.lxor false (Int64.ixor (Int64.repr (to_Z n1)) (Int64.repr (to_Z n2))) x0'); auto.
+      intro; discriminate.
+      intro. rewrite uint63_lxor_i64_xor. reflexivity.
     (* TODO: Factor out helper lemma for booleans *)
     - { (* eqb *)
         inv H1; simpl.
