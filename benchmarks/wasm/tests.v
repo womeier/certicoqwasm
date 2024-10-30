@@ -118,7 +118,7 @@ CertiCoq Compile Wasm even_10000.
 
 Eval compute in "Bernstein yang termination".
 CertiCoq Compile Wasm bernstein_yang.
-(* bernstein_yang: compilation fine, runs for quite long *)
+(* bernstein_yang only for compilation, runs out of memory when executing binary *)
 
 (*******************************************************************)
 Eval compute in "Compiling demo1".
