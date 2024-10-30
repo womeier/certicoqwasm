@@ -7,10 +7,9 @@ Require Import CertiCoq.Benchmarks.lib.coind.
 Require Import CertiCoq.Benchmarks.lib.coqprime.
 Require Import CertiCoq.Benchmarks.lib.BernsteinYangTermination.
 Require Import CertiCoq.Benchmarks.lib.stack_machine.
+
 From MetaCoq.Utils Require Import bytestring MCString.
 From CertiCoq.Plugin Require Import CertiCoq.
-
-Definition foo := 0.
 
 Open Scope bs.
 

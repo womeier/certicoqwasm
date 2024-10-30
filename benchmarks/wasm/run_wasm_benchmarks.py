@@ -12,7 +12,7 @@ files = open("TESTS").read().strip().split("\n")
 ret_code = 0
 
 for f in files:
-    name = f"./CertiCoq.Benchmarks.tests.{f}.wasm"
+    name = f"CertiCoq.Benchmarks.wasm.tests.{f}.wasm"
     assert os.path.isfile(name), f"didn't find wasm file {name}."
 
     print(f"\nrunning: {name}")
@@ -20,7 +20,7 @@ for f in files:
         [
             "node",
             "--stack-size=10000000",
-            "js/run_wasm_external_pp.js",
+            "js/run_wasm.js",
             "./",
             f,
         ]
