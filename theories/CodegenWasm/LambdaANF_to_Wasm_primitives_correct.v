@@ -1801,7 +1801,7 @@ Proof.
   rewrite <-(rwP ssrnat.leP). lia. reflexivity.
 Qed.
 
-Lemma primitive_operation_reduces_proof : primitive_operation_reduces cenv fenv nenv penv.
+Theorem primitive_operation_reduces_proof : primitive_operation_reduces cenv fenv nenv penv.
 Proof.
   unfold primitive_operation_reduces.
   intros ?????????????????????? Hpfs Hf' Hpenv Hop HlenvInjective Hdisjoint HfenvWf HlocsInBounds Hrepr_x
