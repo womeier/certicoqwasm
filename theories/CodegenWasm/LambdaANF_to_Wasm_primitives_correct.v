@@ -1,12 +1,11 @@
 From Coq Require Import
-  Program.Program Sets.Ensembles
+  Program.Equality
   Logic.Decidable Lists.ListDec
   Relations.Relations Relations.Relation_Operators Lia
   EqdepFacts
   List Nnat Uint63.
 
 From CertiCoq Require Import
-  LambdaANF.Ensembles_util
   LambdaANF.cps
   LambdaANF.cps_util
   LambdaANF.eval
@@ -20,8 +19,7 @@ From CertiCoq Require Import
 From MetaCoq Require Import Common.Kernames.
 
 From compcert Require Import
-  Coqlib
-  lib.Integers common.Memory.
+  Coqlib common.Memory.
 
 From Wasm Require Import
   datatypes operations host memory_list opsem
@@ -41,6 +39,110 @@ Opaque Uint63.to_Z.
 
 Open Scope nat_scope.
 
+Section LambdaANF_PRIMITIVE_WRAPPERS.
+
+(* **** Define LambdaANF wrapper functions for Coq's 63 bit integer operators  **** *)
+
+(* LambdaANF constructor values 'Vconstr t vs' hold the tag 't' of the constructor and a list of values 'vs'.
+   The tag is NOT the same as the ordinal used in the translation section above,
+   and the tag of a specific constructor is NOT guaranteed to always be the same,
+   it depends on the program being extracted.
+
+   For the proof, we define 'wrapper' functions for the primitive operators,
+   and for primitive operators that return a constructor value, the wrapper function is parameterized over the tags
+   since we don't know the concrete values of the tags.
+
+   For convenience, we define the tags as section variables.
+ *)
+Variables true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag : ctor_tag.
+
+Definition LambdaANF_primInt_arith_fun (f : uint63 -> uint63 -> uint63) (x y : uint63) := Vprim (primInt (f x y)).
+
+Definition LambdaANF_primInt_bool_fun (f : uint63 -> uint63 -> bool) x y :=
+  if f x y then
+    Vconstr true_tag []
+  else
+    Vconstr false_tag [].
+
+Definition LambdaANF_primInt_compare_fun (f : uint63 -> uint63 -> comparison) x y :=
+  match f x y with
+  | Datatypes.Eq => Vconstr eq_tag []
+  | Datatypes.Lt => Vconstr lt_tag []
+  | Datatypes.Gt => Vconstr gt_tag []
+  end.
+
+Definition LambdaANF_primInt_carry_fun (f : uint63 -> uint63 -> carry uint63) x y :=
+  match f x y with
+  | C0 z => Vconstr c0_tag [ Vprim (primInt z) ]
+  | C1 z => Vconstr c1_tag [ Vprim (primInt z) ]
+  end.
+
+Definition LambdaANF_primInt_prod_fun (f : uint63 -> uint63 -> prod uint63 uint63) x y :=
+  let p := f x y in
+  Vconstr pair_tag [ Vprim (primInt (fst p)) ; Vprim (primInt (snd p)) ].
+
+Definition LambdaANF_primInt_unop_fun (f : uint63 -> uint63) x := Vprim (primInt (f x)).
+
+(* TODO: Consider what to do for the case where xh < y
+   When the dividend (xh * 2^63 + xl) is too large, the quotient will overflow,
+   but the behavior of diveucl_21 in that case is not specified as an axiom,
+   but all VM/ native implementations return (0, 0) *)
+Definition LambdaANF_primInt_diveucl_21 xh xl y :=
+  if (y <=? xh)%uint63 then
+    Vconstr pair_tag [ Vprim (primInt 0%uint63) ; Vprim (primInt 0%uint63) ]
+  else
+    Vconstr pair_tag [ Vprim (primInt (fst (diveucl_21 xh xl y))) ; Vprim (primInt (snd (diveucl_21 xh xl y))) ].
+
+Definition LambdaANF_primInt_addmuldiv p x y := Vprim (primInt (addmuldiv p x y)).
+
+(* Define a partial function for applying a primitive operator.
+   The result is only defined if the operator is supported and the arguments
+   match the type of the Coq operator.
+   E.g 'add' has the type 'uint63 -> uint63 -> uint63' so the arguments must be
+   2 primitive integer values and the return value is a primitive integer. *)
+Definition apply_LambdaANF_primInt_operator op (vs : list cps.val) : option cps.val :=
+  match vs with
+  | [ Vprim (primInt x) ] =>
+      match op with
+      | PrimInt63head0 => Some (LambdaANF_primInt_unop_fun Uint63.head0 x)
+      | PrimInt63tail0 => Some (LambdaANF_primInt_unop_fun Uint63.tail0 x)
+      | _ => None
+      end
+  | [ Vprim (primInt x) ; Vprim (primInt y) ] =>
+      match op with
+      | PrimInt63add => Some (LambdaANF_primInt_arith_fun Uint63.add x y)
+      | PrimInt63sub => Some (LambdaANF_primInt_arith_fun Uint63.sub x y)
+      | PrimInt63mul => Some (LambdaANF_primInt_arith_fun Uint63.mul x y)
+      | PrimInt63div => Some (LambdaANF_primInt_arith_fun Uint63.div x y)
+      | PrimInt63mod => Some (LambdaANF_primInt_arith_fun Uint63.mod x y)
+      | PrimInt63lsl => Some (LambdaANF_primInt_arith_fun Uint63.lsl x y)
+      | PrimInt63lsr => Some (LambdaANF_primInt_arith_fun Uint63.lsr x y)
+      | PrimInt63land => Some (LambdaANF_primInt_arith_fun Uint63.land x y)
+      | PrimInt63lor => Some (LambdaANF_primInt_arith_fun Uint63.lor x y)
+      | PrimInt63lxor => Some (LambdaANF_primInt_arith_fun Uint63.lxor x y)
+      | PrimInt63eqb => Some (LambdaANF_primInt_bool_fun Uint63.eqb x y)
+      | PrimInt63ltb => Some (LambdaANF_primInt_bool_fun Uint63.ltb x y)
+      | PrimInt63leb => Some (LambdaANF_primInt_bool_fun Uint63.leb x y)
+      | PrimInt63compare => Some (LambdaANF_primInt_compare_fun Uint63.compare x y)
+      | PrimInt63addc => Some (LambdaANF_primInt_carry_fun Uint63.addc x y)
+      | PrimInt63addcarryc => Some (LambdaANF_primInt_carry_fun Uint63.addcarryc x y)
+      | PrimInt63subc => Some (LambdaANF_primInt_carry_fun Uint63.subc x y)
+      | PrimInt63subcarryc => Some (LambdaANF_primInt_carry_fun Uint63.subcarryc x y)
+      | PrimInt63mulc => Some (LambdaANF_primInt_prod_fun Uint63.mulc x y)
+      | PrimInt63diveucl => Some (LambdaANF_primInt_prod_fun Uint63.diveucl x y)
+      | _ => None
+      end
+  | [ Vprim (primInt x) ; Vprim (primInt y) ; Vprim (primInt z) ] =>
+      match op with
+      | PrimInt63diveucl_21 => Some (LambdaANF_primInt_diveucl_21 x y z)
+      | PrimInt63addmuldiv => Some (LambdaANF_primInt_addmuldiv x y z)
+      | _ => None
+      end
+  | _ => None
+  end.
+
+End LambdaANF_PRIMITIVE_WRAPPERS.
+
 Section PRIMITIVE_TRANSLATION_CORRECT.
 
 Notation i32_glob gidx := (In gidx [ glob_result ; glob_out_of_mem ; glob_mem_ptr ; glob_cap ]).
@@ -54,6 +156,8 @@ Variable nenv : LambdaANF.cps_show.name_env.
 Variable penv : LambdaANF.toplevel.prim_env.
 
 Context `{ho : host}.
+
+(* Misc. tactics (most duplicated from main proof file) *)
 
 Ltac separate_instr :=
   cbn;
@@ -146,6 +250,15 @@ Local Ltac reduce_under_label:=
   [try apply app_trans|];
   [try apply app_trans_const; auto|];
   [try eapply reduce_trans_label1|].
+
+Ltac Zify.zify_post_hook ::= Z.div_mod_to_equations.
+
+Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : localidx) addr val (m : meminst) bs : Prop :=
+    lookup_N fr.(f_locs) l = Some (VAL_num (VAL_int32 addr))
+    /\ load m (N_of_uint i32m addr) 0%N (N.to_nat (tnum_length T_i64)) = Some bs
+    /\ wasm_deserialise bs T_i64 = (VAL_int64 val).
+
+(* Main reduction related lemmas *)
 
 (* only used for primitives, thus specialized to 52 bytes of mem usage *)
 Lemma store_preserves_INV (sr : store_record) : forall fr m addr off v,
@@ -1106,6 +1219,51 @@ Proof.
     now rewrite Hmemlength1 Hmemlength2 Hmemlength3 Hmemlength4 Hmemlength5.
 Qed.
 
+Ltac dep_destruct_primint v p x :=
+  try dependent destruction v; try discriminate; dependent destruction p; dependent destruction x; try discriminate.
+
+(* Arguments to primitive operations can only be primInts
+   (Eventually adapt for floats) *)
+Lemma apply_primop_only_defined_on_primInts :
+  forall op vs v true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag,
+    apply_LambdaANF_primInt_operator true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag op vs = Some v ->
+    forall v',
+      List.In v' vs -> exists n, v' = Vprim (primInt n).
+Proof.
+  intros.
+  unfold apply_LambdaANF_primInt_operator in H.
+  destruct vs=>//. destruct vs; destruct v0=>//; destruct p =>//; destruct x =>//.
+  destruct H0=>//. now exists p.
+  destruct vs; destruct v1=>//; destruct p0 =>//; destruct x =>//.
+  destruct H0. now exists p. destruct H0. now exists p0. destruct H0.
+  destruct vs; destruct v0=>//; destruct p1 =>//; destruct x =>//.
+  destruct H0. now exists p. destruct H0. now exists p0. destruct H0. now exists p1. destruct H0.
+Qed.
+
+(* Well-formedness of the primitive function (and constructor) environment:
+   Applying a (supported) primitive operator evaluates to a (LambdaANF) value,
+   and the constructor environment contains all constructors that may be returned,
+   and the constructors have the expected ordinals (i.e. the ones used in the translation section).
+ *)
+Definition prim_funs_env_wellformed (cenv : ctor_env) (penv : prim_env) (prim_funs : M.t (list cps.val -> option cps.val)) : Prop :=
+  forall p op_name s b n op f vs v,
+    M.get p penv = Some (op_name, s, b, n) ->       (* penv = primitive function environment obtained from previous pipeline stage *)
+    KernameMap.find op_name primop_map = Some op -> (* primop_map = environment of supported primitive operations *)
+    M.get p prim_funs = Some f ->                   (* from lambdaANF operational semantics *)
+    f vs = Some v ->
+    exists true_tag false_tag it_bool eq_tag lt_tag gt_tag it_comparison c0_tag c1_tag it_carry pair_tag it_prod,
+      (* This links operational semantics to primitive operators in penv *)
+      apply_LambdaANF_primInt_operator true_tag false_tag eq_tag lt_tag gt_tag c0_tag c1_tag pair_tag op vs = Some v
+      (* Constructor tags (bools, comparison, carry and prod) used by prim ops *)
+      /\ M.get true_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "true") (Common.BasicAst.nNamed "bool") it_bool 0%N true_ord)
+      /\ M.get false_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "false") (Common.BasicAst.nNamed "bool") it_bool 0%N false_ord)
+      /\ M.get eq_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Eq") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Eq_ord)
+      /\ M.get lt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Lt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Lt_ord)
+      /\ M.get gt_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "Gt") (Common.BasicAst.nNamed "comparison") it_comparison 0%N Gt_ord)
+      /\ M.get c0_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C0") (Common.BasicAst.nNamed "carry") it_carry 1%N C0_ord)
+      /\ M.get c1_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "C1") (Common.BasicAst.nNamed "carry") it_carry 1%N C1_ord)
+      /\ M.get pair_tag cenv = Some (Build_ctor_ty_info (Common.BasicAst.nNamed "pair") (Common.BasicAst.nNamed "prod") it_prod 2%N pair_ord).
+
 (* Application of primitive operators can never evaluate to a function value *)
 Lemma primop_value_not_funval :
   forall p pfs f' vs v op op_name str b op_arr,
@@ -1173,6 +1331,18 @@ Proof.
     dep_destruct_primint v2 p2 x.
 Qed.
 
+
+Definition div21_loop_invariant sr fr i xh xl xh' xl' y q :=
+  sglob_val sr (f_inst fr) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr xh')))
+  /\ sglob_val sr (f_inst fr) glob_tmp2 = Some (VAL_num (VAL_int64 (Int64.repr xl')))
+  /\ sglob_val sr (f_inst fr) glob_tmp3 = Some (VAL_num (VAL_int64 (Int64.repr y)))
+  /\ sglob_val sr (f_inst fr) glob_tmp4 = Some (VAL_num (VAL_int64 (Int64.repr q)))
+  /\ (0 <= y < 2^63)%Z
+  /\ (0 <= xh' < y)%Z
+  /\ (0 <= q < 2^i)%Z
+  /\ (xl' mod 2^64 = (xl * 2^i) mod 2^64)%Z
+  /\ ((q * y + xh') * 2^(63 - i) + (xl mod 2^(63 - i)) = (xh mod y) * 2^63 + xl)%Z.
+
 Lemma div21_loop_reduce_stop : forall state sr fr i,
     sglob_val sr (f_inst fr) glob_cap = Some (VAL_num (VAL_int32 (Int32.repr i))) ->
     (-1 < i < Int32.modulus)%Z ->
@@ -1216,8 +1386,6 @@ eapply rt_trans with (y:=(state, sr, fr, [AI_label 0 [:: AI_basic (BI_loop (BT_v
   apply r_simple.
   eapply rs_label_const; eauto.
 Qed.
-
-Let div21_loop_invariant := @div21_loop_invariant _ glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4.
 
 Lemma div21_loop_reduce_continue : forall state sr sr' fr m gmp i xh xl xh0' xl0' xh1' xl1' q0 q1 y,
     sglob_val sr (f_inst fr) glob_cap = Some (VAL_num (VAL_int32 (Int32.repr i))) ->
@@ -1801,10 +1969,14 @@ Proof.
   rewrite <-(rwP ssrnat.leP). lia. reflexivity.
 Qed.
 
-Theorem primitive_operation_reduces_proof : primitive_operation_reduces cenv fenv nenv penv.
+
+Theorem primitive_operation_reduces_proof : forall pfs,
+    prim_funs_env_wellformed cenv penv pfs ->
+    primitive_operation_reduces cenv fenv nenv penv pfs.
 Proof.
+  intros pfs Hpfs.
   unfold primitive_operation_reduces.
-  intros ?????????????????????? Hpfs Hf' Hpenv Hop HlenvInjective Hdisjoint HfenvWf HlocsInBounds Hrepr_x
+  intros ????????????????????? Hf' Hpenv Hop HlenvInjective Hdisjoint HfenvWf HlocsInBounds Hrepr_x
     HrelE HprimRepr Hinv HenoughM Hys_vs HprimResSome.
 
   have I := Hinv. destruct I as [_ [_ [_ [Hgmp_w [_ [Hmut [Hlinmem _]]]]]]].
@@ -2832,7 +3004,7 @@ Proof.
       inv Hval_x. replace m with m0 by congruence. exists addr. split; auto.
       remember (primInt n) as p1; remember (primInt n1) as p2.
       inversion H10; subst p1 p2.
-      now replace n1 with n by now apply inj_pair2 in H12.
+      now replace n1 with n by now apply Classical_Prop.EqdepTheory.inj_pair2 in H12.
     }
     destruct Hrv1 as [addr1 Hload1].
     destruct Hload1 as [? Hload1]. subst wal1.
@@ -2845,7 +3017,7 @@ Proof.
       inv Hval_y. replace m with m0 by congruence. exists addr. split; auto.
       remember (primInt n) as p1; remember (primInt n2) as p2.
       inversion H10; subst p1 p2.
-      now replace n2 with n by now apply inj_pair2 in H12.
+      now replace n2 with n by now apply Classical_Prop.EqdepTheory.inj_pair2 in H12.
     }
     destruct Hrv2 as [addr2 Hload2].
     destruct Hload2 as [? Hload2]. subst wal2.
@@ -4269,7 +4441,7 @@ Proof.
       inv Hval_x. replace m with m0 by congruence. exists addr. split; auto.
       remember (primInt n) as p1; remember (primInt n1) as p2.
       inversion H5; subst p1 p2.
-      now replace n1 with n by now apply inj_pair2 in H7.
+      now replace n1 with n by now apply Classical_Prop.EqdepTheory.inj_pair2 in H7.
     }
     destruct Hrv1 as [addr1 Hload1].
     destruct Hload1 as [? Hload1]. subst wal1.
@@ -4282,7 +4454,7 @@ Proof.
       inv Hval_y. replace m with m0 by congruence. exists addr. split; auto.
       remember (primInt n) as p1; remember (primInt n2) as p2.
       inversion H5; subst p1 p2.
-      now replace n2 with n by now apply inj_pair2 in H7.
+      now replace n2 with n by now apply Classical_Prop.EqdepTheory.inj_pair2 in H7.
     }
     destruct Hrv2 as [addr2 Hload2].
     destruct Hload2 as [? Hload2]. subst wal2.
@@ -4295,7 +4467,7 @@ Proof.
       inv Hval_z. replace m with m0 by congruence. exists addr. split; auto.
       remember (primInt n) as p1; remember (primInt n3) as p2.
       inversion H5; subst p1 p2.
-      now replace n3 with n by now apply inj_pair2 in H7.
+      now replace n3 with n by now apply Classical_Prop.EqdepTheory.inj_pair2 in H7.
     }
     destruct Hrv3 as [addr3 Hload3].
     destruct Hload3 as [? Hload3]. subst wal3.

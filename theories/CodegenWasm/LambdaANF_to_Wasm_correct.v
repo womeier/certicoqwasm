@@ -3970,10 +3970,9 @@ Proof.
   }
 Qed.
 
-Definition primitive_operation_reduces : Prop :=
-  forall lenv pfs state s f fds f' (x : var) (x' : localidx) (p : prim) op_name str b op_arr op
+Definition primitive_operation_reduces pfs : Prop :=
+  forall lenv state s f fds f' (x : var) (x' : localidx) (p : prim) op_name str b op_arr op
                                            (ys : list var) (e : exp) (vs : list val) (rho : env) (v : val) instrs mem,
-    prim_funs_env_wellformed cenv penv pfs ->
     M.get p pfs = Some f' ->
     M.get p penv = Some (op_name, str, b, op_arr) ->
     KernameMap.find op_name primop_map = Some op ->
@@ -4010,11 +4009,10 @@ Theorem repr_bs_LambdaANF_Wasm_related :
   (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
   forall lenv pfs (rho : eval.env) (v : cps.val) (e : exp) (memAvail : N) (n : nat) (vars : list cps.var) (fds : fundefs)
                                fAny k (lh : lholed k),
-    primitive_operation_reduces ->
+    primitive_operation_reduces pfs ->
     cenv_restricted cenv ->
     (* restrictions on prim_funs env *)
     prim_funs_env_returns_no_funvalues pfs ->
-    prim_funs_env_wellformed cenv penv pfs ->
     (* restrictions on lenv, fenv *)
     map_injective lenv ->
     domains_disjoint lenv fenv ->
@@ -4066,7 +4064,7 @@ Theorem repr_bs_LambdaANF_Wasm_related :
         (* INV holds if program will continue to run *)
         (INV_glob_out_of_mem_is_zero sr' f' -> INV sr' f').
 Proof with eauto.
-  intros lenv pfs rho v e memAvail n vars fds fAny k lh HprimOpReduce HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective HenvsDisjoint Hvars Hnodup
+  intros lenv pfs rho v e memAvail n vars fds fAny k lh HprimOpReduce HcenvRestr HprimFunsRet HlenvInjective HenvsDisjoint Hvars Hnodup
      HfenvWf HfenvRho HeRestr Hunbound Hev. subst vars.
   generalize dependent lenv. generalize dependent lh. revert k fAny memAvail.
   induction Hev; intros k fAny mem lh lenv HlenvInjective HenvsDisjoint state sr fr instructions
@@ -6125,8 +6123,8 @@ Proof with eauto.
           now apply HvalPreserved.
         }
 
-        have Hprim_red := HprimOpReduce lenv pfs state s' fr fds f' x x' f
-                            op_name s b n op ys e vs rho v prim_instrs _ HprimFunsRelated H0 H9 H12 HlenvInjective HenvsDisjoint HfenvWf HlocInBound H7 HrelE' H13 Hinv' HenoughM H H1.
+        have Hprim_red := HprimOpReduce lenv state s' fr fds f' x x' f
+                            op_name s b n op ys e vs rho v prim_instrs _ H0 H9 H12 HlenvInjective HenvsDisjoint HfenvWf HlocInBound H7 HrelE' H13 Hinv' HenoughM H H1.
 
         clear HrelE'.
 

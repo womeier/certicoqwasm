@@ -279,7 +279,7 @@ Proof.
 
   subst lenv.
   have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
-                   _ _ _ _ _ _ _ _ frameInit _ lh (primitive_operation_reduces_proof cenv fenv nenv penv) HcenvRestr HprimFunsRet HprimFunsRelated HlenvInjective
+                   _ _ _ _ _ _ _ _ frameInit _ lh (primitive_operation_reduces_proof cenv fenv nenv penv _ HprimFunsRelated) HcenvRestr HprimFunsRet HlenvInjective
                   HenvsDisjoint Logic.eq_refl Hnodup'' HfenvWf HfenvRho
                   HeRestr' Hunbound Hstep hs sr _ _ Hfds HlocInBound Hinv_before_IH HmemAvail Hexpr HrelE.
   destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn. subst frameInit.
