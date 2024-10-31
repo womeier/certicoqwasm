@@ -2,6 +2,7 @@ From Coq Require Import
   Logic.Decidable Lists.ListDec
   Relations.Relations
   Relations.Relation_Operators
+  Sets.Ensembles
   ZArith Lia List.
 
 From CertiCoq Require Import
@@ -56,6 +57,61 @@ Ltac dostep' :=
    eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s]));
    first (apply rt_step; separate_instr).
 
+Lemma bound_in_collect_local_variables : forall e v,
+~ bound_var e v ->
+~ In v (collect_local_variables e).
+Proof.
+  induction e using exp_ind'; intros => /= Hcontra //.
+  - destruct Hcontra. { now subst. }
+    now eapply IHe.
+  - apply in_app_or in Hcontra.
+    destruct Hcontra as [Hc | Hc].
+    + eapply IHe. 2: eassumption. intro. apply H.
+      eapply Bound_Ecase; eauto. now left.
+    + eapply IHe0; eauto. intro. apply H.
+      apply bound_var_Ecase_cons. auto.
+  - destruct Hcontra. { now subst. }
+    now eapply IHe.
+  - destruct Hcontra. { now subst. }
+    now eapply IHe.
+  - now eapply IHe.
+  - destruct Hcontra. { now subst. }
+    now eapply IHe.
+  - destruct Hcontra. { now subst. }
+    now eapply IHe.
+Qed.
+
+Lemma NoDup_collect_all_local_variables : forall e,
+  NoDup (collect_all_local_variables e) ->
+  NoDup (collect_local_variables e).
+Proof.
+  destruct e=> H //. cbn.
+  now apply NoDup_app_remove_r in H.
+Qed.
+
+Lemma unique_compat : forall e,
+  (~ exists x, occurs_free e x ) ->
+  unique_bindings e ->
+  Disjoint _ (occurs_free e) (bound_var e) ->
+  NoDup ((collect_all_local_variables e) ++ (collect_function_vars e))%list.
+Proof.
+  induction e using exp_ind'; intros Hclosed Huniq Hdisj; inv Huniq;
+    subst; cbn; try rewrite app_nil_r; try by constructor.
+  - constructor. by apply bound_in_collect_local_variables.
+    assert (Disjoint _ (occurs_free e) (bound_var e)). {
+      rewrite occurs_free_Econstr in Hdisj.
+      rewrite bound_var_Econstr in Hdisj.
+      apply Disjoint_Union_r in Hdisj.
+      apply Disjoint_sym in Hdisj.
+      apply Disjoint_Union_l in Hdisj.
+      apply Disjoint_sym in Hdisj.
+      constructor. intros. intro. apply Hclosed. Print bound_var.
+      Search "Disjoint" "Setminus".
+      apply Disjoint_Setminus_swap in H0. constructor. intro. intro.
+    }
+    have H' := IHe H6 H. apply NoDup_app_remove_r in H'.
+    now apply NoDup_collect_all_local_variables.
+  - inv H.
 
 
 (* TOPLEVEL CORRECTNESS THEOREM *)
