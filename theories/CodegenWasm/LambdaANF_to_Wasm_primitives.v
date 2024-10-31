@@ -1,18 +1,10 @@
-From Coq Require Import POrderedType ZArith BinNat List Lia Uint63 Program Relations.Relations Relations.Relation_Operators.
-
-From Wasm Require Import datatypes operations numerics host opsem properties common.
-Import Wasm_int.
-
-Require Import compcert.lib.Coqlib.
-
-From CertiCoq Require Import
-  LambdaANF.toplevel LambdaANF.cps_util LambdaANF.cps LambdaANF.cps_show
-  Common.Common Common.compM Common.Pipeline_utils.
-
-Require Import ExtLib.Structures.Monad.
+From Coq Require Import ZArith BinNat List Uint63.
+From Wasm Require Import datatypes.
+From CertiCoq Require Import Common.compM Common.Pipeline_utils.
 From MetaCoq Require Import Common.Kernames Utils.bytestring Utils.MCString.
 
-Import eqtype ssrbool eqtype seq ListNotations ssreflect MonadNotation SigTNotations.
+Import ListNotations SigTNotations Wasm_int.
+
 
 Notation "'primInt' x" := (AstCommon.primInt ; x) (at level 0).
 
@@ -25,9 +17,6 @@ Notation N_to_VAL_i32 n := (VAL_int32 (Wasm_int.Int32.repr (BinInt.Z.of_N n))).
 
 Local Coercion Z_to_i64_co z := Z_to_i64 z.
 Local Coercion Z_to_i64val_co z := Z_to_VAL_i64 z.
-
-(* Avoid unfolding during proofs *)
-Opaque Uint63.to_Z.
 
 Section TRANSLATION.
 
