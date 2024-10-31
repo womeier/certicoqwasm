@@ -2003,7 +2003,7 @@ Proof with eauto.
     dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
     dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
     apply reduce_trans_label0. cbn.
-    dostep_nary' 1. apply r_global_set with (v:=VAL_num (nat_to_value 1)). eassumption. apply rt_refl.
+    dostep_nary' 1. apply r_global_set'. eassumption. apply rt_refl.
     cbn. rewrite -Hlheq. apply rt_refl.
     (* correct resulting environment *)
     split. eapply update_global_preserves_funcs; eassumption.
@@ -2375,7 +2375,7 @@ Proof.
         assert (y' = y0'). { inv H0. congruence. } subst y0'.
         clear Htmp. exists wal.
         split; auto.
-        constructor. apply r_local_get with (v:=VAL_num (VAL_int32 (wasm_value_to_i32 wal))); eassumption.
+        constructor. now apply r_local_get'.
       }
       { (* fun idx *)
         eapply HfVal in Hrhoy; eauto. exists (Val_funidx i). split. apply rt_refl. eassumption.
@@ -2600,7 +2600,7 @@ Proof.
       dostep_nary 2. eapply r_store_success; eassumption.
       dostep_nary 0. apply r_global_get. subst s'. eassumption.
       dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
-      dostep_nary 1. apply r_global_set with (v:=VAL_num (VAL_int32 (Wasm_int.Int32.iadd (N_to_i32 gmp) (nat_to_i32 4)))). subst. eassumption.
+      dostep_nary 1. apply r_global_set'. eassumption.
       apply Hred.
       split. assumption. split. assumption. split. simpl_modulus. cbn. lia. split.
       econstructor. apply Hm1. eassumption. {
@@ -3022,7 +3022,7 @@ Proof.
   exists s_final. split.
   (* steps *)
   dostep_nary 0. apply r_global_get. eassumption.
-  dostep_nary 1. apply r_global_set with (v:=VAL_num (VAL_int32 (N_to_i32 gmp_v))). eassumption. cbn.
+  dostep_nary 1. apply r_global_set'. eassumption.
   dostep_nary 0. apply r_global_get. eapply update_global_get_same. eassumption.
   (* write tag *)
   dostep_nary 2. eapply r_store_success. eassumption.
@@ -3033,7 +3033,7 @@ Proof.
     2: eassumption. eassumption. }
 
   dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
-  dostep_nary 1. apply r_global_set with (v:=VAL_num (VAL_int32 (Wasm_int.Int32.iadd (N_to_i32 gmp_v) (nat_to_i32 4)))). subst. rewrite HgmpEq. eassumption.
+  dostep_nary 1. apply r_global_set'. rewrite HgmpEq. eassumption.
   cbn. apply Hred. split. assumption.
   split. apply update_global_preserves_funcs in H, H0. subst s_tag. cbn in H0. congruence.
   split. {
@@ -4308,9 +4308,9 @@ Proof with eauto.
       dostep_nary 0. apply r_global_get. eassumption.
 
       assert (f_inst f_before_IH = f_inst fr) as Hfinst'. { subst. reflexivity. }
-      dostep_nary 1. eapply r_local_set with (v:=VAL_num (VAL_int32 (wasm_value_to_i32 wal))). eassumption.
-      apply /ssrnat.leP. apply nth_error_Some. congruence. subst. reflexivity. apply rt_refl. cbn.
-      apply Hred_IH. cbn.
+      dostep_nary 1. eapply r_local_set'. eassumption.
+      apply /ssrnat.leP. apply nth_error_Some. congruence. subst. reflexivity. apply rt_refl.
+      apply Hred_IH.
 
       subst f_before_IH.
       repeat (split; auto). congruence.
@@ -4482,18 +4482,12 @@ Proof with eauto.
 
       exists sr', f', k', lh'.
       split. eapply rt_trans. apply reduce_trans_frame. apply reduce_trans_label.
-      dostep_nary 1. eapply r_local_set with (f':=f_before_IH)
-         (v:=VAL_num (nat_to_value (N.to_nat
-           (match ord with
-            | 0 => 0
-            | N.pos q => N.pos q~0
-            end + 1)))%N).
-        subst f_before_IH. reflexivity.
-        have I := Hinv.
-        apply /ssrnat.leP.
-        eapply HlocInBound. eassumption.
-        subst f_before_IH. reflexivity.
-        apply rt_refl.
+      dostep_nary 1. eapply r_local_set' with (f':=f_before_IH).
+      subst f_before_IH. reflexivity.
+      apply /ssrnat.leP. eapply HlocInBound.
+      eassumption.
+      subst f_before_IH. reflexivity.
+      apply rt_refl.
 
       (* IH *)
       apply Hred.
@@ -4693,9 +4687,9 @@ Proof with eauto.
 
        dostep_nary 1. eapply r_load_success. eassumption. rewrite Har. apply Hload.
        (* save result in x' *)
-       dostep_nary 1. eapply r_local_set with (v := VAL_num (VAL_int32 (Wasm_int.Int32.repr (decode_int bs)))) (f':=f_before_IH); subst f_before_IH=>//.
-       apply /ssrnat.leP. now apply HlocInBound in Hx'. apply rt_refl.
-       apply Hred. }
+       dostep_nary 1. eapply r_local_set' with (f':=f_before_IH); subst f_before_IH=>//.
+       apply /ssrnat.leP. now apply HlocInBound in Hx'.
+       apply rt_refl. apply Hred. }
      subst f_before_IH. by repeat (split; auto).
     }
   - (* Ecase *)
@@ -5609,7 +5603,7 @@ Proof with eauto.
         dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto. cbn.
         dostep_nary 0. constructor. apply rs_label_const =>//.
         dostep_nary 0. apply r_global_get. subst f_before_IH. eassumption.
-        dostep_nary' 1. eapply r_local_set with (v:= VAL_num (VAL_int32 w)) (f' := f_before_cont).
+        dostep_nary' 1. eapply r_local_set' with (f' := f_before_cont).
         subst f_before_cont. reflexivity.
         apply /ssrnat.leP. eapply HlocInBound. eassumption.
         subst f_before_cont w. reflexivity. apply rt_refl.
@@ -6034,13 +6028,13 @@ Proof with eauto.
         dostep_nary 0. apply r_global_get. eassumption.
         dostep_nary 2. eapply r_store_success; eauto.
         dostep_nary 0. apply r_global_get. apply HgmpPreserved.
-        cbn. dostep_nary 1. eapply r_local_set with (f':=f_before_IH) (v:= VAL_num (VAL_int32 (N_to_i32 gmp))). subst f_before_IH. reflexivity.
+        cbn. dostep_nary 1. eapply r_local_set' with (f':=f_before_IH). subst f_before_IH. reflexivity.
         apply /ssrnat.leP.
         apply HlocInBound in H3. lia. subst. reflexivity.
         cbn.
         dostep_nary 0. apply r_global_get. now rewrite Hfinst'.
         dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
-        dostep_nary 1. apply r_global_set with (v:= (VAL_num (VAL_int32 (Wasm_int.Int32.iadd (N_to_i32 gmp) (nat_to_i32 8))))). rewrite HgmpEq. subst f_before_IH. eassumption.
+        dostep_nary 1. apply r_global_set'. rewrite HgmpEq. subst f_before_IH. eassumption.
         apply rt_refl.
         (* apply IH *)
         apply Hred_IH.
@@ -6279,7 +6273,7 @@ Proof with eauto.
     (* execute wasm instructions *)
     apply reduce_trans_frame. apply reduce_trans_label.
     dostep_nary 0. eapply r_local_get. eassumption.
-    dostep_nary' 1. apply r_global_set with (v:= VAL_num (VAL_int32 (wasm_value_to_i32 wal))). eassumption. apply rt_refl.
+    dostep_nary' 1. apply r_global_set'. eassumption. apply rt_refl.
 
     split.
     left. exists (wasm_value_to_i32 wal). exists wal.

@@ -746,6 +746,41 @@ Import Nnat Znat.
 
 Context `{ho : host}.
 
+(* easier to use with $VN *)
+Lemma r_local_get' : forall f v j s hs,
+  lookup_N (f_locs f) j = Some (VAL_num v) ->
+  reduce hs s f [:: AI_basic (BI_local_get j)] hs s f [:: $VN v].
+Proof.
+  intros.
+  by apply r_local_get with (v:=VAL_num v).
+Qed.
+
+Lemma r_local_set' : forall f f' i v s vd hs,
+  f_inst f' = f_inst f ->
+  ssrnat.leq (S (N.to_nat i)) (Datatypes.length (f_locs f)) ->
+  f_locs f' = set_nth vd (f_locs f) (N.to_nat i) (VAL_num v) ->
+  reduce hs s f [:: $VN v; AI_basic (BI_local_set i)] hs s f' [::].
+Proof.
+  intros.
+  now eapply r_local_set with (v:=VAL_num v).
+Qed.
+
+Lemma r_global_get' : forall s f i v hs,
+  sglob_val s (f_inst f) i = Some (VAL_num v) ->
+  reduce hs s f [:: AI_basic (BI_global_get i)] hs s f [:: $VN v].
+Proof.
+  intros.
+  now eapply r_global_get with (v:=VAL_num v).
+Qed.
+
+Lemma r_global_set' : forall s f i v s' hs,
+  supdate_glob s (f_inst f) i (VAL_num v) = Some s' ->
+  reduce hs s f [:: $VN v; AI_basic (BI_global_set i)] hs s' f [::].
+Proof.
+  intros.
+  now eapply r_global_set with (v:=VAL_num v).
+Qed.
+
 (* taken from iriswasm *)
 Lemma mem_update_length dat dat' k b:
   memory_list.mem_update k b dat = Some dat' ->
@@ -1774,10 +1809,6 @@ Proof. auto. Qed.
 
 Lemma i64_val_8_bytes : forall v,
   length (bits (VAL_int64 v)) = 8.
-Proof. auto. Qed.
-
-Lemma unfold_val_notation : forall v,
-  $VN v = $V (VAL_num v).
 Proof. auto. Qed.
 
 Lemma reduce_trans_label : forall instr instr' hs hs' sr sr' fr fr' i (lh : lholed i),
