@@ -145,7 +145,7 @@ Proof.
 
   assert (Hinv_before_IH: INV fenv nenv sr f_before_IH). {
     subst f_before_IH fenv.
-    eapply init_locals_preserves_INV with (args:=[]). apply Hinv. reflexivity.
+    now eapply init_locals_preserves_INV with (args:=[]).
   }
 
   assert (HmemAvail: min_available_memory sr (f_inst f_before_IH) 0). {

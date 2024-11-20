@@ -2068,11 +2068,6 @@ Proof.
   rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia.
 Qed.
 
-Lemma exists_i32 : exists (v : i32), True.
-Proof.
-  exists (nat_to_i32 1). constructor.
-Qed.
-
 Lemma i32_exists_N : forall (x : i32),
   exists n, x = N_to_i32 n /\ (-1 < Z.of_N n < Wasm_int.Int32.modulus)%Z.
 Proof.
