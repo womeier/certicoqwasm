@@ -60,7 +60,7 @@ Ltac dostep' :=
 
 (* TOPLEVEL CORRECTNESS THEOREM *)
 Theorem LambdaANF_Wasm_related :
-  forall (v : cps.val) (e : exp) (n : nat) (vars : list cps.var)
+  forall (v : cps.val) (e : exp) (n : nat)
          (hs : host_state) module fenv lenv (pfs : M.t (list val -> option val)),
   (* primitive env well-formed *)
   prim_funs_env_returns_no_funvalues pfs ->
@@ -71,8 +71,7 @@ Theorem LambdaANF_Wasm_related :
   cenv_restricted cenv ->
 
   (* vars unique (guaranteed by previous stage) *)
-  vars = ((collect_all_local_variables e) ++ (collect_function_vars e))%list ->
-  NoDup vars ->
+  NoDup ((collect_all_local_variables e) ++ (collect_function_vars e))%list ->
 
   (* expression must be closed *)
   (~ exists x, occurs_free e x ) ->
@@ -94,8 +93,7 @@ Theorem LambdaANF_Wasm_related :
     (* result variable has the correct value set *)
     result_val_LambdaANF_Wasm cenv fenv nenv penv v sr' (f_inst fr).
 Proof.
-  intros ????????? HprimFunsRet HprimFunsRelated Hcenv HcenvRestr HvarsEq HvarsNodup Hfreevars Hstep LANF2Wasm.
-  subst vars.
+  intros ???????? HprimFunsRet HprimFunsRelated Hcenv HcenvRestr HvarsNodup Hfreevars Hstep LANF2Wasm.
   assert (exists fds e', e = Efun fds e') as [fds [e' ->]]. {
     unfold LambdaANF_to_Wasm in LANF2Wasm.
     destruct (check_restrictions cenv e)=>//.

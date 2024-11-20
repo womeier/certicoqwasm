@@ -131,7 +131,7 @@ Proof.
   (* f0<>v *) constructor. eapply IHfds; eauto.
 Qed.
 
-(* END TODO move *)
+(* END move to cps_util *)
 
 
 (* TODO: incorporate into expression_restricted *)

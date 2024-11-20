@@ -746,6 +746,28 @@ Import Nnat Znat.
 
 Context `{ho : host}.
 
+Lemma and_1_odd : forall n,
+  (-1 < Z.of_nat (N.to_nat (2 * n + 1)) < Wasm_int.Int32.modulus)%Z ->
+  Wasm_int.Int32.iand (Wasm_int.Int32.repr (Z.of_N (2 * n + 1))) (Wasm_int.Int32.repr 1) = Wasm_int.Int32.one.
+Proof.
+  intros.
+  unfold Wasm_int.Int32.iand, Wasm_int.Int32.and. cbn.
+  destruct n. cbn. reflexivity.
+  rewrite Wasm_int.Int32.Z_mod_modulus_id; last lia. reflexivity.
+Qed.
+
+Lemma and_1_even : forall n,
+  (-1 < Z.of_N (2 * n) < Wasm_int.Int32.modulus)%Z ->
+  Wasm_int.Int32.iand (Wasm_int.Int32.repr (Z.of_N (2 * n))) (Wasm_int.Int32.repr 1) = Wasm_int.Int32.zero.
+Proof.
+  intros ? H.
+  unfold Wasm_int.Int32.iand, Wasm_int.Int32.and.
+  - destruct n. now cbn.
+  - remember (Z.of_N _) as fd. cbn.
+    now rewrite Wasm_int.Int32.Z_mod_modulus_id; subst.
+Qed.
+
+
 (* easier to use with $VN *)
 Lemma r_local_get' : forall f v j s hs,
   lookup_N (f_locs f) j = Some (VAL_num v) ->
