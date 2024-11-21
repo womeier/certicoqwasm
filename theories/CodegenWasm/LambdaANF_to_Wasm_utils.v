@@ -4,7 +4,7 @@ From compcert Require Import
 
 From CertiCoq Require Import
   LambdaANF.cps LambdaANF.eval LambdaANF.cps_util
-  LambdaANF.List_util LambdaANF.identifiers
+  LambdaANF.List_util LambdaANF.identifiers Ensembles_util
   CodegenWasm.LambdaANF_to_Wasm
   CodegenWasm.LambdaANF_to_Wasm_primitives
   Libraries.maps_util.
@@ -302,6 +302,27 @@ Proof.
     }}
   have Hincl := find_def_collect_all_local_variables _ _ _ _ _ e H0.
   now eapply NoDup_incl_NoDup'.
+Qed.
+
+Lemma collect_function_vars_name_in_fundefs : forall fds f e,
+  In f (collect_function_vars (Efun fds e)) -> name_in_fundefs fds f.
+Proof.
+  induction fds; intros=>//.
+  cbn. destruct H as [H|H].
+  - subst. now constructor.
+  - apply IHfds in H; auto.
+    apply Union_commut. now constructor.
+Qed.
+
+Lemma unqique_functions_NoDup_collect_function_vars : forall fds e,
+  unique_functions fds ->
+  NoDup (collect_function_vars (Efun fds e)).
+Proof.
+  intros.
+  generalize dependent e. induction fds. 2: constructor.
+  intros. inv H. constructor. 2: { now eapply IHfds with (e:=e). }
+  intro H. apply H2.
+  now apply collect_function_vars_name_in_fundefs with (e:=e).
 Qed.
 
 Lemma NoDup_case: forall cl t e y,
@@ -657,21 +678,20 @@ Proof.
 Qed.
 
 
-Lemma dsubterm_fds_e_find_def : forall (fds : fundefs) (e : exp) (eAny : exp),
-  NoDup (collect_function_vars (Efun fds eAny)) ->
+Lemma dsubterm_fds_e_find_def : forall (fds : fundefs) (e : exp),
+  unique_functions fds ->
   dsubterm_fds_e e fds ->
   exists f ys t, find_def f fds = Some (t, ys, e).
 Proof.
   induction fds; intros. 2: inv H0.
   inv H0. { exists v, l, f. cbn. now destruct (M.elt_eq v v). }
-  eapply IHfds in H3. destruct H3 as [f' [ys' [t' H']]].
-  assert (f' <> v). { intro. subst.
-    assert (find_def v fds <> None). { now apply notNone_Some. }
-    eapply find_def_in_collect_function_vars in H0.
-    now inv H. } exists f'.
+  eapply IHfds in H3. 2:{ now inv H. }
+  destruct H3 as [f' [ys' [t' H']]].
+  assert (f' <> v). {
+    intro. subst. inv H.
+    now apply find_def_name_in_fundefs in H'. }
+  exists f'.
   cbn. now destruct (M.elt_eq f' v).
-  now inv H.
-  Unshelve. all: assumption.
 Qed.
 
 Lemma set_lists_In : forall {A} x xs (v:A) vs rho rho' ,
