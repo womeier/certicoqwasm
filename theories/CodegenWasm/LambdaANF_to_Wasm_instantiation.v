@@ -692,14 +692,14 @@ Proof.
   intros. inv H.
 Qed.
 
-Lemma translate_functions_exists_original_fun : forall fds fds'' fns wasmFun e eAny fenv,
-  NoDup (collect_function_vars (Efun fds e)) ->
+Lemma translate_functions_exists_original_fun : forall fds fds'' fns wasmFun eAny fenv,
+  unique_functions fds ->
   translate_functions nenv cenv fenv penv fds = Ret fns ->
   fenv = create_fname_mapping (Efun fds'' eAny) ->
   In wasmFun fns ->
   exists f t ys e, find_def f fds = Some (t, ys, e) /\ (type wasmFun) = N.of_nat (length ys) /\ @repr_funvar fenv nenv f (wasmFun.(fidx)).
 Proof.
-  induction fds; intros fds'' fns wasmFun e' eAny fenv Hnodup Htrans Hfenv Hin. 2: { inv Htrans. inv Hin. }
+  induction fds; intros fds'' fns wasmFun eAny fenv HfdsUnique Htrans Hfenv Hin. 2: { inv Htrans. inv Hin. }
   simpl in Htrans.
   destruct (translate_function nenv cenv _ penv v l e) eqn:transF. inv Htrans.
   cbn. destruct (translate_functions _ _ _ ) eqn:Htra; inv Htrans. destruct Hin.
@@ -711,13 +711,12 @@ Proof.
     destruct (translate_body _ _ _ _) eqn:HtransE. inv transF.
     inv transF. cbn.  split=>//. now econstructor.
   - (* wasmFun is not first fn *)
-    eapply IHfds in H; eauto. 2: { now inv Hnodup. }
+    eapply IHfds in H; eauto. 2: { now inv HfdsUnique. }
     destruct H as [f' [t' [ys' [e'' [Hfdef Hty]]]]].
     exists f', t', ys', e''. split; auto. rewrite -Hfdef.
     destruct (M.elt_eq f' v); auto. subst v. exfalso.
-    inv Hnodup. apply H1. clear H2. cbn.
-    now eapply find_def_in_collect_function_vars.
-Unshelve. all: assumption.
+    inv HfdsUnique. apply H1.
+    now apply find_def_name_in_fundefs in Hfdef.
 Qed.
 
 Lemma translate_functions_length {fenv} : forall fds fns,
@@ -778,15 +777,15 @@ Proof.
     by eapply IHfds; eauto.
 Qed.
 
-Lemma translate_functions_increasing_fids : forall fds fns fenv eAny1 eAny2,
-  fenv = create_fname_mapping (Efun fds eAny1) ->
+Lemma translate_functions_increasing_fids : forall fds fns fenv eAny,
+  fenv = create_fname_mapping (Efun fds eAny) ->
   map_injective fenv ->
-  NoDup (collect_function_vars (Efun fds eAny2)) ->
+  unique_functions fds ->
   translate_functions nenv cenv fenv penv fds = Ret fns ->
   (forall i j i' j', i > j -> nth_error (map (fun f => fidx f) fns) i = Some i' ->
                               nth_error (map (fun f => fidx f) fns) j = Some j' -> (i' > j')%N).
 Proof.
-  intros ????? Hfds Hinj Hnodup HtransFns ? ? ? ? Hgt Hi Hj.
+  intros ???? Hfds Hinj HfdsUnique HtransFns ???? Hgt Hi Hj.
   rewrite nth_error_map in Hi. rewrite nth_error_map in Hj.
   destruct (nth_error fns i) eqn:Hio. 2: inv Hi. cbn in Hi. inv Hi.
   destruct (nth_error fns j) eqn:Hjo. 2: inv Hj. cbn in Hj. inv Hj.
@@ -794,13 +793,13 @@ Proof.
   have Hlen := translate_functions_length _ _ HtransFns. symmetry in Hlen.
 
   assert (Hilen: i < numOf_fundefs fds). { rewrite -Hlen. now apply nth_error_Some. }
-  have Hilen' := Hilen.  rewrite <- (collect_function_vars_length _ eAny1) in Hilen'.
+  have Hilen' := Hilen.  rewrite <- (collect_function_vars_length _ eAny) in Hilen'.
   apply nth_error_Some in Hilen'. apply notNone_Some in Hilen'. destruct Hilen' as [v Hiv].
   have Hi' := translate_functions_fenv _ _ _ _ _ _ Hinj HtransFns Hilen Hiv.
   rewrite Hio in Hi'. cbn in Hi'.
 
   assert (Hjlen: j < numOf_fundefs fds). { rewrite -Hlen. now apply nth_error_Some. }
-  have Hjlen' := Hjlen. rewrite <- (collect_function_vars_length _ eAny1) in Hjlen'.
+  have Hjlen' := Hjlen. rewrite <- (collect_function_vars_length _ eAny) in Hjlen'.
   apply nth_error_Some in Hjlen'. apply notNone_Some in Hjlen'. destruct Hjlen' as [v' Hjv'].
   have Hj' := translate_functions_fenv _ _ _ _ _ _ Hinj HtransFns Hjlen Hjv'.
 
@@ -808,14 +807,16 @@ Proof.
   symmetry in Hj', Hi'.
   remember (fidx w) as i'. remember (fidx w0) as j'. clear Heqi' Heqj'.
 
-  assert (Hi'': translate_var nenv (create_fname_mapping (Efun fds eAny1)) v ""%bs = Ret i'). {
+  assert (Hi'': translate_var nenv (create_fname_mapping (Efun fds eAny)) v ""%bs = Ret i'). {
     unfold translate_var. now rewrite Hi'. }
-  assert (Hj'': translate_var nenv (create_fname_mapping (Efun fds eAny2)) v' ""%bs = Ret j'). {
+  assert (Hj'': translate_var nenv (create_fname_mapping (Efun fds eAny)) v' ""%bs = Ret j'). {
     unfold translate_var. now rewrite Hj'. }
   unfold create_fname_mapping in Hi'.
   rewrite -(Nat2N.id i) in Hiv. rewrite -(Nat2N.id j) in Hjv'.
-  rewrite (var_mapping_list_lt_length_nth_error_idx _ _ (N.of_nat num_custom_funs) _ _ _ Hiv) in Hi''; auto.
-  rewrite (var_mapping_list_lt_length_nth_error_idx _ _ (N.of_nat num_custom_funs) _ _ _ Hjv') in Hj''; auto.
+  rewrite (var_mapping_list_lt_length_nth_error_idx _ _ (N.of_nat num_custom_funs) _ _ _ Hiv) in Hi''.
+  2:{ by apply unqique_functions_NoDup_collect_function_vars. }
+  rewrite (var_mapping_list_lt_length_nth_error_idx _ _ (N.of_nat num_custom_funs) _ _ _ Hjv') in Hj''.
+  2:{ by apply unqique_functions_NoDup_collect_function_vars. }
   remember (_ + N.of_nat i)%N as i''. injection Hi'' as ->.
   remember (_ + N.of_nat j)%N as j''. injection Hj'' as ->. lia.
 Qed.
@@ -897,15 +898,15 @@ Proof.
   assert (n=j) by lia. congruence.
 Qed.
 
-Lemma translate_functions_NoDup : forall fds fns fenv eAny1 eAny2,
-  fenv = create_fname_mapping (Efun fds eAny1) ->
+Lemma translate_functions_NoDup : forall fds fns fenv eAny,
+  fenv = create_fname_mapping (Efun fds eAny) ->
   map_injective fenv ->
-  NoDup (collect_function_vars (Efun fds eAny2)) ->
+  unique_functions fds ->
   translate_functions nenv cenv fenv penv fds = Ret fns ->
   NoDup (map (fun f => fidx f) fns).
 Proof.
-  intros ????? -> Hinj Hnodup HtransFns.
-  have H' := translate_functions_increasing_fids _ _ _ _ _ Logic.eq_refl Hinj Hnodup HtransFns.
+  intros ???? -> Hinj HfdsUnique HtransFns.
+  have H' := translate_functions_increasing_fids _ _ _ _ Logic.eq_refl Hinj HfdsUnique HtransFns.
   apply NoDup_nth_error. intros ? ? HiLen Heq.
   destruct (Nat.eq_dec i j); auto. exfalso.
   apply nth_error_Some in HiLen. apply notNone_Some in HiLen. destruct HiLen as [v Hv].
@@ -918,8 +919,8 @@ Proof.
   have Hcontra := H' _ _ _ _ Hgt Hv Heq. lia.
 Qed.
 
-Lemma translate_functions_type_bound {fenv} : forall fds fns fn eAny,
-  NoDup (collect_function_vars (Efun fds eAny)) ->
+Lemma translate_functions_type_bound {fenv} : forall fds fns fn,
+  unique_functions fds ->
   (forall f t ys e', find_def f fds = Some (t, ys, e') ->
              Z.of_nat (length ys) <= max_function_args /\
              expression_restricted cenv e')%Z ->
@@ -928,7 +929,7 @@ Lemma translate_functions_type_bound {fenv} : forall fds fns fn eAny,
   (type fn <= Z.to_N max_function_args)%N.
 Proof.
   induction fds. 2:{ intros. by inv H1. }
-  intros ??? Hnodup Hrestr Htrans Hin. cbn in Htrans.
+  intros ?? HfdsUnique Hrestr Htrans Hin. cbn in Htrans.
   destruct (translate_var nenv fenv v _) eqn:Hvar=>//.
   destruct (translate_body _ _ _ _ _) eqn:Hbody=>//.
   destruct (translate_functions _ _ _ _ _) eqn:Hfns=>//. inv Htrans.
@@ -938,32 +939,32 @@ Proof.
   destruct Hin as [Hin|Hin].
   - subst. cbn. lia.
   - eapply IHfds; eauto.
-    + cbn in Hnodup. inv Hnodup. eassumption.
+    + now inv HfdsUnique.
     + intros. eapply Hrestr with (f:=f0); eauto. cbn.
       destruct (M.elt_eq f0 v); eauto. exfalso.
-      subst. inv Hnodup. apply H2. apply find_def_in_collect_function_vars; auto.
-      congruence.
-Unshelve. assumption.
+      subst. inv HfdsUnique.
+      apply H2. by apply find_def_name_in_fundefs in H.
 Qed.
 
-Lemma translate_functions_nth_error_idx : forall eAny1 eAny2 fds fns j func,
-  NoDup (collect_function_vars (Efun fds eAny1)) ->
-  translate_functions nenv cenv (create_fname_mapping (Efun fds eAny2)) penv fds = Ret fns ->
+Lemma translate_functions_nth_error_idx : forall eAny fds fns j func,
+  unique_functions fds ->
+  translate_functions nenv cenv (create_fname_mapping (Efun fds eAny)) penv fds = Ret fns ->
   nth_error fns j = Some func ->
   j = N.to_nat (fidx func) - num_custom_funs.
 Proof.
-  intros ?????? Hnodup Hfns Hin.
-  assert (Hinj: map_injective (create_fname_mapping (Efun fds eAny1))). {
-    by apply create_local_variable_mapping_injective.
+  intros ????? HfdsUnique Hfns Hin.
+  assert (Hinj: map_injective (create_fname_mapping (Efun fds eAny))). {
+    apply create_local_variable_mapping_injective.
+    by apply unqique_functions_NoDup_collect_function_vars.
   }
-  have H'' := translate_functions_increasing_fids _ _ _ _ _ Logic.eq_refl Hinj Hnodup Hfns.
+  have H'' := translate_functions_increasing_fids _ _ _ _ Logic.eq_refl Hinj HfdsUnique Hfns.
   assert (Hbounds: forall idx, In idx [seq fidx i | i <- fns] ->
              (N.of_nat num_custom_funs <= idx < N.of_nat (Datatypes.length fns + num_custom_funs))%N). {
     intros ? Hidx.
     have H' := translate_functions_idx_bounds _ _ _ _ _ _ Hfns _ Hidx. apply H'.
     intros ? ? Hf.
     split. { apply local_variable_mapping_gt_idx in Hf. lia. }
-    assert (HtransF: translate_var nenv (create_fname_mapping (Efun fds eAny1)) f ""%bs = Ret f'). {
+    assert (HtransF: translate_var nenv (create_fname_mapping (Efun fds eAny)) f ""%bs = Ret f'). {
     unfold translate_var. now rewrite Hf. }
     apply var_mapping_list_lt_length' in HtransF.
     rewrite collect_function_vars_length in HtransF.
@@ -973,14 +974,14 @@ Proof.
     eapply fns_fidx_nth_error_fidx; eauto. intros.
     apply Hbounds in H. lia. }
   rewrite -Hin in Hnth.
-  have Hnodup' := translate_functions_NoDup _ _ _ _ _ Logic.eq_refl Hinj Hnodup Hfns.
+  have Hnodup' := translate_functions_NoDup _ _ _ _ Logic.eq_refl Hinj HfdsUnique Hfns.
   apply NoDup_map_inv in Hnodup'.
   eapply NoDup_nth_error; eauto.
   now apply nth_error_Some. rewrite -Hnth. f_equal. lia.
 Qed.
 
-Lemma translate_functions_find_def : forall fds f fns t ys e eAny fenv,
-  NoDup (collect_function_vars (Efun fds eAny)) ->
+Lemma translate_functions_find_def : forall fds f fns t ys e fenv,
+  unique_functions fds ->
   translate_functions nenv cenv fenv penv fds = Ret fns ->
   find_def f fds = Some (t, ys, e) ->
   (forall f t ys e, find_def f fds = Some (t, ys, e) -> correct_cenv_of_exp cenv e) ->
@@ -994,7 +995,7 @@ Lemma translate_functions_find_def : forall fds f fns t ys e eAny fenv,
     repr_expr_LambdaANF_Wasm cenv fenv nenv penv e 0 e'
      (lenv := create_local_variable_mapping (ys ++ collect_local_variables e)).
 Proof.
-  induction fds; intros ??????? Hnodup HtransFns HfDef HcorrCenv; last by inv HfDef.
+  induction fds; intros ?????? HfdsUnique HtransFns HfDef HcorrCenv; last by inv HfDef.
   simpl in HtransFns.
   destruct (translate_function _ _ _ _ _ _) eqn:Hf. inv HtransFns.
   destruct (translate_functions _ _ _ _ fds) eqn:Hfns; inv HtransFns.
@@ -1012,17 +1013,17 @@ Proof.
     eapply translate_body_correct in Hexp; eauto. eapply HcorrCenv with (f:=v). cbn.
     by destruct (M.elt_eq v v).
   - (* f0<>v *)
-    assert (Hnodup': NoDup (collect_function_vars (Efun fds e0))) by inv Hnodup=>//.
+    assert (HfdsUnique': unique_functions fds) by inv HfdsUnique=>//.
     assert (HcorrCenv': (forall (f : var) (t : fun_tag) (ys : seq var) (e : exp),
       find_def f fds = Some (t, ys, e) ->
       correct_cenv_of_exp cenv e)). {
       intros. have H' := HcorrCenv f1 t0 ys0 e1. apply H'. cbn.
       assert (f1 <> v). {
-        inv Hnodup. intro. subst. apply H2.
-        apply find_def_in_collect_function_vars; auto. congruence. }
+        inv HfdsUnique. intro. subst. apply H2.
+        now apply find_def_name_in_fundefs in H. }
       destruct (M.elt_eq f1 v); auto; congruence.
     }
-    have IH := IHfds _ _ _ _ _ _ _ Hnodup' Hfns HfDef HcorrCenv'.
+    have IH := IHfds _ _ _ _ _ _ HfdsUnique' Hfns HfDef HcorrCenv'.
     destruct IH as [idx [e' [locs [func [? [? [? [? [? [? [? ?]]]]]]]]]]].
     inversion H. subst. inv H.
     repeat eexists; eauto. now right.
@@ -1088,9 +1089,11 @@ Proof.
   intros ??????????????. unfold selem. rewrite H2. unfold lookup_N.
   rewrite iota_N_lookup; last by apply /ssrnat.leP.
   rewrite N2Nat.id. rewrite H3. rewrite nth_error_map.
-  erewrite nth_error_nth'. 2:{ rewrite combine_length table_element_mapping_length.
-                               apply Forall2_length in H. rewrite table_element_mapping_length in H. lia. }
-  erewrite combine_nth. 2:{ apply Forall2_length in H. now rewrite -> table_element_mapping_length in *. }
+  erewrite nth_error_nth'.
+  2:{ rewrite combine_length table_element_mapping_length.
+      apply Forall2_length in H. rewrite table_element_mapping_length in H. lia. }
+  erewrite combine_nth.
+  2:{ apply Forall2_length in H. now rewrite -> table_element_mapping_length in *. }
   erewrite nth_error_nth; last by eapply table_element_mapping_nth_error.
   have H' := table_element_mapping_nth_error _ idx _ H4.
   assert (exists l, nth_error r_inits (N.to_nat x) = Some l) as [l Hl]. {
@@ -1207,18 +1210,17 @@ Proof.
         cbn in He. cbn. now erewrite He.
 Qed.
 
-Theorem module_instantiate : forall e module fenv venv (hs : host_state),
-  correct_cenv_of_exp cenv e ->
-  NoDup (collect_function_vars e) ->
-  LambdaANF_to_Wasm nenv cenv penv e = Ret (module, fenv, venv) ->
+Theorem module_instantiate : forall e fds module fenv venv (hs : host_state),
+  correct_cenv_of_exp cenv (Efun fds e) ->
+  unique_functions fds ->
+  LambdaANF_to_Wasm nenv cenv penv (Efun fds e) = Ret (module, fenv, venv) ->
   exists sr fr es_post,
   instantiate initial_store module [] (sr, fr, es_post).
 Proof.
-  intros ????? Hcenv Hnodup H. unfold LambdaANF_to_Wasm in H.
-  destruct (check_restrictions cenv e) eqn:Hrestr. inv H. destruct u.
+  intros ?????? Hcenv HfdsUnique H. unfold LambdaANF_to_Wasm in H.
+  destruct (check_restrictions cenv _) eqn:Hrestr. inv H. destruct u.
   eapply check_restrictions_expression_restricted in Hrestr; last by apply rt_refl.
-  destruct e =>//.
-  destruct (translate_functions _ _ _ _ f) eqn:Hfuns. inv H. rename l into fns, f into fds.
+  destruct (translate_functions _ _ _ _ _) eqn:Hfuns. inv H. rename l into fns.
   cbn in H.
   destruct (translate_body nenv cenv _ _) eqn:Hexpr. inv H.
   rename l into wasm_main_instr.
@@ -1325,7 +1327,7 @@ Proof.
         assert (n = N.to_nat (fidx w) - num_custom_funs).
         { eapply translate_functions_nth_error_idx; eauto. } subst n.
 
-        have H' := translate_functions_exists_original_fun fds fds fns _ _ _ _ Hnodup Hfuns
+        have H' := translate_functions_exists_original_fun fds fds fns _ _ _ HfdsUnique Hfuns
                      Logic.eq_refl (nth_error_In _ _ Hin).
         destruct H' as [f [t [ys [e1 [Hfd [Htype Hvarr]]]]]].
 
@@ -1335,7 +1337,7 @@ Proof.
           eapply Forall_constructors_subterm. eassumption.
           apply t_step. apply dsubterm_fds. now eapply find_def_dsubterm_fds_e.
         }
-        have H' := translate_functions_find_def fds _ _ _ _ e1 _ _ Hnodup Hfuns Hfd HcenvFds.
+        have H' := translate_functions_find_def fds _ _ _ _ e1 _ HfdsUnique Hfuns Hfd HcenvFds.
 
         destruct H' as [f' [e' [locs [func [Hvar [-> [Hin' [<- [Hty [Hlocs [<- Hexpr']]]]]]]]]]].
         assert (func = w). {
@@ -1603,8 +1605,8 @@ Definition INV_instantiation (s : store_record) (f : frame) (num_funs : nat) :=
  /\ INV_instantiation_elems s f num_funs
  /\ INV_instantiation_table_empty s f num_funs.
 
-Theorem module_instantiate_INV_and_more_hold : forall eAny e fds num_funs module fenv main_lenv sr f es_post,
-  NoDup (collect_function_vars (Efun fds eAny)) ->
+Theorem module_instantiate_INV_and_more_hold : forall e fds num_funs module fenv main_lenv sr f es_post,
+  unique_functions fds ->
   expression_restricted cenv (Efun fds e) ->
   (forall (f : var) (t : fun_tag) (ys : seq var) (e : exp),
       find_def f fds = Some (t, ys, e) -> correct_cenv_of_exp cenv e) ->
@@ -1644,7 +1646,7 @@ Theorem module_instantiate_INV_and_more_hold : forall eAny e fds num_funs module
   (* translation of functions *)
   translate_functions nenv cenv fenv penv fds = Ret fns.
 Proof.
-  intros eAny e fds num_funs module fenv lenv s f es_post Hnodup HeRestr HcenvCorrect ->
+  intros e fds num_funs module fenv lenv s f es_post HfdsUnique HeRestr HcenvCorrect ->
     HfnsLength Hcompile Hinst.
   unfold instantiate in Hinst.
   unfold LambdaANF_to_Wasm in Hcompile.
@@ -1819,7 +1821,7 @@ Proof.
   split. (* val relation holds for functions *)
   { intros. apply notNone_Some in H. destruct H as [[[v' ys'] e''] Hfd].
 
-    have H' := translate_functions_find_def _ _ _ _ _ _ _ _ e'' _ _ Hnodup HtransFns Hfd HcenvCorrect.
+    have H' := translate_functions_find_def _ _ _ _ _ _ _ _ e'' _ HfdsUnique HtransFns Hfd HcenvCorrect.
     destruct H' as [fidx [e''' [? [func [? [? [? [? [? [? [? ?]]]]]]]]]]].
     subst. eauto.
     exists (fidx func).
@@ -1839,9 +1841,10 @@ Proof.
 
     assert (HnodupFns: NoDup fns). {
       assert (Hinj: map_injective (create_fname_mapping (Efun fds e))). {
-        by apply create_local_variable_mapping_injective.
+        apply create_local_variable_mapping_injective.
+        by apply unqique_functions_NoDup_collect_function_vars.
       }
-      have H' := translate_functions_NoDup _ _ _ _ _ _ _ _ Logic.eq_refl Hinj Hnodup HtransFns.
+      have H' := translate_functions_NoDup _ _ _ _ _ _ _ Logic.eq_refl Hinj HfdsUnique HtransFns.
       now eapply NoDup_map_inv.
     }
 
@@ -2435,7 +2438,7 @@ Definition instantiate' module hs sr fr :=
 
 (* instantiation and post-instantiation combined *)
 Theorem instantiation_combined_INV_and_more : forall e fds num_funs module fenv main_lenv hs,
-  NoDup (collect_function_vars (Efun fds e)) ->
+  unique_functions fds ->
   expression_restricted cenv (Efun fds e) ->
   correct_cenv_of_exp cenv (Efun fds e) ->
   num_funs = numOf_fundefs fds ->
@@ -2473,9 +2476,9 @@ exists sr fr,
   (* translation of functions *)
   translate_functions nenv cenv fenv penv fds = Ret fns.
 Proof.
-  intros ??????? Hnodup HeRestr HcenvCorrect Hnumfuns HfnsLength LANF2Wasm.
+  intros ??????? HfdsUnique HeRestr HcenvCorrect Hnumfuns HfnsLength LANF2Wasm.
   (* module instantiates *)
-  have HINST := @module_instantiate _ nenv _  hfc ho _ _ _ _ hs HcenvCorrect Hnodup LANF2Wasm.
+  have HINST := @module_instantiate _ nenv _  hfc ho _ _ _ _ _ hs HcenvCorrect HfdsUnique LANF2Wasm.
   destruct HINST as [sr [fr [es_post Hinst]]].
 
   assert (HcenvCorrect' : (forall (f : var) (t : fun_tag) (ys : seq var) (e : exp),
@@ -2487,7 +2490,7 @@ Proof.
     apply t_step. apply dsubterm_fds. eassumption. }
 
   (* INV_instantiate hold after instantiation *)
-  have HINST_INV := module_instantiate_INV_and_more_hold _ _ _ _ module fenv main_lenv sr fr es_post Hnodup HeRestr HcenvCorrect' Hnumfuns HfnsLength LANF2Wasm Hinst.
+  have HINST_INV := module_instantiate_INV_and_more_hold _ _ _ module fenv main_lenv sr fr es_post HfdsUnique HeRestr HcenvCorrect' Hnumfuns HfnsLength LANF2Wasm Hinst.
   destruct HINST_INV as [Hinv_inst [HinstFuncs [HvalRel [main_fn [e' [fns' [H_main [Hfuncs [HesPost [He Hfns]]]]]]]]]].
 
   assert (HfenvBound: (forall (f0 : var) (f' : u32) (errMsg : string),

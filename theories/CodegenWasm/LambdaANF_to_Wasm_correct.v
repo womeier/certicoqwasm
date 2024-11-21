@@ -3957,11 +3957,13 @@ Definition primitive_operation_reduces pfs : Prop :=
                |} /\
       repr_val_LambdaANF_Wasm v s' (f_inst f') wal).
 
+
 (* GENERALIZED CORRECTNESS THEOREM *)
 Theorem repr_bs_LambdaANF_Wasm_related :
   (* rho is environment containing outer fundefs. e is body of LambdaANF program *)
-  forall lenv pfs (rho : eval.env) (v : cps.val) (e : exp) (memAvail : N) (n : nat) (vars : list cps.var) (fds : fundefs)
+  forall lenv pfs (rho : eval.env) (v : cps.val) (e : exp) (memAvail : N) (n : nat) (fds : fundefs)
                                fAny k (lh : lholed k),
+    (* correctness of primitive 63-bit integer ops *)
     primitive_operation_reduces pfs ->
     cenv_restricted cenv ->
     (* restrictions on prim_funs env *)
@@ -3970,8 +3972,8 @@ Theorem repr_bs_LambdaANF_Wasm_related :
     map_injective lenv ->
     domains_disjoint lenv fenv ->
     (* bound vars globally unique *)
-    vars = (collect_local_variables e) ++ (collect_function_vars (Efun fds e))%list ->
-    NoDup vars ->
+    NoDup (collect_local_variables e) ->
+    unique_functions fds ->
     (* fenv maps f vars to the index of the corresponding wasm function *)
     (forall f, (exists res, find_def f fds = Some res) <-> (exists i, fenv ! f = Some i)) ->
     (* find_def a fds <> None, rho ! a imply fn value *)
@@ -4017,8 +4019,8 @@ Theorem repr_bs_LambdaANF_Wasm_related :
         (* INV holds if program will continue to run *)
         (INV_glob_out_of_mem_is_zero sr' f' -> INV sr' f').
 Proof with eauto.
-  intros lenv pfs rho v e memAvail n vars fds fAny k lh HprimOpReduce HcenvRestr HprimFunsRet HlenvInjective HenvsDisjoint Hvars Hnodup
-     HfenvWf HfenvRho HeRestr Hunbound Hev. subst vars.
+  intros lenv pfs rho v e memAvail n fds fAny k lh HprimOpReduce HcenvRestr HprimFunsRet HlenvInjective HenvsDisjoint Hnodup HfdsUniq
+     HfenvWf HfenvRho HeRestr Hunbound Hev.
   generalize dependent lenv. generalize dependent lh. revert k fAny memAvail.
   induction Hev; intros k fAny mem lh lenv HlenvInjective HenvsDisjoint state sr fr instructions
                         Hfds HlocInBound Hinv HmemAvail Hrepr_e HrelE.
@@ -4220,14 +4222,12 @@ Proof with eauto.
                                                            rho' ! x = None)). {
         subst rho'. intros.
         assert (~ In x (collect_local_variables e)). {
-          apply NoDup_app_remove_r in Hnodup. cbn in Hnodup.
           now apply NoDup_cons_iff in Hnodup. }
         assert (x <> x1) by congruence. rewrite M.gso; auto.
         apply Hunbound. now right.
       }
 
-      assert (Hnodup': NoDup (collect_local_variables e ++
-                              collect_function_vars (Efun fds e))). {
+      assert (Hnodup': NoDup (collect_local_variables e)). {
        cbn in Hnodup. apply NoDup_cons_iff in Hnodup.
        now destruct Hnodup. }
 
@@ -4297,7 +4297,7 @@ Proof with eauto.
 
       subst. injection H as <-.
       remember ({|f_locs := set_nth (VAL_num (nat_to_value (N.to_nat (2 * ord + 1)))) (f_locs fr) (N.to_nat x') (VAL_num (nat_to_value (N.to_nat (2 * ord + 1)))) ; f_inst := f_inst fr|}) as f_before_IH.
-      assert (HNoDup' : NoDup (collect_local_variables e ++ collect_function_vars (Efun fds e))). {
+      assert (HNoDup' : NoDup (collect_local_variables e)). {
         cbn in Hnodup. apply NoDup_cons_iff in Hnodup.
         destruct Hnodup. assumption.
       }
@@ -4315,7 +4315,10 @@ Proof with eauto.
       assert (Hunbound' : (forall x0 : var,
         In x0 (collect_local_variables e) ->
         (map_util.M.set x (Vconstr t []) rho) ! x0 = None)). {
-        intros. apply NoDup_app_remove_r in Hnodup. cbn in Hnodup. apply NoDup_cons_iff in Hnodup. rewrite M.gso. apply Hunbound. unfold collect_local_variables. cbn. fold collect_local_variables. right. assumption. destruct Hnodup as [Hx _ ]. unfold not. unfold not in Hx. intros Heq. subst x. apply Hx in H. contradiction.
+        intros.
+        apply NoDup_cons_iff in Hnodup. rewrite M.gso. apply Hunbound. unfold collect_local_variables.
+        cbn. fold collect_local_variables. right. assumption. destruct Hnodup as [Hx _ ].
+        intros Heq. now subst x.
       }
 
       assert (Hfds' :  (forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) (errMsg : string),
@@ -4587,14 +4590,13 @@ Proof with eauto.
                                           (map_util.M.set x v rho) ! x0 = None)). {
        intros.
        assert (~ In x (collect_local_variables e)). {
-         apply NoDup_app_remove_r in Hnodup. cbn in Hnodup.
+         cbn in Hnodup.
          now apply NoDup_cons_iff in Hnodup. }
        assert (x <> x1) by congruence. rewrite M.gso; auto.
        apply Hunbound. now right.
      }
 
-     assert (Hnodup' : NoDup (collect_local_variables e ++
-                              collect_function_vars (Efun fds e))). {
+     assert (Hnodup' : NoDup (collect_local_variables e)). {
        cbn in Hnodup. apply NoDup_cons_iff in Hnodup.
        now destruct Hnodup. }
 
@@ -4811,14 +4813,8 @@ Proof with eauto.
 
       destruct Hstep_case as [e' [k0 [lh0 [Hred Hrepre]]]].
 
-      assert (Hnodup': NoDup (collect_local_variables e ++
-                                collect_function_vars (Efun fds e))). {
-        apply NoDup_incl_NoDup' with (l1:=collect_local_variables (Ecase y cl)) =>//.
-        apply NoDup_case with (cl:=cl) (t:=t) (y:=y)=>//.
-        apply NoDup_app_remove_r in Hnodup. assumption.
-        assert (In (t, e) cl). { by apply findtag_In. }
-        intros ??. apply in_flat_map. by exists (t, e).
-      }
+      assert (Hnodup': NoDup (collect_local_variables e)). {
+        apply NoDup_case with (cl:=cl) (t:=t) (y:=y)=>//. }
 
       have IH := IHHev Hnodup' HfenvRho HeRestr' Hunbound' k0 fAny _ lh0 _ HlenvInjective HenvsDisjoint
                        state _ _ _ Hfds HlocInBound Hinv HmemAvail Hrepre Hrel.
@@ -5041,10 +5037,10 @@ Proof with eauto.
          eapply NoDup_app_In in HnodupE; eauto. }
     }
 
-    assert (Hnodup': NoDup (collect_local_variables e ++
-                            collect_function_vars (Efun fds e))). {
+    assert (Hnodup': NoDup (collect_local_variables e)). {
       apply Hfds with (errMsg:=""%bs) in H7. destruct H7 as [_ [_ [HnodupE _]]].
       apply NoDup_app_remove_l in HnodupE.
+      apply NoDup_app_remove_r in HnodupE.
       assumption. }
 
     assert (HfenvRho': forall (a : positive) (v : cps.val),
@@ -5318,10 +5314,10 @@ Proof with eauto.
          eapply NoDup_app_In in HnodupE; eauto. }
     }
 
-    assert (Hnodup': NoDup (collect_local_variables e_body ++
-                            collect_function_vars (Efun fds e_body))). {
+    assert (Hnodup': NoDup (collect_local_variables e_body)). {
       apply Hfds with (errMsg:=""%bs) in H7. destruct H7 as [_ [_ [HnodupE _]]].
       apply NoDup_app_remove_l in HnodupE.
+      apply NoDup_app_remove_r in HnodupE.
       assumption. }
 
     assert (HfenvRho': forall (a : positive) (v : cps.val),
@@ -5369,8 +5365,7 @@ Proof with eauto.
                     f_inst := f_inst fr|}) as f_before_cont.
 
         (* prepare IH for continuation *)
-        assert (Hnodup': NoDup (collect_local_variables e_cont ++
-                                collect_function_vars (Efun fds e_cont))). {
+        assert (Hnodup': NoDup (collect_local_variables e_cont)). {
           cbn in Hnodup. now inv Hnodup.
         }
 
@@ -5390,7 +5385,6 @@ Proof with eauto.
                                (map_util.M.set x_res v rho) ! x = None)). {
           intros.
           assert (~ In x_res (collect_local_variables e_cont)). {
-            apply NoDup_app_remove_r in Hnodup. cbn in Hnodup.
             now apply NoDup_cons_iff in Hnodup. }
           rewrite M.gso; auto.
           apply Hunbound. now right. now intro.
@@ -5477,8 +5471,7 @@ Proof with eauto.
                 intros ? ? ? ? [HbodyNofun | HfdsNofun].
               - eapply repr_expr_LambdaANF_Wasm_no_Efun_subterm; eauto.
               - destruct HfdsNofun as [Hsub HsubFds].
-                eapply dsubterm_fds_e_find_def in HsubFds.
-                2:{ now apply NoDup_app_remove_l in Hnodup. }
+                eapply dsubterm_fds_e_find_def in HsubFds. 2: assumption.
                 destruct HsubFds as [? [? [? Hfd]]].
                 have Hfd' := Hfd.
                 eapply Hfds in Hfd. destruct Hfd as [_ [_ [_ [? [? HvalFun]]]]]. inv HvalFun.
@@ -5790,7 +5783,7 @@ Proof with eauto.
           apply HlocInBound in Hvar, H3. lia.
         }
 
-        assert (Hnodup' : NoDup (collect_local_variables e ++ collect_function_vars (Efun fds e)) ). {
+        assert (Hnodup' : NoDup (collect_local_variables e) ). {
           cbn in Hnodup. apply NoDup_cons_iff in Hnodup. now destruct Hnodup.
         }
 
@@ -5806,7 +5799,6 @@ Proof with eauto.
 
         assert (Hunbound' : forall x0 : var, In x0 (collect_local_variables e) -> (map_util.M.set x (Vprim p) rho) ! x0 = None). {
           intros.
-          apply NoDup_app_remove_r in Hnodup.
           cbn in Hnodup.
           apply NoDup_cons_iff in Hnodup.
           rewrite M.gso.
@@ -6081,7 +6073,7 @@ Proof with eauto.
         rewrite Hfinst in HenoughM'.
         have Hrepr_e' := H8.
 
-        assert (Hnodup' : NoDup (collect_local_variables e ++ collect_function_vars (Efun fds e))). {
+        assert (Hnodup' : NoDup (collect_local_variables e)). {
           cbn in Hnodup. apply NoDup_cons_iff in Hnodup. now destruct Hnodup.
         }
 
@@ -6098,9 +6090,7 @@ Proof with eauto.
 
         assert (Hunbound' : (forall x0 : var,
                                 In x0 (collect_local_variables e) -> (map_util.M.set x v rho) ! x0 = None)). {
-                    intros.
-          apply NoDup_app_remove_r in Hnodup.
-          cbn in Hnodup.
+          intros.
           apply NoDup_cons_iff in Hnodup.
           rewrite M.gso.
           apply Hunbound.
@@ -6109,7 +6099,7 @@ Proof with eauto.
           fold collect_local_variables.
           right. assumption.
           destruct Hnodup as [Hx _ ].
-          unfold not. unfold not in Hx. intros Heq. subst x.
+          intros Heq. subst x.
           apply Hx in H2. contradiction. }
 
         assert (HfVal' : (forall (y : positive) (y' : funcidx) (v : cps.val),

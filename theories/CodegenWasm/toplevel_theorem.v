@@ -60,8 +60,9 @@ Ltac dostep' :=
 
 (* TOPLEVEL CORRECTNESS THEOREM *)
 Theorem LambdaANF_Wasm_related :
-  forall (v : cps.val) (e : exp) (n : nat)
+  forall (v : cps.val) (e : exp) (e' : exp) (fds : fundefs) (n : nat)
          (hs : host_state) module fenv lenv (pfs : M.t (list val -> option val)),
+  e = Efun fds e' ->
   (* primitive env well-formed *)
   prim_funs_env_returns_no_funvalues pfs ->
   prim_funs_env_wellformed cenv penv pfs ->
@@ -71,7 +72,8 @@ Theorem LambdaANF_Wasm_related :
   cenv_restricted cenv ->
 
   (* vars unique (guaranteed by previous stage) *)
-  NoDup ((collect_all_local_variables e) ++ (collect_function_vars e))%list ->
+  NoDup (collect_all_local_variables e) ->
+  unique_functions fds ->
 
   (* expression must be closed *)
   (~ exists x, occurs_free e x ) ->
@@ -93,13 +95,8 @@ Theorem LambdaANF_Wasm_related :
     (* result variable has the correct value set *)
     result_val_LambdaANF_Wasm cenv fenv nenv penv v sr' (f_inst fr).
 Proof.
-  intros ???????? HprimFunsRet HprimFunsRelated Hcenv HcenvRestr HvarsNodup Hfreevars Hstep LANF2Wasm.
-  assert (exists fds e', e = Efun fds e') as [fds [e' ->]]. {
-    unfold LambdaANF_to_Wasm in LANF2Wasm.
-    destruct (check_restrictions cenv e)=>//.
-    destruct e =>//. eauto.
-  } rename e' into e.
-
+  intros ?????????? -> HprimFunsRet HprimFunsRelated Hcenv HcenvRestr HvarsNodup HfdsUnique Hfreevars Hstep LANF2Wasm.
+  rename e' into e.
   assert (HeRestr: expression_restricted cenv (Efun fds e)).
   { unfold LambdaANF_to_Wasm in LANF2Wasm. destruct (check_restrictions cenv _) eqn:HeRestr.
     inv LANF2Wasm. destruct u. eapply check_restrictions_expression_restricted; eauto.
@@ -110,11 +107,7 @@ Proof.
     inv HeRestr. assumption.
   }
 
-  assert (Hnodup': NoDup (collect_function_vars (Efun fds e))). {
-    now eapply NoDup_app_remove_l in HvarsNodup.
-  }
-
-  have HI := @instantiation_combined_INV_and_more _ _ _ hfc ho _ _ _ _ _ _ hs Hnodup' HeRestr
+  have HI := @instantiation_combined_INV_and_more _ _ _ hfc ho _ _ _ _ _ _ hs HfdsUnique HeRestr
                Hcenv Logic.eq_refl Hmaxfuns LANF2Wasm.
   destruct HI as [sr [fr [Hinst [Hinv [HinstFuncs [HfVal [main_fn [e' [fns [-> [Hfuncs [Hexpr' Hfns']]]]]]]]]]]].
 
@@ -166,20 +159,18 @@ Proof.
     subst lenv.
     intros x y x' y' Hneq Hx Hy Heq. subst y'.
     apply NoDup_app_remove_r in HvarsNodup. cbn in HvarsNodup.
-    apply NoDup_app_remove_r in HvarsNodup.
     cbn in Hx, Hy.
     have H' := create_local_variable_mapping_injective _ 0%N HvarsNodup _ _ _ _ Hneq Hx Hy. auto. }
 
   assert (HenvsDisjoint : domains_disjoint lenv fenv). {
     rewrite Heqfenv. subst lenv. eapply variable_mappings_nodup_disjoint; eauto.
-    cbn in HvarsNodup. rewrite <-catA in HvarsNodup.
-    now eapply NoDup_app_remove_middle in HvarsNodup.
+    (* cbn in HvarsNodup. rewrite <-catA in HvarsNodup.
+    now eapply NoDup_app_remove_middle in HvarsNodup. *) admit.
   }
 
-  assert (Hnodup'': NoDup (collect_local_variables e ++
-                          collect_function_vars (Efun fds e))). {
-    cbn in HvarsNodup. rewrite <-catA in HvarsNodup.
-    now eapply NoDup_app_remove_middle in HvarsNodup.
+  assert (Hnodup'': NoDup (collect_local_variables e)). {
+    cbn in HvarsNodup.
+    now apply NoDup_app_remove_r in HvarsNodup.
   }
 
   assert (HfenvWf: (forall f : var,
@@ -191,7 +182,7 @@ Proof.
     - apply notNone_Some in H.
       rewrite find_def_in_collect_function_vars in H.
       apply notNone_Some. apply variable_mapping_In_Some.
-      + now eapply NoDup_app_remove_l in HvarsNodup.
+      + by apply unqique_functions_NoDup_collect_function_vars.
       + assumption.
     - destruct H as [i H]. apply variable_mapping_Some_In in H; auto.
       rewrite <- find_def_in_collect_function_vars in H.
@@ -211,9 +202,8 @@ Proof.
     destruct (find_def x fds) eqn:Hdec; auto. exfalso.
     assert (Hdec': find_def x fds <> None) by congruence. clear Hdec p.
     apply find_def_in_collect_function_vars with (e:=e) in Hdec'.
-    cbn in HvarsNodup. rewrite <- catA in HvarsNodup.
-    eapply NoDup_app_remove_middle in HvarsNodup; eauto.
-    by eapply NoDup_app_In in H; eauto.
+    cbn in HvarsNodup.
+    admit. (* disjoint *)
   }
 
   assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e0 : exp) errMsg,
@@ -239,7 +229,7 @@ Proof.
     intro Hfd. revert Hcontra'.
     apply name_in_fundefs_find_def_is_Some in Hfd.
     now destruct Hfd as [? [? [? ?]]]. }
-    split. { rewrite catA. eapply NoDup_collect_all_local_variables_find_def; eauto. }
+    split. { rewrite catA. eapply NoDup_collect_all_local_variables_find_def; eauto. admit. (* disjoint *) }
     (* exists fun values *)
     { assert (Hc: find_def a fds <> None) by congruence.
       apply HfVal with (errMsg:=errMsg) in Hc; auto.
@@ -277,8 +267,8 @@ Proof.
 
   subst lenv.
   have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
-                   _ _ _ _ _ _ _ _ frameInit _ lh (primitive_operation_reduces_proof cenv fenv nenv penv _ HprimFunsRelated) HcenvRestr HprimFunsRet HlenvInjective
-                  HenvsDisjoint Logic.eq_refl Hnodup'' HfenvWf HfenvRho
+                   _ _ _ _ _ _ _ frameInit _ lh (primitive_operation_reduces_proof cenv fenv nenv penv _ HprimFunsRelated) HcenvRestr HprimFunsRet HlenvInjective
+                  HenvsDisjoint Hnodup'' HfdsUnique HfenvWf HfenvRho
                   HeRestr' Hunbound Hstep hs sr _ _ Hfds HlocInBound Hinv_before_IH HmemAvail Hexpr HrelE.
   destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn. subst frameInit.
   exists s'. split.
@@ -292,7 +282,7 @@ Proof.
   dostep'. constructor. apply rs_return with (lh:=lh') (vs:=[::]) =>//. apply rt_refl.
   subst f_before_IH. apply Hval.
 Unshelve. all: auto.
-Qed.
+Admitted.
 
 (* Eval compute in "Assumptions of 'LambdaANF_Wasm_related' (Wasm backend, main correctness)"%bs. *)
 (* Print Assumptions LambdaANF_Wasm_related. *)
