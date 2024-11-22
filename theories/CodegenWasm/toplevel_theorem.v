@@ -72,7 +72,7 @@ Theorem LambdaANF_Wasm_related :
   cenv_restricted cenv ->
 
   (* vars unique (guaranteed by previous stage) *)
-  NoDup (collect_all_local_variables e) ->
+  unique_bindings e ->
   unique_functions fds ->
 
   (* expression must be closed *)
@@ -95,7 +95,7 @@ Theorem LambdaANF_Wasm_related :
     (* result variable has the correct value set *)
     result_val_LambdaANF_Wasm cenv fenv nenv penv v sr' (f_inst fr).
 Proof.
-  intros ?????????? -> HprimFunsRet HprimFunsRelated Hcenv HcenvRestr HvarsNodup HfdsUnique Hfreevars Hstep LANF2Wasm.
+  intros ?????????? -> HprimFunsRet HprimFunsRelated Hcenv HcenvRestr HvarsUnique HfdsUnique Hfreevars Hstep LANF2Wasm.
   rename e' into e.
   assert (HeRestr: expression_restricted cenv (Efun fds e)).
   { unfold LambdaANF_to_Wasm in LANF2Wasm. destruct (check_restrictions cenv _) eqn:HeRestr.
@@ -158,9 +158,11 @@ Proof.
   assert (HlenvInjective : map_injective lenv). {
     subst lenv.
     intros x y x' y' Hneq Hx Hy Heq. subst y'.
-    apply NoDup_app_remove_r in HvarsNodup. cbn in HvarsNodup.
+    inv HvarsUnique.
     cbn in Hx, Hy.
-    have H' := create_local_variable_mapping_injective _ 0%N HvarsNodup _ _ _ _ Hneq Hx Hy. auto. }
+    have H' := create_local_variable_mapping_injective _ 0%N _ _ _ _ _ Hneq Hx Hy.
+    now apply unique_bindings_NoDup_collect_local_variables in H1.
+  }
 
   assert (HenvsDisjoint : domains_disjoint lenv fenv). {
     rewrite Heqfenv. subst lenv. eapply variable_mappings_nodup_disjoint; eauto.
@@ -168,10 +170,7 @@ Proof.
     now eapply NoDup_app_remove_middle in HvarsNodup. *) admit.
   }
 
-  assert (Hnodup'': NoDup (collect_local_variables e)). {
-    cbn in HvarsNodup.
-    now apply NoDup_app_remove_r in HvarsNodup.
-  }
+  assert (HvarsUnique': unique_bindings e). { now inv HvarsUnique. }
 
   assert (HfenvWf: (forall f : var,
        (exists res : fun_tag * seq var * exp,
@@ -196,13 +195,13 @@ Proof.
 
   assert (HeRestr' : expression_restricted cenv e). { now inv HeRestr. }
   assert (Hunbound: (forall x : var,
-       In x (collect_local_variables e) ->
+       bound_var e x ->
        (def_funs fds fds (M.empty _) (M.empty _)) ! x = None)). {
     intros. eapply def_funs_not_find_def; eauto.
     destruct (find_def x fds) eqn:Hdec; auto. exfalso.
     assert (Hdec': find_def x fds <> None) by congruence. clear Hdec p.
     apply find_def_in_collect_function_vars with (e:=e) in Hdec'.
-    cbn in HvarsNodup.
+    cbn in HvarsUnique.
     admit. (* disjoint *)
   }
 
@@ -266,9 +265,9 @@ Proof.
   remember ({| f_locs := [::]; f_inst := f_inst fr |}) as frameInit.
 
   subst lenv.
-  have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
+  have HMAIN := repr_bs_LambdaANF_Wasm_related cenv funenv fenv nenv penv _
                    _ _ _ _ _ _ _ frameInit _ lh (primitive_operation_reduces_proof cenv fenv nenv penv _ HprimFunsRelated) HcenvRestr HprimFunsRet HlenvInjective
-                  HenvsDisjoint Hnodup'' HfdsUnique HfenvWf HfenvRho
+                  HenvsDisjoint HvarsUnique' HfdsUnique HfenvWf HfenvRho
                   HeRestr' Hunbound Hstep hs sr _ _ Hfds HlocInBound Hinv_before_IH HmemAvail Hexpr HrelE.
   destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn. subst frameInit.
   exists s'. split.
