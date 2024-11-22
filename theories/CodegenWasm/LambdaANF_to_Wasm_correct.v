@@ -3972,7 +3972,7 @@ Theorem repr_bs_LambdaANF_Wasm_related :
     map_injective lenv ->
     domains_disjoint lenv fenv ->
     (* bound vars globally unique *)
-    NoDup (collect_local_variables e) ->
+    unique_bindings e ->
     unique_functions fds ->
     (* fenv maps f vars to the index of the corresponding wasm function *)
     (forall f, (exists res, find_def f fds = Some res) <-> (exists i, fenv ! f = Some i)) ->
@@ -3983,7 +3983,7 @@ Theorem repr_bs_LambdaANF_Wasm_related :
     (* restricts size of e so all vars fit in i32s *)
     expression_restricted cenv e ->
     (* SSA form, let-bound vars not assigned yet *)
-    (forall x, In x (collect_local_variables e) -> rho ! x = None) ->
+    (forall x, bound_var e x -> rho ! x = None) ->
     bstep_e pfs cenv rho e v n ->  (* e n-steps to v *)
     forall (hs : host_state) (sr : store_record) (f : frame) (e' : list basic_instruction),
 
@@ -4019,8 +4019,8 @@ Theorem repr_bs_LambdaANF_Wasm_related :
         (* INV holds if program will continue to run *)
         (INV_glob_out_of_mem_is_zero sr' f' -> INV sr' f').
 Proof with eauto.
-  intros lenv pfs rho v e memAvail n fds fAny k lh HprimOpReduce HcenvRestr HprimFunsRet HlenvInjective HenvsDisjoint Hnodup HfdsUniq
-     HfenvWf HfenvRho HeRestr Hunbound Hev.
+  intros lenv pfs rho v e memAvail n fds fAny k lh HprimOpReduce HcenvRestr HprimFunsRet HlenvInjective
+    HenvsDisjoint HvarsUnique HfdsUniq HfenvWf HfenvRho HeRestr Hunbound Hev.
   generalize dependent lenv. generalize dependent lh. revert k fAny memAvail.
   induction Hev; intros k fAny mem lh lenv HlenvInjective HenvsDisjoint state sr fr instructions
                         Hfds HlocInBound Hinv HmemAvail Hrepr_e HrelE.
@@ -4028,7 +4028,7 @@ Proof with eauto.
     inversion Hrepr_e.
     inversion H13.
     { (* boxed constructor *)
-      assert (Hmaxargs: (Z.of_nat (Datatypes.length ys) <= max_constr_args)%Z). { now inv HeRestr. }
+      assert (Hmaxargs: (Z.of_nat (length ys) <= max_constr_args)%Z). { now inv HeRestr. }
       subst t0 x0 vs0 e0 mem0 x'0 vs1 t1 scont. rename H12 into Hx'. rename H11 into Hexp.
       assert (arity = arity0) by congruence. subst arity0. subst arity.
 
@@ -4218,18 +4218,15 @@ Proof with eauto.
 
       assert (HeRestr' : expression_restricted cenv e). { now inv HeRestr. }
 
-      assert (Hunbound' : (forall x : var, In x (collect_local_variables e) ->
-                                                           rho' ! x = None)). {
+      assert (Hunbound' : (forall x : var, bound_var e x -> rho' ! x = None)). {
         subst rho'. intros.
-        assert (~ In x (collect_local_variables e)). {
-          now apply NoDup_cons_iff in Hnodup. }
-        assert (x <> x1) by congruence. rewrite M.gso; auto.
-        apply Hunbound. now right.
+        assert (~ bound_var e x). { now inv HvarsUnique. }
+        assert (x <> x1) by congruence.
+        rewrite M.gso; auto.
       }
 
-      assert (Hnodup': NoDup (collect_local_variables e)). {
-       cbn in Hnodup. apply NoDup_cons_iff in Hnodup.
-       now destruct Hnodup. }
+      assert (HvarsUnique': unique_bindings e). {
+        now inv HvarsUnique. }
 
        assert (HfenvRho' : forall (a : positive) (v : cps.val),
           rho' ! a = Some v -> find_def a fds <> None -> v = Vfun (M.empty cps.val) fds a). {
@@ -4239,10 +4236,10 @@ Proof with eauto.
           inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
           apply Hd2 in H0. unfold translate_var in H2. now rewrite H0 in H2. }
 
-      have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny _ lh _ HlenvInjective HenvsDisjoint
+      have IH := IHHev HvarsUnique' HfenvRho' HeRestr' Hunbound' _ fAny _ lh _ HlenvInjective HenvsDisjoint
                  state s_v f_before_IH _ Hfds' HlocInBound' Hinv_before_IH HmemAvail' Hexp HrelE_v.
       destruct IH as [s_final [f_final [k' [lh' [Hred_IH [Hval [Hfinst [Hsfuncs' [HvalPres H_INV]]]]]]]]].
-      clear IHHev HfenvRho' Hunbound' Hnodup' HlocInBound' Hinv_before_IH Hfds Hfds'.
+      clear IHHev HfenvRho' Hunbound' HvarsUnique' HlocInBound' Hinv_before_IH Hfds Hfds'.
       cbn in Hfinst.
 
       exists s_final, f_final, k', lh'. split.
@@ -4297,10 +4294,10 @@ Proof with eauto.
 
       subst. injection H as <-.
       remember ({|f_locs := set_nth (VAL_num (nat_to_value (N.to_nat (2 * ord + 1)))) (f_locs fr) (N.to_nat x') (VAL_num (nat_to_value (N.to_nat (2 * ord + 1)))) ; f_inst := f_inst fr|}) as f_before_IH.
-      assert (HNoDup' : NoDup (collect_local_variables e)). {
-        cbn in Hnodup. apply NoDup_cons_iff in Hnodup.
-        destruct Hnodup. assumption.
-      }
+
+      assert (HvarsUnique' : unique_bindings e). {
+        now inv HvarsUnique. }
+
       assert (HfenvRho' : (forall (a : positive) (v : val),
         (map_util.M.set x (Vconstr t []) rho) ! a = Some v ->
         find_def a fds <> None -> v = Vfun (M.empty val) fds a)). {
@@ -4313,12 +4310,11 @@ Proof with eauto.
       }
 
       assert (Hunbound' : (forall x0 : var,
-        In x0 (collect_local_variables e) ->
+        bound_var e x0 ->
         (map_util.M.set x (Vconstr t []) rho) ! x0 = None)). {
-        intros.
-        apply NoDup_cons_iff in Hnodup. rewrite M.gso. apply Hunbound. unfold collect_local_variables.
-        cbn. fold collect_local_variables. right. assumption. destruct Hnodup as [Hx _ ].
-        intros Heq. now subst x.
+        intros. inv HvarsUnique.
+        rewrite M.gso. 2:{ now intro. }
+        apply Hunbound. now constructor.
       }
 
       assert (Hfds' :  (forall (a : var) (t : fun_tag) (ys : seq var) (e : exp) (errMsg : string),
@@ -4432,7 +4428,7 @@ Proof with eauto.
         have H' := constr_size_0 _ _ H6 H5. lia.
       } subst grow_mem_instr.
 
-      have IH := IHHev HNoDup' HfenvRho' Herestr' Hunbound' _ fAny _ lh _ HlenvInjective HenvsDisjoint
+      have IH := IHHev HvarsUnique' HfenvRho' Herestr' Hunbound' _ fAny _ lh _ HlenvInjective HenvsDisjoint
                  state sr f_before_IH _ Hfds' HlocInBound' Hinv' HmemAvail' H11 HrelE'.
       destruct IH as [sr' [f' [k' [lh' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]]]].
 
@@ -4586,19 +4582,13 @@ Proof with eauto.
      assert (HmemAvail' :  min_available_memory sr (f_inst f_before_IH) mem) by now subst f_before_IH.
 
      assert (HeRestr' : expression_restricted cenv e). { now inv HeRestr. }
-     assert (Hunbound': (forall x0 : var, In x0 (collect_local_variables e) ->
-                                          (map_util.M.set x v rho) ! x0 = None)). {
+     assert (Hunbound': (forall x0 : var, bound_var e x0 -> (map_util.M.set x v rho) ! x0 = None)). {
        intros.
-       assert (~ In x (collect_local_variables e)). {
-         cbn in Hnodup.
-         now apply NoDup_cons_iff in Hnodup. }
-       assert (x <> x1) by congruence. rewrite M.gso; auto.
-       apply Hunbound. now right.
+       assert (~ bound_var e x). { now inv HvarsUnique. }
+       now rewrite M.gso; auto.
      }
 
-     assert (Hnodup' : NoDup (collect_local_variables e)). {
-       cbn in Hnodup. apply NoDup_cons_iff in Hnodup.
-       now destruct Hnodup. }
+     assert (HvarsUnique' : unique_bindings e). { now inv HvarsUnique. }
 
      assert (HfenvRho' : forall (a : positive) (v0 : cps.val),
               (map_util.M.set x v rho) ! a = Some v0 ->
@@ -4610,7 +4600,7 @@ Proof with eauto.
        inv Hx'. destruct HenvsDisjoint as [Hd1 Hd2].
        apply Hd2 in H11. unfold translate_var in H13. now rewrite H11 in H13. }
 
-     have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny _ lh _ HlenvInjective HenvsDisjoint
+     have IH := IHHev HvarsUnique' HfenvRho' HeRestr' Hunbound' _ fAny _ lh _ HlenvInjective HenvsDisjoint
                       state _ _ _ Hfds' HlocInBound' Hinv' HmemAvail' H8 Hrm.
      destruct IH as [sr' [f' [k' [lh' [Hred [Hval [Hfinst [Hsfuncs [HvalPres H_INV]]]]]]]]]. cbn in Hfinst.
 
@@ -4650,16 +4640,15 @@ Proof with eauto.
   - (* Ecase *)
     {
       intros.
-      assert (caseConsistent cenv cl t). { assumption. }
       inv Hrepr_e.
-      rename H5 into Hy'.
+      rename H4 into Hy'.
       assert (Hy : occurs_free (Ecase y cl) y) by constructor.
       have HrelE' := HrelE.
       destruct HrelE' as [Hfun1 [Hfun2 Hvar]].
       assert (HfdNone: find_def y fds = None). {
         apply HfenvWf_None with (f:=y) in HfenvWf. rewrite HfenvWf.
-        inv Hy'. unfold translate_var in H3. destruct (lenv ! y) eqn:Hy'; rewrite Hy' in H3=>//.
-        injection H3 as ->.
+        inv Hy'. unfold translate_var in H2. destruct (lenv ! y) eqn:Hy'; rewrite Hy' in H2=>//.
+        injection H2 as ->.
         now apply HenvsDisjoint in Hy'.
       }
       have Hy0 := Hy.
@@ -4702,12 +4691,12 @@ Proof with eauto.
                      /\ @repr_expr_LambdaANF_Wasm penv lenv e mem e').
           {
             destruct Hlocals as [i [Htrans_y Hlocs]].
-            assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. } subst i.
-            have Hif_red := unboxed_nested_if_chain_reduces cl fAny y t e y' lenv mem brs1 brs2 e2' fr state sr ord Hlocs HcenvRestr HeRestr H2 H1 H5 H14 H6 H10.
+            assert (i = y'). { now inv Hy'. } subst i.
+            have Hif_red := unboxed_nested_if_chain_reduces cl fAny y t e y' lenv mem brs1 brs2 e2' fr state sr ord Hlocs HcenvRestr HeRestr H0 H1 H4 H13 H5 H9.
             destruct Hif_red as [e' [e'' [Hsel [Hred Hrep]]]].
             by exists e', e''.
           }
-          destruct H3 as [e' [e'' [_ [Hred Hrep]]]].
+          destruct H2 as [e' [e'' [_ [Hred Hrep]]]].
           have Hholednested := lholed_nested_label k lh (map AI_basic e2') [].
           destruct Hholednested as [k0' [lh0' He2']].
           have Hred' := Hred k0' lh0'.
@@ -4715,7 +4704,7 @@ Proof with eauto.
           exists e', k0, lh0. split; auto.
           have Hlocals' := Hlocals.
           destruct Hlocals' as [i [Htrans_y Hntherror]].
-          assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. } subst i.
+          assert (i = y'). { now inv Hy'. } subst i.
           eapply rt_trans. apply reduce_trans_frame. apply reduce_trans_label.
           dostep_nary 0. apply r_local_get. eauto.
           dostep_nary 2. constructor. apply rs_binop_success.
@@ -4752,24 +4741,24 @@ Proof with eauto.
                      /\ @repr_expr_LambdaANF_Wasm penv lenv e mem e').
           {
             destruct Hlocals as [i [Htrans_y Hlocs]].
-            assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. } subst i.
+            assert (i = y'). { now inv Hy'. } subst i.
             destruct Hinv as [_ [_ [_ [_ [_ [_ [Hmem _]]]]]]].
-            have Hif_red := boxed_nested_if_chain_reduces cl fAny y t vl e addr y' lenv mem brs1 brs2 e1' state sr fr ord Hmem Hval' Hlocs HcenvRestr HeRestr H2 H9 H1 H6 H7.
+            have Hif_red := boxed_nested_if_chain_reduces cl fAny y t vl e addr y' lenv mem brs1 brs2 e1' state sr fr ord Hmem Hval' Hlocs HcenvRestr HeRestr H0 H8 H1 H5 H6.
             destruct Hif_red as [e' [e'' [Hsel [Hred Hrep]]]].
             have Hred' := Hred k lh.
             by exists e', e''.
           }
-          destruct H3 as [e' [e'' [_ [Hred Hrep]]]].
+          destruct H2 as [e' [e'' [_ [Hred Hrep]]]].
           have Hholednested := lholed_nested_label k lh (map AI_basic e1') [].
           destruct Hholednested as [k0' [lh0' He1']].
           destruct (Hred k0' lh0') as [k0 [lh0 Hred']].
           exists e', k0, lh0. split; auto.
           destruct Hlocals as [i [Htrans_y Hntherror]].
-          assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. }
+          assert (i = y'). { now inv Hy'. }
           eapply rt_trans. apply reduce_trans_frame. apply reduce_trans_label.
-          dostep_nary 0. apply r_local_get. rewrite H3 in Hntherror. eauto.
+          dostep_nary 0. apply r_local_get. rewrite H2 in Hntherror. eauto.
           assert (Hand : Wasm_int.Int32.iand (wasm_value_to_i32 (Val_ptr addr)) (nat_to_i32 1) = Wasm_int.Int32.zero). {
-            destruct H14 as [n0 Hn0].
+            destruct H13 as [n0 Hn0].
             rewrite Hn0.
             unfold wasm_value_to_u32; unfold wasm_value_to_i32; unfold N_to_i32.
             cbn.
@@ -4798,25 +4787,24 @@ Proof with eauto.
 
       assert (HeRestr': expression_restricted cenv e). {
         inv HeRestr.
-        rewrite Forall_forall in H5.
-        apply H5 with (x:=(t,e)).
+        rewrite Forall_forall in H4.
+        apply H4 with (x:=(t,e)).
         by apply findtag_In.
       }
 
-      assert (Hunbound': (forall x : var, In x (collect_local_variables e) ->
-                                     rho ! x = None)). {
-        intros. apply Hunbound. cbn.
-        apply in_flat_map.
-        exists (t,e). split; auto.
-        by apply findtag_In.
+      assert (Hunbound': forall x : var, bound_var e x -> rho ! x = None). {
+        intros. apply Hunbound.
+        econstructor. eassumption.
+        apply findtag_In. eassumption.
       }
 
       destruct Hstep_case as [e' [k0 [lh0 [Hred Hrepre]]]].
 
-      assert (Hnodup': NoDup (collect_local_variables e)). {
-        apply NoDup_case with (cl:=cl) (t:=t) (y:=y)=>//. }
+      assert (HvarsUnique': unique_bindings e). {
+        eapply unique_bindings_Ecase_In. eassumption.
+        now apply findtag_In. }
 
-      have IH := IHHev Hnodup' HfenvRho HeRestr' Hunbound' k0 fAny _ lh0 _ HlenvInjective HenvsDisjoint
+      have IH := IHHev HvarsUnique' HfenvRho HeRestr' Hunbound' k0 fAny _ lh0 _ HlenvInjective HenvsDisjoint
                        state _ _ _ Hfds HlocInBound Hinv HmemAvail Hrepre Hrel.
       destruct IH as [sr' [fr' [k1 [lh1 [Hstep [Hval_e [Hfinst [HvalPres H_INV]]]]]]]].
 
@@ -4989,22 +4977,20 @@ Proof with eauto.
     assert (HeRestr' : expression_restricted cenv e). {
         apply Hfds with (errMsg:=""%bs) in H7. now destruct H7. }
 
-    assert (Hunbound': (forall x : var, In x (collect_local_variables e) -> rho'' ! x = None)). {
+    assert (Hunbound': (forall x : var, bound_var e x -> rho'' ! x = None)). {
       intros.
       assert (~ exists v, find_def x fds = Some v). {
-        intro Hcontra. destruct Hcontra as [? Hfd].
-        assert (Hfd': find_def x fds <> None) by congruence.
-        clear Hfd. rename Hfd' into Hfd.
-        eapply find_def_in_collect_function_vars in Hfd.
+        intros [? Hfd].
+        (* apply find_def_name_in_fundefs in Hfd. *)
         apply Hfds with (errMsg:=""%bs) in H7. destruct H7 as [_ [_ [HnodupE _]]].
         apply NoDup_app_remove_l in HnodupE.
-        eapply NoDup_app_In in HnodupE; eauto. }
+        eapply NoDup_app_In in HnodupE; eauto. admit. admit. }
       assert (Hfd: find_def x fds = None). { destruct (find_def x fds); eauto. exfalso. eauto. }
       apply def_funs_not_find_def with (fds':=fds) (rho:=M.empty _) in Hfd.
       assert (HxIn: ~ In x xs). {
         intro Hcontra. apply Hfds with (errMsg:=""%bs) in H7. destruct H7 as [_ [_ [HnodupE _]]].
         rewrite catA in HnodupE. apply NoDup_app_remove_r in HnodupE.
-        eapply NoDup_app_In in HnodupE; eauto. }
+        eapply NoDup_app_In in HnodupE; eauto. admit. }
       have H'' := set_lists_not_In _ _ _ _ _ H2 HxIn. rewrite <- H''.
       now rewrite Hfd.
     }
@@ -5037,11 +5023,11 @@ Proof with eauto.
          eapply NoDup_app_In in HnodupE; eauto. }
     }
 
-    assert (Hnodup': NoDup (collect_local_variables e)). {
+    assert (HvarsUnique': unique_bindings e). {
       apply Hfds with (errMsg:=""%bs) in H7. destruct H7 as [_ [_ [HnodupE _]]].
       apply NoDup_app_remove_l in HnodupE.
       apply NoDup_app_remove_r in HnodupE.
-      assumption. }
+      admit. }
 
     assert (HfenvRho': forall (a : positive) (v : cps.val),
       rho'' ! a = Some v ->
@@ -5060,7 +5046,7 @@ Proof with eauto.
     remember (LH_rec [] 0 [] (LH_base [] []) []) as lh_IH.
 
     subst lenv_before_IH.
-    have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny _ lh_IH _ HlenvInjective' HenvsDisjoint'
+    have IH := IHHev HvarsUnique' HfenvRho' HeRestr' Hunbound' _ fAny _ lh_IH _ HlenvInjective' HenvsDisjoint'
                    state _ _ _ Hfds_before_IH HlocInBound_before_IH Hinv_before_IH HmemAvail_before_IH Hexpr HrelE'.
 
     destruct IH as [sr_final [fr_final [k' [lh' [Hred [Hval [Hfinst [Hfuncs [HvalPres H_INV]]]]]]]]].
@@ -5266,7 +5252,7 @@ Proof with eauto.
     assert (HeRestr' : expression_restricted cenv e_body). {
         apply Hfds with (errMsg:=""%bs) in H7. now destruct H7. }
 
-    assert (Hunbound': (forall x : var, In x (collect_local_variables e_body) -> rho'' ! x = None)). {
+    assert (Hunbound': (forall x : var, bound_var e_body x -> rho'' ! x = None)). {
       intros.
       assert (~ exists v, find_def x fds = Some v). {
         intro Hcontra. destruct Hcontra as [? Hfd].
@@ -5275,13 +5261,13 @@ Proof with eauto.
         eapply find_def_in_collect_function_vars in Hfd.
         apply Hfds with (errMsg:=""%bs) in H7. destruct H7 as [_ [_ [HnodupE _]]].
         apply NoDup_app_remove_l in HnodupE.
-        eapply NoDup_app_In in HnodupE; eauto. }
+        eapply NoDup_app_In in HnodupE; eauto. admit. }
       assert (Hfd: find_def x fds = None). { destruct (find_def x fds); eauto. exfalso. eauto. }
       apply def_funs_not_find_def with (fds':=fds) (rho:=M.empty _) in Hfd.
       assert (HxIn: ~ In x xs). {
         intro Hcontra. apply Hfds with (errMsg:=""%bs) in H7. destruct H7 as [_ [_ [HnodupE _]]].
         rewrite catA in HnodupE. apply NoDup_app_remove_r in HnodupE.
-        eapply NoDup_app_In in HnodupE; eauto. }
+        eapply NoDup_app_In in HnodupE; eauto. admit. }
       have H'' := set_lists_not_In _ _ _ _ _ H2 HxIn. rewrite <- H''.
       now rewrite Hfd.
     }
@@ -5314,11 +5300,11 @@ Proof with eauto.
          eapply NoDup_app_In in HnodupE; eauto. }
     }
 
-    assert (Hnodup': NoDup (collect_local_variables e_body)). {
+    assert (HvarsUnique': unique_bindings e_body). {
       apply Hfds with (errMsg:=""%bs) in H7. destruct H7 as [_ [_ [HnodupE _]]].
       apply NoDup_app_remove_l in HnodupE.
       apply NoDup_app_remove_r in HnodupE.
-      assumption. }
+      (* assumption. *) admit. }
 
     assert (HfenvRho': forall (a : positive) (v : cps.val),
       rho'' ! a = Some v ->
@@ -5337,11 +5323,11 @@ Proof with eauto.
     remember (LH_rec [] 0 [] (LH_base [] []) []) as lh_before_IH.
 
     subst lenv_before_IH.
-    have IH_body := IHHev1 Hnodup' HfenvRho' HeRestr' Hunbound' _ fr _ lh_before_IH _ HlenvInjective' HenvsDisjoint'
+    have IH_body := IHHev1 HvarsUnique' HfenvRho' HeRestr' Hunbound' _ fr _ lh_before_IH _ HlenvInjective' HenvsDisjoint'
                    state _ _ _ Hfds_before_IH HlocInBound_before_IH Hinv_before_IH HmemAvail_before_IH Hexpr HrelE_before_IH.
 
     destruct IH_body as [sr_after_call [fr_after_call [k0 [lh0 [Hred [Hval [Hfinst [Hfuncs [HvalPres H_INV]]]]]]]]].
-    clear HfenvRho' Hnodup' Hunbound' HeRestr' IHHev1.
+    clear HfenvRho' HvarsUnique' Hunbound' HeRestr' IHHev1.
     subst lh_before_IH. cbn in Hred. rewrite cats0 in Hred.
 
     assert (Hcont: exists (sr_final : store_record) (fr_final : frame) k' (lh' : lholed k'),
@@ -5365,9 +5351,7 @@ Proof with eauto.
                     f_inst := f_inst fr|}) as f_before_cont.
 
         (* prepare IH for continuation *)
-        assert (Hnodup': NoDup (collect_local_variables e_cont)). {
-          cbn in Hnodup. now inv Hnodup.
-        }
+        assert (HvarsUnique': unique_bindings e_cont). { now inv HvarsUnique. }
 
         assert (HfenvRho': forall (a : positive) (v0 : val),
           (map_util.M.set x_res v rho) ! a = Some v0 ->
@@ -5381,13 +5365,12 @@ Proof with eauto.
 
         assert (HeRestr': expression_restricted cenv e_cont). { now inv HeRestr. }
 
-        assert (Hunbound': (forall x : var, In x (collect_local_variables e_cont) ->
+        assert (Hunbound': (forall x : var, bound_var e_cont x ->
                                (map_util.M.set x_res v rho) ! x = None)). {
           intros.
-          assert (~ In x_res (collect_local_variables e_cont)). {
-            now apply NoDup_cons_iff in Hnodup. }
+          assert (~ bound_var e_cont x_res). { now inv HvarsUnique. }
           rewrite M.gso; auto.
-          apply Hunbound. now right. now intro.
+          now intro.
         }
 
         assert (HlocInBound_before_cont_IH: (forall (var : positive) (varIdx : localidx),
@@ -5536,7 +5519,7 @@ Proof with eauto.
           }
         }
 
-        have IH_cont := IHHev2 Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny _ lh lenv HlenvInjective HenvsDisjoint
+        have IH_cont := IHHev2 HvarsUnique' HfenvRho' HeRestr' Hunbound' _ fAny _ lh lenv HlenvInjective HenvsDisjoint
                    state _ _ _ Hfds_before_cont_IH HlocInBound_before_cont_IH Hinv_before_cont_IH HmemAvail_before_cont_IH Hexpr HrelE_before_cont_IH.
         destruct IH_cont as [sr_final [fr_final [k_final [lh_final [Hred' [Hval' [Hfinst' [Hfuncs' [HvalPres' H_INV']]]]]]]]]. clear IHHev2.
 
@@ -5783,9 +5766,7 @@ Proof with eauto.
           apply HlocInBound in Hvar, H3. lia.
         }
 
-        assert (Hnodup' : NoDup (collect_local_variables e) ). {
-          cbn in Hnodup. apply NoDup_cons_iff in Hnodup. now destruct Hnodup.
-        }
+        assert (HvarsUnique' : unique_bindings e). { now inv HvarsUnique. }
 
         assert (HfenvRho' :  forall (a : positive) (v : val),
                    (map_util.M.set x (Vprim p) rho) ! a = Some v -> find_def a fds <> None -> v = Vfun (M.empty val) fds a). {
@@ -5797,19 +5778,10 @@ Proof with eauto.
 
         assert (HeRestr' : expression_restricted cenv e) by now inv HeRestr.
 
-        assert (Hunbound' : forall x0 : var, In x0 (collect_local_variables e) -> (map_util.M.set x (Vprim p) rho) ! x0 = None). {
+        assert (Hunbound' : forall x0 : var, bound_var e x0 -> (map_util.M.set x (Vprim p) rho) ! x0 = None). {
           intros.
-          cbn in Hnodup.
-          apply NoDup_cons_iff in Hnodup.
-          rewrite M.gso.
-          apply Hunbound.
-          unfold collect_local_variables.
-          cbn.
-          fold collect_local_variables.
-          right. assumption.
-          destruct Hnodup as [Hx _ ].
-          unfold not. unfold not in Hx. intros Heq. subst x.
-          apply Hx in H0. contradiction.
+          assert (~ bound_var e x). { now inv HvarsUnique. }
+          now rewrite M.gso; auto.
         }
 
         (* Equivalence of store functions *)
@@ -5957,7 +5929,7 @@ Proof with eauto.
           }
         }
 
-        have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny _ lh lenv HlenvInjective HenvsDisjoint state _ _ _ Hfds' HlocInBound' Hinv_before_IH HmemAvail_before_IH H4 HrelE'.
+        have IH := IHHev HvarsUnique' HfenvRho' HeRestr' Hunbound' _ fAny _ lh lenv HlenvInjective HenvsDisjoint state _ _ _ Hfds' HlocInBound' Hinv_before_IH HmemAvail_before_IH H4 HrelE'.
         destruct IH as [s_final [f_final [k'' [lh'' [Hred_IH [Hval [Hfinst [Hsfuncs' [HvalPres H_INV]]]]]]]]].
 
         assert (Hfinst': f_inst f_before_IH = f_inst fr) by now subst.
@@ -6073,9 +6045,7 @@ Proof with eauto.
         rewrite Hfinst in HenoughM'.
         have Hrepr_e' := H8.
 
-        assert (Hnodup' : NoDup (collect_local_variables e)). {
-          cbn in Hnodup. apply NoDup_cons_iff in Hnodup. now destruct Hnodup.
-        }
+        assert (HvarsUnique' : unique_bindings e). { now inv HvarsUnique. }
 
         assert (HfenvRho' :
                  (forall (a : positive) (v0 : val),
@@ -6088,19 +6058,11 @@ Proof with eauto.
         }
         assert (HeRestr' : expression_restricted cenv e) by now inv HeRestr.
 
-        assert (Hunbound' : (forall x0 : var,
-                                In x0 (collect_local_variables e) -> (map_util.M.set x v rho) ! x0 = None)). {
+        assert (Hunbound' : (forall x0 : var, bound_var e x0 -> (map_util.M.set x v rho) ! x0 = None)). {
           intros.
-          apply NoDup_cons_iff in Hnodup.
-          rewrite M.gso.
-          apply Hunbound.
-          unfold collect_local_variables.
-          cbn.
-          fold collect_local_variables.
-          right. assumption.
-          destruct Hnodup as [Hx _ ].
-          intros Heq. subst x.
-          apply Hx in H2. contradiction. }
+          assert (~ bound_var e x). { now inv HvarsUnique. }
+          now rewrite M.gso; auto.
+        }
 
         assert (HfVal' : (forall (y : positive) (y' : funcidx) (v : cps.val),
                              rho ! y = Some v ->
@@ -6151,7 +6113,7 @@ Proof with eauto.
         }
 
 
-        have IH := IHHev Hnodup' HfenvRho' HeRestr' Hunbound' _ fAny _ lh lenv HlenvInjective HenvsDisjoint state _ _ _ Hfds' HlocInBound' Hinv_before_IH HenoughM' Hrepr_e' HrelE'.
+        have IH := IHHev HvarsUnique' HfenvRho' HeRestr' Hunbound' _ fAny _ lh lenv HlenvInjective HenvsDisjoint state _ _ _ Hfds' HlocInBound' Hinv_before_IH HenoughM' Hrepr_e' HrelE'.
 
         destruct IH as [s_final [f_final [k'' [lh'' [Hred_IH [Hval [Hfinst' [Hsfuncs' [HvalPres H_INV]]]]]]]]].
 
@@ -6251,6 +6213,6 @@ Proof with eauto.
     now intro.
     eassumption.
     Unshelve. all: try assumption; try apply ""%bs; try apply [].
-Qed.
+Admitted.
 
 End MAIN.

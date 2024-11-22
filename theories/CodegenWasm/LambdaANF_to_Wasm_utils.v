@@ -304,8 +304,58 @@ Proof.
   now eapply NoDup_incl_NoDup'.
 Qed.
 
+Lemma collect_local_variables_bound_var : forall e x,
+  In x (collect_local_variables e) ->
+  bound_var e x.
+Proof.
+  induction e using exp_ind'=> //= x' H.
+  all: try by (destruct H; cbn; auto; now subst).
+  - (* Ecase *)
+    apply in_app_or in H as [H|H].
+    + eapply Bound_Ecase. now apply IHe. now left.
+    + apply IHe0 in H. inv H. eapply Bound_Ecase; eauto. now right.
+  - (* Efun *)
+    apply Bound_Efun2.
+    now apply IHe.
+Qed.
+
+
+Lemma bound_var_collect_local_variables : forall e x,
+  bound_var e x ->
+  In x (collect_local_variables e).
+Proof.
+  induction e using exp_ind'; intros; inv H; cbn; auto.
+  - (* Ecase *)
+    destruct H4 as [H0|H0].
+    + inv H0. now apply in_app_iff.
+    + cbn. apply in_app_iff. now right.
+  - (* Efun *)
+    (* Print bound_var_fundefs. *)
+Admitted.
+
+Lemma NoDup_collect_local_variables_unique_bindings : forall e,
+  NoDup (collect_local_variables e) ->
+  unique_bindings e.
+Proof.
+(*   induction e using exp_ind'; intros.
+  - inv H. constructor; auto. intro.
+    apply H2. now apply bound_var_collect_local_variables.
+  - constructor.
+  - cbn in H.
+    constructor.
+    + apply IHe0. now apply NoDup_app_remove_l in H.
+    + apply IHe. now apply NoDup_app_remove_r in H. *)
+Abort.
+
+Lemma unique_bindings_NoDup_collect_local_variables : forall e,
+  unique_bindings e ->
+  NoDup (collect_local_variables e).
+Proof.
+Admitted.
+
 Lemma collect_function_vars_name_in_fundefs : forall fds f e,
-  In f (collect_function_vars (Efun fds e)) -> name_in_fundefs fds f.
+  In f (collect_function_vars (Efun fds e)) ->
+  name_in_fundefs fds f.
 Proof.
   induction fds; intros=>//.
   cbn. destruct H as [H|H].
@@ -326,9 +376,9 @@ Proof.
 Qed.
 
 Lemma NoDup_case: forall cl t e y,
-    findtag cl t  = Some e ->
-    NoDup (collect_local_variables (Ecase y cl)) ->
-    NoDup (collect_local_variables e).
+  findtag cl t  = Some e ->
+  NoDup (collect_local_variables (Ecase y cl)) ->
+  NoDup (collect_local_variables e).
 Proof.
   induction cl; intros.
   - inv H.
