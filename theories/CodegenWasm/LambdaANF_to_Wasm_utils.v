@@ -14,11 +14,10 @@ From Wasm Require Import
   instantiation_properties memory_list opsem properties.
 
 From Coq Require Import
-  List ListDec
+  Ensembles List ListDec
   Logic.Decidable
   Relations.Relations Relations.Relation_Operators
-  Lia
-  Uint63.
+  Lia Uint63.
 
 Import Common.compM Common.Pipeline_utils.
 Import bytestring.
@@ -353,6 +352,7 @@ Lemma unique_bindings_NoDup_collect_local_variables : forall e,
 Proof.
 Admitted.
 
+(* TODO get rid of *)
 Lemma collect_function_vars_name_in_fundefs : forall fds f e,
   In f (collect_function_vars (Efun fds e)) ->
   name_in_fundefs fds f.
@@ -362,6 +362,14 @@ Proof.
   - subst. now constructor.
   - apply IHfds in H; auto.
     apply Union_commut. now constructor.
+Qed.
+
+Lemma collect_function_vars_name_in_fundefs' : forall fds e,
+  Same_set _ (FromList (collect_function_vars (Efun fds e))) (name_in_fundefs fds).
+Proof.
+  induction fds; auto with Ensembles_DB.
+  intros. cbn. rewrite FromList_cons.
+  now rewrite IHfds.
 Qed.
 
 Lemma unqique_functions_NoDup_collect_function_vars : forall fds e,
@@ -555,20 +563,21 @@ Proof.
 Qed.
 
 Lemma variable_mappings_nodup_disjoint : forall l1 l2 idx1 idx2,
-  NoDup (l1 ++ l2) ->
+  Disjoint _ (FromList l1) (FromList l2) ->
   domains_disjoint (create_var_mapping idx1 l1 (M.empty _))
                    (create_var_mapping idx2 l2 (M.empty _)).
 Proof.
   intros. unfold domains_disjoint.
   split; intros.
   - apply variable_mapping_Some_In in H0; auto.
-    apply variable_mapping_NotIn_None; auto. intro. now eapply NoDup_app_In.
+    apply variable_mapping_NotIn_None; auto. intro. now eapply Disjoint_In_l.
   - apply variable_mapping_Some_In in H0; auto.
-    apply variable_mapping_NotIn_None; auto. intro. now eapply NoDup_app_In.
+    apply variable_mapping_NotIn_None; auto. intro. now eapply Disjoint_In_l.
 Qed.
 
 Lemma create_local_variable_mapping_injective : forall l idx,
-   NoDup l -> map_injective (create_var_mapping idx l (M.empty u32)).
+  NoDup l ->
+  map_injective (create_var_mapping idx l (M.empty u32)).
 Proof.
   induction l; intros. { cbn. intros ????? H1. inv H1. }
   inv H. cbn. unfold map_injective in *. intros.
