@@ -2,7 +2,7 @@ From Coq Require Import
   Logic.Decidable Lists.ListDec
   Relations.Relations
   Relations.Relation_Operators
-  ZArith Lia List.
+  ZArith Lia Ensembles List.
 
 From CertiCoq Require Import
   LambdaANF.Ensembles_util
@@ -74,6 +74,7 @@ Theorem LambdaANF_Wasm_related :
   (* vars unique (guaranteed by previous stage) *)
   unique_bindings e ->
   unique_functions fds ->
+  Disjoint _ (name_in_fundefs fds) (bound_var e) ->
 
   (* expression must be closed *)
   (~ exists x, occurs_free e x ) ->
@@ -95,7 +96,7 @@ Theorem LambdaANF_Wasm_related :
     (* result variable has the correct value set *)
     result_val_LambdaANF_Wasm cenv fenv nenv penv v sr' (f_inst fr).
 Proof.
-  intros ?????????? -> HprimFunsRet HprimFunsRelated Hcenv HcenvRestr HvarsUnique HfdsUnique Hfreevars Hstep LANF2Wasm.
+  intros ?????????? -> HprimFunsRet HprimFunsRelated Hcenv HcenvRestr HvarsUnique HfdsUnique HvarsDisjoint Hfreevars Hstep LANF2Wasm.
   rename e' into e.
   assert (HeRestr: expression_restricted cenv (Efun fds e)).
   { unfold LambdaANF_to_Wasm in LANF2Wasm. destruct (check_restrictions cenv _) eqn:HeRestr.
@@ -166,6 +167,8 @@ Proof.
 
   assert (HenvsDisjoint : domains_disjoint lenv fenv). {
     rewrite Heqfenv. subst lenv. eapply variable_mappings_nodup_disjoint; eauto.
+    rewrite bound_var_Efun in HvarsDisjoint.
+    rewrite collect_function_vars_name_in_fundefs'.
     (* cbn in HvarsNodup. rewrite <-catA in HvarsNodup.
     now eapply NoDup_app_remove_middle in HvarsNodup. *) admit.
   }
@@ -194,15 +197,13 @@ Proof.
     intros ? ? H H1. eapply def_funs_find_def in H1; eauto. now erewrite H in H1. }
 
   assert (HeRestr' : expression_restricted cenv e). { now inv HeRestr. }
-  assert (Hunbound: (forall x : var,
-       bound_var e x ->
-       (def_funs fds fds (M.empty _) (M.empty _)) ! x = None)). {
+  assert (Hunbound: (forall x : var, bound_var e x ->
+                                    (def_funs fds fds (M.empty _) (M.empty _)) ! x = None)). {
     intros. eapply def_funs_not_find_def; eauto.
     destruct (find_def x fds) eqn:Hdec; auto. exfalso.
-    assert (Hdec': find_def x fds <> None) by congruence. clear Hdec p.
-    apply find_def_in_collect_function_vars with (e:=e) in Hdec'.
-    cbn in HvarsUnique.
-    admit. (* disjoint *)
+    apply find_def_name_in_fundefs in Hdec. clear p.
+    eapply Disjoint_In_l; try eassumption.
+    rewrite bound_var_Efun. apply Union_intror. eassumption.
   }
 
   assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e0 : exp) errMsg,
