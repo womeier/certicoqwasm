@@ -19,7 +19,7 @@ opam install . --deps-only
 make && make install
 
 # run benchmarks (prints S-expressions to stdout)
-cd benchmarks && make
+cd benchmarks/wasm && make
 ```
 See [here](https://github.com/womeier/certicoqwasm-testing) for how to use, and performance evaluation.
 
