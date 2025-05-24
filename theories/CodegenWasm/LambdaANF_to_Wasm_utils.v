@@ -1434,7 +1434,6 @@ Proof.
   rewrite Z.add_comm in Hn.
   rewrite Z.mul_comm in Hn.
   rewrite Z.div_add in Hn; try lia.
-  rewrite Zdiv_small in Hn; lia.
 Qed.
 
 Ltac solve_arith_load_store :=
@@ -1737,12 +1736,12 @@ Proof.
   rewrite Memdata.decode_encode_int.
   rewrite Z.mod_small.
   by rewrite Wasm_int.Int32.repr_unsigned.
-  destruct s ; simpl; replace (two_power_pos _)
+  destruct i ; simpl; replace (two_power_pos _)
     with Wasm_int.Int32.modulus ; [lia | done].
   rewrite Memdata.decode_encode_int.
   rewrite Z.mod_small.
   by rewrite Wasm_int.Int64.repr_unsigned.
-  destruct s ; simpl ; replace (two_power_pos _)
+  destruct i ; simpl ; replace (two_power_pos _)
     with Wasm_int.Int64.modulus ; [lia | done].
   rewrite Memdata.decode_encode_int_4.
   by rewrite Wasm_float.FloatSize32.of_to_bits.
@@ -2758,7 +2757,7 @@ Lemma low32step : forall state sr fr num,
            state sr fr [$VN (VAL_int64 (Int64.repr (lo num))) ].
 Proof.
 intros.
-constructor. apply rs_binop_success. cbn.
+constructor. apply rs_binop_success; auto. cbn.
 unfold Int64.iand, Int64.and. cbn.
 rewrite Z_bitmask_modulo32_equivalent.
 now replace (Int64.Z_mod_modulus num) with num by now solve_unsigned_id.
@@ -2771,7 +2770,7 @@ Lemma high32step : forall state sr fr num,
            state sr fr [ $VN (VAL_int64 (Int64.repr (hi num))) ].
 Proof.
 intros.
-constructor. apply rs_binop_success.
+constructor. apply rs_binop_success; auto.
 unfold app_binop. simpl.
 rewrite int64_high32. reflexivity. lia.
 Qed.
@@ -3029,7 +3028,7 @@ Proof.
   remember (Z.of_nat (Int64.wordsize - i - 1)) as j eqn:Hj.
   remember (Z.of_nat (ssrnat.subn (ssrnat.subn Int64.wordsize i) 1)) as j' eqn:Hj'.
   assert (j = j') by now rewrite <- ssrnat.minusE in Hj'.
-  remember (fun b : bool_eqType => b == true) as a eqn:Ha.
+  remember (fun b : Datatypes_bool__canonical__eqtype_Equality => b == true) as a eqn:Ha.
   remember (Int64.intval x) as x' eqn:Hx'.
   remember (Int64.wordsize) as n eqn:Hn.
   remember (j' \in Zbits.Z_one_bits n x' 0) as inbits eqn:Hinbits.
@@ -3128,7 +3127,7 @@ Proof.
   remember (Z.of_nat (Int64.wordsize - i - 1)) as j eqn:Hj.
   remember (Z.of_nat (ssrnat.subn (ssrnat.subn Int64.wordsize i) 1)) as j' eqn:Hj'.
   assert (j = j') by now rewrite <- ssrnat.minusE in Hj'.
-  remember (fun b : bool_eqType => b == true) as a eqn:Ha.
+  remember (fun b : Datatypes_bool__canonical__eqtype_Equality => b == true) as a eqn:Ha.
   remember (Int64.intval x) as x' eqn:Hx'.
   remember (Int64.wordsize) as n eqn:Hn.
   remember (j' \in Zbits.Z_one_bits n x' 0) as inbits eqn:Hinbits.
@@ -3463,7 +3462,7 @@ Proof.
   have Hbefore := before_find.
   assert (Hbf: forall k, k < i -> (nth false (rev s) k == true) = false). {
     intros k Hk.
-    specialize (Hbefore (Equality.sort bool_eqType) false (fun b => b == true) (rev s) k).
+    specialize (Hbefore (Equality.sort Datatypes_bool__canonical__eqtype_Equality) false (fun b => b == true) (rev s) k).
     rewrite <-Hifind in Hbefore.
     apply Hbefore.
     rewrite -(rwP ssrnat.leP). lia. }

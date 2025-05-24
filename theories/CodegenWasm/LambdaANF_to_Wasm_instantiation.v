@@ -35,7 +35,7 @@ From CertiCoq Require Import
 
 From Wasm Require Import
   datatypes operations host
-  type_preservation instantiation_spec instantiation_properties
+  type_preservation instantiation_spec instantiation_func instantiation_properties
   memory_list opsem properties common.
 
 From Coq Require Import List.
@@ -135,9 +135,9 @@ Ltac solve_bet Hcontext :=
   | |- be_typing _ [:: BI_testop T_i32 _] (Tf [:: T_num T_i32] _) => apply bet_testop; by simpl
   | |- be_typing _ [:: BI_testop T_i64 _] (Tf ([:: T_num T_i32; T_num T_i64]) _) => apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_testop; by simpl
   | |- be_typing _ [:: BI_testop T_i64 _] (Tf ([:: T_num T_i64]) _) => apply bet_testop; by simpl
-  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i32; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_unop; apply Unop_i64_agree
-  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i64] _) => apply bet_unop; apply Unop_i64_agree
-  | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_binop; apply Binop_i32_agree
+  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i32; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by apply bet_unop
+  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i64] _) => by apply bet_unop
+  | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => by apply bet_binop
   | |- be_typing _ [:: BI_binop T_i64 _] (Tf ?tin _) =>
          (match tin with
           | [:: T_num T_i64; T_num T_i64 ] => idtac
@@ -145,10 +145,10 @@ Ltac solve_bet Hcontext :=
           | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64])
           | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64; T_num T_i64])
           end);
-         apply bet_binop; apply Binop_i64_agree
-  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); apply bet_binop; apply Binop_i64_agree
-  | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_relop; apply Relop_i32_agree
-  | |- be_typing _ [:: BI_relop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_relop; apply Relop_i64_agree
+         by apply bet_binop
+  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by apply bet_binop
+  | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => by apply bet_relop
+  | |- be_typing _ [:: BI_relop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) => by apply bet_relop
 (* memory *)
   | H: lookup_N (tc_mems _) 0 = Some _ |- be_typing _ [:: BI_memory_size] (Tf [::] _) => eapply bet_memory_size; apply H
   | H: lookup_N (tc_mems _) 0 = Some _ |- be_typing _ [:: BI_memory_grow] (Tf [:: T_num T_i32] _) => eapply bet_memory_grow; apply H
@@ -185,7 +185,7 @@ Ltac solve_bet Hcontext :=
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32; T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
-         apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_binop; apply Binop_i32_agree
+         apply bet_weakening with (ts:=[::T_num T_i32]); by apply bet_binop
   | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by solve_bet Hcontext
   end.
 
@@ -553,7 +553,7 @@ Proof.
     apply rt_step. apply r_ref_func.
     rewrite H.
     unfold lookup_N. rewrite nth_error_map.
-    rewrite iota_lookup. cbn. f_equal. lia.
+    rewrite iota_lookup. unfold ssrnat.addn. cbn. f_equal. lia.
     apply /ssrnat.leP. lia.
 Qed.
 
@@ -1862,7 +1862,7 @@ Proof.
     rewrite H3. by rewrite Nat2N.id.
   }
   (* from exists statement on *)
-  eexists. exists e', fns. do 1 split=>//. rewrite -E0.
+  eexists. exists e', fns. split=>//. rewrite -E0.
   split. do 4 f_equal. cbn.
   rewrite <- map_map_seq.
   { clear Hmodule E1 F.

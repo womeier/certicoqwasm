@@ -315,18 +315,18 @@ Proof.
     intros.
     assert (exists v', load_i32 m a = Some v') as Hex. by apply enough_space_to_load; lia.
     destruct Hex as [v' Hv']; rewrite Hv'; symmetry; destruct v; rewrite store_offset_eq in Hstore.
-    - now apply load_store_load_i32 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int32 s))).
-    - now apply load_store_load_i32' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int64 s))).
-    - now apply load_store_load_i32 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float32 s))).
-    - now apply load_store_load_i32' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float64 s))).
+    - now apply load_store_load_i32 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int32 i))).
+    - now apply load_store_load_i32' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int64 i))).
+    - now apply load_store_load_i32 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float32 f))).
+    - now apply load_store_load_i32' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float64 f))).
   } split. { (* all i64 values in mem are preserved *)
     intros.
     assert (exists v', load_i64 m a = Some v') as Hex by now apply enough_space_to_load_i64; lia.
     destruct Hex as [v' Hv']; rewrite Hv'; symmetry; destruct v; rewrite store_offset_eq in Hstore.
-    - now apply load_store_load_i64 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int32 s))).
-    - now apply load_store_load_i64' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int64 s))).
-    - now apply load_store_load_i64 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float32 s))).
-    - now apply load_store_load_i64' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float64 s))).
+    - now apply load_store_load_i64 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int32 i))).
+    - now apply load_store_load_i64' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_int64 i))).
+    - now apply load_store_load_i64 with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float32 f))).
+    - now apply load_store_load_i64' with (m:=m) (a2:=(addr+off)%N) (w:=(bits (VAL_float64 f))).
   }
   unfold smem_store in Hsmem_store.
   destruct (lookup_N (inst_mems (f_inst fr)) 0). 2: discriminate.
@@ -431,11 +431,11 @@ Proof.
     dostep_nary_eliml 0 1. apply r_global_get; apply HglobPres1, HglobPres2 in Hgmp; eassumption.
     dostep_nary 2. apply r_store_success; rewrite HrewriteGmp; subst res_addr; cbn; eassumption.
     dostep_nary 0. apply r_global_get; apply HglobPres1, HglobPres2, HglobPres3 in Hgmp; eassumption.
-    dostep_nary 2. constructor. apply rs_binop_success. cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
+    dostep_nary 2. constructor. apply rs_binop_success; first done. cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
     rewrite Int32.Z_mod_modulus_id. replace 8%Z with (Z.of_N 8) by now cbn. rewrite <-N2Z.inj_add. reflexivity.
     simpl_modulus; simpl_modulus_in HenoughMem; unfold page_size in *; cbn in *; lia.
     dostep_nary_eliml 0 1. apply r_global_get; apply HglobPres1, HglobPres2, HglobPres3 in Hgmp; eassumption.
-    dostep_nary_eliml 2 1. constructor. apply rs_binop_success. cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
+    dostep_nary_eliml 2 1. constructor. apply rs_binop_success; first done. cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
     rewrite Int32.Z_mod_modulus_id. replace 16%Z with (Z.of_N 16) by now cbn. rewrite <-N2Z.inj_add. reflexivity.
     simpl_modulus; simpl_modulus_in HenoughMem; unfold page_size in *; cbn in *; lia.
     dostep_nary_eliml 1 1. replace ($VN N_to_VAL_i32 (gmp + 16)) with ($V (VAL_num (N_to_VAL_i32 (gmp + 16)))) by now cbn.
@@ -574,8 +574,8 @@ Proof.
       dostep_nary_eliml 1 1. eapply r_load_success; eauto.
       rewrite Hdesx.
       (* Check for overflow, step into the if-branch and reduce the make_carry instructions *)
-      dostep_nary 2. constructor; apply rs_relop.
-      dostep_nary 1. constructor; apply rs_if_true; rewrite uint63_lt_int64_lt; auto. discriminate.
+      dostep_nary 2. constructor. apply rs_relop=>//.
+      dostep_nary 1. constructor. apply rs_if_true; rewrite uint63_lt_int64_lt; auto. discriminate.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
       reduce_under_label. subst carryInstrsC1; apply Hmake_carry_red_C1.
       dostep_nary 0. constructor; apply rs_label_const; auto.
@@ -607,7 +607,7 @@ Proof.
       dostep_nary_eliml 0 1. eapply r_local_get; eauto.
       dostep_nary_eliml 1 1. eapply r_load_success; eauto.
       rewrite Hdesx.
-      dostep_nary 2. constructor; apply rs_relop.
+      dostep_nary 2. constructor; apply rs_relop=>//.
       dostep_nary 1. constructor; apply rs_if_false; rewrite uint63_nlt_int64_nlt; auto.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
       reduce_under_label. subst carryInstrsC0; apply Hmake_carry_red_C0.
@@ -737,7 +737,7 @@ Proof.
       dostep_nary_eliml 1 1. eapply r_load_success; eauto.
       rewrite Hdesx.
       (* Check for overflow, step into the if-branch and reduce the make_carry instructions *)
-      dostep_nary 2. constructor; apply rs_relop.
+      dostep_nary 2. constructor; apply rs_relop=>//.
       dostep_nary 1. constructor. apply rs_if_true. rewrite uint63_le_int64_le; auto. discriminate.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
       reduce_under_label. subst carryInstrsC1; apply Hmake_carry_red_C1.
@@ -770,7 +770,7 @@ Proof.
       dostep_nary_eliml 0 1. eapply r_local_get; eauto.
       dostep_nary_eliml 1 1. eapply r_load_success; eauto.
       rewrite Hdesx.
-      dostep_nary 2. constructor; apply rs_relop.
+      dostep_nary 2. constructor; apply rs_relop=>//.
       dostep_nary 1. constructor; apply rs_if_false. rewrite uint63_nle_int64_nle; auto.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
       reduce_under_label. subst carryInstrsC0; apply Hmake_carry_red_C0.
@@ -887,7 +887,7 @@ Proof.
       dostep_nary_eliml 0 1. eapply r_local_get; eauto.
       dostep_nary_eliml 1 1. eapply r_load_success; eauto.
       rewrite Hdesx.
-      dostep_nary 2. constructor; apply rs_relop.
+      dostep_nary 2. constructor; apply rs_relop=>//.
       dostep_nary 1. constructor. apply rs_if_true. rewrite uint63_le_int64_le; auto. discriminate.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
       reduce_under_label. subst carryInstrsC0; apply Hmake_carry_red_C0.
@@ -921,7 +921,7 @@ Proof.
       dostep_nary_eliml 0 1. eapply r_local_get; eauto.
       dostep_nary_eliml 1 1. eapply r_load_success; eauto.
       rewrite Hdesx.
-      dostep_nary 2. constructor; apply rs_relop.
+      dostep_nary 2. constructor; apply rs_relop=>//.
       dostep_nary 1. constructor. apply rs_if_false. rewrite uint63_nle_int64_nle; auto.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
       reduce_under_label. subst carryInstrsC1; apply Hmake_carry_red_C1.
@@ -1039,7 +1039,7 @@ Proof.
       dostep_nary_eliml 0 1. eapply r_local_get; eauto.
       dostep_nary_eliml 1 1. eapply r_load_success; eauto.
       rewrite Hdesx.
-      dostep_nary 2. constructor; apply rs_relop.
+      dostep_nary 2. constructor; apply rs_relop=>//.
       dostep_nary 1. constructor. apply rs_if_true. rewrite uint63_lt_int64_lt; auto. discriminate.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
       reduce_under_label. subst carryInstrsC0; apply Hmake_carry_red_C0.
@@ -1074,7 +1074,7 @@ Proof.
       dostep_nary_eliml 0 1. eapply r_local_get; eauto.
       dostep_nary_eliml 1 1. eapply r_load_success; eauto.
       rewrite Hdesx.
-      dostep_nary 2. constructor; apply rs_relop.
+      dostep_nary 2. constructor; apply rs_relop=>//.
       dostep_nary 1. constructor. apply rs_if_false. rewrite uint63_nlt_int64_nlt; auto.
       dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); auto.
       reduce_under_label. subst carryInstrsC1; apply Hmake_carry_red_C1.
@@ -1167,7 +1167,8 @@ Proof.
   exists sr', m5.
   split. { (* make_product instructions reduce *)
     intros.
-    assert (HrewriteGmp : N_of_uint i32m (N_to_i32 gmp) = gmp) by now cbn; rewrite Int32.Z_mod_modulus_id;[now rewrite N2Z.id|lia].
+    assert (HrewriteGmp : N_of_uint i32m (N_to_i32 gmp) = gmp) by now cbn;
+      rewrite Int32.Z_mod_modulus_id;[now rewrite N2Z.id|lia].
     unfold make_product.
     separate_instr.
     dostep_nary 0. apply r_global_get; eassumption.
@@ -1187,17 +1188,20 @@ Proof.
     apply r_store_success; rewrite HrewriteGmp; cbn; eassumption.
     dostep_nary 0. apply r_global_get. apply HglobPres1, HglobPres2, HglobPres3, HglobPres4 in Hgmp. eassumption.
     dostep_nary_eliml 0 1. apply r_global_get. apply HglobPres1, HglobPres2, HglobPres3, HglobPres4 in Hgmp. eassumption.
-    dostep_nary_eliml 2 1. constructor. apply rs_binop_success. cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
+    dostep_nary_eliml 2 1. constructor. apply rs_binop_success; first done.
+    cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
     rewrite Int32.Z_mod_modulus_id. replace 8%Z with (Z.of_N 8) by now cbn. rewrite <-N2Z.inj_add. reflexivity.
     simpl_modulus; simpl_modulus_in HenoughMem; unfold page_size in *; cbn in *; lia.
     dostep_nary 2.
     apply r_store_success; rewrite HrewriteGmp; cbn; eassumption.
     dostep_nary 0. apply r_global_get. apply HglobPres1, HglobPres2, HglobPres3, HglobPres4, HglobPres5 in Hgmp. eassumption.
-    dostep_nary 2. constructor. apply rs_binop_success. cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
+    dostep_nary 2. constructor. apply rs_binop_success; first done.
+    cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
     rewrite Int32.Z_mod_modulus_id. replace 16%Z with (Z.of_N 16) by now cbn. rewrite <-N2Z.inj_add. reflexivity.
     simpl_modulus; simpl_modulus_in HenoughMem; unfold page_size in *; cbn in *; lia.
     dostep_nary_eliml 0 1. apply r_global_get. apply HglobPres1, HglobPres2, HglobPres3, HglobPres4, HglobPres5 in Hgmp. eassumption.
-    dostep_nary_eliml 2 1. constructor. apply rs_binop_success. cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
+    dostep_nary_eliml 2 1. constructor. apply rs_binop_success; first done.
+    cbn. unfold Int32.iadd, Int32.add, Int32.unsigned; cbn.
     rewrite Int32.Z_mod_modulus_id. replace 28%Z with (Z.of_N 28) by now cbn. rewrite <-N2Z.inj_add. reflexivity.
     simpl_modulus; simpl_modulus_in HenoughMem; unfold page_size in *; cbn in *; lia.
     dostep_nary_eliml 1 1. replace ($VN N_to_VAL_i32 (gmp + 28)) with ($V (VAL_num (N_to_VAL_i32 (gmp + 28)))) by now cbn.
@@ -1239,12 +1243,12 @@ Lemma apply_primop_only_defined_on_primInts :
 Proof.
   intros.
   unfold apply_LambdaANF_primInt_operator in H.
-  destruct vs=>//. destruct vs; destruct v0=>//; destruct p =>//; destruct x =>//.
+  destruct vs=>//. destruct vs, v0=>//; destruct p =>//; destruct x =>//.
   destruct H0=>//. now exists p.
-  destruct vs; destruct v1=>//; destruct p0 =>//; destruct x =>//.
+  destruct vs, v1=>//; destruct p0 =>//; destruct x =>//.
   destruct H0. now exists p. destruct H0. now exists p0. destruct H0.
-  destruct vs; destruct v0=>//; destruct p1 =>//; destruct x =>//.
-  destruct H0. now exists p. destruct H0. now exists p0. destruct H0. now exists p1. destruct H0.
+  destruct vs, v0=>//; destruct p1 =>//; destruct x =>//.
+  destruct H0. now exists p. destruct H0. now exists p0. destruct H0=>//. now exists p1.
 Qed.
 
 (* Well-formedness of the primitive function (and constructor) environment:
@@ -1377,7 +1381,7 @@ eapply rt_trans with (y:=(state, sr, fr, [AI_label 0 [:: AI_basic (BI_loop (BT_v
   simpl.
   separate_instr.
   dostep_nary' 0. eapply r_global_get; eauto.
-  dostep_nary' 2. constructor. apply rs_relop.
+  dostep_nary' 2. constructor. apply rs_relop=>//.
   dostep_nary' 1. constructor. apply rs_if_false.
   unfold Int32.ltu. cbn.
   rewrite Int32.Z_mod_modulus_id.
@@ -1431,7 +1435,8 @@ Proof.
   assert (Hival'' : sglob_val sr'' (f_inst fr) glob_cap = Some (VAL_num (VAL_int32 (Int32.repr (i + 1))))).
   by now eapply update_global_get_same; eauto.
   assert (HINV' : INV fenv nenv sr'' fr).
-  eapply update_global_preserves_INV; eauto. left; split; auto. apply cap_i32_glob. discriminate. now intro. now intro.
+  eapply update_global_preserves_INV; eauto. left; split; auto. apply cap_i32_glob=>//. discriminate.
+  now intro. now intro.
   exists sr''.
   split; auto.
   eapply rt_trans with (y:=(state, sr, fr, ([:: AI_label 0 [AI_basic (BI_loop (BT_valtype None)
@@ -1449,7 +1454,7 @@ Proof.
   remember (diveucl_21_loop_body glob_tmp1 glob_tmp2 glob_tmp3 glob_tmp4) as body.
   separate_instr.
   dostep_nary' 0. eapply r_global_get; eauto.
-  dostep_nary' 2. constructor. apply rs_relop.
+  dostep_nary' 2. constructor. apply rs_relop=>//.
   dostep_nary' 1. constructor. apply rs_if_true.
   unfold Int32.ltu. cbn. rewrite Int32.Z_mod_modulus_id.
   rewrite zlt_true. discriminate. lia. simpl_modulus. cbn. lia.
@@ -1464,7 +1469,7 @@ Proof.
   apply HredBody.
   separate_instr.
   dostep_nary' 0. eapply r_global_get; eauto.
-  dostep_nary' 2. constructor. apply rs_binop_success. cbn.
+  dostep_nary' 2. constructor. apply rs_binop_success; first done. cbn.
   unfold Int32.iadd, Int32.add. cbn. rewrite Int32.Z_mod_modulus_id.
   reflexivity. simpl_modulus. cbn. lia.
   dostep_nary' 1. eapply r_global_set'; eauto.
@@ -1606,22 +1611,21 @@ Proof.
                                    [:: BI_binop T_i64 (Binop_i BOI_sub)] ++ [:: BI_global_set glob_tmp1]) [::])])). {
     separate_instr.
     dostep_nary' 0. eapply r_global_get; eauto.
-    dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+    dostep_nary' 2. apply r_simple. apply rs_binop_success; first done. cbn.
     unfold Int64.ishl. unfold Int64.shl.
     rewrite Z.shiftl_mul_pow2.
     cbn. rewrite Int64.Z_mod_modulus_eq. rewrite int64_modulus_eq_pow64. reflexivity.
     by cbn.
     dostep_nary' 1. eapply r_global_set'; eauto.
     dostep_nary' 0. eapply r_global_get; eauto.
-    dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
-    unfold Int64.ishl. cbn. reflexivity.
+    dostep_nary' 2. apply r_simple. apply rs_binop_success=>//.
     dostep_nary_eliml 0 1. eapply r_global_get; eauto.
-    dostep_nary_eliml 2 1. apply r_simple. apply rs_binop_success. cbn.
+    dostep_nary_eliml 2 1. apply r_simple. apply rs_binop_success; first done. cbn.
     unfold Int64.ishr_u. unfold Int64.shru. simpl.
     rewrite Int64.Z_mod_modulus_eq.
     rewrite Z.shiftr_div_pow2.
     reflexivity. lia.
-    dostep_nary' 2. apply r_simple. apply rs_binop_success.
+    dostep_nary' 2. apply r_simple. apply rs_binop_success; first done.
     simpl. unfold Int64.ior.
     rewrite Int64.shifted_or_is_add. unfold two_p, two_power_pos. cbn.
     rewrite lt_pow64_mod_modulus_id. rewrite lt_pow64_mod_modulus_id.
@@ -1631,7 +1635,7 @@ Proof.
     rewrite int64_modulus_eq_pow64. lia. rewrite int64_modulus_eq_pow64. lia.
     dostep_nary' 1. eapply r_global_set'; eauto.
     dostep_nary' 0. eapply r_global_get; eauto.
-    dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+    dostep_nary' 2. apply r_simple. apply rs_binop_success; first done. cbn.
     unfold Int64.ishl. unfold Int64.shl. rewrite Z.shiftl_mul_pow2.
     cbn.
     rewrite Int64.Z_mod_modulus_id. reflexivity. rewrite int64_modulus_eq_pow64.
@@ -1705,25 +1709,16 @@ Proof.
     split. {
       eapply rt_trans with (y:=(state, s2, fr, ?[es])).
       apply Hred'.
-      dostep_nary' 2. apply r_simple. apply rs_relop.
+      dostep_nary' 2. apply r_simple. apply rs_relop=>//.
       dostep_nary' 1. apply r_simple. apply rs_if_false. cbn.
       unfold Int64.ltu. rewrite zlt_true. reflexivity.
       cbn. rewrite Int64.Z_mod_modulus_id. rewrite Int64.Z_mod_modulus_id. auto.
       rewrite int64_modulus_eq_pow64; lia. rewrite int64_modulus_eq_pow64; lia.
       dostep_nary' 0. eapply r_block with (t1s:=[::]) (t2s:=[:: ])(vs:=[::]); eauto.
       dostep_nary' 0. apply r_simple. apply rs_label_const; cbn; auto. apply rt_refl. }
-    split; auto.
-    split; auto.
-    split; auto.
-    split; auto.
-    split; auto.
+    do 5! (split; auto).
     {
-      split; auto.
-      split; auto.
-      split; auto.
-      split; auto.
-      split; auto.
-      split; auto. lia.
+      do 6! (split; auto). lia.
       split. split. lia. subst q1. replace (2^(i + 1))%Z with (2^i * 2)%Z. lia.
       rewrite Z.pow_add_r. reflexivity. lia. lia. split.
       subst xl1'. rewrite Hli4.
@@ -1772,7 +1767,7 @@ Proof.
     split. {
       eapply rt_trans with (y:=(state, s2, fr, ?[es])).
       apply Hred'.
-      dostep_nary' 2. apply r_simple. apply rs_relop.
+      dostep_nary' 2. apply r_simple. apply rs_relop=>//.
       dostep_nary' 1. apply r_simple. apply rs_if_true. cbn.
       unfold Int64.ltu. rewrite zlt_false. discriminate.
       cbn. rewrite Int64.Z_mod_modulus_id. rewrite Int64.Z_mod_modulus_id. auto. rewrite int64_modulus_eq_pow64. cbn in Hli1. lia. rewrite int64_modulus_eq_pow64. cbn in Hli1. lia.
@@ -1782,7 +1777,7 @@ Proof.
       apply reduce_trans_label0.
       separate_instr.
       dostep_nary' 0. eapply r_global_get; eauto.
-      dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+      dostep_nary' 2. apply r_simple. apply rs_binop_success; first done. cbn.
       unfold Int64.ior.
       replace (Int64.repr q1) with (Int64.shl (Int64.repr q0) (Int64.repr 1)).
       rewrite Int64.shifted_or_is_add. unfold two_p, two_power_pos. cbn.
@@ -1794,7 +1789,7 @@ Proof.
       dostep_nary' 1. replace (q0 * 2 + 1)%Z with q2 by auto. eapply r_global_set'; eauto.
       dostep_nary' 0. eapply r_global_get; eauto.
       dostep_nary_eliml 0 1. eapply r_global_get; eauto.
-      dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+      dostep_nary' 2. apply r_simple. apply rs_binop_success; first done. cbn.
       unfold Int64.isub. unfold Int64.sub.
       cbn. rewrite Int64.Z_mod_modulus_id. rewrite Int64.Z_mod_modulus_id. reflexivity.
       rewrite int64_modulus_eq_pow64. cbn in Hli1; lia.
@@ -1923,10 +1918,10 @@ Proof.
   dostep_nary 1. apply r_load_success with (m:=mem1); eassumption. rewrite Hdesx.
   dostep_nary_eliml 0 1. apply r_local_get. eassumption.
   dostep_nary_eliml 1 1. apply r_load_success with (m:=mem1); eassumption. rewrite Hdesy.
-  dostep_nary 2. apply r_simple. apply rs_binop_success. rewrite Happ. reflexivity.
+  dostep_nary 2. apply r_simple. apply rs_binop_success; first done. rewrite Happ. reflexivity.
   destruct mask.
   unfold bitmask_instrs.
-  dostep_nary 2. apply r_simple. apply rs_binop_success. simpl.
+  dostep_nary 2. apply r_simple. apply rs_binop_success; first done. simpl.
   rewrite (Hmaskt Logic.eq_refl). reflexivity.
   apply rt_refl.
   rewrite (Hmaskf Logic.eq_refl).
@@ -1936,7 +1931,7 @@ Proof.
   eapply update_memory_preserves_globals; eassumption.
   dostep_nary_eliml 0 1. apply r_global_get.
   eapply update_memory_preserves_globals; eassumption.
-  dostep_nary_eliml 2 1. apply r_simple. apply rs_binop_success. simpl. reflexivity.
+  dostep_nary_eliml 2 1. apply r_simple. apply rs_binop_success=>//.
   dostep_nary_eliml 1 1. apply r_global_set'. eassumption.
   apply rt_step. eapply r_local_set'=>//.
   now apply /ssrnat.leP.
@@ -1954,7 +1949,7 @@ Proof.
 
   have I := Hinv. destruct I as [_ [_ [_ [Hgmp_w [_ [Hmut [Hlinmem _]]]]]]].
   destruct Hlinmem as [Hmem1 [m [Hmem2 [size [<- [Hmem4 Hmem5]]]]]].
-  destruct (i32_glob_implies_i32_val _ _ _ gmp_i32_glob Hgmp_w Hmut) as [g' Hgmp].
+  destruct (i32_glob_implies_i32_val _ _ _ (gmp_i32_glob cenv fenv nenv penv) Hgmp_w Hmut) as [g' Hgmp].
   destruct (i32_exists_N g') as [gmp_v [-> HgmpBound]].
   have HenoughM' := HenoughM _ _ Hmem2 Hgmp HgmpBound.
 
@@ -2085,8 +2080,8 @@ Proof.
           apply store_length in Hm'. congruence. }
         assert (m.(meminst_type).(lim_max) = m'.(meminst_type).(lim_max)). {
           apply store_lim_max in Hm'. congruence. }
-        eapply update_mem_preserves_INV. apply Hinv. eassumption. erewrite <- H. lia.
-        congruence. exists (mem_size m); split; auto. unfold mem_size. congruence. reflexivity. }
+        eapply update_mem_preserves_INV; auto. apply Hinv. eassumption. erewrite <- H. lia.
+        congruence. exists (mem_size m); split; auto. unfold mem_size. congruence. }
       have I := Hinv'. destruct I as [_ [_ [_ [Hgmp_w' [_ [Hglob_mut [Hlinmem' [Hgmp' [_ [_ [_ [_ [_ [Hgmp_mult_two _]]]]]]]]]]]]]].
       destruct Hlinmem' as [Hmem1' [m'' [Hmem2' [size' [Hmem3' [Hmem4' Hmem5']]]]]].
       destruct (Hgmp_w' (VAL_int32 (Wasm_int.Int32.iadd (N_to_i32 gmp_v) (nat_to_i32 8)))) as [s_final Hupd_glob].
@@ -2127,7 +2122,7 @@ Proof.
 
       assert (Hinv_final : INV fenv nenv s_final fr). {
         eapply update_global_preserves_INV with (sr:=s') (i:=glob_mem_ptr) (num:=(VAL_int32 (N_to_i32 (gmp_v + 8)))); eauto.
-        left. split. apply gmp_i32_glob. now cbn. discriminate.
+        left. split. apply gmp_i32_glob; auto. now cbn. discriminate.
         now subst fr.
         move => _. intros.
         destruct Hgmp_mult_two with (gmp_v:=gmp_v) (m:=m') as [n0' Hn0]. assumption.
@@ -2157,7 +2152,7 @@ Proof.
 
       assert (Hinv_sr' : INV fenv nenv sr' fr). {
         eapply update_global_preserves_INV with (sr:=s') (i:=glob_mem_ptr) (num:=(VAL_int32 (N_to_i32 (gmp_v+8)))); eauto.
-        left. split. apply gmp_i32_glob. now cbn. discriminate.
+        left. split. apply gmp_i32_glob; auto. now cbn. discriminate.
         now subst fr.
         move => _.
         intros n0 [Heqn0 Hboundn0].
@@ -2349,17 +2344,17 @@ Proof.
       dostep_nary 0. eapply r_local_get; eassumption.
       dostep_nary 1. eapply r_load_success; eauto. rewrite <- Haddrx. simpl; eauto.
       replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Int64.repr (to_Z xp))) by now inversion Hloadx.
-      dostep_nary 1. apply r_simple. apply rs_unop.
+      dostep_nary 1. apply r_simple. apply rs_unop; first done.
       eapply rt_trans with (y:=(state, s, f, [ $VN VAL_int64 (Int64.repr (to_Z (head0 xp)))] ++ ?[es_after'])).
       destruct (Z.eq_dec (to_Z xp) (to_Z 0)) as [Heq0 | Hneq0].
-      dostep_nary 2. apply r_simple. apply rs_binop_success. simpl.
+      dostep_nary 2. apply r_simple. apply rs_binop_success; first done. simpl.
       unfold Int64.isub, Int64.sub. replace (Int64.unsigned (Int64.repr 1)) with 1%Z by now cbn.
       rewrite Heq0. replace (Int64.clz (Int64.repr (to_Z 0))) with (Int64.repr 64). simpl.
       replace (Int64.repr 63) with (Int64.repr (to_Z (head0 0))). reflexivity.
       rewrite head00_spec. unfold digits. reflexivity. reflexivity.
       rewrite to_Z_0. unfold Int64.clz. reflexivity. apply to_Z_inj in Heq0. rewrite Heq0.
       apply rt_refl.
-      dostep_nary 2. apply r_simple. apply rs_binop_success. simpl.
+      dostep_nary 2. apply r_simple. apply rs_binop_success; first done. simpl.
       unfold Int64.isub, Int64.sub. replace (Int64.unsigned (Int64.repr 1)) with 1%Z by now cbn.
       rewrite to_Z_0 in Hneq0. rewrite <-head0_int64_clz. reflexivity. have Hboundedx := (to_Z_bounded xp). lia.
       apply rt_refl. apply rt_refl.
@@ -2400,7 +2395,7 @@ Proof.
       dostep_nary 0. eapply r_local_get; eassumption.
       dostep_nary 1. eapply r_load_success; eauto. rewrite <- Haddrx. simpl; eauto.
       replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Int64.repr (to_Z xp))) by now inversion Hloadx.
-      dostep_nary' 1. apply r_simple. apply rs_unop. unfold app_unop. simpl.
+      dostep_nary' 1. apply r_simple. apply rs_unop; first done.
       apply rt_refl.
       dostep_nary 0. apply r_simple. apply rs_label_const; auto.
       rewrite tail0_int64_ctz; eauto.
@@ -2471,8 +2466,8 @@ Proof.
           apply store_length in Hm'. congruence. }
         assert (m.(meminst_type).(lim_max) = m'.(meminst_type).(lim_max)). {
           apply store_lim_max in Hm'. congruence. }
-        eapply update_mem_preserves_INV. apply Hinv. eassumption. erewrite <- H2. lia.
-        congruence. exists (mem_size m); split; auto. unfold mem_size. congruence. reflexivity. }
+        eapply update_mem_preserves_INV; auto. apply Hinv. eassumption. erewrite <- H2. lia.
+        congruence. exists (mem_size m); split; auto. unfold mem_size. congruence. }
       have I := Hinv'. destruct I as [_ [_ [_ [Hgmp_w' [_ [Hglob_mut [Hlinmem' [Hgmp' [_ [_ [_ [_ [_ [Hgmp_mult_two]]]]]]]]]]]]]].
       destruct Hlinmem' as [Hmem1' [m'' [Hmem2' [size' [Hmem3' [Hmem4' Hmem5']]]]]].
       destruct (Hgmp_w' (VAL_int32 (Wasm_int.Int32.iadd (N_to_i32 gmp_v) (nat_to_i32 8)))) as [s_final Hupd_glob].
@@ -2513,7 +2508,7 @@ Proof.
 
       assert (Hinv_final : INV fenv nenv s_final fr). {
         eapply update_global_preserves_INV with (sr:=s') (i:=glob_mem_ptr) (num:=(VAL_int32 (N_to_i32 (gmp_v + 8)))); eauto.
-        left. split. apply gmp_i32_glob. now cbn. discriminate.
+        left. split. apply gmp_i32_glob; auto. now cbn. discriminate.
         now subst fr.
         move => _. intros.
         destruct Hgmp_mult_two with (gmp_v:=gmp_v) (m:=m') as [n0' Hn0]. assumption.
@@ -2543,7 +2538,7 @@ Proof.
 
       assert (Hinv_sr' : INV fenv nenv sr' fr). {
         eapply update_global_preserves_INV with (sr:=s') (i:=glob_mem_ptr) (num:=(VAL_int32 (N_to_i32 (gmp_v+8)))); eauto.
-        left. split. apply gmp_i32_glob. now cbn. discriminate.
+        left. split. apply gmp_i32_glob; auto. reflexivity. discriminate.
         now subst fr.
         move => _.
         intros n0 [Heqn0 Hboundn0].
@@ -3118,7 +3113,7 @@ Proof.
         reduce_under_label.
         apply HloadStep'.
         reduce_under_label.
-        apply rt_step. constructor; apply rs_binop_success. simpl.
+        apply rt_step. constructor. apply rs_binop_success; first done. simpl.
         rewrite uint63_div_i64_div; simpl; auto.
         dostep_nary_eliml 0 1. constructor; apply rs_label_const; auto.
         dostep_nary 2. eapply r_store_success.
@@ -3157,8 +3152,9 @@ Proof.
         reduce_under_label.
         apply HloadStep'.
         reduce_under_label.
-        apply rt_step. constructor; apply rs_binop_success; simpl; rewrite uint63_mod_i64_mod; simpl; auto.
-        dostep_nary_eliml 0 1. constructor; apply rs_label_const; auto.
+        apply rt_step. constructor. apply rs_binop_success; first done.
+          cbn. now rewrite uint63_mod_i64_mod.
+        dostep_nary_eliml 0 1. constructor. now apply rs_label_const.
         dostep_nary 2. eapply r_store_success.
         eassumption.
         eassumption. } }
@@ -3174,7 +3170,7 @@ Proof.
         apply app_trans_const; auto.
         destruct (Z_lt_dec (to_Z n2) (to_Z 63)).
         { (* n2 < 63 *)
-          dostep_nary_eliml 2 1. constructor; apply rs_relop.
+          dostep_nary_eliml 2 1. constructor. apply rs_relop=>//.
           dostep_nary_eliml 1 1. constructor; apply rs_if_true; unfold wasm_bool.
           replace (Z_to_i64 63) with (Z_to_i64 (to_Z 63)) by now cbn.
           rewrite uint63_lt_int64_lt; auto. discriminate.
@@ -3187,12 +3183,12 @@ Proof.
           reduce_under_label.
           apply rt_step. constructor; apply rs_binop_success; reflexivity. cbn.
           rewrite uint63_lsl_i64_shl; simpl; auto.
-          dostep_nary_eliml 0 1. constructor; apply rs_label_const; auto.
+          dostep_nary_eliml 0 1. constructor. apply rs_label_const; auto.
           dostep_nary 2. eapply r_store_success.
           eassumption.
           eassumption. }
         { (* n2 <= 63 *)
-          dostep_nary_eliml 2 1. constructor; apply rs_relop.
+          dostep_nary_eliml 2 1. constructor. apply rs_relop=>//.
           dostep_nary_eliml 1 1. constructor; apply rs_if_false; unfold wasm_bool.
           replace (Z_to_i64 63) with (Z_to_i64 (to_Z 63)) by now cbn.
           rewrite uint63_nlt_int64_nlt; auto.
@@ -3213,7 +3209,7 @@ Proof.
         apply app_trans_const; auto.
         destruct (Z_lt_dec (to_Z n2) (to_Z 63)).
         { (* n2 < 63 *)
-          dostep_nary_eliml 2 1. constructor; apply rs_relop.
+          dostep_nary_eliml 2 1. constructor. apply rs_relop=>//.
           dostep_nary_eliml 1 1. constructor; apply rs_if_true; unfold wasm_bool.
           replace (Z_to_i64 63) with (Z_to_i64 (to_Z 63)) by now cbn.
           rewrite uint63_lt_int64_lt; auto. discriminate.
@@ -3222,14 +3218,14 @@ Proof.
           reduce_under_label.
           apply HloadStep'.
           reduce_under_label.
-          apply rt_step. constructor; apply rs_binop_success. simpl.
+          apply rt_step. constructor; apply rs_binop_success; first done. simpl.
           rewrite uint63_lsr_i64_shr; simpl; auto.
           dostep_nary_eliml 0 1. constructor; apply rs_label_const; auto.
           dostep_nary 2. eapply r_store_success.
           eassumption.
           eassumption. }
         { (* n2 <= 63 *)
-          dostep_nary_eliml 2 1. constructor; apply rs_relop.
+          dostep_nary_eliml 2 1. constructor; apply rs_relop; first done.
           dostep_nary_eliml 1 1. constructor; apply rs_if_false; unfold wasm_bool.
           replace (Z_to_i64 63) with (Z_to_i64 (to_Z 63)) by now cbn.
           rewrite uint63_nlt_int64_nlt; auto.
@@ -3279,8 +3275,8 @@ Proof.
             separate_instr.
             eapply rt_trans.
             apply HloadStep'.
-            dostep_nary 2. constructor; apply rs_relop.
-            dostep_nary 1. constructor; apply rs_if_true; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            dostep_nary 1. constructor. apply rs_if_true.
             rewrite uint63_eq_int64_eq; [discriminate|now rewrite e0].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
@@ -3306,8 +3302,8 @@ Proof.
             separate_instr.
             eapply rt_trans.
             apply HloadStep'.
-            dostep_nary 2. constructor; apply rs_relop.
-            dostep_nary 1. constructor; apply rs_if_false; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            dostep_nary 1. constructor. apply rs_if_false.
             rewrite uint63_neq_int64_neq; [reflexivity|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
@@ -3336,8 +3332,8 @@ Proof.
             separate_instr.
             eapply rt_trans.
             apply HloadStep'.
-            dostep_nary 2. constructor; apply rs_relop.
-            dostep_nary 1. constructor; apply rs_if_true; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            dostep_nary 1. constructor. apply rs_if_true.
             rewrite uint63_lt_int64_lt; [discriminate|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
@@ -3363,8 +3359,8 @@ Proof.
             separate_instr.
             eapply rt_trans.
             apply HloadStep'.
-            dostep_nary 2. constructor; apply rs_relop.
-            dostep_nary 1. constructor; apply rs_if_false; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            dostep_nary 1. constructor. apply rs_if_false.
             rewrite uint63_nlt_int64_nlt; [reflexivity|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
@@ -3393,8 +3389,8 @@ Proof.
             separate_instr.
             eapply rt_trans.
             apply HloadStep'.
-            dostep_nary 2. constructor; apply rs_relop.
-            dostep_nary 1. constructor; apply rs_if_true; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            dostep_nary 1. constructor. apply rs_if_true.
             rewrite uint63_le_int64_le; [discriminate|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
@@ -3420,8 +3416,8 @@ Proof.
             separate_instr.
             eapply rt_trans.
             apply HloadStep'.
-            dostep_nary 2. constructor; apply rs_relop.
-            dostep_nary 1. constructor; apply rs_if_false; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            dostep_nary 1. constructor. apply rs_if_false.
             rewrite uint63_nle_int64_nle; [reflexivity|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             dostep_nary 0. constructor; apply rs_label_const; auto.
@@ -3455,11 +3451,11 @@ Proof.
             separate_instr.
             eapply rt_trans.
             apply HloadStep'.
-            dostep_nary 2. constructor; apply rs_relop.
-            dostep_nary 1. constructor; apply rs_if_true; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            dostep_nary 1. constructor. apply rs_if_true; unfold wasm_bool.
             rewrite uint63_lt_int64_lt;[discriminate|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
-            dostep_nary 0. constructor; apply rs_label_const; auto.
+            dostep_nary 0. constructor. apply rs_label_const; auto.
             replace [:: $VN VAL_int32 (Wasm_int.Int32.repr 3)] with [:: $V VAL_num (VAL_int32 (wasm_value_to_i32 wal))]; auto.
             inv HreprVal; try discriminate.
             - now replace ord with 1%N by congruence.
@@ -3491,16 +3487,16 @@ Proof.
             separate_instr.
             eapply rt_trans.
             apply HloadStep'.
-            dostep_nary 2. constructor; apply rs_relop.
-            dostep_nary 1. constructor; apply rs_if_false; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            dostep_nary 1. constructor. apply rs_if_false; unfold wasm_bool.
             rewrite uint63_nlt_int64_nlt;[reflexivity|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             rewrite catA.
             reduce_under_label.
             apply HloadStep'.
             reduce_under_label.
-            dostep_nary 2. constructor; apply rs_relop.
-            apply rt_step. constructor; apply rs_if_true; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            apply rt_step. constructor. apply rs_if_true; unfold wasm_bool.
             cbn; rewrite uint63_eq_int64_eq;[discriminate|assumption].
             reduce_under_label.
             apply rt_step. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
@@ -3534,8 +3530,8 @@ Proof.
             separate_instr.
             eapply rt_trans.
             apply HloadStep'.
-            dostep_nary 2. constructor; apply rs_relop.
-            dostep_nary 1. constructor; apply rs_if_false; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            dostep_nary 1. constructor. apply rs_if_false; unfold wasm_bool.
             rewrite uint63_nlt_int64_nlt;[reflexivity|assumption].
             dostep_nary 0. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
             separate_instr.
@@ -3543,8 +3539,8 @@ Proof.
             reduce_under_label.
             apply HloadStep'.
             reduce_under_label.
-            dostep_nary 2. constructor; apply rs_relop.
-            apply rt_step. constructor; apply rs_if_false; unfold wasm_bool.
+            dostep_nary 2. constructor. apply rs_relop=>//.
+            apply rt_step. constructor. apply rs_if_false; unfold wasm_bool.
             cbn. rewrite uint63_neq_int64_neq;[reflexivity|assumption].
             reduce_under_label.
             apply rt_step. eapply r_block with (t1s:=[::]) (t2s:=[:: T_num T_i32])(vs:=[::]); eauto.
@@ -3555,14 +3551,14 @@ Proof.
             inv HreprVal; try (replace t with gt_tag in *; [rewrite Hgt_arr in H7; inv H7; lia|congruence]); try discriminate.
             now replace ord with 2%N by congruence.
           }
-          try repeat (split; auto). subst fr; auto.
+          repeat (split; auto). subst fr; auto.
 
           (* minimum mem *)
           intros ?????.
           solve_eq m m0.
           solve_eq gmp gmp_v. lia.
 
-          exists wal; auto. } } }
+          now exists wal. } } }
     - { (* addc
            TODO: reduce duplication *)
         inversion H1; subst x1 y0.
@@ -3958,7 +3954,7 @@ Proof.
           dostep_nary_eliml 1 1. eapply r_load_success; eauto.
           rewrite Hbsy.
           dostep_nary_eliml 2 1. apply low32step; auto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite max32bit_mul_modulo64_id; try apply low32_max_int32. reflexivity.
           dostep_nary 1. eapply r_global_set'; eauto.
           dostep_nary 0. eapply r_local_get; eauto.
@@ -3969,7 +3965,7 @@ Proof.
           dostep_nary_eliml 1 1. eapply r_load_success; eauto.
           rewrite Hbsy.
           dostep_nary_eliml 2 1. apply low32step; auto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite max32bit_mul_modulo64_id; try apply low32_max_int32. reflexivity.
           unfold hi. apply high32_max_int32; auto.
           dostep_nary 1. eapply r_global_set'; eauto.
@@ -3981,7 +3977,7 @@ Proof.
           dostep_nary_eliml 1 1. eapply r_load_success; eauto.
           rewrite Hbsy.
           dostep_nary_eliml 2 1. apply high32step; auto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite max32bit_mul_modulo64_id; try apply low32_max_int32. reflexivity.
           unfold hi. apply high32_max_int32; auto.
           dostep_nary 1. eapply r_global_set'; eauto.
@@ -3993,22 +3989,22 @@ Proof.
           dostep_nary_eliml 1 1. eapply r_load_success; eauto.
           rewrite Hbsy.
           dostep_nary_eliml 2 1. apply high32step; auto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite max32bit_mul_modulo64_id; auto.
           unfold hi; apply high32_max_int32; auto. unfold hi; apply high32_max_int32; auto.
           dostep_nary 1. eapply r_global_set'; eauto.
           dostep_nary 0. eapply r_global_get; eauto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite int64_high32; auto. have Hb := lo_lo_product_63bit _ _ Hb1 Hb2; lia.
           replace ((lo (to_Z n1) * lo (to_Z n2))%Z / 2^32)%Z with (hi (lo (to_Z n1) * lo (to_Z n2))%Z) by auto.
           dostep_nary_eliml 0 1. eapply r_global_get; eauto.
-          dostep_nary_eliml 2 1. constructor. apply rs_binop_success. cbn.
+          dostep_nary_eliml 2 1. constructor. apply rs_binop_success; first done. cbn.
           rewrite int64_low32'; auto. have Hb := hi_lo_product_63bit _ _ Hb1 Hb2; lia.
           replace ((hi (to_Z n1) * lo (to_Z n2))%Z mod 2^32)%Z with (lo ((hi (to_Z n1) * lo (to_Z n2))%Z)) by auto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite sum1_i64; auto.
           dostep_nary_eliml 0 1. eapply r_global_get; eauto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite cross_i64; auto.
           replace (hi (lo (to_Z n1) * lo (to_Z n2))%Z + lo (hi (to_Z n1) * lo (to_Z n2))%Z + (lo (to_Z n1) * hi (to_Z n2))%Z)%Z with crs.
           dostep_nary 1. eapply r_global_set'; eauto.
@@ -4018,15 +4014,15 @@ Proof.
           dostep_nary_eliml 0 1. eapply r_global_get; eauto.
           dostep_nary_eliml 2 1. apply high32step; auto.
           have Hb := cross_range _ _ Hb1 Hb2. lia.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite Hcrs. rewrite sum2_i64; auto.
           dostep_nary_eliml 0 1. eapply r_global_get; eauto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite upper_i64; auto.
           replace (hi (hi (to_Z n1) * lo (to_Z n2))%Z + hi (cross (to_Z n1) (to_Z n2)) + (hi (to_Z n1) * hi (to_Z n2))%Z)%Z with hi64.
           dostep_nary 1. eapply r_global_set'; eauto.
           dostep_nary 0. eapply r_global_get; eauto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           unfold Int64.ishl.
           replace (Int64.unsigned (Z_to_i64 32)) with 32%Z by now cbn.
           replace (32 mod Int64.wordsize)%Z with 32%Z by now cbn.
@@ -4034,22 +4030,22 @@ Proof.
           dostep_nary_eliml 0 1. eapply r_global_get; eauto.
           dostep_nary_eliml 2 1. apply low32step.
           have Hb := lo_lo_product_63bit _ _ Hb1 Hb2; lia.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite Hcrs. rewrite lower_or_i64; auto.
           replace (cross (to_Z n1) (to_Z n2) * 2 ^ 32 + lo (lo (to_Z n1) * lo (to_Z n2))%Z)%Z with lo64.
           dostep_nary 1. eapply r_global_set'; eauto.
           dostep_nary 0. eapply r_global_get; eauto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite Hhi64. rewrite upper_shifted_i64; auto.
           dostep_nary_eliml 0 1. eapply r_global_get; eauto.
-          dostep_nary_eliml 2 1. constructor. apply rs_binop_success. cbn.
+          dostep_nary_eliml 2 1. constructor. apply rs_binop_success; first done. cbn.
           rewrite Hlo64. rewrite lower_shifted_i64; auto.
-          dostep_nary 2. constructor. apply rs_binop_success.
+          dostep_nary 2. constructor. apply rs_binop_success; first done.
           cbn. rewrite upper63_i64; auto.
           replace (upper (to_Z n1) (to_Z n2) * 2 + lower (to_Z n1) (to_Z n2) mod 2 ^ 64 / 2 ^ 63)%Z with hi63.
           dostep_nary 1. eapply r_global_set'; eauto.
           dostep_nary 0. eapply r_global_get; eauto.
-          dostep_nary 2. constructor. apply rs_binop_success. cbn.
+          dostep_nary 2. constructor. apply rs_binop_success; first done. cbn.
           rewrite int64_bitmask_modulo.
           replace (lo64 mod wB)%Z with lo63; auto.
           rewrite Hlo63 Hlo64. reflexivity.
@@ -4264,7 +4260,7 @@ Proof.
               dostep_nary' 1. eapply r_load_success; eauto. rewrite Hbsx.
               dostep_nary_eliml 0 1. eapply r_local_get; eauto.
               dostep_nary_eliml 1 1. eapply r_load_success; eauto. rewrite Hbsy.
-              dostep_nary' 2. constructor. apply rs_binop_success. simpl.
+              dostep_nary' 2. constructor. apply rs_binop_success; first done. simpl.
               rewrite uint63_div_i64_div; simpl; auto.
               rewrite Hfst in HupdGlob1.
               dostep_nary' 1. eapply r_global_set'; eauto.
@@ -4272,7 +4268,7 @@ Proof.
               dostep_nary' 1. eapply r_load_success; eauto. rewrite Hbsx.
               dostep_nary_eliml 0 1. eapply r_local_get; eauto.
               dostep_nary_eliml 1 1. eapply r_load_success; eauto. rewrite Hbsy.
-              dostep_nary' 2. constructor. apply rs_binop_success. simpl.
+              dostep_nary' 2. constructor. apply rs_binop_success; first done. simpl.
               rewrite uint63_mod_i64_mod; simpl; auto.
               rewrite Hsnd in HupdGlob2.
               dostep_nary' 1. eapply r_global_set'; eauto.
@@ -4645,7 +4641,7 @@ Proof.
           dostep_nary_eliml 0 1.  eapply r_local_get; eauto.
           dostep_nary_eliml 1 1. eapply r_load_success; eauto.
           rewrite <-Haddr1. simpl. apply Hload1'. replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Int64.repr (to_Z xh))) by congruence.
-          dostep_nary 2. apply r_simple. apply rs_relop. simpl.
+          dostep_nary 2. apply r_simple. apply rs_relop; first done. simpl.
           dostep_nary 1. apply r_simple. apply rs_if_true. simpl.
           unfold Int64.ltu. rewrite zlt_false. discriminate.
           rewrite uint63_unsigned_id uint63_unsigned_id. lia.
@@ -4690,7 +4686,7 @@ Proof.
         have Hs4m := update_global_preserves_memory _ _ _ _ _ Hupd4. symmetry in Hs4m. rewrite Hs3m in Hs4m.
         have : INV fenv nenv s4 f.
         eapply update_global_preserves_INV with (sr:=s3) (i:=glob_cap) (num:=VAL_int32 (Int32.repr 0)); eauto.
-        left; split; auto. apply cap_i32_glob. discriminate. now intros. now intros.
+        left; split; auto. apply cap_i32_glob; auto. discriminate. now intros. now intros.
         intro HINV4.
         have : (sglob_val s4 (f_inst f) glob_tmp1 = Some (VAL_num (VAL_int64 (Int64.repr (to_Z xh))))).
         eapply update_global_get_other with (sr:=s3) (j:=glob_cap); eauto. discriminate.
@@ -4782,7 +4778,7 @@ Proof.
           dostep_nary_eliml 0 1.  eapply r_local_get; eauto.
           dostep_nary_eliml 1 1. eapply r_load_success; eauto.
           rewrite <-Haddr1. simpl. apply Hload1'. replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Int64.repr (to_Z xh))) by congruence.
-          dostep_nary 2. apply r_simple. apply rs_relop. simpl.
+          dostep_nary 2. apply r_simple. apply rs_relop; first done. simpl.
           dostep_nary 1. apply r_simple. apply rs_if_false. simpl.
           unfold Int64.ltu. rewrite zlt_true. reflexivity.
           rewrite uint63_unsigned_id uint63_unsigned_id. lia.
@@ -4877,8 +4873,8 @@ Proof.
           apply store_length in Hm'. congruence. }
         assert (m.(meminst_type).(lim_max) = m'.(meminst_type).(lim_max)). {
           apply store_lim_max in Hm'. congruence. }
-        eapply update_mem_preserves_INV. apply Hinv. eassumption. erewrite <- H. lia.
-        congruence. exists (mem_size m); split; auto. unfold mem_size. congruence. reflexivity. }
+        eapply update_mem_preserves_INV; auto. apply Hinv. eassumption. erewrite <- H. lia.
+        congruence. exists (mem_size m); split; auto. unfold mem_size. congruence. }
       have I := Hinv'. destruct I as [_ [_ [_ [Hgmp_w' [_ [Hglob_mut [Hlinmem' [Hgmp' [_ [_ [_ [_ [_ [Hgmp_mult_two _]]]]]]]]]]]]]].
       destruct Hlinmem' as [Hmem1' [m'' [Hmem2' [size' [Hmem3' [Hmem4' Hmem5']]]]]].
       destruct (Hgmp_w' (VAL_int32 (Wasm_int.Int32.iadd (N_to_i32 gmp_v) (nat_to_i32 8)))) as [s_final Hupd_glob].
@@ -4919,7 +4915,7 @@ Proof.
 
       assert (Hinv_final : INV fenv nenv s_final fr). {
         eapply update_global_preserves_INV with (sr:=s') (i:=glob_mem_ptr) (num:=(VAL_int32 (N_to_i32 (gmp_v + 8)))); eauto.
-        left. split. apply gmp_i32_glob. now cbn. discriminate.
+        left. split. apply gmp_i32_glob; auto. now cbn. discriminate.
         now subst fr.
         move => _. intros.
         destruct Hgmp_mult_two with (gmp_v:=gmp_v) (m:=m') as [n0' Hn0]. assumption.
@@ -4949,7 +4945,7 @@ Proof.
 
       assert (Hinv_sr' : INV fenv nenv sr' fr). {
         eapply update_global_preserves_INV with (sr:=s') (i:=glob_mem_ptr) (num:=(VAL_int32 (N_to_i32 (gmp_v+8)))); eauto.
-        left. split. apply gmp_i32_glob. now cbn. discriminate.
+        left. split. apply gmp_i32_glob; auto. now cbn. discriminate.
         now subst fr.
         move => _.
         intros n0 [Heqn0 Hboundn0].
@@ -5092,7 +5088,7 @@ Proof.
         with (y:=(state, sr', f, [$V VAL_num (VAL_int32 (N_to_i32 gmp_v))] ++ [AI_basic (BI_local_set x0')])).
       eapply app_trans_const; auto.
       dostep_nary 0. apply r_global_get; eassumption.
-      dostep_nary 2. constructor; apply rs_binop_success; reflexivity.
+      dostep_nary 2. constructor; apply rs_binop_success; first done; reflexivity.
       cbn; unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add; cbn.
       rewrite Wasm_int.Int32.Z_mod_modulus_id. 2: lia.
       dostep_nary 1. rewrite N2Z.inj_add in Hglob_sr'. eapply r_global_set'; eauto.
@@ -5153,7 +5149,7 @@ Proof.
         by destruct (to_Z_bounded n3). lia.
         assert ((to_Z n3) / 2^(to_Z 63 - to_Z n1) < Int64.modulus)%Z.
         rewrite int64_modulus_eq_pow64. unfold wB in Hn1bounded. cbn in Hn1bounded. lia.
-        dostep_nary 2. apply r_simple. apply rs_relop.
+        dostep_nary 2. apply r_simple. apply rs_relop=>//.
         dostep_nary 1. apply r_simple. apply rs_if_false.
         assert (~ (to_Z 63 < to_Z n1)%Z).
         replace (to_Z 63) with 63%Z.
@@ -5174,7 +5170,7 @@ Proof.
         dostep_nary_eliml 1 1. eapply r_load_success; eauto.
         rewrite <-Haddr1. simpl. apply Hload1'.
         replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Int64.repr (to_Z n1))) by now inversion Hload1.
-        dostep_nary 2. apply r_simple. apply rs_binop_success.
+        dostep_nary 2. apply r_simple. apply rs_binop_success; first done.
         simpl. reflexivity.
         dostep_nary_eliml 0 1. eapply r_local_get; eauto.
         dostep_nary_eliml 1 1. eapply r_load_success; eauto.
@@ -5184,14 +5180,14 @@ Proof.
         dostep_nary_eliml 1 3. eapply r_load_success; eauto.
         rewrite <-Haddr1. simpl. apply Hload1'.
         replace (wasm_deserialise b0 T_i64) with (VAL_int64 (Int64.repr (to_Z n1))) by now inversion Hload1.
-        dostep_nary_eliml 2 2. apply r_simple. apply rs_binop_success.
+        dostep_nary_eliml 2 2. apply r_simple. apply rs_binop_success; first done.
         simpl. unfold Int64.isub, Int64.sub. replace 63%Z with (to_Z 63) by now cbn.
         rewrite uint63_unsigned_id. rewrite uint63_unsigned_id. reflexivity.
-        dostep_nary_eliml 2 1. apply r_simple. apply rs_binop_success.
+        dostep_nary_eliml 2 1. apply r_simple. apply rs_binop_success; first done.
         simpl. unfold Int64.ishr_u. unfold Int64.shru.
         rewrite H6. rewrite H5. rewrite H6. rewrite uint63_unsigned_id.
         rewrite Z.shiftr_div_pow2. reflexivity. lia.
-        dostep_nary' 2. apply r_simple. apply rs_binop_success. cbn.
+        dostep_nary' 2. apply r_simple. apply rs_binop_success; first done. cbn.
         unfold Int64.ishl. rewrite uint63_unsigned_id. rewrite H4.
         unfold Int64.ior. rewrite Int64.shifted_or_is_add.
         reflexivity. unfold Int64.zwordsize. unfold Int64.wordsize, Integers.Wordsize_64.wordsize. lia.
@@ -5200,7 +5196,7 @@ Proof.
         replace (2^(to_Z 63))%Z with wB by now cbn. by destruct (to_Z_bounded n3).
         lia. lia. cbn. rewrite Int64.Z_mod_modulus_id.
         apply Z.div_lt_upper_bound. lia. lia. lia.
-        dostep_nary' 2. apply r_simple. apply rs_binop_success.
+        dostep_nary' 2. apply r_simple. apply rs_binop_success; first done.
         simpl. rewrite int64_bitmask_modulo.
         rewrite uint63_mod_modulus_id.
         rewrite Int64.Z_mod_modulus_id.
@@ -5212,7 +5208,7 @@ Proof.
         lia.
         apply rt_refl.
         dostep_nary 0. apply  r_simple. apply rs_label_const; auto. apply rt_refl. }
-      dostep_nary 2. apply r_simple. apply rs_relop.
+      dostep_nary 2. apply r_simple. apply rs_relop=>//.
       dostep_nary 1. apply r_simple. apply rs_if_true.
       assert (to_Z 63 < to_Z n1)%Z. replace (to_Z 63) with 63%Z by now cbn.
       lia. replace 63%Z with (to_Z 63) by reflexivity.
@@ -5255,7 +5251,6 @@ Proof.
       dostep_nary' 2. eapply r_store_success; eauto.
       apply Hstep. } }
 Qed.
-
 
 
 End PRIMITIVE_TRANSLATION_CORRECT.
