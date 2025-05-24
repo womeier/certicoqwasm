@@ -1414,7 +1414,7 @@ Proof with eauto.
     assert (Hlen: i < Datatypes.length ([seq (VAL_num (N_to_value a)) | a <- args]
                                         ++ repeat (VAL_num (nat_to_value 0)) n)). {
       apply nth_error_Some. congruence. }
-    rewrite app_length length_is_size size_map -length_is_size repeat_length in Hlen.
+    rewrite length_app length_is_size size_map -length_is_size repeat_length in Hlen.
     rewrite nth_error_app2 in H0. 2: {
       now rewrite length_is_size size_map -length_is_size. }
     have H' := H0.
@@ -4893,9 +4893,9 @@ Proof with eauto.
           @repr_var nenv (create_local_variable_mapping (xs ++ collect_local_variables e)) var varIdx ->
            N.to_nat varIdx < Datatypes.length (f_locs f_before_IH))). {
       intros ?? Hvar. subst f_before_IH. cbn. inv Hvar. apply var_mapping_list_lt_length in H1.
-      rewrite app_length in H1. apply const_val_list_length_eq in HfargsRes.
-      rewrite app_length. rewrite map_length -HfargsRes.
-      rewrite map_repeat_eq. rewrite map_length. apply set_lists_length_eq in H2.
+      rewrite length_app in H1. apply const_val_list_length_eq in HfargsRes.
+      rewrite length_app. rewrite length_map -HfargsRes.
+      rewrite map_repeat_eq. rewrite length_map. apply set_lists_length_eq in H2.
       now rewrite -H2.
     }
 
@@ -5075,14 +5075,14 @@ Proof with eauto.
 
     dostep'. eapply r_return_invoke with (a:=fidx); try eassumption; try reflexivity.
     apply map_const_const_list.
-    rewrite map_length repeat_length.
+    rewrite length_map repeat_length.
     apply const_val_list_length_eq in HfargsRes.
     apply set_lists_length_eq in H2. rewrite H2. symmetry. assumption.
 
     dostep'.
     eapply r_invoke_native with (vs:= map (fun a => VAL_num (N_to_value a)) args); try eassumption; try reflexivity.
     - unfold v_to_e_list. by rewrite -map_map_seq.
-    - rewrite repeat_length map_length. apply const_val_list_length_eq in HfargsRes.
+    - rewrite repeat_length length_map. apply const_val_list_length_eq in HfargsRes.
       apply set_lists_length_eq in H2. rewrite H2. assumption.
     - by apply default_vals_i32_Some.
     (* apply IH *)
@@ -5175,9 +5175,9 @@ Proof with eauto.
     assert (HlocInBound_before_IH: (forall (var : positive) (varIdx : localidx),
           @repr_var nenv (create_local_variable_mapping (xs ++ collect_local_variables e_body)) var varIdx -> N.to_nat varIdx < Datatypes.length (f_locs f_before_IH))). {
       intros ?? Hvar. subst f_before_IH. cbn. inv Hvar. apply var_mapping_list_lt_length in H1.
-      rewrite app_length in H1. apply const_val_list_length_eq in HfargsRes.
-      rewrite app_length. rewrite map_length -HfargsRes.
-      rewrite map_repeat_eq. rewrite map_length. apply set_lists_length_eq in H2.
+      rewrite length_app in H1. apply const_val_list_length_eq in HfargsRes.
+      rewrite length_app. rewrite length_map -HfargsRes.
+      rewrite map_repeat_eq. rewrite length_map. apply set_lists_length_eq in H2.
       now rewrite -H2.
     }
 
@@ -5615,7 +5615,7 @@ Proof with eauto.
     reflexivity. reflexivity.
     unfold v_to_e_list. now rewrite -map_map_seq.
     reflexivity. reflexivity.
-    { rewrite repeat_length map_length.
+    { rewrite repeat_length length_map.
     apply const_val_list_length_eq in HfargsRes.
     apply set_lists_length_eq in H2. rewrite H2. assumption. }
     reflexivity. cbn. apply default_vals_i32_Some.
