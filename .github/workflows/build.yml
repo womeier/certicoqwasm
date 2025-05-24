@@ -18,7 +18,7 @@ jobs:
         opam_file:
           - 'coq-certicoq.opam'
         image:
-          - 'mattam82/metacoq:metacoq-1.3.2-coq-8.19'
+          - 'mattam82/metacoq:metacoq-1.3.4-coq-8.20'
       fail-fast: false  # don't stop jobs if one fails
     steps:
       - uses: actions/checkout@v3
@@ -31,6 +31,9 @@ jobs:
           before_install: | # comment back in if MetaCoq commit changes
             startGroup "fix permission issues"
               sudo chown -R coq:coq .
+
+              # remove once proper docker image exists
+              opam pin add coq-compcert 3.14 -y
             endGroup
             # startGroup "opam pin"
             #   opam pin -n -y submodules/metacoq

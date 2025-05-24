@@ -1414,7 +1414,7 @@ Proof with eauto.
     assert (Hlen: i < Datatypes.length ([seq (VAL_num (N_to_value a)) | a <- args]
                                         ++ repeat (VAL_num (nat_to_value 0)) n)). {
       apply nth_error_Some. congruence. }
-    rewrite app_length length_is_size size_map -length_is_size repeat_length in Hlen.
+    rewrite length_app length_is_size size_map -length_is_size repeat_length in Hlen.
     rewrite nth_error_app2 in H0. 2: {
       now rewrite length_is_size size_map -length_is_size. }
     have H' := H0.
@@ -1859,8 +1859,8 @@ Proof.
     (* load glob_mem_ptr *)
     dostep_nary 0. apply r_global_get. eassumption.
     (* add required bytes *)
-    dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
-    dostep_nary 2. constructor. apply rs_binop_success. cbn. unfold is_left.
+    dostep_nary 2. constructor. apply rs_binop_success=>//.
+    dostep_nary 2. constructor. apply rs_binop_success=>//. cbn. unfold is_left.
     rewrite zeq_false. reflexivity.
     { (*TODO code duplication *)
       intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
@@ -1874,7 +1874,7 @@ Proof.
       simpl_modulus_in H''. cbn. lia. cbn in H4. lia. }
     dostep. apply r_eliml; auto.
     elimr_nary_instr 0. now eapply r_memory_size.
-    dostep_nary 2. constructor. apply rs_relop.
+    dostep_nary 2. constructor. apply rs_relop=>//.
 
     dostep'. constructor. subst.
     rewrite HneedMoreMem. apply rs_if_true. intro H3'. inv H3'.
@@ -1882,7 +1882,7 @@ Proof.
     dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
     cbn. eapply rt_trans. apply reduce_trans_label0.
     dostep_nary 1. eapply r_memory_grow_success. apply Hgrow.
-    dostep_nary 2. constructor. apply rs_relop. cbn.
+    dostep_nary 2. constructor. apply rs_relop=>//. cbn.
     dostep'. constructor. apply rs_if_false.
 
     assert (size >= 0)%N. { subst. cbn. auto. lia. }
@@ -1943,9 +1943,9 @@ Proof.
     dostep_nary 0. apply r_global_get. eassumption.
     (* add required bytes *)
     dostep_nary 2. constructor.
-    apply rs_binop_success. reflexivity.
+    apply rs_binop_success=>//.
     dostep_nary 2. constructor.
-    apply rs_binop_success. cbn. unfold is_left.
+    apply rs_binop_success=>//. cbn. unfold is_left.
     rewrite zeq_false. reflexivity.
     { (*TODO code duplication *)
       intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
@@ -1960,7 +1960,7 @@ Proof.
     dostep. apply r_eliml; auto.
     elimr_nary_instr 0. now eapply r_memory_size.
 
-    dostep_nary 2. constructor. apply rs_relop.
+    dostep_nary 2. constructor. apply rs_relop=>//.
 
     dostep'. constructor. subst. rewrite HneedMoreMem. apply rs_if_true. discriminate.
     dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
@@ -1973,7 +1973,7 @@ Proof.
       rewrite Hm4. subst size.
       destruct ((mem_size m + 1 <=? 30000)%N) eqn:Hcontra=>//.
       apply N.leb_le in Hcontra. lia. }
-    dostep_nary 2. constructor. apply rs_relop. cbn.
+    dostep_nary 2. constructor. apply rs_relop=>//. cbn.
     dostep'. constructor. apply rs_if_true. intro Hcontra. inv Hcontra.
     dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
     apply reduce_trans_label0. cbn.
@@ -2041,9 +2041,9 @@ Proof.
   dostep_nary 0. apply r_global_get. eassumption.
   (* add required bytes *)
   dostep_nary 2. constructor.
-  apply rs_binop_success. reflexivity.
+  apply rs_binop_success=>//.
   dostep_nary 2. constructor.
-  apply rs_binop_success. cbn. unfold is_left.
+  apply rs_binop_success=>//. cbn. unfold is_left.
   rewrite zeq_false. reflexivity.
   { (*TODO code duplication *)
     intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
@@ -2058,7 +2058,7 @@ Proof.
   dostep. apply r_eliml; auto.
   elimr_nary_instr 0. now eapply r_memory_size.
 
-  dostep_nary 2. constructor. apply rs_relop.
+  dostep_nary 2. constructor. apply rs_relop=>//.
 
   dostep'. constructor. subst.
   rewrite HenoughMem. apply rs_if_false. reflexivity.
@@ -2099,41 +2099,20 @@ Proof.
     subst y. unfold Wasm_int.Int32.signed in Ha. cbn in Ha.
 
     rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: {
-      assert ((Z.of_N gmp ÷ 65536 < 100000)%Z) as H''. { apply Z.quot_lt_upper_bound; lia. }
-      simpl_modulus. cbn.
-      assert (Z.of_N gmp ÷ 65536  >= 0)%Z. {
-        rewrite Zquot.Zquot_Zdiv_pos; try lia. apply Z_div_ge0; lia.
-      } lia. }
+      simpl_modulus. cbn. lia.
+    }
 
     rewrite small_signed_repr_n_n in Heqn; last by unfold max_mem_pages; lia.
     unfold Wasm_int.Int32.signed in Heqn. cbn in Heqn.
 
     (* 100000 arbitrary *)
-    assert ((Z.of_N gmp ÷ 65536 < 100000)%Z) as H''. { apply Z.quot_lt_upper_bound; lia. }
-    assert (Z.of_N gmp ÷ 65536  >= 0)%Z. { rewrite Zquot.Zquot_Zdiv_pos; try lia.
-    apply Z_div_ge0; lia. }
+    assert ((Z.of_N gmp ÷ 65536 < 100000)%Z) as H'' by lia.
+    assert (Z.of_N gmp ÷ 65536  >= 0)%Z by lia.
 
     rewrite zlt_true in Ha; try lia. subst.
 
-    rewrite N2Z.inj_div in Ha.
-    cbn in Ha.
-    rewrite Zquot.Zquot_Zdiv_pos in Ha; try lia.
-    remember (Z.of_N gmp) as q.
-    remember (Z.of_N (mem_length m)) as r.
-
-    assert (Hsimpl: (65536 > 0)%Z) by lia.
-    edestruct (Zdiv_eucl_exist Hsimpl q) as [[z z0] [H1' H2']].
-    rewrite H1' in Ha.
-    rewrite (Z.add_comm _ z0) in Ha.
-    rewrite Z.mul_comm in Ha.
-    rewrite Z.div_add in Ha; try lia.
-    rewrite (Zdiv_small z0) in Ha; try lia. cbn in Ha. rewrite H1'.
-    edestruct (Zdiv_eucl_exist Hsimpl r) as [[z1 z2] [H1'' H2'']].
-    rewrite H1'' in Ha.
-    rewrite (Z.add_comm _ z2) in Ha.
-    rewrite Z.mul_comm in Ha.
-    rewrite Z.div_add in Ha; try lia.
-    rewrite (Zdiv_small z2) in Ha; lia.
+    rewrite N2Z.inj_div in Ha. cbn in Ha.
+    lia.
    }
 Qed.
 
@@ -2568,12 +2547,12 @@ Proof.
       eexists. split.
       (* reduce *)
       dostep_nary 0. apply r_global_get. rewrite Hglob_cap. eassumption.
-      dostep_nary 2. constructor. constructor. reflexivity.
+      dostep_nary 2. constructor. constructor. reflexivity. reflexivity.
       eapply rt_trans. apply app_trans_const; auto. apply app_trans. eassumption.
 
       dostep_nary 2. eapply r_store_success; eassumption.
       dostep_nary 0. apply r_global_get. subst s'. eassumption.
-      dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
+      dostep_nary 2. constructor. apply rs_binop_success=>//.
       dostep_nary 1. apply r_global_set'. eassumption.
       apply Hred.
       split. assumption. split. assumption. split. simpl_modulus. cbn. lia. split.
@@ -2737,8 +2716,7 @@ Proof.
   intros ??? Hsize Harr ?.
   unfold get_ctor_size in Hsize.
   rewrite Harr in Hsize. cbn in Hsize.
-  destruct (arity=?0) eqn:Ha; inv Hsize; try lia.
-  apply Nat.eqb_eq in Ha. lia.
+  destruct (arity=?0) eqn:Ha; inv Hsize; lia.
 Qed.
 
 Lemma constr_size_0 : forall t constr_size,
@@ -2923,8 +2901,7 @@ Proof.
       assert (m = m'') by congruence. subst m''. congruence. }
     unfold get_ctor_size in Hsize.
     rewrite Harr in Hsize. cbn in Hsize.
-    destruct (Datatypes.length ys =? 0) eqn:Hl; inv Hsize; try lia.
-    apply Nat.eqb_eq in Hl. lia. }
+    destruct (Datatypes.length ys =? 0) eqn:Hl; inv Hsize; lia. }
 
   assert (HlenBound: (-1 < Z.of_nat (Datatypes.length ys + 0) < 2 * max_constr_args)%Z). {
     rewrite Nat.add_0_r. cbn. unfold max_constr_args in Hmaxargs. lia. }
@@ -3006,7 +2983,7 @@ Proof.
     eapply update_global_get_other with (j:= glob_cap). assumption. now intro.
     2: eassumption. eassumption. }
 
-  dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
+  dostep_nary 2. constructor. apply rs_binop_success=>//.
   dostep_nary 1. apply r_global_set'. rewrite HgmpEq. eassumption.
   cbn. apply Hred. split. assumption.
   split. apply update_global_preserves_funcs in H, H0. subst s_tag. cbn in H0. congruence.
@@ -3608,7 +3585,7 @@ Proof.
     eapply reduce_trans_frame.
     eapply rt_trans. apply reduce_trans_label.
     dostep_nary 0. apply r_local_get. eauto.
-    dostep_nary 2. constructor. apply rs_relop.
+    dostep_nary 2. constructor. apply rs_relop=>//.
     dostep'. constructor. apply rs_if_true.
     {
       rewrite N.mul_comm.
@@ -3654,7 +3631,7 @@ Proof.
       (* Step through the if-then-else into the else-branch *)
       eapply rt_trans. apply reduce_trans_frame. apply reduce_trans_label. eapply rt_trans.
       dostep_nary 0. apply r_local_get. eauto.
-      dostep_nary 2. constructor. apply rs_relop.
+      dostep_nary 2. constructor. apply rs_relop=>//.
       dostep'. constructor. apply rs_if_false.
       (* Check that (t0 << 1) + 1 <> (t << 1);
          requires some arithmetic gymnastics  *)
@@ -3794,7 +3771,7 @@ Proof.
       cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia.
     }
     rewrite <- H. apply Hload.
-    dostep_nary 2. constructor. apply rs_relop.
+    dostep_nary 2. constructor. apply rs_relop=>//.
     dostep'. constructor. apply rs_if_true. {
       (* Check that ord = t *)
       cbn.
@@ -3856,7 +3833,7 @@ Proof.
         cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id; lia.
       }
       rewrite <- H. apply Hload.
-      dostep_nary 2. constructor. apply rs_relop.
+      dostep_nary 2. constructor. apply rs_relop=>//.
       dostep'. constructor. apply rs_if_false.
       { (* Check that the ord of t0 is not equal to ord of t;
          requires some arithmetic gymnastics  *)
@@ -3923,9 +3900,11 @@ Proof.
   }
 Qed.
 
+
+(* This is assumed here, the proof was moved to LambdaANF_to_Wasm_primitives_correct.v *)
 Definition primitive_operation_reduces pfs : Prop :=
   forall lenv state s f fds f' (x : var) (x' : localidx) (p : prim) op_name str b op_arr op
-                                           (ys : list var) (e : exp) (vs : list val) (rho : env) (v : val) instrs mem,
+         (ys : list var) (e : exp) (vs : list val) (rho : env) (v : val) instrs mem,
     M.get p pfs = Some f' ->
     M.get p penv = Some (op_name, str, b, op_arr) ->
     KernameMap.find op_name primop_map = Some op ->
@@ -4625,7 +4604,7 @@ Proof with eauto.
        (* get_local y' *)
        dostep_nary 0. apply r_local_get. apply H1.
        (* add offset n *)
-       dostep_nary 2. constructor. apply rs_binop_success. cbn. reflexivity.
+       dostep_nary 2. constructor. apply rs_binop_success=>//.
        assert (Har: Wasm_int.N_of_uint i32m (Wasm_int.Int32.iadd (wasm_value_to_i32 (Val_ptr addr))
             (nat_to_i32 ((N.to_nat n + 1) * 4))) = ((4 + addr) + 4 * n)%N). {
           replace (4 + addr)%N with (addr + 4)%N by lia. replace (4*n)%N with (n*4)%N by lia. cbn.
@@ -4636,7 +4615,7 @@ Proof with eauto.
        assert (m' = m). { unfold smem in H10, Hmem2. subst f_before_IH. rewrite Hmem1 in H10, Hmem2.
         congruence. } subst.
        apply mem_length_upper_bound in Hmem5. cbn in Hmem5.
-       repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia).  }
+       by repeat (rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; try lia). }
 
        dostep_nary 1. eapply r_load_success. eassumption. rewrite Har. apply Hload.
        (* save result in x' *)
@@ -4716,7 +4695,7 @@ Proof with eauto.
           assert (i = y'). { inv Hy'. specialize (Htrans_y err_str). rewrite H3 in Htrans_y. inv Htrans_y. reflexivity. } subst i.
           eapply rt_trans. apply reduce_trans_frame. apply reduce_trans_label.
           dostep_nary 0. apply r_local_get. eauto.
-          dostep_nary 2. constructor. apply rs_binop_success.
+          dostep_nary 2. constructor. apply rs_binop_success; first done.
           cbn.
           assert (Heq: Wasm_int.Int32.iand (wasm_value_to_i32 (Val_unboxed (ord * 2 + 1)%N)) (nat_to_i32 1) = Wasm_int.Int32.one).
           {
@@ -4774,7 +4753,7 @@ Proof with eauto.
             apply and_1_even.
             lia.
           }
-          dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
+          dostep_nary 2. constructor. apply rs_binop_success=>//.
           dostep_nary 1. constructor. apply rs_testop_i32. cbn.
           dostep'. constructor. apply rs_if_true. by rewrite Hand.
           dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
@@ -4914,9 +4893,9 @@ Proof with eauto.
           @repr_var nenv (create_local_variable_mapping (xs ++ collect_local_variables e)) var varIdx ->
            N.to_nat varIdx < Datatypes.length (f_locs f_before_IH))). {
       intros ?? Hvar. subst f_before_IH. cbn. inv Hvar. apply var_mapping_list_lt_length in H1.
-      rewrite app_length in H1. apply const_val_list_length_eq in HfargsRes.
-      rewrite app_length. rewrite map_length -HfargsRes.
-      rewrite map_repeat_eq. rewrite map_length. apply set_lists_length_eq in H2.
+      rewrite length_app in H1. apply const_val_list_length_eq in HfargsRes.
+      rewrite length_app. rewrite length_map -HfargsRes.
+      rewrite map_repeat_eq. rewrite length_map. apply set_lists_length_eq in H2.
       now rewrite -H2.
     }
 
@@ -5096,14 +5075,14 @@ Proof with eauto.
 
     dostep'. eapply r_return_invoke with (a:=fidx); try eassumption; try reflexivity.
     apply map_const_const_list.
-    rewrite map_length repeat_length.
+    rewrite length_map repeat_length.
     apply const_val_list_length_eq in HfargsRes.
     apply set_lists_length_eq in H2. rewrite H2. symmetry. assumption.
 
     dostep'.
     eapply r_invoke_native with (vs:= map (fun a => VAL_num (N_to_value a)) args); try eassumption; try reflexivity.
     - unfold v_to_e_list. by rewrite -map_map_seq.
-    - rewrite repeat_length map_length. apply const_val_list_length_eq in HfargsRes.
+    - rewrite repeat_length length_map. apply const_val_list_length_eq in HfargsRes.
       apply set_lists_length_eq in H2. rewrite H2. assumption.
     - by apply default_vals_i32_Some.
     (* apply IH *)
@@ -5196,9 +5175,9 @@ Proof with eauto.
     assert (HlocInBound_before_IH: (forall (var : positive) (varIdx : localidx),
           @repr_var nenv (create_local_variable_mapping (xs ++ collect_local_variables e_body)) var varIdx -> N.to_nat varIdx < Datatypes.length (f_locs f_before_IH))). {
       intros ?? Hvar. subst f_before_IH. cbn. inv Hvar. apply var_mapping_list_lt_length in H1.
-      rewrite app_length in H1. apply const_val_list_length_eq in HfargsRes.
-      rewrite app_length. rewrite map_length -HfargsRes.
-      rewrite map_repeat_eq. rewrite map_length. apply set_lists_length_eq in H2.
+      rewrite length_app in H1. apply const_val_list_length_eq in HfargsRes.
+      rewrite length_app. rewrite length_map -HfargsRes.
+      rewrite map_repeat_eq. rewrite length_map. apply set_lists_length_eq in H2.
       now rewrite -H2.
     }
 
@@ -5636,7 +5615,7 @@ Proof with eauto.
     reflexivity. reflexivity.
     unfold v_to_e_list. now rewrite -map_map_seq.
     reflexivity. reflexivity.
-    { rewrite repeat_length map_length.
+    { rewrite repeat_length length_map.
     apply const_val_list_length_eq in HfargsRes.
     apply set_lists_length_eq in H2. rewrite H2. assumption. }
     reflexivity. cbn. apply default_vals_i32_Some.
@@ -5986,7 +5965,7 @@ Proof with eauto.
         apply HlocInBound in H3. lia. subst. reflexivity.
         cbn.
         dostep_nary 0. apply r_global_get. now rewrite Hfinst'.
-        dostep_nary 2. constructor. apply rs_binop_success. reflexivity.
+        dostep_nary 2. constructor. apply rs_binop_success=>//.
         dostep_nary 1. apply r_global_set'. rewrite HgmpEq. subst f_before_IH. eassumption.
         apply rt_refl.
         (* apply IH *)

@@ -35,7 +35,7 @@ From CertiCoq Require Import
 
 From Wasm Require Import
   datatypes operations host
-  type_preservation instantiation_spec instantiation_properties
+  type_preservation instantiation_spec instantiation_func instantiation_properties
   memory_list opsem properties common.
 
 From Coq Require Import List.
@@ -135,9 +135,9 @@ Ltac solve_bet Hcontext :=
   | |- be_typing _ [:: BI_testop T_i32 _] (Tf [:: T_num T_i32] _) => apply bet_testop; by simpl
   | |- be_typing _ [:: BI_testop T_i64 _] (Tf ([:: T_num T_i32; T_num T_i64]) _) => apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_testop; by simpl
   | |- be_typing _ [:: BI_testop T_i64 _] (Tf ([:: T_num T_i64]) _) => apply bet_testop; by simpl
-  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i32; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_unop; apply Unop_i64_agree
-  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i64] _) => apply bet_unop; apply Unop_i64_agree
-  | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_binop; apply Binop_i32_agree
+  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i32; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by apply bet_unop
+  | |- be_typing _ [:: BI_unop T_i64 _] (Tf [:: T_num T_i64] _) => by apply bet_unop
+  | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => by apply bet_binop
   | |- be_typing _ [:: BI_binop T_i64 _] (Tf ?tin _) =>
          (match tin with
           | [:: T_num T_i64; T_num T_i64 ] => idtac
@@ -145,10 +145,10 @@ Ltac solve_bet Hcontext :=
           | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64])
           | [:: T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64; T_num T_i64 ] => apply bet_weakening with (ts:=[::T_num T_i64 ; T_num T_i64; T_num T_i64])
           end);
-         apply bet_binop; apply Binop_i64_agree
-  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); apply bet_binop; apply Binop_i64_agree
-  | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => apply bet_relop; apply Relop_i32_agree
-  | |- be_typing _ [:: BI_relop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_relop; apply Relop_i64_agree
+         by apply bet_binop
+  | |- be_typing _ [:: BI_binop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by apply bet_binop
+  | |- be_typing _ [:: BI_relop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32] _) => by apply bet_relop
+  | |- be_typing _ [:: BI_relop T_i64 _] (Tf [:: T_num T_i64; T_num T_i64] _) => by apply bet_relop
 (* memory *)
   | H: lookup_N (tc_mems _) 0 = Some _ |- be_typing _ [:: BI_memory_size] (Tf [::] _) => eapply bet_memory_size; apply H
   | H: lookup_N (tc_mems _) 0 = Some _ |- be_typing _ [:: BI_memory_grow] (Tf [:: T_num T_i32] _) => eapply bet_memory_grow; apply H
@@ -185,7 +185,7 @@ Ltac solve_bet Hcontext :=
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i32]); by solve_bet Hcontext
   | |- be_typing _ _ (Tf [:: T_num T_i32; T_num T_i64; T_num T_i32] _) => apply bet_weakening with (ts:=[::T_num T_i32; T_num T_i64]); by solve_bet Hcontext
   | |- be_typing _ [:: BI_binop T_i32 _] (Tf [:: T_num T_i32; T_num T_i32; T_num T_i32] _) =>
-         apply bet_weakening with (ts:=[::T_num T_i32]); apply bet_binop; apply Binop_i32_agree
+         apply bet_weakening with (ts:=[::T_num T_i32]); by apply bet_binop
   | |- be_typing _ _ (Tf [:: T_num T_i64; T_num T_i64] _) => apply bet_weakening with (ts:=[::T_num T_i64]); by solve_bet Hcontext
   end.
 
@@ -553,7 +553,7 @@ Proof.
     apply rt_step. apply r_ref_func.
     rewrite H.
     unfold lookup_N. rewrite nth_error_map.
-    rewrite iota_lookup. cbn. f_equal. lia.
+    rewrite iota_lookup. unfold ssrnat.addn. cbn. f_equal. lia.
     apply /ssrnat.leP. lia.
 Qed.
 
@@ -573,7 +573,7 @@ Qed.
 Lemma length_list_function_types : forall n,
   length (list_function_types n) = S n.
 Proof.
-  induction n; cbn; auto. f_equal. now rewrite map_length.
+  induction n; cbn; auto. f_equal. now rewrite length_map.
 Qed.
 
 Lemma nth_list_function_types : forall m n def,
@@ -619,7 +619,7 @@ Proof.
     intros. cbn in H0. destruct H0=>//. subst x.
     split=>//.
     assert (length (tc_funcs c) = num_custom_funs + length fns).
-    { rewrite Hft. cbn. now rewrite map_length. }
+    { rewrite Hft. cbn. now rewrite length_map. }
     assert (exists x, lookup_N (tc_funcs c) (N.of_nat n) = Some x) as [x Hx].
     { apply notNone_Some. apply nth_error_Some. lia. }
     eapply bet_ref_func; eauto. rewrite Hrefs. apply nodup_In.
@@ -655,7 +655,7 @@ Proof.
     repeat split; auto.
     replace (N.of_nat (Datatypes.length (s_funcs s')) :: l1) with
             ([:: N.of_nat (Datatypes.length (s_funcs s'))]  ++ l1) by reflexivity.
-    rewrite app_length Nat.add_comm. cbn.
+    rewrite length_app Nat.add_comm. cbn.
     rewrite -app_assoc. cbn.
     do 3 f_equal. lia.
 Qed.
@@ -888,7 +888,7 @@ Proof.
       nth_error [seq fidx f | f <- fns] j = Some j' ->
       num_custom_funs <= N.to_nat j' < length [seq fidx f | f <- fns] + num_custom_funs)). {
     intros. apply nth_error_In in H2. apply H0 in H2.
-    now rewrite map_length.
+    now rewrite length_map.
   }
 
   have H' := increasing_list_fact_id _ _ _ num_custom_funs H Hbounds Ho.
@@ -1088,7 +1088,7 @@ Proof.
   intros ??????????????. unfold selem. rewrite H2. unfold lookup_N.
   rewrite iota_N_lookup; last by apply /ssrnat.leP.
   rewrite N2Nat.id. rewrite H3. rewrite nth_error_map.
-  erewrite nth_error_nth'. 2:{ rewrite combine_length table_element_mapping_length.
+  erewrite nth_error_nth'. 2:{ rewrite length_combine table_element_mapping_length.
                                apply Forall2_length in H. rewrite table_element_mapping_length in H. lia. }
   erewrite combine_nth. 2:{ apply Forall2_length in H. now rewrite -> table_element_mapping_length in *. }
   erewrite nth_error_nth; last by eapply table_element_mapping_nth_error.
@@ -1312,7 +1312,7 @@ Proof.
       }
       { (* funcs *)
         apply Forall2_spec.
-        { rewrite map_length length_is_size length_is_size size_map -length_is_size.
+        { rewrite length_map length_is_size length_is_size size_map -length_is_size.
           now erewrite <-mapi_length.
         }
         intros ?? [t1s t2s] Hnth1 Hnth2. cbn. unfold module_func_typing. repeat split =>//.
@@ -1360,7 +1360,7 @@ Proof.
           * (* locs i32 *)
             intros ?? Hvar'.
             rewrite Hlocs Htype Nat2N.id. unfold lookup_N. cbn.
-            rewrite <-repeat_app, <-app_length.
+            rewrite <-repeat_app, <-length_app.
             apply nth_error_repeat. inv Hvar'. now eapply var_mapping_list_lt_length.
           * (* i32 globals *)
             intros ? Hin'. cbn. by repeat destruct Hin' as [|Hin']; subst =>//.
@@ -1400,7 +1400,7 @@ Proof.
       apply Forall2_app.
       { (* fns *)
         intros. cbn.
-        apply Forall2_spec. { repeat rewrite map_length. now erewrite <-mapi_length. }
+        apply Forall2_spec. { repeat rewrite length_map. now erewrite <-mapi_length. }
         intros ??? Hnth1 Hnth2. rewrite nth_error_map in Hnth2.
         destruct (nth_error fns n) eqn:Hnth =>//.
         rewrite nth_error_map in Hnth1.
@@ -1488,7 +1488,7 @@ Proof.
     destruct (alloc_elems _ _) eqn:Helems.
     injection HallocM as <-.
     apply elems_instantiate. subst inst. cbn.
-    rewrite Nat.add_comm. rewrite map_length.
+    rewrite Nat.add_comm. rewrite length_map.
     unfold unique_export_names. now erewrite <-mapi_length.
   - by rewrite cats0.
 Unshelve. all: apply (Tf [] []).
@@ -1692,7 +1692,7 @@ Proof.
   (* clear Hs01 Hs02 Hs03 Hs04. *)
   cbn in E0, E1, E2, E3, E4, E5.
   cbn in F0, F1, F2, F3.
-  rewrite map_length in F5, F. rewrite rev_app_distr in F, F5.
+  rewrite length_map in F5, F. rewrite rev_app_distr in F, F5.
   rewrite rev_involutive in F5, F.
   cbn in F0, F1, F2, F3, F4, F5, F.
 
@@ -1755,7 +1755,7 @@ Proof.
    { unfold INV_num_functions_bounds, max_num_functions.
      split.
      - cbn. rewrite -E0. cbn.
-       do 2! rewrite map_length.
+       do 2! rewrite length_map.
        inv HtransFns.
        unfold unique_export_names. erewrite <-mapi_length; eauto.
        erewrite <- translate_functions_length; eauto.
@@ -1789,7 +1789,7 @@ Proof.
       erewrite nth_error_funcidcs; eauto.
       f_equal. lia. unfold num_custom_funs in *.
       rewrite -E0 in Hbound. cbn in Hbound.
-      do 2! rewrite map_length in Hbound. lia. }
+      do 2! rewrite length_map in Hbound. lia. }
   }
   split. (* i64 globs writable *)
   { intros gidx [Htmp1 | [Htmp2 | [Htmp3 | [Htmp4 | Hfls]]]]; intro v.
@@ -1862,7 +1862,7 @@ Proof.
     rewrite H3. by rewrite Nat2N.id.
   }
   (* from exists statement on *)
-  eexists. exists e', fns. do 1 split=>//. rewrite -E0.
+  eexists. exists e', fns. split=>//. rewrite -E0.
   split. do 4 f_equal. cbn.
   rewrite <- map_map_seq.
   { clear Hmodule E1 F.

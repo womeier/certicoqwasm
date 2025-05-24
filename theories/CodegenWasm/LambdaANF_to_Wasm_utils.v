@@ -183,7 +183,7 @@ Lemma mapi_aux_length {A B} : forall xs idx l (f : nat -> A -> B) ys,
   length xs + length l = length ys.
 Proof.
   induction xs; cbn; intros.
-  - subst ys. by rewrite rev_length.
+  - subst ys. by rewrite length_rev.
   - apply IHxs in H. cbn in H. lia.
 Qed.
 
@@ -856,7 +856,7 @@ Proof.
         assert (size (drop (Datatypes.length bs - S j) bs) = 0).
         { rewrite Hdrop. reflexivity. } rewrite size_drop in H.
         rewrite <- length_is_size in H.
-        unfold ssrnat.subn, ssrnat.subn_rec in H. lia.
+        unfold ssrnat.subn in H. lia.
       * assert (exists dat0, mem_update (n + off + N.of_nat (length bs - S j))%N
                                    b dat = Some dat0) as [dat0 Hdat0].
         { unfold mem_update. apply N.leb_le in Hlen.
@@ -920,8 +920,7 @@ Proof.
       destruct (drop (length bs - S i) bs) eqn:Hdrop.
       * assert (length (drop (length bs - S i) bs) = 0); first by rewrite Hdrop.
         rewrite length_is_size in H2. rewrite size_drop in H2.
-        rewrite -length_is_size in H2. rewrite ssrnat.subnE in H2.
-        unfold ssrnat.subn_rec in H2. lia.
+        rewrite -length_is_size in H2. rewrite ssrnat.subnE in H2. lia.
       * assert (exists datupd,
                    mem_update (k + off + N.of_nat (length bs - S i))%N b dat =
                      Some datupd ) as [datupd Hdatupd].
@@ -937,14 +936,13 @@ Proof.
            have H' := (take_drop 1 _ (drop (length bs - S i) bs)).
            rewrite ssrnat.addnE in H'. cbn in H'.
            rewrite length_is_size. rewrite size_drop. rewrite -length_is_size.
-           rewrite ssrnat.subnE. unfold ssrnat.subn_rec.
+           rewrite ssrnat.subnE.
            replace (Datatypes.length bs - (Datatypes.length bs - S i)) with (S i) by lia. cbn.
            rewrite Hdrop. cbn.
            replace (Datatypes.length bs - S i + 1) with (Datatypes.length bs - i) by lia.
            rewrite Hdatupd.
            rewrite length_is_size in Hdatf. rewrite size_drop in Hdatf.
            rewrite -length_is_size in Hdatf. rewrite ssrnat.subnE in Hdatf.
-           unfold ssrnat.subn_rec in Hdatf.
            replace (Datatypes.length bs - (Datatypes.length bs - i)) with i in Hdatf by lia.
            assert (drop 1 (drop (Datatypes.length bs - S i) bs) = l) as Hd. {
            rewrite Hdrop. now rewrite drop1. } rewrite -Hd.
@@ -1315,10 +1313,10 @@ Proof.
   destruct (lim_max (meminst_type m)) eqn:Hmaxpages.
   destruct (mem_size m + sgrow <=? u)%N; inv H.
   unfold mem_length. unfold memory_list.mem_length.
-  rewrite app_length. rewrite Nat2N.inj_add.
+  rewrite length_app. rewrite Nat2N.inj_add.
   rewrite N.add_comm. rewrite repeat_length. unfold page_size. lia.
   inv H.
-  unfold mem_length, memory_list.mem_length. cbn. rewrite app_length.
+  unfold mem_length, memory_list.mem_length. cbn. rewrite length_app.
   rewrite repeat_length. unfold page_size. lia.
 Qed.
 
@@ -1333,14 +1331,14 @@ Proof.
   (* lim_max = Some n0 *)
   destruct (mem_size m + sgrow <=? u)%N. 2: inv H. inv H.
   unfold mem_size. unfold mem_length. unfold memory_list.mem_length.
-  rewrite app_length. rewrite Nat2N.inj_add.
+  rewrite length_app. rewrite Nat2N.inj_add.
   rewrite N.add_comm. unfold page_size. rewrite <- N.div_add_l. 2: intro; lia.
   remember (N.of_nat (Datatypes.length (memory_list.ml_data (meminst_data m)))) as len.
   rewrite repeat_length. rewrite N2Nat.id.
   replace (sgrow * (64 * 1024))%N with (sgrow * 65536)%N; reflexivity.
   (* lim_max = None *)
   inv H. unfold mem_size. unfold mem_length. unfold memory_list.mem_length.
-  rewrite app_length. rewrite Nat2N.inj_add.
+  rewrite length_app. rewrite Nat2N.inj_add.
   rewrite N.add_comm. unfold page_size. rewrite <- N.div_add_l. 2: intro; lia.
   remember (N.of_nat (Datatypes.length (memory_list.ml_data (meminst_data m)))) as len.
   rewrite repeat_length. lia.
@@ -1396,7 +1394,7 @@ Proof.
                                   ml_data := ml_data (meminst_data m) ++
                                              repeat (ml_init (meminst_data m)) (Pos.to_nat 65536) |};
                   meminst_type := {| lim_min := (mem_size m + 1)%N; lim_max := Some maxlim |} |})%N). {
-    unfold mem_length, memory_list.mem_length. cbn. rewrite app_length. rewrite repeat_length.
+    unfold mem_length, memory_list.mem_length. cbn. rewrite length_app. rewrite repeat_length.
     unfold mem_length, memory_list.mem_length in Ha. apply N.leb_le. lia. }
   remember ((mem_length {| meminst_data := {| ml_init := ml_init (meminst_data m);
                                   ml_data := ml_data (meminst_data m) ++
@@ -1434,7 +1432,6 @@ Proof.
   rewrite Z.add_comm in Hn.
   rewrite Z.mul_comm in Hn.
   rewrite Z.div_add in Hn; try lia.
-  rewrite Zdiv_small in Hn; lia.
 Qed.
 
 Ltac solve_arith_load_store :=
@@ -1737,12 +1734,12 @@ Proof.
   rewrite Memdata.decode_encode_int.
   rewrite Z.mod_small.
   by rewrite Wasm_int.Int32.repr_unsigned.
-  destruct s ; simpl; replace (two_power_pos _)
+  destruct i ; simpl; replace (two_power_pos _)
     with Wasm_int.Int32.modulus ; [lia | done].
   rewrite Memdata.decode_encode_int.
   rewrite Z.mod_small.
   by rewrite Wasm_int.Int64.repr_unsigned.
-  destruct s ; simpl ; replace (two_power_pos _)
+  destruct i ; simpl ; replace (two_power_pos _)
     with Wasm_int.Int64.modulus ; [lia | done].
   rewrite Memdata.decode_encode_int_4.
   by rewrite Wasm_float.FloatSize32.of_to_bits.
@@ -2758,7 +2755,7 @@ Lemma low32step : forall state sr fr num,
            state sr fr [$VN (VAL_int64 (Int64.repr (lo num))) ].
 Proof.
 intros.
-constructor. apply rs_binop_success. cbn.
+constructor. apply rs_binop_success; auto. cbn.
 unfold Int64.iand, Int64.and. cbn.
 rewrite Z_bitmask_modulo32_equivalent.
 now replace (Int64.Z_mod_modulus num) with num by now solve_unsigned_id.
@@ -2771,7 +2768,7 @@ Lemma high32step : forall state sr fr num,
            state sr fr [ $VN (VAL_int64 (Int64.repr (hi num))) ].
 Proof.
 intros.
-constructor. apply rs_binop_success.
+constructor. apply rs_binop_success; auto.
 unfold app_binop. simpl.
 rewrite int64_high32. reflexivity. lia.
 Qed.
@@ -3029,7 +3026,7 @@ Proof.
   remember (Z.of_nat (Int64.wordsize - i - 1)) as j eqn:Hj.
   remember (Z.of_nat (ssrnat.subn (ssrnat.subn Int64.wordsize i) 1)) as j' eqn:Hj'.
   assert (j = j') by now rewrite <- ssrnat.minusE in Hj'.
-  remember (fun b : bool_eqType => b == true) as a eqn:Ha.
+  remember (fun b : Datatypes_bool__canonical__eqtype_Equality => b == true) as a eqn:Ha.
   remember (Int64.intval x) as x' eqn:Hx'.
   remember (Int64.wordsize) as n eqn:Hn.
   remember (j' \in Zbits.Z_one_bits n x' 0) as inbits eqn:Hinbits.
@@ -3128,7 +3125,7 @@ Proof.
   remember (Z.of_nat (Int64.wordsize - i - 1)) as j eqn:Hj.
   remember (Z.of_nat (ssrnat.subn (ssrnat.subn Int64.wordsize i) 1)) as j' eqn:Hj'.
   assert (j = j') by now rewrite <- ssrnat.minusE in Hj'.
-  remember (fun b : bool_eqType => b == true) as a eqn:Ha.
+  remember (fun b : Datatypes_bool__canonical__eqtype_Equality => b == true) as a eqn:Ha.
   remember (Int64.intval x) as x' eqn:Hx'.
   remember (Int64.wordsize) as n eqn:Hn.
   remember (j' \in Zbits.Z_one_bits n x' 0) as inbits eqn:Hinbits.
@@ -3315,7 +3312,7 @@ Proof.
     have Hnth' := Hnth.
     rewrite nth_rev in Hnth'.
     assert (Hsize' : i = size l). simpl in Hsize, Hdiff |-*. lia.
-    unfold ssrnat.subn, ssrnat.subn_rec in Hnth'; simpl in Hnth'.
+    unfold ssrnat.subn in Hnth'; simpl in Hnth'.
     rewrite Hdiff in Hnth'.
     simpl in Hnth'.
     rewrite eqb_id in Hnth'. rewrite Hnth'.
@@ -3332,7 +3329,7 @@ Proof.
       assert ((i' - 1) < i'). simpl in H0. simpl. lia.
       apply H1 in H2.
       rewrite nth_rev in H2. rewrite <-H0 in H2.
-      unfold ssrnat.subn, ssrnat.subn_rec in H2. simpl in H2.
+      unfold ssrnat.subn in H2. simpl in H2.
       assert (i' - S (i' - 1) = 0). lia. rewrite H3 in H2. assumption.
       rewrite -(rwP ssrnat.leP). simpl in H0 |- *. lia.
       intro Ha0.
@@ -3376,7 +3373,6 @@ Proof.
   rewrite nth_rev in Hnth; auto.
   rewrite nth_rev.
   rewrite ssrnat.subnE in Hnth |- *. simpl in Hnth |- *.
-  unfold ssrnat.subn_rec in Hnth |- *.
   rewrite eqb_id in Hnth.
   simpl in Hnth.
   rewrite Hdiff in Hnth. simpl in Hnth. simpl in Hsize'''. rewrite <-Hsize'''. rewrite eqb_id. assumption.
@@ -3384,7 +3380,7 @@ Proof.
   assert (Hfind' : i = find (fun b => b == true) (rev l)).
   rewrite <-cat1s in Hfind.
   rewrite rev_cat in Hfind. rewrite find_cat in Hfind.
-  unfold ssrnat.addn, ssrnat.addn_rec in Hfind.
+  unfold ssrnat.addn in Hfind.
   destruct (has (fun b => b == true) (rev l)). assumption.
   simpl in Hfind. destruct a; simpl in Hfind. rewrite size_rev in Hfind. simpl in Hdiff, Hsize'. lia. rewrite size_rev in Hfind. simpl in Hdiff, Hsize'. lia.
   assert (Hbefore' : forall k, k < i -> (nth false (rev l) k == true) = false).
@@ -3463,7 +3459,7 @@ Proof.
   have Hbefore := before_find.
   assert (Hbf: forall k, k < i -> (nth false (rev s) k == true) = false). {
     intros k Hk.
-    specialize (Hbefore (Equality.sort bool_eqType) false (fun b => b == true) (rev s) k).
+    specialize (Hbefore (Equality.sort Datatypes_bool__canonical__eqtype_Equality) false (fun b => b == true) (rev s) k).
     rewrite <-Hifind in Hbefore.
     apply Hbefore.
     rewrite -(rwP ssrnat.leP). lia. }
