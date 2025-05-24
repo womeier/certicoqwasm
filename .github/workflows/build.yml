@@ -31,6 +31,9 @@ jobs:
           before_install: | # comment back in if MetaCoq commit changes
             startGroup "fix permission issues"
               sudo chown -R coq:coq .
+
+              # remove once proper docker image exists
+              opam pin add coq-compcert 3.14 -y
             endGroup
             # startGroup "opam pin"
             #   opam pin -n -y submodules/metacoq
