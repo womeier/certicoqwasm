@@ -12,10 +12,10 @@ Definition add_prim_names (prims : list (kername * string * bool * nat * positiv
 
 
 Definition ensure_top_level_Efun (prog : exp) :=
-    match prog with
-    | Efun _ _ => prog
-    | _ => Efun Fnil prog
-    end.
+  match prog with
+  | Efun _ _ => prog
+  | _ => Efun Fnil prog
+  end.
 
 
 Definition LambdaANF_to_Wasm_Wrapper (prims : list (kername * string * bool * nat * positive)) (args : nat) (t : toplevel.LambdaANF_FullTerm) : error module * string :=

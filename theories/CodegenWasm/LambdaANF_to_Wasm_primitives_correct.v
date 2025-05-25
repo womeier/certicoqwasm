@@ -2241,7 +2241,7 @@ Proof.
           }
           { (* x <> x1 *) rewrite M.gso in Hrho; eauto. }
         } split.
-        { intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd.
+        { intros ? Hnfd. apply Hfun2 in Hnfd.
           destruct Hnfd as [i' [Htrans Hval]].
           exists i'. split. assumption.
           apply val_relation_func_depends_on_funcs with (s:=s); auto.
@@ -2627,7 +2627,7 @@ Proof.
           }
           { (* x <> x1 *) rewrite M.gso in Hrho; eauto. }
         } split.
-        { intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd.
+        { intros ? Hnfd. apply Hfun2 in Hnfd.
           destruct Hnfd as [i' [Htrans Hval]].
           exists i'. split. assumption.
           apply val_relation_func_depends_on_funcs with (s:=s); auto.
@@ -2743,7 +2743,7 @@ Proof.
           contradiction.
         - (* x0 <> x1 *) rewrite M.gso in Hrho; eauto.
       } split. {
-        intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd.
+        intros ? Hnfd. apply Hfun2 in Hnfd.
         destruct Hnfd as [i' [Htrans HvalFun]].
         exists i'. split. assumption.
         apply val_relation_func_depends_on_funcs with (s:=s); auto.
@@ -2833,7 +2833,7 @@ Proof.
           }
           { by rewrite M.gso in H7; eauto. }
         } split.
-        { intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd.
+        { intros ? Hnfd. apply Hfun2 in Hnfd.
           destruct Hnfd as [i [Htrans Hval]].
           exists i. split. assumption. now subst fr.
         }
@@ -3900,7 +3900,7 @@ Proof.
               contradiction.
             - (* x0 <> x1 *) rewrite M.gso in Hrho; eauto.
           } split. {
-            intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd.
+            intros ? Hnfd. apply Hfun2 in Hnfd.
             destruct Hnfd as [i' [Htrans HvalFun]].
             exists i'. split. assumption.
             apply val_relation_func_depends_on_funcs with (s:=s); subst fr'; auto.
@@ -4158,7 +4158,7 @@ Proof.
               contradiction.
             - (* x0 <> x1 *) rewrite M.gso in Hrho; eauto.
           } split. {
-            intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd.
+            intros ? Hnfd. apply Hfun2 in Hnfd.
             destruct Hnfd as [i' [Htrans HvalFun]].
             exists i'. split. assumption.
             apply val_relation_func_depends_on_funcs with (s:=s); subst fr'; auto.
@@ -4556,7 +4556,7 @@ Proof.
               contradiction.
             - (* x0 <> x1 *) rewrite M.gso in Hrho; eauto.
           } split. {
-            intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd.
+            intros ? Hnfd. apply Hfun2 in Hnfd.
             destruct Hnfd as [i' [Htrans HvalFun]].
             exists i'. split. assumption.
             apply val_relation_func_depends_on_funcs with (s:=s); subst fr'; auto.
@@ -5034,7 +5034,7 @@ Proof.
           }
           { (* x <> x1 *) rewrite M.gso in Hrho; eauto. }
         } split.
-        { intros ? ? Hnfd. apply Hfun2 with (errMsg:=errMsg) in Hnfd.
+        { intros ? Hnfd. apply Hfun2 in Hnfd.
           destruct Hnfd as [i' [Htrans Hval]].
           exists i'. split. assumption.
           apply val_relation_func_depends_on_funcs with (s:=s); auto.

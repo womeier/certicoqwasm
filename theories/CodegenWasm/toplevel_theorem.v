@@ -204,6 +204,23 @@ Proof.
     intros ? ? H H1. eapply def_funs_find_def in H1; eauto. now erewrite H in H1. }
 
   assert (HeRestr' : expression_restricted cenv e). { now inv HeRestr. }
+
+  assert (HfdsRestr : fds_restricted cenv fds). {
+    intros ?????.
+    split. { inv HeRestr. eapply H5. eassumption. }
+    split. { intros x Hocc.
+    assert (Hdec: decidable_eq var). {
+      intros n' m'. unfold Decidable.decidable. now destruct (var_dec n' m'). }
+    have H' := In_decidable Hdec x ys. destruct H'. now left.
+    right. intro Hcontra'.
+    exfalso. apply Hfreevars. exists x. apply Free_Efun2.
+    eapply find_def_is_Some_occurs_free_fundefs; eauto.
+    intro Hfd. revert Hcontra'.
+    apply name_in_fundefs_find_def_is_Some in Hfd.
+    now destruct Hfd as [? [? [? ?]]]. }
+    rewrite catA. eapply NoDup_collect_all_local_variables_find_def; eauto.
+  }
+
   assert (Hunbound: (forall x : var,
        In x (collect_local_variables e) ->
        (def_funs fds fds (M.empty _) (M.empty _)) ! x = None)). {
@@ -216,37 +233,14 @@ Proof.
     by eapply NoDup_app_In in H; eauto.
   }
 
-  assert (Hfds : forall (a : var) (t : fun_tag) (ys : seq var) (e0 : exp) errMsg,
-      find_def a fds = Some (t, ys, e0) ->
-      expression_restricted cenv e0 /\
-      (forall x : var, occurs_free e0 x -> In x ys \/ find_def x fds <> None) /\
-      NoDup
-        (ys ++
-         collect_local_variables e0 ++
-         collect_function_vars (Efun fds e0)) /\
-      (exists fidx : funcidx,
-         translate_var nenv fenv a errMsg = Ret fidx /\
-         repr_val_LambdaANF_Wasm cenv fenv nenv penv (Vfun (M.empty _) fds a) sr (f_inst f_before_IH) (Val_funidx fidx))). {
-    intros ????? Hcontra.
-    split. { inv HeRestr. eapply H4. eassumption. }
-    split. { intros x Hocc.
-    assert (Hdec: decidable_eq var). {
-      intros n' m'. unfold Decidable.decidable. now destruct (var_dec n' m'). }
-    have H' := In_decidable Hdec x ys. destruct H'. now left.
-    right. intro Hcontra'.
-    exfalso. apply Hfreevars. exists x. apply Free_Efun2.
-    eapply find_def_is_Some_occurs_free_fundefs; eauto.
-    intro Hfd. revert Hcontra'.
-    apply name_in_fundefs_find_def_is_Some in Hfd.
-    now destruct Hfd as [? [? [? ?]]]. }
-    split. { rewrite catA. eapply NoDup_collect_all_local_variables_find_def; eauto. }
-    (* exists fun values *)
-    { assert (Hc: find_def a fds <> None) by congruence.
-      apply HfVal with (errMsg:=errMsg) in Hc; auto.
-      destruct Hc as [fidx [HtransF Hval]].
-      exists fidx. split. assumption. subst f_before_IH.
-      eapply val_relation_func_depends_on_funcs. 2: apply Hval.
-      congruence. }
+  assert (Hfds : fds_translated_correctly cenv fenv nenv penv fds sr (f_inst f_before_IH)). {
+    intros ???? Hcontra.
+    assert (Hc: find_def a fds <> None) by congruence.
+    apply HfVal in Hc; auto.
+    destruct Hc as [fidx [HtransF Hval]].
+    exists fidx. split. assumption. subst f_before_IH.
+    eapply val_relation_func_depends_on_funcs. 2: apply Hval.
+    congruence.
   }
 
   assert (HrelE : @rel_env_LambdaANF_Wasm cenv fenv nenv penv
@@ -262,9 +256,9 @@ Proof.
       destruct Hval as [? [Hval ?]]. inv Hval => //.
     } split.
     { (* funs2 *)
-      intros ? ? Hnfd. apply name_in_fundefs_find_def_is_Some in Hnfd.
-      destruct Hnfd as [? [? [? Hfd]]]. apply Hfds with (errMsg:=errMsg) in Hfd.
-      destruct Hfd as [_ [_ [_ [i [Htrans Hval]]]]]. eauto. }
+      intros ? Hnfd. apply name_in_fundefs_find_def_is_Some in Hnfd.
+      destruct Hnfd as [? [? [? Hfd]]]. apply Hfds in Hfd.
+      destruct Hfd as [i [Htrans Hval]]. eauto. }
     { (* vars *)
       intros x Hocc Hfd. exfalso. apply Hfreevars. exists x. constructor; auto.
       intro Hcontra. apply name_in_fundefs_find_def_is_Some in Hcontra.
@@ -279,7 +273,7 @@ Proof.
   have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
                    _ _ _ _ _ _ _ _ frameInit _ lh (primitive_operation_reduces_proof cenv fenv nenv penv _ HprimFunsRelated) HcenvRestr HprimFunsRet HlenvInjective
                   HenvsDisjoint Logic.eq_refl Hnodup'' HfenvWf HfenvRho
-                  HeRestr' Hunbound Hstep hs sr _ _ Hfds HlocInBound Hinv_before_IH HmemAvail Hexpr HrelE.
+                  HeRestr' HfdsRestr Hunbound Hstep hs sr _ _ Hfds HlocInBound Hinv_before_IH HmemAvail Hexpr HrelE.
   destruct HMAIN as [s' [f' [k' [lh' [Hred [Hval [Hfinst _]]]]]]]. cbn. subst frameInit.
   exists s'. split.
   dostep'. apply r_call. cbn.
