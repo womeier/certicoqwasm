@@ -3466,89 +3466,6 @@ Proof.
     cbn. apply IHbrs in H5. now rewrite H5.
 Qed.
 
-Lemma ctor_ord_restricted : forall y cl t e ord,
-  expression_restricted cenv (Ecase y cl) ->
-  In (t, e) cl ->
-  get_ctor_ord cenv t = Ret ord ->
-  (-1 < Z.of_N ord < Wasm_int.Int32.half_modulus)%Z.
-Proof.
-  intros ????? Hr Hin Hord. inv Hr.
-  rewrite Forall_forall in H1. apply H1 in Hin.
-  destruct Hin as [Hr' _].
-  simpl_modulus. cbn. cbn in Hr'.
-  unfold ctor_ordinal_restricted in Hr'.
-  apply Hr' in Hord. simpl_modulus_in Hord. destruct ord; lia.
-Qed.
-
-Lemma cases_same_ind_tag : forall cl t t' e' cinfo cinfo',
-  caseConsistent cenv cl t ->
-  findtag cl t' = Some e' ->
-  M.get t cenv = Some cinfo ->
-  M.get t' cenv = Some cinfo' ->
-  ctor_ind_tag cinfo = ctor_ind_tag cinfo'.
-Proof.
-  induction cl=>//; intros.
-  inv H. inv H0. destruct (M.elt_eq _ _).
-  - congruence.
-  - now eapply IHcl.
-Qed.
-
-Lemma nullary_ctor_ords_in_case_disjoint : forall cl t t' e e' ord ord',
-  cenv_restricted cenv ->
-  caseConsistent cenv cl t ->
-  t <> t' ->
-  findtag cl t = Some e ->
-  findtag cl t' = Some e' ->
-  get_ctor_arity cenv t = Ret 0 ->
-  get_ctor_arity cenv t' = Ret 0 ->
-  get_ctor_ord cenv t = Ret ord ->
-  get_ctor_ord cenv t' = Ret ord' ->
-  ord <> ord'.
-Proof.
-  intros ???????????????? <-.
-  unfold cenv_restricted, get_ctor_ord, get_ctor_arity in *.
-  destruct (M.get t cenv) eqn:Ht=>//.
-  destruct (M.get t' cenv) eqn:Ht'=>//.
-  destruct c, c0.
-  injection H6 as <-. injection H7 as <-.
-  assert (ctor_arity = 0%N). { injection H4. lia. } subst ctor_arity.
-  assert (ctor_arity0 = 0%N). { injection H5. lia. } subst ctor_arity0.
-  have H' := H t _ _ _ 0%N _ Ht t' H1.
-  have H'' := @Logic.eq_refl _ 0%N. apply H' in H''. clear H'.
-  have I := cases_same_ind_tag cl t t' e' _ _ H0 H3 Ht Ht'.
-  cbn in I. subst. eauto.
-Qed.
-
-Lemma nonnullary_ctor_ords_in_case_disjoint : forall cl t t' e e' a a' ord ord',
-  cenv_restricted cenv ->
-  caseConsistent cenv cl t ->
-  t <> t' ->
-  findtag cl t = Some e ->
-  findtag cl t' = Some e' ->
-  get_ctor_arity cenv t = Ret a ->
-  get_ctor_arity cenv t' = Ret a' ->
-  0 < a ->
-  0 < a' ->
-  get_ctor_ord cenv t = Ret ord ->
-  get_ctor_ord cenv t' = Ret ord' ->
-  ord <> ord'.
-Proof.
-  intros.
-  unfold cenv_restricted, get_ctor_ord, get_ctor_arity in *.
-  destruct (M.get t cenv) eqn:Ht=>//.
-  destruct (M.get t' cenv) eqn:Ht'=>//.
-  destruct c, c0.
-  assert (ctor_arity = N.of_nat a). { inv H4. lia. } subst ctor_arity.
-  assert (ctor_ordinal = ord). { inv H8. lia. } subst ctor_ordinal.
-  have H' := H t _ _ _ (N.of_nat a) ord Ht t' H1.
-  destruct H' as [_ H'].
-  assert (H'' : (0 < N.of_nat a)%N) by lia.
-  apply H' in H''. clear H'.
-  injection H9 as <-.
-  assert (ctor_arity0 = N.of_nat a'). { inv H5. lia. } subst ctor_arity0.
-  have I := cases_same_ind_tag cl t t' e' _ _ H0 H3 Ht Ht'. cbn in I.
-  intro Hcontra. subst. eauto.
-Qed.
 
 Lemma unboxed_nested_if_chain_reduces : forall cl fAny y t e v lenv mem brs1 brs2 e2' f hs sr ord,
   lookup_N (f_locs f) v = Some (VAL_num (VAL_int32 (wasm_value_to_i32 (Val_unboxed (ord  * 2 + 1)%N)))) ->
@@ -3629,7 +3546,7 @@ Proof.
       inv Hunboxedcase.
       assert (Hord_neq : ord <> ord0). {
 
-        eapply nullary_ctor_ords_in_case_disjoint with (cl:=((t0, e0)::cl)) (t:=t) (t':=t0) (e:=e) (e':=e0); auto.
+        eapply nullary_ctor_ords_in_case_disjoint with (cl:=((t0, e0)::cl)); eauto.
         cbn. destruct (M.elt_eq t0 t0). auto. contradiction.
       }
       assert (Hord_neq' : ord0 <> ord) by auto.
@@ -3825,7 +3742,7 @@ Proof.
       unfold select_nested_if.
       assert (Hord_neq : ord <> ord0).
       {
-        eapply nonnullary_ctor_ords_in_case_disjoint with (cl:=((t0, e0)::cl)) (t:=t) (t':=t0) (e:=e) (e':=e0) (a:=n) (a':=n1); auto.
+        eapply nonnullary_ctor_ords_in_case_disjoint with (cl:=((t0, e0)::cl)); eauto.
         cbn. destruct (M.elt_eq t0 t0). auto. contradiction.
       }
       assert (Hord_neq' : ord0 <> ord) by auto.
@@ -3898,7 +3815,7 @@ Proof.
         inv e1.
         assert (ord <> ord0).
         {
-        eapply nonnullary_ctor_ords_in_case_disjoint with (cl:=((t0, e0)::cl)) (t:=t) (t':=t0) (e:=e) (e':=e0) (a:=n) (a':=n1); auto.
+        eapply nonnullary_ctor_ords_in_case_disjoint with (cl:=((t0, e0)::cl)); eauto.
         cbn. destruct (M.elt_eq t0 t0). auto. contradiction.
 
         }
