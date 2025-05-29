@@ -114,7 +114,7 @@ Proof.
     now eapply NoDup_app_remove_l in HvarsNodup.
   }
 
-  have HI := @instantiation_combined_INV_and_more _ _ _ hfc ho _ _ _ _ _ _ hs Hnodup' HeRestr
+  have HI := @instantiation_combined_INV_and_more _ _ _ _ _ _ _ _ _ _ _ _ hs Hnodup' HeRestr
                Hcenv Logic.eq_refl Hmaxfuns LANF2Wasm.
   destruct HI as [sr [fr [Hinst [Hinv [HinstFuncs [HfVal [main_fn [e' [fns [-> [Hfuncs [Hexpr' Hfns']]]]]]]]]]]].
 
@@ -244,7 +244,7 @@ Proof.
   }
 
   assert (HrelE : @rel_env_LambdaANF_Wasm cenv fenv nenv penv
-                   _ (create_local_variable_mapping (collect_local_variables e)) e (def_funs fds fds (M.empty _) (M.empty _))
+                   _ _ (create_local_variable_mapping (collect_local_variables e)) e (def_funs fds fds (M.empty _) (M.empty _))
           sr f_before_IH fds). {
     split.
     { (* funs1 (follows from previous Hfds) *)
@@ -290,5 +290,10 @@ Qed.
 
 (* Eval compute in "Assumptions of 'LambdaANF_Wasm_related' (Wasm backend, main correctness)"%bs. *)
 (* Print Assumptions LambdaANF_Wasm_related. *)
+
+(* TODO investigate
+   FunctionalExtensionality, Classical_Prop.classic,
+   ClassicalDedekindReals.sig_not_dec, ClassicalDedekindReals.sig_forall_dec
+   plus all the axioms for 63-bit primitive objects and operations *)
 
 End TOPLEVEL.
