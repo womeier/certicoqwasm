@@ -114,7 +114,7 @@ Proof.
     now eapply NoDup_app_remove_l in HvarsNodup.
   }
 
-  have HI := @instantiation_combined_INV_and_more _ _ _ hfc ho _ _ _ _ _ _ hs Hnodup' HeRestr
+  have HI := @instantiation_combined_INV_and_more _ _ _ _ _ _ _ _ _ _ _ _ hs Hnodup' HeRestr
                Hcenv Logic.eq_refl Hmaxfuns LANF2Wasm.
   destruct HI as [sr [fr [Hinst [Hinv [HinstFuncs [HfVal [main_fn [e' [fns [-> [Hfuncs [Hexpr' Hfns']]]]]]]]]]]].
 
@@ -244,7 +244,7 @@ Proof.
   }
 
   assert (HrelE : @rel_env_LambdaANF_Wasm cenv fenv nenv penv
-                   _ (create_local_variable_mapping (collect_local_variables e)) e (def_funs fds fds (M.empty _) (M.empty _))
+                   _ _ (create_local_variable_mapping (collect_local_variables e)) e (def_funs fds fds (M.empty _) (M.empty _))
           sr f_before_IH fds). {
     split.
     { (* funs1 (follows from previous Hfds) *)
@@ -270,7 +270,7 @@ Proof.
   remember ({| f_locs := [::]; f_inst := f_inst fr |}) as frameInit.
 
   subst lenv.
-  have HMAIN := repr_bs_LambdaANF_Wasm_related cenv fenv nenv penv _
+  have HMAIN := repr_bs_LambdaANF_Wasm_related cenv funenv fenv nenv penv _
                    _ _ _ _ _ _ _ _ frameInit _ lh (primitive_operation_reduces_proof cenv fenv nenv penv _ HprimFunsRelated) HcenvRestr HprimFunsRet HlenvInjective
                   HenvsDisjoint Logic.eq_refl Hnodup'' HfenvWf HfenvRho
                   HeRestr' HfdsRestr Hunbound Hstep hs sr _ _ Hfds HlocInBound Hinv_before_IH HmemAvail Hexpr HrelE.
