@@ -255,7 +255,7 @@ Ltac Zify.zify_post_hook ::= Z.div_mod_to_equations.
 
 Definition local_holds_address_to_i64 (sr : store_record) (fr : frame) (l : localidx) addr val (m : meminst) bs : Prop :=
     lookup_N fr.(f_locs) l = Some (VAL_num (VAL_int32 addr))
-    /\ load m (N_of_uint i32m addr) 0%N (N.to_nat (tnum_length T_i64)) = Some bs
+    /\ load m (N_of_uint i32m addr) 0%N (tnum_length T_i64) = Some bs
     /\ wasm_deserialise bs T_i64 = (VAL_int64 val).
 
 (* Main reduction related lemmas *)
@@ -285,7 +285,8 @@ Proof.
   destruct Hm0size as [Hmemsize [Hmemmaxsize Hsizebound]].
   assert (Hsrmem: lookup_N (s_mems sr) 0 = Some m)
     by now unfold smem in Hm; rewrite Hmeminst in Hm; cbn in Hm; destruct (s_mems sr).
-  assert (Hstore: exists m', store m addr off (bits v) (length (bits v)) = Some m') by now destruct v; apply enough_space_to_store; unfold_bits; cbn in *; try lia.
+  assert (Hstore: exists m', store m addr off (bits v) (length (bits v)) = Some m')
+      by (destruct v; apply notNone_Some, enough_space_to_store; unfold_bits; cbn in *; lia).
   destruct Hstore as [m' Hstore].
   remember (upd_s_mem sr (set_nth m' sr.(s_mems) (N.to_nat 0) m')) as sr'.
   assert (Hsmem_store : smem_store sr (f_inst fr) addr off v (typeof_num v) = Some sr'). {
@@ -295,8 +296,10 @@ Proof.
     replace (ssrnat.nat_of_bin (tnum_length (typeof_num v))) with (Datatypes.length (bits v))
       by now destruct v; unfold_bits; cbn in *.
     rewrite Hstore; rewrite Heqsr'; now cbn. }
-  assert (Hmemlength': mem_length m = mem_length m') by now unfold store in Hstore;
-    destruct (addr + off + N.of_nat (Datatypes.length (bits v)) <=? mem_length m)%N; [now destruct (write_bytes_preserve_type Hstore)|inv Hstore].
+  assert (Hmemlength': mem_length m = mem_length m'). {
+    unfold store in Hstore.
+    destruct (addr + off + N.of_nat (Datatypes.length (bits v)) <=? mem_length m)%N=>//.
+    by edestruct (write_bytes_meminst_preserve_type); eauto. }
   exists sr', m'; auto.
   split; auto.
   unfold smem_store in Hsmem_store. rewrite Hmeminst in Hsmem_store. cbn in *.
@@ -527,7 +530,7 @@ Proof.
   have HcarryRedC1 := make_carry_reduce C1_ord state sr1 fr m _ _ HINV1 Hmem1 Hgmp1 HgmpBounds HresVal.
   destruct HcarryRedC1 as [sr_C1 [m_C1 [Hmake_carry_red_C1 [HINV_C1 [Hmem_C1 [Hgmp_C1 [HloadRes_C1 [ HloadOrd_C1 [HloadArg_C1 [Hpres64_C1 [Hpres32_C1 [Hsfs_C1 Hmemlength_C1]]]]]]]]]]]].
 
-  assert (HnewgmpBoundsC1: (Z.of_N (gmp + 16) + 8 <= Z.of_N (mem_length m_C1) < Int32.modulus)%Z) by now simpl_modulus; simpl_modulus_in HgmpBounds; cbn in HgmpBounds |- *.
+  assert (HnewgmpBoundsC1: (Z.of_N (gmp + 16) + 8 <= Z.of_N (mem_length m_C1) < Int32.modulus)%Z) by lia.
 
   assert (HconstrArgsC1: repr_val_constr_args_LambdaANF_Wasm cenv fenv nenv penv [:: Vprim (AstCommon.primInt; (n1 + n2)%uint63)] sr_C1  (f_inst fr) (4 + (gmp+8))%N). {
     eapply Rcons_l with (wal:=(Val_ptr gmp)) (gmp:=(gmp+16)%N); try lia; eauto.
@@ -689,7 +692,7 @@ Proof.
   have HcarryRedC1 := make_carry_reduce C1_ord state sr1 fr m _ _ HINV1 Hmem1 Hgmp1 HgmpBounds HresVal.
   destruct HcarryRedC1 as [sr_C1 [m_C1 [Hmake_carry_red_C1 [HINV_C1 [Hmem_C1 [Hgmp_C1 [HloadRes_C1 [ HloadOrd_C1 [HloadArg_C1 [Hpres64_C1 [Hpres32_C1 [Hsfs_C1 Hmemlength_C1]]]]]]]]]]]].
 
-  assert (HnewgmpBoundsC1: (Z.of_N (gmp + 16) + 8 <= Z.of_N (mem_length m_C1) < Int32.modulus)%Z) by now simpl_modulus; simpl_modulus_in HgmpBounds; cbn in HgmpBounds |- *.
+  assert (HnewgmpBoundsC1: (Z.of_N (gmp + 16) + 8 <= Z.of_N (mem_length m_C1) < Int32.modulus)%Z) by lia.
 
   assert (HconstrArgsC1: repr_val_constr_args_LambdaANF_Wasm cenv fenv nenv penv [:: Vprim (AstCommon.primInt; (n1 + n2 + 1)%uint63)] sr_C1  (f_inst fr) (4 + (gmp+8))%N). {
     eapply Rcons_l with (wal:=(Val_ptr gmp)) (gmp:=(gmp+16)%N); try lia; eauto.
@@ -846,7 +849,7 @@ Proof.
   have HcarryRedC1 := make_carry_reduce C1_ord state sr1 fr m _ _ HINV1 Hmem1 Hgmp1 HgmpBounds HresVal.
   destruct HcarryRedC1 as [sr_C1 [m_C1 [Hmake_carry_red_C1 [HINV_C1 [Hmem_C1 [Hgmp_C1 [HloadRes_C1 [ HloadOrd_C1 [HloadArg_C1 [Hpres64_C1 [Hpres32_C1 [Hsfs_C1 Hmemlength_C1]]]]]]]]]]]].
 
-  assert (HnewgmpBoundsC1: (Z.of_N (gmp + 16) + 8 <= Z.of_N (mem_length m_C1) < Int32.modulus)%Z) by now simpl_modulus; simpl_modulus_in HgmpBounds; cbn in HgmpBounds |- *.
+  assert (HnewgmpBoundsC1: (Z.of_N (gmp + 16) + 8 <= Z.of_N (mem_length m_C1) < Int32.modulus)%Z) by lia.
 
   assert (HconstrArgsC1: repr_val_constr_args_LambdaANF_Wasm cenv fenv nenv penv [:: Vprim (AstCommon.primInt; (n1 - n2)%uint63)] sr_C1  (f_inst fr) (4 + (gmp+8))%N). {
     eapply Rcons_l with (wal:=(Val_ptr gmp)) (gmp:=(gmp+16)%N); try lia; eauto.
@@ -980,7 +983,7 @@ Proof.
   have HcarryRedC0 := make_carry_reduce C0_ord state sr1 fr m _ _ HINV1 Hmem1 Hgmp1 HgmpBounds HresVal.
   destruct HcarryRedC0 as [sr_C0 [m_C0 [Hmake_carry_red_C0 [HINV_C0 [Hmem_C0 [Hgmp_C0 [HloadRes_C0 [ HloadOrd_C0 [HloadArg_C0 [Hpres64_C0 [Hpres32_C0 [Hsfs_C0 Hmemlength_C0]]]]]]]]]]]].
 
-  assert (HnewgmpBoundsC0: (Z.of_N (gmp + 16) + 8 <= Z.of_N (mem_length m_C0) < Int32.modulus)%Z) by now simpl_modulus; simpl_modulus_in HgmpBounds; cbn in HgmpBounds |- *.
+  assert (HnewgmpBoundsC0: (Z.of_N (gmp + 16) + 8 <= Z.of_N (mem_length m_C0) < Int32.modulus)%Z) by lia.
 
   assert (HconstrArgsC0: repr_val_constr_args_LambdaANF_Wasm cenv fenv nenv penv [:: Vprim (AstCommon.primInt; (n1 - n2 - 1)%uint63)] sr_C0 (f_inst fr) (4 + (gmp+8))%N). {
     eapply Rcons_l with (wal:=(Val_ptr gmp)) (gmp:=(gmp+16)%N); try lia; eauto.
@@ -997,7 +1000,7 @@ Proof.
   have HcarryRedC1 := make_carry_reduce C1_ord state sr1 fr m _ _ HINV1 Hmem1 Hgmp1 HgmpBounds HresVal.
   destruct HcarryRedC1 as [sr_C1 [m_C1 [Hmake_carry_red_C1 [HINV_C1 [Hmem_C1 [Hgmp_C1 [HloadRes_C1 [ HloadOrd_C1 [HloadArg_C1 [Hpres64_C1 [Hpres32_C1 [Hsfs_C1 Hmemlength_C1]]]]]]]]]]]].
 
-  assert (HnewgmpBoundsC1: (Z.of_N (gmp + 16) + 8 <= Z.of_N (mem_length m_C1) < Int32.modulus)%Z) by now simpl_modulus; simpl_modulus_in HgmpBounds; cbn in HgmpBounds |- *.
+  assert (HnewgmpBoundsC1: (Z.of_N (gmp + 16) + 8 <= Z.of_N (mem_length m_C1) < Int32.modulus)%Z) by lia.
 
   assert (HconstrArgsC1: repr_val_constr_args_LambdaANF_Wasm cenv fenv nenv penv [:: Vprim (AstCommon.primInt; (n1 - n2 - 1)%uint63)] sr_C1  (f_inst fr) (4 + (gmp+8))%N). {
     eapply Rcons_l with (wal:=(Val_ptr gmp)) (gmp:=(gmp+16)%N); try lia; eauto.
@@ -1692,7 +1695,7 @@ Proof.
         rewrite Zaux.Zmod_mod_mult. reflexivity. lia. lia.
         replace (2 * 2^(63 - (i + 1)))%Z with (2^1 * 2 ^ (63 - (i  + 1)))%Z.
         rewrite <-Z.pow_add_r.    replace (1 + (63 - (i + 1)))%Z with (63 - i)%Z. reflexivity.
-        by lia. lia. lia.
+        lia. lia. lia.
         reflexivity. }
       rewrite H8.
       replace ((q0 * y + xh0') * 2 ^ (63 - i) + xl mod 2 ^ (63 - i) / 2 ^ (63 - (i + 1)) * 2 ^ (63 - (i + 1)) +
@@ -1797,7 +1800,7 @@ Proof.
       rewrite int64_modulus_eq_pow64.
       assert (xh0' * 2 < y * 2)%Z. lia. assert (y * 2 < 2^64 - 1)%Z.
       cbn in Hli1. lia.
-      assert (xl1' mod 2^64 / 2^63 < 2)%Z. lia. lia.
+      assert (xl1' mod 2^64 / 2^63 < 2)%Z by lia. lia.
       dostep_nary' 1. replace (xh1' - y)%Z with xh2' by auto. eapply r_global_set'; eauto.
       apply rt_refl.
       apply rt_step. apply r_simple. apply rs_label_const; cbn; auto. }
@@ -1965,11 +1968,8 @@ Proof.
   { (* Unary operations *)
     assert (forall w, exists mem, store m (Wasm_int.N_of_uint i32m (N_to_i32 gmp_v)) 0%N
                                           (bits (VAL_int64 w)) 8 = Some mem) as Htest. {
-      intros.
-      apply enough_space_to_store. cbn.
-      assert ((Datatypes.length (serialise_i64 w)) = 8%nat) as Hl.
-      { unfold serialise_i64, encode_int, bytes_of_int, rev_if_be.
-        destruct (Archi.big_endian); reflexivity. } rewrite Hl. clear Hl. cbn.
+      intros. apply notNone_Some, enough_space_to_store. cbn.
+      rewrite length_bits_i64. cbn.
       rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
 
     rename H into Hrepr_arg1, H0 into Hrepr_primop.
@@ -2412,10 +2412,8 @@ Proof.
                            (bits (VAL_int64 w))
                            8 = Some mem) as Htest. {
       intros.
-      apply enough_space_to_store. cbn.
-      assert ((Datatypes.length (serialise_i64 w)) = 8) as Hl.
-      { unfold serialise_i64, encode_int, bytes_of_int, rev_if_be.
-        destruct (Archi.big_endian); reflexivity. } rewrite Hl. clear Hl. cbn.
+      apply notNone_Some, enough_space_to_store. cbn.
+      rewrite length_bits_i64. cbn.
       rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
 
     (* TODO cleanup *)
@@ -4822,10 +4820,8 @@ Proof.
                            (bits (VAL_int64 w))
                            8 = Some mem) as Htest. {
       intros.
-      apply enough_space_to_store. cbn.
-      assert ((Datatypes.length (serialise_i64 w)) = 8) as Hl.
-      { unfold serialise_i64, encode_int, bytes_of_int, rev_if_be.
-        destruct (Archi.big_endian); reflexivity. } rewrite Hl. clear Hl. cbn.
+      apply notNone_Some, enough_space_to_store. cbn.
+      rewrite length_bits_i64. cbn.
       rewrite Wasm_int.Int32.Z_mod_modulus_id; lia. }
 
     (* TODO cleanup *)
