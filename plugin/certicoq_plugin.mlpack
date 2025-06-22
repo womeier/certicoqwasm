@@ -270,6 +270,7 @@ Ctypesdefs
 Memtype
 Memdata
 Memory
+Memory0
 Globalenvs
 Clight
 PrintAST
