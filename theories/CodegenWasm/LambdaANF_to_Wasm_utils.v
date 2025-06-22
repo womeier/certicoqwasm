@@ -838,6 +838,16 @@ Import Nnat Znat.
 
 Context `{ho : host}.
 
+Lemma length_bits_i32 : forall v, length (bits (VAL_int32 v)) = 4.
+Proof.
+  intros. now unfold_bits.
+Qed.
+
+Lemma length_bits_i64 : forall v, length (bits (VAL_int64 v)) = 8.
+Proof.
+  intros. now unfold_bits.
+Qed.
+
 Lemma and_1_odd : forall n,
   (-1 < Z.of_nat (N.to_nat (2 * n + 1)) < Wasm_int.Int32.modulus)%Z ->
   Wasm_int.Int32.iand (Wasm_int.Int32.repr (Z.of_N (2 * n + 1))) (Wasm_int.Int32.repr 1) = Wasm_int.Int32.one.

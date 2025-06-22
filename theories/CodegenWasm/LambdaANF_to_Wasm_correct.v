@@ -2260,16 +2260,6 @@ Proof.
   intros. inv H1. now solve_eq n m.
 Qed.
 
-Lemma length_bits_i32 : forall v, length (bits (VAL_int32 v)) = 4.
-Proof.
-  intros. now unfold_bits.
-Qed.
-
-Lemma length_bits_i64 : forall v, length (bits (VAL_int64 v)) = 8.
-Proof.
-  intros. now unfold_bits.
-Qed.
-
 Lemma store_constr_args_reduce {lenv} : forall ys offset vs sargs state rho fds s f m v_cap num_args,
   domains_disjoint lenv fenv ->
   (forall f, (exists res, find_def f fds = Some res) <-> (exists i, fenv ! f = Some i)) ->
