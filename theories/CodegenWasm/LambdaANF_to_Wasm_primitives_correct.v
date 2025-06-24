@@ -2238,13 +2238,15 @@ Proof.
         { (* funs1 *)
           intros ????? Hrho Hv'.
           destruct (var_dec x0 x2).
-          { (* x = x1 *)
+          - (* x = x1 *)
             subst x2. rewrite M.gss in Hrho. inv Hrho.
-            assert (~ subval_or_eq (Vfun rho' fds' f0) (Vprim (primInt n))). { now apply subval_or_eq_fun_not_prim. }
+            assert (~ subval_or_eq (Vfun rho' fds' f0) (Vprim (primInt n))).
+            { now apply subval_or_eq_fun_not_prim. }
             contradiction.
-          }
-          { (* x <> x1 *) rewrite M.gso in Hrho; eauto. }
-        } split.
+          - (* x <> x1 *)
+            now rewrite M.gso in Hrho; eauto.
+        }
+        split.
         { intros ? Hnfd. apply Hfun2 in Hnfd.
           destruct Hnfd as [i' [Htrans Hval]].
           exists i'. split. assumption.
@@ -2253,36 +2255,32 @@ Proof.
           now apply update_global_preserves_funcs in Hglob_sr'.
           now subst fr.
         }
-        {
-          intros. destruct (var_dec x0 x2).
-          { (* x = x1 *)
-            subst x2. exists (Vprim (primInt n)), (Val_ptr gmp_v).
-            rewrite M.gss. split; auto.
-            split.
-            exists x0'. cbn. split. assumption.
-            unfold lookup_N; cbn; auto.
-            subst fr. cbn. erewrite set_nth_nth_error_same; eauto.
-            now subst fr.
-          }
-          { (* x <> x1 *)
-            assert (Hocc : occurs_free (Eprim x0 p [:: x ] e) x2) by now apply Free_Eprim2.
-            have H' := Hvar _ Hocc H1.
-            destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
-            exists val', wal'. split.
-            rewrite M.gso; auto. split.
-            destruct Hloc as [i' [Hl1 Hl2]].
-            unfold stored_in_locals. exists i'. split; auto.
-            subst fr. unfold lookup_N.
-            rewrite set_nth_nth_error_other; auto.
-            inv Hrepr_x.
-            inv Hl1.
-            intro. assert (x0' = i') by lia. subst x0'.
-            unfold translate_var in H2, H3.
-            destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in H3=>//.
-            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H2=>//.
-            have H'' := HlenvInjective _ _ _ _ n0 Hlx2 Hlx1. congruence.
-            now apply HvalsPreserved.
-          }
+        intros. destruct (var_dec x0 x2).
+        { (* x = x1 *)
+          subst x2. exists (Vprim (primInt n)), (Val_ptr gmp_v).
+          rewrite M.gss. split; auto.
+          split.
+          exists x0'. cbn. split. assumption.
+          unfold lookup_N; cbn; auto.
+          subst fr. cbn. erewrite set_nth_nth_error_same; eauto.
+          now subst fr.
+        }
+        { (* x <> x1 *)
+          assert (Hocc : occurs_free (Eprim x0 p [:: x ] e) x2) by now apply Free_Eprim2.
+          have H' := Hvar _ Hocc H1.
+          destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
+          exists val', wal'. split.
+          rewrite M.gso; auto. split.
+           destruct Hloc as [i' [Hl1 Hl2]].
+          unfold stored_in_locals. exists i'. split; auto.
+          subst fr. unfold lookup_N.
+          rewrite set_nth_nth_error_other; auto.
+
+          intro. assert (x0' = i') by lia. subst x0'.
+          have Hcontra := repr_var_inj _ _ _ _ HlenvInjective Hl1 Hrepr_x.
+          contradiction.
+
+          now apply HvalsPreserved.
         }
       }
       exists sr', fr, m', (Val_ptr gmp_v).
@@ -2618,12 +2616,13 @@ Proof.
         { (* funs1 *)
           intros ????? Hrho Hv'.
           destruct (var_dec x0 x2).
-          { (* x = x1 *)
+          - (* x = x1 *)
             subst x2. rewrite M.gss in Hrho. inv Hrho.
-            assert (~ subval_or_eq (Vfun rho' fds' f0) (Vprim (primInt n))). { now apply subval_or_eq_fun_not_prim. }
+            assert (~ subval_or_eq (Vfun rho' fds' f0) (Vprim (primInt n))).
+            { now apply subval_or_eq_fun_not_prim. }
             contradiction.
-          }
-          { (* x <> x1 *) rewrite M.gso in Hrho; eauto. }
+          - (* x <> x1 *)
+            now rewrite M.gso in Hrho; eauto.
         } split.
         { intros ? Hnfd. apply Hfun2 in Hnfd.
           destruct Hnfd as [i' [Htrans Hval]].
@@ -2633,36 +2632,34 @@ Proof.
           now apply update_global_preserves_funcs in Hglob_sr'.
           now subst fr.
         }
-        {
-          intros. destruct (var_dec x0 x2).
-          { (* x = x1 *)
-            subst x2. exists (Vprim (primInt n)), (Val_ptr gmp_v).
-            rewrite M.gss. split; auto.
-            split.
-            exists x0'. cbn. split. assumption.
-            unfold lookup_N; cbn; auto.
-            subst fr. cbn. erewrite set_nth_nth_error_same; eauto.
-            now subst fr.
-          }
-          { (* x <> x1 *)
-            assert (Hocc : occurs_free (Eprim x0 p [:: x ; y] e) x2) by now apply Free_Eprim2.
-            have H' := Hvar _ Hocc H5.
-            destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
-            exists val', wal'. split.
-            rewrite M.gso; auto. split.
-            destruct Hloc as [i' [Hl1 Hl2]].
-            unfold stored_in_locals. exists i'. split; auto.
-            subst fr. unfold lookup_N.
-            rewrite set_nth_nth_error_other; auto.
-            inv Hrepr_x. inv Hl1.
-            intro. assert (x0' = i') by lia. subst x0'.
-            unfold translate_var in H6, H7.
-            destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in H7=>//.
-            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H6=>//.
-            have H'' := HlenvInjective _ _ _ _ n0 Hlx2 Hlx1. congruence.
-            apply nth_error_Some. congruence.
-            now apply HvalsPreserved.
-          }
+        intros. destruct (var_dec x0 x2).
+        { (* x = x1 *)
+          subst x2. exists (Vprim (primInt n)), (Val_ptr gmp_v).
+          rewrite M.gss. split; auto.
+          split.
+          exists x0'. cbn. split. assumption.
+          unfold lookup_N; cbn; auto.
+          subst fr. cbn. erewrite set_nth_nth_error_same; eauto.
+          now subst fr.
+        }
+        { (* x <> x1 *)
+          assert (Hocc : occurs_free (Eprim x0 p [:: x ; y] e) x2)
+              by now apply Free_Eprim2.
+          have H' := Hvar _ Hocc H5.
+          destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
+          exists val', wal'. split.
+          rewrite M.gso; auto. split.
+          destruct Hloc as [i' [Hl1 Hl2]].
+          unfold stored_in_locals. exists i'. split; auto.
+          subst fr. unfold lookup_N.
+          rewrite set_nth_nth_error_other; auto.
+
+          intro. assert (x0' = i') by lia. subst x0'.
+          have Hcontra := repr_var_inj _ _ _ _ HlenvInjective Hl1 Hrepr_x.
+          contradiction.
+
+          apply nth_error_Some. congruence.
+          now apply HvalsPreserved.
         }
       }
       exists sr', fr, m', (Val_ptr gmp_v).
@@ -2672,8 +2669,7 @@ Proof.
       separate_instr.
       dostep_nary 0. eapply r_global_get.
       eassumption.
-      eapply rt_trans
-        with (y:=(state, sr', f, [$V VAL_num (VAL_int32 (N_to_i32 gmp_v))] ++ [AI_basic (BI_local_set x0')])).
+      eapply rt_trans with (y:=(state, sr', f, ?[e1] ++ ?[e2])).
       eapply app_trans_const; auto.
       dostep_nary 0. apply r_global_get; eassumption.
       dostep_nary 2. constructor; apply rs_binop_success; reflexivity.
@@ -2730,47 +2726,49 @@ Proof.
       split. {
         intros ????? Hrho Hv'.
         destruct (var_dec x0 x2).
-        - (* x0 = x1 *) (* v0 can never be a function value, by assumption on primops *)
+        - (* x0 = x1 *)
+          (* v0 can never be a function value, by assumption on primops *)
           subst x2. rewrite M.gss in Hrho; eauto.
           inversion Hrho. subst v0.
           have H'' := Hnofunval rho' fds' f0.
           contradiction.
-        - (* x0 <> x1 *) rewrite M.gso in Hrho; eauto.
+        - (* x0 <> x1 *)
+          rewrite M.gso in Hrho; eauto.
       } split. {
         intros ? Hnfd. apply Hfun2 in Hnfd.
         destruct Hnfd as [i' [Htrans HvalFun]].
         exists i'. split. assumption.
         apply val_relation_func_depends_on_funcs with (s:=s); auto.
-      } {
-        intros x2 Hx2free Hx2notfun.
-        destruct (var_dec x0 x2).
-        { (* x = x1 *)
-          subst x2.
-          exists v, (Val_ptr addr).
-          rewrite M.gss. split; auto.
-          split.
-          exists x0'. cbn. split. assumption.
-          unfold lookup_N; cbn; auto.
-          assumption.
-        }
-        { (* x <> x1 *)
-          assert (Hocc : occurs_free (Eprim x0 p [:: x ; y] e) x2) by now apply Free_Eprim2.
-          have H' := Hvar _ Hocc Hx2notfun.
-          destruct H' as [val' [wal' [Hrho [Hloc Hval']]]].
-          exists val', wal'. split.
-          rewrite M.gso; auto. split.
-          destruct Hloc as [i' [Hl1 Hl2]].
-          unfold stored_in_locals. exists i'. split; auto.
-          unfold lookup_N.
-          rewrite set_nth_nth_error_other; eauto.
-          inv Hrepr_x. inv Hl1.
-          intro. assert (x0' = i') by lia. subst x0'.
-          unfold translate_var in H3, H6.
-          destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in H3=>//.
-          destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H6=>//.
-          have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. congruence.
-          now apply H11.
-        } } }
+      }
+      intros x2 Hx2free Hx2notfun.
+      destruct (var_dec x0 x2).
+      { (* x = x1 *)
+        subst x2.
+        exists v, (Val_ptr addr).
+        rewrite M.gss. split; auto.
+        split.
+        exists x0'. cbn. split. assumption.
+        unfold lookup_N; cbn; auto.
+        assumption.
+      }
+      { (* x <> x1 *)
+        assert (Hocc : occurs_free (Eprim x0 p [:: x ; y] e) x2)
+            by now apply Free_Eprim2.
+        have H' := Hvar _ Hocc Hx2notfun.
+        destruct H' as [val' [wal' [Hrho [Hloc Hval']]]].
+        exists val', wal'. split.
+        rewrite M.gso; auto. split.
+        destruct Hloc as [i' [Hl1 Hl2]].
+        unfold stored_in_locals. exists i'. split; auto.
+        unfold lookup_N.
+        rewrite set_nth_nth_error_other; eauto.
+
+        intro. assert (x0' = i') by lia. subst x0'.
+        have Hcontra := repr_var_inj _ _ _ _ HlenvInjective Hl1 Hrepr_x.
+        contradiction.
+
+        now apply H11.
+      } }
 
     (* TODO cleanup *)
     assert (forall t ord,
@@ -2816,59 +2814,53 @@ Proof.
         apply nth_error_Some in Hl.
         apply notNone_Some in Hl. destruct Hl as [? Hlx].
 
-        destruct HrelE as [Hfun1 [Hfun2 Hvar]]. unfold rel_env_LambdaANF_Wasm. split.
+        destruct HrelE as [Hfun1 [Hfun2 Hvar]]. unfold rel_env_LambdaANF_Wasm.
+        split.
         { intros. destruct (var_dec x0 x2).
-          { subst x2. rewrite M.gss in H7. injection H7 as <-. subst v.
+          - subst x2. rewrite M.gss in H7. injection H7 as <-. subst v.
             apply subval_or_eq_fun in H8.
-            destruct H8 as [v1 [Hr1 Hr2]]. inv Hr2.
-          }
-          { by rewrite M.gso in H7; eauto. }
-        } split.
+            destruct H8 as [v1 [Hr1 Hr2]]. now inv Hr2.
+          - by rewrite M.gso in H7; eauto.
+        }
+        split.
         { intros ? Hnfd. apply Hfun2 in Hnfd.
           destruct Hnfd as [i [Htrans Hval]].
           exists i. split. assumption. now subst fr.
         }
-        { intros. destruct (var_dec x0 x2).
-          { subst x2.
-            assert ( (Wasm_int.Int32.half_modulus < Wasm_int.Int32.modulus)%Z )
-                by now rewrite Wasm_int.Int32.half_modulus_modulus.
-            exists (Vconstr t []), (Val_unboxed (2 * ord + 1)%N).
-            rewrite M.gss. split. congruence.
-            split.
-            {
-              unfold stored_in_locals. exists x0'.
-              split. assumption.
-              subst fr.
-              unfold lookup_N, nat_to_value, nat_to_i32, wasm_value_to_i32.
-              simpl. erewrite set_nth_nth_error_same; eauto.
-            }
-            {
-              econstructor; eauto.
-              now rewrite N.mul_comm.
-              {
-                now inv HreprVal. }
-            }
-          }
-          {
-            assert (Hocc: occurs_free (Eprim x0 p [:: x; y] e) x2). { now apply Free_Eprim2. }
-            have H' := Hvar _ Hocc H8.
-            destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
-            exists val', wal'.
-            split. rewrite M.gso; auto.
-            split. 2: now subst fr.
-            destruct Hloc as [i [Hl1 Hl2]].
-            unfold stored_in_locals. exists i. split; auto.
+        intros. destruct (var_dec x0 x2).
+        { (* x0 = x2 *)
+          subst x2.
+          assert ( (Wasm_int.Int32.half_modulus < Wasm_int.Int32.modulus)%Z )
+              by now rewrite Wasm_int.Int32.half_modulus_modulus.
+          exists (Vconstr t []), (Val_unboxed (2 * ord + 1)%N).
+          rewrite M.gss. split. congruence.
+          split.
+          - unfold stored_in_locals. exists x0'.
+            split. assumption.
             subst fr.
-            unfold lookup_N.
-            rewrite set_nth_nth_error_other; auto.
-            intro. assert (x0' = i) by lia. subst x0'.
-            inv Hrepr_x. inv Hl1.
-            unfold translate_var in H3, H10.
-            destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in H3=>//. injection H3 as ->.
-            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H10=>//. injection H10 as ->.
-            have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. contradiction.
-            apply nth_error_Some. congruence.
-          }
+            unfold lookup_N, nat_to_value, nat_to_i32, wasm_value_to_i32.
+            simpl. now erewrite set_nth_nth_error_same; eauto.
+          - econstructor; eauto; try lia.
+            now inv HreprVal.
+        }
+        { (* x0 <> x2 *)
+          assert (Hocc: occurs_free (Eprim x0 p [:: x; y] e) x2). { now apply Free_Eprim2. }
+          have H' := Hvar _ Hocc H8.
+          destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
+          exists val', wal'.
+          split. rewrite M.gso; auto.
+          split. 2: now subst fr.
+          destruct Hloc as [i [Hl1 Hl2]].
+          unfold stored_in_locals. exists i. split; auto.
+          subst fr.
+          unfold lookup_N.
+          rewrite set_nth_nth_error_other; auto.
+
+          intro. assert (x0' = i) by lia. subst x0'.
+          have Hcontra := repr_var_inj _ _ _ _ HlenvInjective Hl1 Hrepr_x.
+          contradiction.
+
+          apply nth_error_Some. congruence.
         }
       }
       exists fr, (Val_unboxed (2 * ord + 1)%N).
@@ -3876,37 +3868,37 @@ Proof.
             destruct Hnfd as [i' [Htrans HvalFun]].
             exists i'. split. assumption.
             apply val_relation_func_depends_on_funcs with (s:=s); subst fr'; auto.
-          } {
-            intros x2 Hx2free Hx2notfun.
-            destruct (var_dec x0 x2).
-            { (* x = x1 *)
-              subst x2.
-              exists v, (Val_ptr (gmp_v+16)%N).
-              rewrite M.gss. split; auto.
-              split.
-              exists x0'. cbn. split. assumption.
-              unfold lookup_N; cbn; auto.
-              subst fr'. cbn.
-              eapply set_nth_nth_error_same; eauto. rewrite <-Hv_mulc. assumption.
-            }
-            { (* x <> x1 *)
-              assert (Hocc : occurs_free (Eprim x0 p [:: x ; y] e) x2) by now apply Free_Eprim2.
-              have H' := Hvar _ Hocc Hx2notfun.
-              destruct H' as [val' [wal' [Hrho [Hloc Hval']]]].
-              exists val', wal'. split.
-              rewrite M.gso; auto. split.
-              destruct Hloc as [i' [Hl1 Hl2]].
-              unfold stored_in_locals. exists i'. split; auto.
-              unfold lookup_N.
-              subst fr'; rewrite set_nth_nth_error_other; auto.
-              inv Hrepr_x. inv Hl1.
-              intro. assert (x0' = i') by (clear_except H8; lia). subst x0'.
-              unfold translate_var in H7, H6.
-              destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in H7=>//.
-              destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H6=>//.
-              have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. congruence.
-              now apply HvalsPreserved.
-        } } }
+          }
+          intros x2 Hx2free Hx2notfun.
+          destruct (var_dec x0 x2).
+          { (* x = x1 *)
+            subst x2.
+            exists v, (Val_ptr (gmp_v+16)%N).
+            rewrite M.gss. split; auto.
+            split.
+            exists x0'. cbn. split. assumption.
+            unfold lookup_N; cbn; auto.
+            subst fr'. cbn.
+            eapply set_nth_nth_error_same; eauto. rewrite <-Hv_mulc. assumption.
+          }
+          { (* x <> x1 *)
+            assert (Hocc : occurs_free (Eprim x0 p [:: x ; y] e) x2) by now apply Free_Eprim2.
+            have H' := Hvar _ Hocc Hx2notfun.
+            destruct H' as [val' [wal' [Hrho [Hloc Hval']]]].
+            exists val', wal'. split.
+            rewrite M.gso; auto. split.
+            destruct Hloc as [i' [Hl1 Hl2]].
+            unfold stored_in_locals. exists i'. split; auto.
+            unfold lookup_N.
+            subst fr'; rewrite set_nth_nth_error_other; auto.
+
+            intro. assert (x0' = i') by (clear_except H6; lia). subst x0'.
+            have Hcontra := repr_var_inj _ _ _ _ HlenvInjective Hl1 Hrepr_x.
+            contradiction.
+
+            now apply HvalsPreserved.
+          }
+        }
         exists sr', fr'.
         have Hb1 := to_Z_bounded n1. cbn in Hb1.
         have Hb2 := to_Z_bounded n2. cbn in Hb2.
@@ -4130,37 +4122,37 @@ Proof.
             destruct Hnfd as [i' [Htrans HvalFun]].
             exists i'. split. assumption.
             apply val_relation_func_depends_on_funcs with (s:=s); subst fr'; auto.
-          } {
-            intros x2 Hx2free Hx2notfun.
-            destruct (var_dec x0 x2).
-            { (* x = x1 *)
-              subst x2.
-              exists v, (Val_ptr (gmp_v+16)%N).
-              rewrite M.gss. split; auto.
-              split.
-              exists x0'. cbn. split. assumption.
-              unfold lookup_N; cbn; auto.
-              subst fr'. cbn.
-              eapply set_nth_nth_error_same; eauto. rewrite <-Hv_diveucl. assumption.
-            }
-            { (* x <> x1 *)
-              assert (Hocc : occurs_free (Eprim x0 p [:: x ; y] e) x2) by now apply Free_Eprim2.
-              have H' := Hvar _ Hocc Hx2notfun.
-              destruct H' as [val' [wal' [Hrho [Hloc Hval']]]].
-              exists val', wal'. split.
-              rewrite M.gso; auto. split.
-              destruct Hloc as [i' [Hl1 Hl2]].
-              unfold stored_in_locals. exists i'. split; auto.
-              unfold lookup_N.
-              subst fr'; rewrite set_nth_nth_error_other; auto.
-              inv Hrepr_x. inv Hl1.
-              intro. assert (x0' = i') by lia. subst x0'.
-              unfold translate_var in H7, H6.
-              destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in H7=>//.
-              destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H6=>//.
-              have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. congruence.
-              now apply HvalsPreserved.
-        } } }
+          }
+          intros x2 Hx2free Hx2notfun.
+          destruct (var_dec x0 x2).
+          { (* x = x1 *)
+            subst x2.
+            exists v, (Val_ptr (gmp_v+16)%N).
+            rewrite M.gss. split; auto.
+            split.
+            exists x0'. cbn. split. assumption.
+            unfold lookup_N; cbn; auto.
+            subst fr'. cbn.
+            eapply set_nth_nth_error_same; eauto. rewrite <-Hv_diveucl. assumption.
+          }
+          { (* x <> x1 *)
+            assert (Hocc : occurs_free (Eprim x0 p [:: x ; y] e) x2) by now apply Free_Eprim2.
+            have H' := Hvar _ Hocc Hx2notfun.
+            destruct H' as [val' [wal' [Hrho [Hloc Hval']]]].
+            exists val', wal'. split.
+            rewrite M.gso; auto. split.
+            destruct Hloc as [i' [Hl1 Hl2]].
+            unfold stored_in_locals. exists i'. split; auto.
+            unfold lookup_N.
+            subst fr'; rewrite set_nth_nth_error_other; auto.
+
+            intro. assert (x0' = i') by lia. subst x0'.
+            have Hcontra := repr_var_inj _ _ _ _ HlenvInjective Hl1 Hrepr_x.
+            contradiction.
+
+            now apply HvalsPreserved.
+          }
+        }
         exists sr', fr'.
         split. { (* Instructions reduce *)
           unfold diveucl_instrs.
@@ -4501,37 +4493,37 @@ Proof.
             destruct Hnfd as [i' [Htrans HvalFun]].
             exists i'. split. assumption.
             apply val_relation_func_depends_on_funcs with (s:=s); subst fr'; auto.
-          } {
-            intros x2 Hx2free Hx2notfun.
-            destruct (var_dec x0 x2).
-            { (* x = x1 *)
-              subst x2.
-              exists v, (Val_ptr (gmp_v+16)%N).
-              rewrite M.gss. split; auto.
-              split.
-              exists x0'. cbn. split. assumption.
-              unfold lookup_N; cbn; auto.
-              subst fr'. cbn.
-              eapply set_nth_nth_error_same; eauto. assumption.
-            }
-            { (* x <> x1 *)
-              assert (Hocc : occurs_free (Eprim x0 p [:: arg1 ; arg2 ; arg3] e) x2) by now apply Free_Eprim2.
-              have H' := Hvar _ Hocc Hx2notfun.
-              destruct H' as [val' [wal' [Hrho [Hloc Hval']]]].
-              exists val', wal'. split.
-              rewrite M.gso; auto. split.
-              destruct Hloc as [i' [Hl1 Hl2]].
-              unfold stored_in_locals. exists i'. split; auto.
-              unfold lookup_N.
-              subst fr'; rewrite set_nth_nth_error_other; auto.
-              inv Hrepr_x. inv Hl1.
-              intro. assert (x0' = i') by lia. subst x0'.
-              unfold translate_var in H1, H0.
-              destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in H1=>//.
-              destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H0=>//.
-              have H'' := HlenvInjective _ _ _ _ n Hlx2 Hlx1. congruence.
-              now apply HvalsPreserved.
-        } } }
+          }
+          intros x2 Hx2free Hx2notfun.
+          destruct (var_dec x0 x2).
+          { (* x = x1 *)
+            subst x2.
+            exists v, (Val_ptr (gmp_v+16)%N).
+            rewrite M.gss. split; auto.
+            split.
+            exists x0'. cbn. split. assumption.
+            unfold lookup_N; cbn; auto.
+            subst fr'. cbn.
+            eapply set_nth_nth_error_same; eauto. assumption.
+          }
+          { (* x <> x1 *)
+            assert (Hocc : occurs_free (Eprim x0 p [:: arg1 ; arg2 ; arg3] e) x2) by now apply Free_Eprim2.
+            have H' := Hvar _ Hocc Hx2notfun.
+            destruct H' as [val' [wal' [Hrho [Hloc Hval']]]].
+            exists val', wal'. split.
+            rewrite M.gso; auto. split.
+            destruct Hloc as [i' [Hl1 Hl2]].
+            unfold stored_in_locals. exists i'. split; auto.
+            unfold lookup_N.
+            subst fr'; rewrite set_nth_nth_error_other; auto.
+
+            intro. assert (x0' = i') by lia. subst x0'.
+            have Hcontra := repr_var_inj _ _ _ _ HlenvInjective Hl1 Hrepr_x.
+            contradiction.
+
+            now apply HvalsPreserved.
+          }
+        }
         exists sr', fr'.
         split; auto.
         split. apply rt_step. eapply r_local_set; eauto.
@@ -4956,12 +4948,13 @@ Proof.
         { (* funs1 *)
           intros ????? Hrho Hv'.
           destruct (var_dec x0 x2).
-          { (* x = x1 *)
+          - (* x = x1 *)
             subst x2. rewrite M.gss in Hrho. inv Hrho.
-            assert (~ subval_or_eq (Vfun rho' fds' f0) (Vprim (primInt n))). { now apply subval_or_eq_fun_not_prim. }
+            assert (~ subval_or_eq (Vfun rho' fds' f0) (Vprim (primInt n))).
+                by now apply subval_or_eq_fun_not_prim.
             contradiction.
-          }
-          { (* x <> x1 *) rewrite M.gso in Hrho; eauto. }
+          - (* x <> x1 *)
+            now rewrite M.gso in Hrho; eauto.
         } split.
         { intros ? Hnfd. apply Hfun2 in Hnfd.
           destruct Hnfd as [i' [Htrans Hval]].
@@ -4971,35 +4964,33 @@ Proof.
           now apply update_global_preserves_funcs in Hglob_sr'.
           now subst fr.
         }
-        {
-          intros. destruct (var_dec x0 x2).
-          { (* x = x1 *)
-            subst x2. exists (Vprim (primInt n)), (Val_ptr gmp_v).
-            rewrite M.gss. split; auto.
-            split.
-            exists x0'. cbn. split. assumption.
-            unfold lookup_N; cbn; auto.
-            subst fr. cbn. erewrite set_nth_nth_error_same; eauto.
-            now subst fr.
-          }
-          { (* x <> x1 *)
-            assert (Hocc : occurs_free (Eprim x0 p [:: x ; y ; z] e) x2) by now apply Free_Eprim2.
-            have H' := Hvar _ Hocc H1.
-            destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
-            exists val', wal'. split.
-            rewrite M.gso; auto. split.
-            destruct Hloc as [i' [Hl1 Hl2]].
-            unfold stored_in_locals. exists i'. split; auto.
-            subst fr. unfold lookup_N.
-            rewrite set_nth_nth_error_other; auto.
-            inv Hrepr_x. inv Hl1.
-            intro. assert (x0' = i') by lia. subst x0'.
-            unfold translate_var in H3, H2.
-            destruct (lenv ! x2) eqn:Hlx1; rewrite Hlx1 in H3=>//.
-            destruct (lenv ! x0) eqn:Hlx2; rewrite Hlx2 in H2=>//.
-            have H'' := HlenvInjective _ _ _ _ n0 Hlx2 Hlx1. congruence.
-            now apply HvalsPreserved.
-          }
+        intros. destruct (var_dec x0 x2).
+        { (* x = x1 *)
+          subst x2. exists (Vprim (primInt n)), (Val_ptr gmp_v).
+          rewrite M.gss. split; auto.
+          split.
+          exists x0'. cbn. split. assumption.
+          unfold lookup_N; cbn; auto.
+          subst fr. cbn. erewrite set_nth_nth_error_same; eauto.
+          now subst fr.
+        }
+        { (* x <> x1 *)
+          assert (Hocc : occurs_free (Eprim x0 p [:: x ; y ; z] e) x2)
+              by now apply Free_Eprim2.
+          have H' := Hvar _ Hocc H1.
+          destruct H' as [val' [wal' [Hrho [Hloc Hval]]]].
+          exists val', wal'. split.
+          rewrite M.gso; auto. split.
+          destruct Hloc as [i' [Hl1 Hl2]].
+          unfold stored_in_locals. exists i'. split; auto.
+          subst fr. unfold lookup_N.
+          rewrite set_nth_nth_error_other; auto.
+
+          intro. assert (x0' = i') by lia. subst x0'.
+          have Hcontra := repr_var_inj _ _ _ _ HlenvInjective Hl1 Hrepr_x.
+          contradiction.
+
+          now apply HvalsPreserved.
         }
       }
       exists sr', fr, m', (Val_ptr gmp_v).
