@@ -1,7 +1,5 @@
 From Coq Require Import
-  Logic.Decidable Lists.ListDec
-  Relations.Relations
-  Relations.Relation_Operators
+  Lists.ListDec
   ZArith Lia List.
 
 From CertiCoq Require Import
@@ -13,16 +11,13 @@ From CertiCoq Require Import
   CodegenWasm.LambdaANF_to_Wasm
   CodegenWasm.LambdaANF_to_Wasm_utils
   CodegenWasm.LambdaANF_to_Wasm_correct
-  CodegenWasm.LambdaANF_to_Wasm_primitives
   CodegenWasm.LambdaANF_to_Wasm_primitives_correct
   CodegenWasm.LambdaANF_to_Wasm_instantiation
   CodegenWasm.LambdaANF_to_Wasm_restrictions.
 
 From Wasm Require Import
-  datatypes host opsem
-  instantiation_spec.
+  opsem.
 
-Import host instantiation_spec.
 Import Lia.
 Import Relations.Relation_Operators.
 Import ssreflect eqtype.
