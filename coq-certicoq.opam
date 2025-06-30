@@ -38,11 +38,7 @@ depends: [
   "coq-metacoq-safechecker-plugin" {= "1.3.4+8.20"}
   "coq-coqprime"
   "coq-ext-lib" {>= "0.12"}
-  "coq-wasm" {= "dev"}
-]
-
-pin-depends: [
-  ["coq-wasm.dev" "git+https://github.com/womeier/wasmcert-coq.git#23168b9"]
+  "coq-wasm" {= "2.1.0"}
 ]
 
 synopsis: "A Verified Compiler for Gallina, Written in Gallina "
