@@ -3,9 +3,11 @@
 
  > Codegen relation: relates expressions to Wasm instructions
  > Value relation:   relates LambdaANF values to Wasm values
- > Environment relation: for vars free in the expression: provides value stored in the local vars
-                         containing the result of previous execution steps, and func indides for functions
-                         it is also called "memory relation" in Clight)
+ > Environment relation:
+     for vars free in the expression: provides value stored in the local vars
+     containing the result of previous execution steps,
+     also provides the index for every function
+     (it is also called "memory relation" in Clight)
 
  > Main statement: relates LambdaANF states to Wasm states according
                    to operational semantics
@@ -538,19 +540,6 @@ Proof.
     constructor. now econstructor.
 Qed.
 
-(* TODO move to utils *)
-Lemma correct_cenv_of_exp_get_ctor_arity : forall v t ys e,
-  correct_cenv_of_exp cenv (Econstr v t ys e) ->
-  get_ctor_arity cenv t = Ret (length ys).
-Proof.
-  intros.
-  apply Forall_constructors_in_constr in H.
-  unfold get_ctor_arity.
-  destruct (cenv ! t) =>//.
-  now destruct c.
-Qed.
-
-
 Lemma call_grow_mem_if_necessary_correct : forall mem bytes p,
   call_grow_mem_if_necessary mem bytes = p ->
   repr_call_grow_mem_if_necessary mem bytes (snd p) (fst p).
@@ -572,7 +561,7 @@ Theorem translate_body_correct {lenv} : forall e instructions mem,
   translate_body nenv cenv lenv fenv penv e mem = Ret instructions ->
   @repr_expr_LambdaANF_Wasm lenv e mem instructions.
 Proof.
-  induction e using exp_ind'; intros instr mem Hcenv; intros.
+  induction e using exp_ind'; intros instr mem Hcenv H.
   - (* Econstr *)
     simpl in H.
     destruct (translate_var nenv lenv v _) eqn:H_translate_var. inv H.
@@ -602,8 +591,8 @@ Proof.
       unfold store_constructor in Hstore_constr.
       destruct (get_ctor_ord cenv t) eqn:Hord; first by inv Hstore_constr.
       destruct (store_constructor_args nenv lenv fenv (v0 :: l') 0) eqn:Hconstrargs; first by inv Hstore_constr.
-      destruct (translate_body _ _ _ _ _ _ _) eqn:Hbody; inversion H0.
-      inversion Hstore_constr.
+      destruct (translate_body _ _ _ _ _ _ _) eqn:Hbody; inv H0.
+      inv Hstore_constr.
       repeat rewrite <- app_assoc.
       apply call_grow_mem_if_necessary_correct in Hgrow.
 
@@ -636,8 +625,9 @@ Proof.
     simpl in Hl.
     destruct (_ l) eqn:Hm. inv H. rewrite Hvar in Hl. inv Hl. destruct p.
     assert (correct_cenv_of_exp cenv e). {
-      intro; intros. eapply Hcenv. eapply rt_trans. eauto. constructor.
-      econstructor. now left.
+      intros ?????. eapply Hcenv.
+      eapply rt_trans; eauto.
+      constructor. econstructor. now left.
     }
     specialize (IHe l0 mem H1 He).
     inv IHe0. inv H2.
@@ -648,10 +638,12 @@ Proof.
     destruct (get_ctor_arity cenv c) eqn:Har. inv H.
     destruct n eqn:Hn.
     + (* Unboxed branch *)
-      inv H. destruct l3. econstructor; eauto. econstructor; eauto. econstructor; eauto. cbn in H7.
+      inv H. destruct l3. econstructor; eauto.
+      econstructor; eauto. econstructor; eauto. cbn in H7.
       by repeat (econstructor; eauto).
     + (* Boxed branch *)
-        inv H. by destruct l2; econstructor; eauto; econstructor; eauto; try lia.
+      inv H.
+      destruct l2; econstructor; eauto; econstructor; eauto; lia.
   - (* Eproj *)
     simpl in H.
     destruct (translate_body nenv cenv lenv fenv penv e) eqn:He. inv H.
@@ -699,13 +691,13 @@ Proof.
     destruct (translate_body nenv cenv lenv fenv penv e _) eqn:H_eqTranslate. inv H0.
     inv H0.
     apply call_grow_mem_if_necessary_correct in Hgrow.
-    eapply R_prim_val=>//.
+    eapply R_prim_val; eauto.
     + now econstructor.
     + assert (Hcenv': correct_cenv_of_exp cenv e). {
         intro; intros. eapply Hcenv. eapply rt_trans. eauto. constructor.
         now econstructor.
       }
-      now eapply IHe. assumption.
+      now eapply IHe.
   - (* Eprim *)
     inv H.
     destruct (penv ! p) eqn:Hp. 2: inv H1.
@@ -993,30 +985,30 @@ Definition stored_in_locals {lenv} (x : cps.var) (v : wasm_value) (f : frame ) :
 
 Definition rel_env_LambdaANF_Wasm {lenv} (e : exp) (rho : LambdaANF.eval.env)
                     (sr : store_record) (fr : frame) (fds : fundefs) :=
-        (forall x f v fds' rho',
-            rho ! x = Some v ->
-            (* f is var in fds, v is either a Vfun or Vconstr value *)
-            subval_or_eq (Vfun rho' fds' f) v ->
-            (* fds only on toplevel, thus the two equalities *)
-            rho' = M.empty _ /\ fds' = fds /\ name_in_fundefs fds f)
-        /\
-        (forall f,
-            name_in_fundefs fds f ->
-            (* i is index of function f *)
-            exists i, repr_funvar f i /\
-            (* function def is related to function index *)
-            repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f) sr (f_inst fr) (Val_funidx i))
-        /\
-        (* free variables are related to local var containing a
-           memory pointer or a function index *)
-        (forall x,
-            occurs_free e x ->
-            (* not a function var *)
-            find_def x fds = None ->
-            (exists v w,
-               rho ! x = Some v /\
-               stored_in_locals (lenv:=lenv) x w fr /\
-               repr_val_LambdaANF_Wasm v sr (f_inst fr) w)).
+  (forall x f v fds' rho',
+   rho ! x = Some v ->
+   (* f is var in fds, v is either a Vfun or Vconstr value *)
+   subval_or_eq (Vfun rho' fds' f) v ->
+   (* fds only on toplevel, thus the two equalities *)
+   rho' = M.empty _ /\ fds' = fds /\ name_in_fundefs fds f)
+/\
+  (forall f,
+   name_in_fundefs fds f ->
+   (* i is index of function f *)
+   exists i, repr_funvar f i /\
+   (* function def is related to function index *)
+   repr_val_LambdaANF_Wasm (Vfun (M.empty _) fds f) sr (f_inst fr) (Val_funidx i))
+/\
+  (* free variables are related to local var containing a
+     memory pointer or a function index *)
+  (forall x,
+   occurs_free e x ->
+   (* not a function var *)
+   find_def x fds = None ->
+   (exists v w,
+    rho ! x = Some v /\
+    stored_in_locals (lenv:=lenv) x w fr /\
+    repr_val_LambdaANF_Wasm v sr (f_inst fr) w)).
 
 (* INVARIANTS *)
 
@@ -1919,17 +1911,7 @@ Proof.
     (* add required bytes *)
     dostep_nary 2. constructor. apply rs_binop_success=>//.
     dostep_nary 2. constructor. apply rs_binop_success=>//. cbn. unfold is_left.
-    rewrite zeq_false. reflexivity.
-    { (*TODO code duplication *)
-      intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
-                    Wasm_int.Int32.unsigned in HA;
-      cbn in HA.
-      assert ((Wasm_int.Int32.signed
-        (Wasm_int.Int32.repr
-           (Wasm_int.Int32.intval (N_to_i32 gmp) + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
-      apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
-      have H'' := signed_upper_bound (Wasm_int.Int32.intval (N_to_i32 gmp) + Z.of_N page_size).
-      simpl_modulus_in H''. cbn. lia. cbn in H1. lia. }
+    rewrite zeq_false. reflexivity. now apply div_page_size_neq_i32_half_modulus.
     dostep. apply r_eliml; auto.
     elimr_nary_instr 0. now eapply r_memory_size.
     dostep_nary 2. constructor. apply rs_relop=>//.
@@ -1942,19 +1924,18 @@ Proof.
     dostep_nary 1. eapply r_memory_grow_success. apply Hgrow.
     dostep_nary 2. constructor. apply rs_relop=>//. cbn.
     dostep'. constructor. apply rs_if_false.
-
-    { unfold Wasm_int.Int32.eq. cbn. rewrite zeq_false. reflexivity. intro.
-      subst. cbn in *. unfold page_limit in *.
+    { unfold Int32.eq. cbn. rewrite zeq_false. reflexivity. intro.
       unfold smem, smem_grow in Hgrow, Hm2.
-      rewrite Hm1 in Hgrow, Hm2. cbn in Hgrow.
-      destruct (s_mems sr)=>//.
-      destruct (mem_grow m0 1)=>//. inv Hgrow. injection Hm2 as ->.
+      rewrite Hm1 in Hgrow, Hm2. cbn in Hgrow, Hm2.
+      destruct (s_mems sr)=>//. inv Hm2.
+      destruct (mem_grow m 1)=>//. inv Hgrow.
       rewrite Wasm_int.Int32.Z_mod_modulus_id in H1.
       unfold mem_limit_bound in HgrowSize. lia.
       unfold mem_limit_bound in HgrowSize. simpl_modulus. cbn. lia. }
     dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
     cbn. dostep'. constructor. apply rs_label_const=>//. apply rt_refl.
     dostep'. constructor. apply rs_label_const=>//. apply rt_refl.
+
     intros. split. eapply smem_grow_funcs; eauto. split.
     { (* value relation preserved *)
       intros.
@@ -2004,17 +1985,7 @@ Proof.
     apply rs_binop_success=>//.
     dostep_nary 2. constructor.
     apply rs_binop_success=>//. cbn. unfold is_left.
-    rewrite zeq_false. reflexivity.
-    { (*TODO code duplication *)
-      intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
-                    Wasm_int.Int32.unsigned in HA;
-      cbn in HA.
-      assert ((Wasm_int.Int32.signed
-        (Wasm_int.Int32.repr  (* arbitrary number *)
-           (Wasm_int.Int32.intval (N_to_i32 gmp) + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
-      apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
-      have H'' := signed_upper_bound (Wasm_int.Int32.intval (N_to_i32 gmp) + Z.of_N page_size).
-      cbn. simpl_modulus_in H''. lia. cbn in H1. lia. }
+    rewrite zeq_false. reflexivity. now apply div_page_size_neq_i32_half_modulus.
     dostep. apply r_eliml; auto.
     elimr_nary_instr 0. now eapply r_memory_size.
 
@@ -2095,17 +2066,7 @@ Proof.
   apply rs_binop_success=>//.
   dostep_nary 2. constructor.
   apply rs_binop_success=>//. cbn. unfold is_left.
-  rewrite zeq_false. reflexivity.
-  { (*TODO code duplication *)
-    intro HA. unfold Wasm_int.Int32.unsigned, Wasm_int.Int32.iadd, Wasm_int.Int32.add,
-                    Wasm_int.Int32.unsigned in HA;
-    cbn in HA.
-    assert ((Wasm_int.Int32.signed
-      (Wasm_int.Int32.repr
-           (Wasm_int.Int32.intval (N_to_i32 gmp) + Z.of_N page_size)) ÷ 65536 <= 10000000)%Z).
-    apply OrdersEx.Z_as_OT.quot_le_upper_bound; try lia.
-    have H'' := signed_upper_bound (Wasm_int.Int32.intval (N_to_i32 gmp) + Z.of_N page_size).
-    simpl_modulus_in H''. cbn. lia. cbn in H. lia. }
+  rewrite zeq_false. reflexivity. now apply div_page_size_neq_i32_half_modulus.
   dostep. apply r_eliml; auto.
   elimr_nary_instr 0. now eapply r_memory_size.
 
@@ -2120,49 +2081,46 @@ Proof.
   split. assumption.
 
   (* enough space *)
-  { intros. unfold max_mem_pages in *. subst size.
-    split. assumption.
-    solve_eq m m0.
-    unfold Wasm_int.Int32.lt in HenoughMem.
-    destruct (zlt _ _) as [Ha|Ha]. 2: inv HenoughMem. clear HenoughMem.
-    unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in Ha. cbn in Ha.
+  intros. unfold max_mem_pages in *. subst size.
+  split. assumption.
+  solve_eq m m0.
+  unfold Wasm_int.Int32.lt in HenoughMem.
+  edestruct (zlt _ _) as [Ha|Ha]. 2: inv HenoughMem. clear HenoughMem.
+  unfold Wasm_int.Int32.iadd, Wasm_int.Int32.add in Ha. cbn in Ha.
 
-    rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: {
-      simpl_modulus. cbn.
-      apply mem_length_upper_bound in Hm5; cbn in Hm5. lia. }
+  rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: {
+    simpl_modulus. cbn.
+    apply mem_length_upper_bound in Hm5; cbn in Hm5. lia. }
 
-    remember (Wasm_int.Int32.signed (Wasm_int.Int32.repr (Z.of_N gmp + 65536)) ÷ 65536)%Z as y.
-    unfold Wasm_int.Int32.signed, Wasm_int.Int32.unsigned in Heqy.
-    have Hlength := mem_length_upper_bound _ Hm5.
-    unfold page_size, max_mem_pages in Hlength. cbn in Hlength.
+  remember (Wasm_int.Int32.signed (Wasm_int.Int32.repr (Z.of_N gmp + 65536)) ÷ 65536)%Z as y.
+  unfold Wasm_int.Int32.signed, Wasm_int.Int32.unsigned in Heqy.
+  have Hlength := mem_length_upper_bound _ Hm5.
+  unfold page_size, max_mem_pages in Hlength. cbn in Hlength.
 
-    rewrite zlt_true in Heqy. 2: {
-      cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. lia. simpl_modulus. cbn. lia. }
+  rewrite zlt_true in Heqy. 2: {
+    cbn. rewrite Wasm_int.Int32.Z_mod_modulus_id. lia. simpl_modulus. cbn. lia. }
 
-    unfold Wasm_int.Int32.signed in Heqy. cbn in Heqy.
-    rewrite Wasm_int.Int32.Z_mod_modulus_id in Heqy. 2: { simpl_modulus. cbn. lia. }
-    cbn in Heqy. replace (Z.of_nat (Pos.to_nat 65536)) with 65536%Z in Heqy by lia.
-    rewrite (Z.quot_add (Z.of_N gmp) 1 65536) in Heqy; try lia.
+  unfold Wasm_int.Int32.signed in Heqy. cbn in Heqy.
+  rewrite Wasm_int.Int32.Z_mod_modulus_id in Heqy. 2: { simpl_modulus. cbn. lia. }
+  cbn in Heqy. replace (Z.of_nat (Pos.to_nat 65536)) with 65536%Z in Heqy by lia.
+  rewrite (Z.quot_add (Z.of_N gmp) 1 65536) in Heqy; try lia.
 
-    remember (Wasm_int.Int32.signed
-        (Wasm_int.Int32.repr (Z.of_N (mem_size m)))) as n.
-    unfold Wasm_int.Int32.signed in Ha.
-    subst y. unfold Wasm_int.Int32.signed in Ha. cbn in Ha.
+  remember (Wasm_int.Int32.signed
+      (Wasm_int.Int32.repr (Z.of_N (mem_size m)))) as n.
+  unfold Wasm_int.Int32.signed in Ha.
+  subst y. unfold Wasm_int.Int32.signed in Ha. cbn in Ha.
 
-    rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: {
-      simpl_modulus. cbn. lia.
-    }
+  rewrite Wasm_int.Int32.Z_mod_modulus_id in Ha. 2: {
+    simpl_modulus. cbn. lia.
+  }
 
-    rewrite small_signed_repr_n_n in Heqn; last by unfold max_mem_pages; lia.
-    unfold Wasm_int.Int32.signed in Heqn. cbn in Heqn.
+  rewrite small_signed_repr_n_n in Heqn; last by unfold max_mem_pages; lia.
+  unfold Wasm_int.Int32.signed in Heqn. cbn in Heqn.
 
-    (* 100000 arbitrary *)
-    assert ((Z.of_N gmp ÷ 65536 < 100000)%Z) as H'' by lia.
-    assert (Z.of_N gmp ÷ 65536  >= 0)%Z by lia.
-
-    rewrite zlt_true in Ha; try lia. subst.
-    rewrite N2Z.inj_div in Ha. cbn in Ha. lia.
-   }
+  (* 100000 arbitrary *)
+  assert ((Z.of_N gmp ÷ 65536 < 100000)%Z) as H'' by lia.
+  rewrite zlt_true in Ha; try lia. subst.
+  rewrite N2Z.inj_div in Ha. cbn in Ha. lia.
 Qed.
 
 Lemma glob_result_i32_glob : i32_glob glob_result.
@@ -2238,8 +2196,7 @@ Proof.
     assert (global_var_r glob_mem_ptr sr fr) as Hgmp_r.
     { apply global_var_w_implies_global_var_r.
       now left; cbn. apply Hinv.
-      destruct Hinv as [_[_[_[Hgmp_w _]]]]. assumption.
-    }
+      destruct Hinv as [_[_[_[Hgmp_w _]]]]. assumption. }
     left. exists sr.
     split. apply rt_refl.
     repeat split=>//.
@@ -2413,7 +2370,6 @@ Proof.
 
       destruct Hm0 as [m0 Hm0].
       remember (upd_s_mem s (set_nth m0 (s_mems s) 0 m0)) as s'.
-      (* TODO cleanup *)
       assert (Hm0': smem_store s (f_inst f)
                       (Wasm_int.N_of_uint i32m
                          (Wasm_int.Int32.iadd (N_to_i32 v_cap)
@@ -2660,7 +2616,6 @@ Proof.
           repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; try lia. lia.
       }
 
-      (* TODO: contains duplication: cleanup *)
       replace (4 + (4 + 4 * N.of_nat offset + cap))%N with (4 + 4 * N.of_nat (S offset) + cap)%N by lia.
       apply Hv2.
       split. subst. auto. rewrite H8. do 4! f_equal.
@@ -3512,11 +3467,13 @@ Lemma unboxed_nested_if_chain_reduces : forall cl fAny y t e v lenv mem brs1 brs
           e'' ]
     /\ (forall k (lh : lholed k),
         exists k0 (lh0 : lholed k0),
-          reduce_trans (hs, sr, fAny, [AI_frame 0 f (lfill lh (map AI_basic e2'))]) (hs, sr, fAny, [AI_frame 0 f (lfill lh0 (map AI_basic e'))]))
+          reduce_trans (hs, sr, fAny, [AI_frame 0 f (lfill lh (map AI_basic e2'))])
+                       (hs, sr, fAny, [AI_frame 0 f (lfill lh0 (map AI_basic e'))]))
     /\ repr_expr_LambdaANF_Wasm lenv e mem e'.
 Proof.
   induction cl; first by move => ???????????????? //=.
-  intros fAny y t e v lenv mem brs1 brs2 e2' f hs sr ord Hval HcenvRestr HcaseRestr HcaseConsistent Hfindtag Hord Hunboxed Hbranches Hunboxedcase.
+  intros fAny y t e v lenv mem brs1 brs2 e2' f hs sr ord Hval HcenvRestr HcaseRestr
+         HcaseConsistent Hfindtag Hord Hunboxed Hbranches Hunboxedcase.
   destruct a as [t0 e0].
   have HcaseRestr' := HcaseRestr.
   inv HcaseRestr.
@@ -3546,13 +3503,11 @@ Proof.
     dostep_nary 0. apply r_local_get. eauto.
     dostep_nary 2. constructor. apply rs_relop=>//.
     dostep'. constructor. apply rs_if_true.
-    {
-      rewrite N.mul_comm.
+    { rewrite N.mul_comm.
       unfold wasm_value_to_i32, wasm_value_to_u32, nat_to_value, nat_to_i32.
       unfold Wasm_int.Int32.eq.
       rewrite N_nat_Z. rewrite zeq_true.
-      intro Hcontra. inv Hcontra.
-    }
+      intro Hcontra. inv Hcontra. }
     dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
     apply rt_refl.
     rewrite Hlheq. apply rt_refl.
@@ -3566,94 +3521,50 @@ Proof.
     inv Hbranches.
     { (* t0 is the tag of a non-nullary constructor, not even in the nested if-chain *)
       inv HcaseConsistent. eapply IHcl; eauto. }
-    {
-      assert (HcaseConsistent' : caseConsistent cenv cl t). { inv HcaseConsistent. assumption. }
-      inv Hunboxedcase.
-      assert (Hord_neq : ord <> ord0). {
 
-        eapply nullary_ctor_ords_in_case_disjoint with (cl:=((t0, e0)::cl)); eauto.
-        cbn. destruct (M.elt_eq t0 t0). auto. contradiction.
-      }
-      assert (Hord_neq' : ord0 <> ord) by auto.
-      have IH := IHcl fAny y t e v lenv mem brs1 brs3 instrs_more f hs sr ord  Hval HcenvRestr Hrestr HcaseConsistent' Hfindtag Hord Hunboxed H2 H7.
-      destruct IH as [e1' [e'' [Hsel [Hred Hrep]]]].
-      exists e1', e''.
-      split.
-      unfold select_nested_if. apply N.eqb_neq in Hord_neq'. rewrite Hord_neq'. fold select_nested_if. assumption.
-      split=>//.
-      intros.
-      have Hlh := lholed_nested_label _ lh [seq AI_basic i | i <- instrs_more] [::].
-      destruct Hlh as [k' [lh' Hlheq]].
-      have Hred' := Hred k' lh'.
-      destruct Hred' as [k0 [lh0 Hstep]].
-      exists k0, lh0.
-      (* Step through the if-then-else into the else-branch *)
-      eapply rt_trans. apply reduce_trans_frame. apply reduce_trans_label. eapply rt_trans.
-      dostep_nary 0. apply r_local_get. eauto.
-      dostep_nary 2. constructor. apply rs_relop=>//.
-      dostep'. constructor. apply rs_if_false.
-      (* Check that (t0 << 1) + 1 <> (t << 1);
-         requires some arithmetic gymnastics  *)
-      {
-        rewrite N.mul_comm. cbn.
-        unfold wasm_value_to_i32, wasm_value_to_u32, nat_to_i32. unfold Wasm_int.Int32.eq.
-        destruct ord. destruct ord0. destruct Hord_neq'. reflexivity.
-        rewrite N_nat_Z.
-        rewrite Wasm_int.Int32.unsigned_repr. 2: cbn; lia.
-        rewrite zeq_false. reflexivity.
-        rewrite Wasm_int.Int32.unsigned_repr.
-        lia.
-        unfold Wasm_int.Int32.max_unsigned.
-        assert ((-1 < (Z.of_N (N.pos p)) < Wasm_int.Int32.half_modulus)%Z). {
-          eapply ctor_ord_restricted with (cl:=((t0, e0)::cl)); eauto.
-          cbn. destruct (M.elt_eq t0 t0). auto. contradiction.
-        }
-        simpl_modulus.
-        simpl_modulus_in H.
-        cbn.
-        lia.
-        destruct ord0.
-        rewrite N_nat_Z.
-        rewrite zeq_false. reflexivity.
-        rewrite Wasm_int.Int32.unsigned_repr.
-        rewrite Wasm_int.Int32.unsigned_repr. 2: cbn; lia.
-        cbn. lia.
-        assert ((-1 < (Z.of_N (N.pos p)) < Wasm_int.Int32.half_modulus)%Z). {
-          eapply ctor_ord_restricted; eauto.
-          eapply findtag_In; eauto.
-        }
-        simpl_modulus.
-        simpl_modulus_in H.
-        cbn.
-        lia.
-        rewrite zeq_false. reflexivity.
-        rewrite N_nat_Z.
-        rewrite Wasm_int.Int32.unsigned_repr.
-        rewrite Wasm_int.Int32.unsigned_repr.
-        cbn.
-        intro Hcontra. congruence.
-        assert ((-1 < (Z.of_N (N.pos p0)) < Wasm_int.Int32.half_modulus)%Z). {
-          eapply ctor_ord_restricted with (cl:=((t0, e0)::cl)); eauto.
-          cbn. destruct (M.elt_eq t0 t0). auto. contradiction.
-        }
-        simpl_modulus.
-        simpl_modulus_in H.
-        cbn.
-        lia.
-        assert ((-1 < (Z.of_N (N.pos p)) < Wasm_int.Int32.half_modulus)%Z). {
-          eapply ctor_ord_restricted; eauto.
-          eapply findtag_In; eauto.
-        }
-        simpl_modulus.
-        simpl_modulus_in H.
-        cbn.
-        lia.
-        }
-      dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
-      apply rt_refl. apply rt_refl.
-      rewrite Hlheq.
-      apply Hstep.
-    }
+    assert (HcaseConsistent' : caseConsistent cenv cl t). { inv HcaseConsistent. assumption. }
+    inv Hunboxedcase.
+    assert (Hord_neq : ord0 <> ord). {
+      symmetry.
+      eapply nullary_ctor_ords_in_case_disjoint with (cl:=((t0, e0)::cl)); eauto.
+      cbn. destruct (M.elt_eq t0 t0). auto. contradiction. }
+    have IH := IHcl fAny y t e v lenv mem brs1 brs3 instrs_more f hs sr ord  Hval HcenvRestr
+               Hrestr HcaseConsistent' Hfindtag Hord Hunboxed H2 H7.
+    destruct IH as [e1' [e'' [Hsel [Hred Hrep]]]].
+    exists e1', e''.
+    split.
+    { unfold select_nested_if. apply N.eqb_neq in Hord_neq. rewrite Hord_neq.
+      fold select_nested_if. assumption. }
+    split=>//.
+    intros.
+    have Hlh := lholed_nested_label _ lh [seq AI_basic i | i <- instrs_more] [::].
+    destruct Hlh as [k' [lh' Hlheq]].
+    have Hred' := Hred k' lh'.
+    destruct Hred' as [k0 [lh0 Hstep]].
+    exists k0, lh0.
+    (* Step through the if-then-else into the else-branch *)
+    eapply rt_trans. apply reduce_trans_frame. apply reduce_trans_label. eapply rt_trans.
+    dostep_nary 0. apply r_local_get. eauto.
+    dostep_nary 2. constructor. apply rs_relop=>//.
+    dostep'. constructor. apply rs_if_false.
+    { (* (t0 << 1) + 1 <> (t << 1) *)
+      rewrite N.mul_comm. cbn.
+      unfold wasm_value_to_i32, wasm_value_to_u32, nat_to_i32, Wasm_int.Int32.eq.
+      rewrite zeq_false. reflexivity.
+      assert (H': (-1 < (Z.of_N ord0) < Wasm_int.Int32.half_modulus)%Z). {
+        eapply ctor_ord_restricted with (ord:=ord0) in HcaseRestr'; eauto.
+        now left. }
+      assert (H'': (-1 < (Z.of_N ord) < Wasm_int.Int32.half_modulus)%Z). {
+        cbn in Hfindtag'. destruct (M.elt_eq t0 t)=>//.
+        eapply ctor_ord_restricted in Hord; eauto.
+        eapply findtag_In; eauto. }
+      simpl_modulus_in H'. simpl_modulus_in H''.
+      destruct ord, ord0; auto; rewrite N_nat_Z;
+        try rewrite !Wasm_int.Int32.unsigned_repr; simpl_modulus; cbn; lia. }
+    dostep'. eapply r_block with (t1s:=[::]) (t2s:=[::])(vs:=[::]); auto.
+    apply rt_refl. apply rt_refl.
+    rewrite Hlheq.
+    apply Hstep.
   }
 Qed.
 

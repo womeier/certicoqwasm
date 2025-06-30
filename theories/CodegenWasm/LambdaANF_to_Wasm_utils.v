@@ -830,6 +830,18 @@ Proof.
   intro Hcontra. subst. eauto.
 Qed.
 
+Lemma correct_cenv_of_exp_get_ctor_arity {cenv} : forall v t ys e,
+  correct_cenv_of_exp cenv (Econstr v t ys e) ->
+  get_ctor_arity cenv t = Ret (length ys).
+Proof.
+  intros.
+  apply Forall_constructors_in_constr in H.
+  unfold get_ctor_arity.
+  destruct (cenv ! t)=>//.
+  now destruct c.
+Qed.
+
+
 End ConstrEnv.
 
 
@@ -1257,7 +1269,7 @@ Proof.
   rewrite H1 in Hn.
   rewrite Z.add_comm in Hn.
   rewrite Z.mul_comm in Hn.
-  rewrite Z.div_add in Hn; try lia.
+  rewrite Z.div_add in Hn; lia.
 Qed.
 
 
@@ -1785,14 +1797,23 @@ Proof.
   have H' := Wasm_int.Int32.Z_mod_modulus_range x. simpl_modulus_in H'. simpl_modulus. cbn. lia.
 Qed.
 
+Lemma div_page_size_neq_i32_half_modulus : forall v,
+  (Int32.signed v ÷ (Z.of_N page_size) <> 2147483648)%Z.
+Proof.
+  unfold Wasm_int.Int32.signed. cbn.
+  intros v vBounds.
+  have H'' := signed_upper_bound (Int32.unsigned v).
+  simpl_modulus_in H''.
+  destruct (zlt _ _); try lia.
+  destruct v; cbn in *. lia.
+Qed.
+
 Lemma N_div_ge0 : forall a b,
-  (b > 0)%N ->
-  (a >= 0)%N ->
   (a / b >= 0)%N.
 Proof.
   intros.
-  assert (Z.of_N a / Z.of_N b >= 0)%Z.
-  apply Z_div_ge0; lia. lia.
+  remember (a / b)%N as n.
+  lia.
 Qed.
 
 Lemma small_signed_repr_n_n : forall n,
