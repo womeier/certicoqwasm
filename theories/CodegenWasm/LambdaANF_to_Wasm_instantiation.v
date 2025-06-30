@@ -1137,16 +1137,7 @@ Variable penv : LambdaANF.toplevel.prim_env.
 
 Context `{ho : host}.
 
-Ltac simpl_modulus := unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat.
-
-Ltac separate_instr :=
-  cbn;
-  repeat match goal with
-  |- context C [?x :: ?l] =>
-     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-  end.
-
-(* isolate instr. + n leading args, e.g. with n=2 for add:
+(* The following are slightly different than the ones in utils: isolate instr. + n leading args, e.g. with n=2 for add:
    [const 1, const 2, add, remaining instr] => [const 1, const 2, add]  *)
 Ltac elimr_nary_instr n :=
   let H := fresh "H" in

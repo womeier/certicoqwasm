@@ -31,7 +31,98 @@ Import ListNotations.
 Import seq.
 
 Ltac unfold_bits :=
-  unfold bits, serialise_i32, serialise_i64, serialise_f32, serialise_f64, encode_int, rev_if_be; destruct Archi.big_endian.
+  unfold bits, serialise_i32, serialise_i64, serialise_f32,
+         serialise_f64, encode_int, rev_if_be;
+    destruct Archi.big_endian.
+
+Ltac simpl_modulus_in H :=
+  unfold Wasm_int.Int32.modulus, Wasm_int.Int64.modulus,
+         Wasm_int.Int32.half_modulus, Wasm_int.Int64.half_modulus,
+         two_power_nat in H; cbn in H.
+
+Ltac simpl_modulus :=
+  unfold Wasm_int.Int64.max_unsigned, Wasm_int.Int32.modulus,
+         Wasm_int.Int64.modulus, Wasm_int.Int32.half_modulus,
+         Wasm_int.Int64.half_modulus, two_power_nat.
+
+
+(* helpers for stepping through a list of Wasm instructions *)
+Ltac separate_instr :=
+  cbn;
+  repeat match goal with
+  |- context C [?x :: ?l] =>
+     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
+  end.
+
+(** The lemmas [r_eliml] and [r_elimr] are relicts,
+    kept for compatability for now, TODO rework (use new context representation) **)
+Lemma r_eliml `{ho : host} : forall hs s f es hs' s' f' es' lconst,
+  const_list lconst ->
+  reduce hs s f es hs' s' f' es' ->
+  reduce hs s f (lconst ++ es) hs' s' f' (lconst ++ es').
+Proof.
+  move => hs s f es hs' s' f' es' lconst HConst H.
+  apply const_es_exists in HConst. destruct HConst as [vs ?].
+  eapply r_label with (lh:=LH_base vs []). eassumption.
+  - cbn. rewrite cats0. congruence.
+  - cbn. rewrite cats0. congruence.
+Qed.
+
+Lemma r_elimr `{ho : host} : forall hs s f es hs' s' f' es' les,
+  reduce hs s f es hs' s' f' es' ->
+  reduce hs s f (es ++ les) hs' s' f' (es' ++ les).
+Proof.
+  move => hs s f es hs' s' f' es' les H.
+  eapply r_label with (lh:=LH_base [] les); eauto.
+Qed.
+
+(* isolate instr. + n leading args, e.g. with n=2 for add:
+   [const 1, const 2, add, remaining instr] => [const 1, const 2, add]  *)
+Ltac elimr_nary_instr n :=
+  let H := fresh "H" in
+  match n with
+  | 0 => lazymatch goal with
+         | |- reduce _ _ _ ([:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([:: ?instr] ++ ?l3) _ _ _ _ => apply r_elimr
+         end
+  | 1 => lazymatch goal with
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([::$VN c1] ++ [:: instr] ++ l3 =
+                    [:: $VN c1; instr] ++ l3) as H by reflexivity; rewrite H;
+                                                       apply r_elimr; clear H
+         end
+  | 2 => lazymatch goal with
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [::$VN ?c2] ++ [:: ?instr])        _ _ _ _ => idtac
+         | |- reduce _ _ _ ([::$VN ?c1] ++ [::$VN ?c2] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
+            assert ([::$VN c1] ++ [:: $VN c2] ++ [:: instr] ++ l3 =
+                    [::$VN c1; $VN c2; instr] ++ l3) as H by reflexivity; rewrite H;
+                                                       apply r_elimr; clear H
+         end
+  end.
+
+(* single step *)
+Ltac dostep :=
+  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t]));
+  first (apply rt_step; separate_instr).
+
+(* single step, only returns single list of instructions *)
+Ltac dostep' :=
+   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s]));
+   first (apply rt_step; separate_instr).
+
+(* single step, n-ary instruction *)
+Ltac dostep_nary n :=
+  dostep; first elimr_nary_instr n.
+
+(* single step, n-ary instruction *)
+Ltac dostep_nary' n :=
+  dostep'; first elimr_nary_instr n.
+
+(* single step, n-ary instruction. Additionally, leave n' leading values untouched *)
+Ltac dostep_nary_eliml n n' :=
+  dostep; first ((do n'! (apply r_eliml; auto)); elimr_nary_instr n).
+
 
 Section General.
 
@@ -741,11 +832,6 @@ End LambdaANF.
 
 
 Section ConstrEnv.
-
-Ltac simpl_modulus_in H :=
-  unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat in H; cbn in H.
-Ltac simpl_modulus :=
-  unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat.
 
 Lemma ctor_ord_restricted {cenv} : forall y cl t e ord,
   expression_restricted cenv (Ecase y cl) ->
@@ -1654,29 +1740,6 @@ Proof.
     apply IHclos_refl_trans_1n; auto.
 Qed.
 
-(** The lemmas [r_eliml] and [r_elimr] are relicts,
-    kept for compatability for now, TODO rework (use new context representation) **)
-Lemma r_eliml : forall hs s f es hs' s' f' es' lconst,
-  const_list lconst ->
-  reduce hs s f es hs' s' f' es' ->
-  reduce hs s f (lconst ++ es) hs' s' f' (lconst ++ es').
-Proof.
-  move => hs s f es hs' s' f' es' lconst HConst H.
-  apply const_es_exists in HConst. destruct HConst as [vs ?].
-  eapply r_label with (lh:=LH_base vs []). eassumption.
-  - cbn. rewrite cats0. congruence.
-  - cbn. rewrite cats0. congruence.
-Qed.
-
-Lemma r_elimr: forall hs s f es hs' s' f' es' les,
-  reduce hs s f es hs' s' f' es' ->
-  reduce hs s f (es ++ les) hs' s' f' (es' ++ les).
-Proof.
-  move => hs s f es hs' s' f' es' les H.
-  eapply r_label with (lh:=LH_base [] les); eauto.
-Qed.
-
-
 Lemma app_trans_const : forall hs hs' s s' f f' es es' lconst,
   const_list lconst ->
   reduce_trans (hs, s, f, es) (hs', s', f', es') ->
@@ -1781,12 +1844,6 @@ Qed.
 End Wasm.
 
 Section Arith.
-
-
-Ltac simpl_modulus_in H :=
-  unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat in H; cbn in H.
-Ltac simpl_modulus :=
-  unfold Wasm_int.Int32.modulus, Wasm_int.Int32.half_modulus, two_power_nat.
 
 Lemma signed_upper_bound : forall x,
   (Wasm_int.Int32.signed (Wasm_int.Int32.repr x) < Wasm_int.Int32.half_modulus)%Z.

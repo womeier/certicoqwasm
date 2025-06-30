@@ -514,13 +514,6 @@ Proof.
     constructor. econstructor. eassumption. apply IHl; auto.
 Qed.
 
-Ltac separate_instr :=
-  cbn;
-  repeat match goal with
-  |- context C [?x :: ?l] =>
-     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-  end.
-
 Lemma store_nth_constr_arg_correct {lenv} : forall  l instr n,
   store_constructor_args nenv lenv fenv l n = Ret instr ->
   Forall_statements_in_seq' (@store_nth_constr_arg lenv) l instr n.
@@ -1712,62 +1705,6 @@ Proof.
     rewrite Hgrow.
     lia.
 Qed.
-
-Ltac separate_instr :=
-  cbn;
-  repeat match goal with
-  |- context C [?x :: ?l] =>
-     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-  end.
-
-(* isolate instr. + n leading args, e.g. with n=2 for add:
-   [const 1, const 2, add, remaining instr] => [const 1, const 2, add]  *)
-Ltac elimr_nary_instr n :=
-  let H := fresh "H" in
-  match n with
-  | 0 => lazymatch goal with
-         | |- reduce _ _ _ ([:: ?instr])        _ _ _ _ => idtac
-         | |- reduce _ _ _ ([:: ?instr] ++ ?l3) _ _ _ _ => apply r_elimr
-         end
-  | 1 => lazymatch goal with
-         | |- reduce _ _ _ ([::$VN ?c1] ++ [:: ?instr])        _ _ _ _ => idtac
-         | |- reduce _ _ _ ([::$VN ?c1] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
-            assert ([::$VN c1] ++ [:: instr] ++ l3 =
-                    [:: $VN c1; instr] ++ l3) as H by reflexivity; rewrite H;
-                                                       apply r_elimr; clear H
-         end
-  | 2 => lazymatch goal with
-         | |- reduce _ _ _ ([::$VN ?c1] ++ [::$VN ?c2] ++ [:: ?instr])        _ _ _ _ => idtac
-         | |- reduce _ _ _ ([::$VN ?c1] ++ [::$VN ?c2] ++ [:: ?instr] ++ ?l3) _ _ _ _ =>
-            assert ([::$VN c1] ++ [:: $VN c2] ++ [:: instr] ++ l3 =
-                    [::$VN c1; $VN c2; instr] ++ l3) as H by reflexivity; rewrite H;
-                                                       apply r_elimr; clear H
-         end
-  end.
-
-Ltac dostep :=
-  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t]));
-  first (apply rt_step; separate_instr).
-
-(* only returns single list of instructions *)
-Ltac dostep' :=
-   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s]));
-   first (apply rt_step; separate_instr).
-
-Ltac dostep_nary n :=
-  dostep; first elimr_nary_instr n.
-
-Ltac dostep_nary_eliml n n' :=
-  dostep; first ((do n'! (apply r_eliml; auto)); elimr_nary_instr n).
-
-Ltac dostep_nary' n :=
-  dostep'; first elimr_nary_instr n.
-
-Ltac simpl_modulus_in H :=
-  unfold Wasm_int.Int32.modulus, Wasm_int.Int64.modulus, Wasm_int.Int32.half_modulus, Wasm_int.Int64.half_modulus, two_power_nat in H; cbn in H.
-Ltac simpl_modulus :=
-  unfold Wasm_int.Int64.max_unsigned, Wasm_int.Int32.modulus, Wasm_int.Int64.modulus, Wasm_int.Int32.half_modulus, Wasm_int.Int64.half_modulus, two_power_nat.
-
 
 Lemma value_bounds : forall wal v sr fr,
   INV_num_functions_bounds sr fr ->

@@ -34,25 +34,6 @@ Variable penv : LambdaANF.toplevel.prim_env.
 
 Context `{ho : host}.
 
-
-Ltac separate_instr :=
-  cbn;
-  repeat match goal with
-  |- context C [?x :: ?l] =>
-     lazymatch l with [::] => fail | _ => rewrite -(cat1s x l) end
-  end.
-
-Ltac dostep :=
-  eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s] ++ ?[t]));
-  first (apply rt_step; separate_instr).
-
-(* only returns single list of instructions *)
-Ltac dostep' :=
-   eapply rt_trans with (y := (?[hs], ?[sr], ?[f'], ?[s]));
-   first (apply rt_step; separate_instr).
-
-
-
 (* TOPLEVEL CORRECTNESS THEOREM *)
 Theorem LambdaANF_Wasm_related :
   forall (v : cps.val) (e : exp) (n : nat)
