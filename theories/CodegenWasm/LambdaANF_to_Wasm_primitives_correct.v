@@ -1476,6 +1476,71 @@ Ltac clear_all :=
 (* for trivial facts that don't need any assumptions *)
 Ltac liat := clear_all; lia.
 
+Lemma div21_loop_arith_lemma : forall i y xh0' xh1' q0 q1 xl0' xl1' xl xh,
+ (0 <= i < 63 ->
+  0 <= y < 2 ^ 63 ->
+  0 <= xh0' < y ->
+  0 <= q0 < 2 ^ i ->
+  xl0' mod 2 ^ 64 = (xl * 2 ^ i) mod 2 ^ 64 ->
+  (q0 * y + xh0') * 2 ^ (63 - i) + xl mod 2 ^ (63 - i) = xh mod y * 2 ^ 63 + xl ->
+  xh1' = xh0' * 2 + xl1' mod 2 ^ 64 / 2 ^ 63 ->
+  xl1' = xl0' mod 2 ^ 64 * 2 ->
+  q1 = q0 * 2 ->
+  (q1 * y + xh1') * 2 ^ (63 - (i + 1)) + xl mod 2 ^ (63 - (i + 1)) = xh mod y * 2 ^ 63 + xl)%Z.
+Proof.
+  intros ?????????? Hi Hli1 Hli2 Hli3 Hli4 Hli5 Hxh1' Hxl1' Hq1.
+  assert ((xl * 2 ^ (i + 1)) mod 2 ^ 64 = ((xl * 2^(i + 1)) mod 2^65) mod 2^64)%Z
+      by liat.
+  subst q1. subst xh1'.
+  replace (q0 * 2 * y + (xh0' * 2 + xl1' mod 2 ^ 64 / 2 ^ 63))%Z
+     with (2 * (q0 * y + xh0') + xl1' mod 2 ^ 64 / 2 ^ 63)%Z by liat.
+  replace ((2 * (q0 * y + xh0') + xl1' mod 2 ^ 64 / 2 ^ 63) * 2^(63 - (i + 1)))%Z
+     with (2 * (q0 * y + xh0') * 2^(63 - (i + 1)) + (xl1' mod 2 ^ 64 / 2 ^ 63) * 2^(63 - (i + 1)))%Z by liat.
+    replace (2 * (q0 * y + xh0') * 2^(63 - (i + 1)))%Z with ((q0 * y + xh0') * 2^(63-i))%Z.
+    2: { rewrite (Z.mul_comm (2 * _)) Z.mul_assoc.
+         replace (2^(63 - (i + 1)) * 2)%Z with (2^1 * 2^(63 - (i + 1)))%Z by liat.
+         rewrite <- Z.pow_add_r; clear_except Hi; try lia.
+         replace (1 + (63 - (i + 1)))%Z with (63 - i)%Z by lia. lia. }
+    subst xl1'.
+    rewrite Hli4.
+    replace ((xl * 2 ^ i) mod 2 ^ 64 * 2)%Z with ((xl * 2 ^ (i + 1)) mod (2 ^ 65))%Z.
+    2: { rewrite <- Z.mul_mod_distr_r; try liat.
+         rewrite Z.pow_add_r; try liat. apply Hi. }
+    rewrite <-H.
+    replace ((xl * 2 ^ (i + 1)) mod 2 ^ 64 / 2 ^ 63)%Z with ((xl mod 2 ^ (63 - i)) / 2 ^ (63 - (i + 1)))%Z.
+    2: {
+      assert (2^(i + 1) * (xl mod 2^(64 - (i + 1))) = (xl * 2^(i + 1) mod 2^64))%Z. {
+        rewrite -Z.mul_mod_distr_l; try (clear_except Hi; lia).
+        rewrite Z.mul_comm.
+        replace (2 ^ (i + 1) * 2 ^ (64 - (i + 1)))%Z with (2 ^ (i + 1 + (64 - (i + 1))))%Z.
+        2: { clear_except Hi. rewrite <-Z.pow_add_r; lia. }
+        replace (i + 1 + (64 - (i + 1)))%Z with 64%Z by liat=>//. reflexivity. }
+
+      rewrite -H0. clear H H0.
+      replace (64 - (i + 1))%Z with (63 - i)%Z by liat.
+      replace (2^63)%Z with (2^(i + 1) * 2^(63 - (i + 1)))%Z.
+      2: { rewrite <-Z.pow_add_r; try (clear_except Hi; lia).
+           replace (i + 1 + (63 - (i + 1)))%Z with 63%Z by liat. reflexivity. }
+      clear_except Hi. rewrite Z.div_mul_cancel_l; lia. }
+
+    have Hxldivmod := Z_div_mod_eq_full (xl mod 2^(63-i))%Z (2^(63 - (i + 1)))%Z.
+    assert (xl mod 2^(63 - (i + 1)) = (xl mod 2^(63 - i)) mod 2^(63-(i+1)))%Z. {
+      clear_except Hi.
+      replace (2 ^ (63 - i))%Z with (2 * 2^(63 - (i + 1)))%Z.
+      2: { replace (2 * 2^(63 - (i + 1)))%Z with (2^1 * 2 ^ (63 - (i  + 1)))%Z by lia.
+           rewrite <-Z.pow_add_r; try lia.
+           replace (1 + (63 - (i + 1)))%Z with (63 - i)%Z by lia. reflexivity. }
+      rewrite Zaux.Zmod_mod_mult; lia. }
+
+    rewrite H0.
+    replace ((q0 * y + xh0') * 2 ^ (63 - i) + xl mod 2 ^ (63 - i) / 2 ^ (63 - (i + 1)) * 2 ^ (63 - (i + 1)) +
+  (xl mod 2 ^ (63 - i)) mod 2 ^ (63 - (i + 1)))%Z
+       with ((q0 * y + xh0') * 2 ^ (63 - i) + xl mod 2^(63-i))%Z=>//.
+    rewrite <- Z.add_assoc.
+    rewrite [(xl mod 2 ^ (63 - i) / 2 ^ (63 - (i + 1)) * 2 ^ (63 - (i + 1)))%Z] Z.mul_comm.
+    rewrite <- Hxldivmod. reflexivity.
+Qed.
+
 
 Lemma div21_loop_body_reduce (gidx : globalidx) :
   forall state sr fr m gmp i xh xl xh0' xl0' q0 y,
@@ -1620,57 +1685,6 @@ Proof with eassumption.
     dostep_nary_eliml 0 1. eapply r_global_get...
     apply rt_refl. }
 
-  assert (Hdiv_eq: (((q1 * y + xh1') * 2 ^ (63 - (i + 1)) + xl mod 2 ^ (63 - (i + 1)))%Z =
-                   (xh mod y * 2 ^ 63 + xl))%Z). {
-    assert ((xl * 2 ^ (i + 1)) mod 2 ^ 64 = ((xl * 2^(i + 1)) mod 2^65) mod 2^64)%Z by liat.
-    subst q1. subst xh1'.
-    replace (q0 * 2 * y + (xh0' * 2 + xl1' mod 2 ^ 64 / 2 ^ 63))%Z
-       with (2 * (q0 * y + xh0') + xl1' mod 2 ^ 64 / 2 ^ 63)%Z by liat.
-    replace ((2 * (q0 * y + xh0') + xl1' mod 2 ^ 64 / 2 ^ 63) * 2^(63 - (i + 1)))%Z
-       with (2 * (q0 * y + xh0') * 2^(63 - (i + 1)) + (xl1' mod 2 ^ 64 / 2 ^ 63) * 2^(63 - (i + 1)))%Z by liat.
-    replace (2 * (q0 * y + xh0') * 2^(63 - (i + 1)))%Z with ((q0 * y + xh0') * 2^(63-i))%Z.
-    2: { rewrite (Z.mul_comm (2 * _)) Z.mul_assoc.
-         replace (2^(63 - (i + 1)) * 2)%Z with (2^1 * 2^(63 - (i + 1)))%Z by liat.
-         rewrite <- Z.pow_add_r; clear_except Hi; try lia.
-         replace (1 + (63 - (i + 1)))%Z with (63 - i)%Z by lia. lia. }
-    subst xl1'.
-    rewrite Hli4.
-    replace ((xl * 2 ^ i) mod 2 ^ 64 * 2)%Z with ((xl * 2 ^ (i + 1)) mod (2 ^ 65))%Z.
-    2: { rewrite <- Z.mul_mod_distr_r; try liat.
-         rewrite Z.pow_add_r; try liat. apply Hi. }
-    rewrite <-H7.
-    replace ((xl * 2 ^ (i + 1)) mod 2 ^ 64 / 2 ^ 63)%Z with ((xl mod 2 ^ (63 - i)) / 2 ^ (63 - (i + 1)))%Z.
-    2: {
-      assert (2^(i + 1) * (xl mod 2^(64 - (i + 1))) = (xl * 2^(i + 1) mod 2^64))%Z. {
-        rewrite -Z.mul_mod_distr_l; try (clear_except Hi; lia).
-        rewrite Z.mul_comm.
-        replace (2 ^ (i + 1) * 2 ^ (64 - (i + 1)))%Z with (2 ^ (i + 1 + (64 - (i + 1))))%Z.
-        2: { clear_except Hi. rewrite <-Z.pow_add_r; lia. }
-        replace (i + 1 + (64 - (i + 1)))%Z with 64%Z by liat=>//. reflexivity. }
-
-      rewrite -H8. clear H H7.
-      replace (64 - (i + 1))%Z with (63 - i)%Z by liat.
-      replace (2^63)%Z with (2^(i + 1) * 2^(63 - (i + 1)))%Z.
-      2: { rewrite <-Z.pow_add_r; try (clear_except Hi; lia).
-           replace (i + 1 + (63 - (i + 1)))%Z with 63%Z by liat. reflexivity. }
-      clear_except Hi. rewrite Z.div_mul_cancel_l; lia. }
-
-    have Hxldivmod := Z_div_mod_eq_full (xl mod 2^(63-i))%Z (2^(63 - (i + 1)))%Z.
-    assert (xl mod 2^(63 - (i + 1)) = (xl mod 2^(63 - i)) mod 2^(63-(i+1)))%Z. {
-      clear_except Hi.
-      replace (2 ^ (63 - i))%Z with (2 * 2^(63 - (i + 1)))%Z.
-      2: { replace (2 * 2^(63 - (i + 1)))%Z with (2^1 * 2 ^ (63 - (i  + 1)))%Z by lia.
-           rewrite <-Z.pow_add_r; try lia.
-           replace (1 + (63 - (i + 1)))%Z with (63 - i)%Z by lia. reflexivity. }
-      rewrite Zaux.Zmod_mod_mult; lia. }
-
-    rewrite H8.
-    replace ((q0 * y + xh0') * 2 ^ (63 - i) + xl mod 2 ^ (63 - i) / 2 ^ (63 - (i + 1)) * 2 ^ (63 - (i + 1)) +
-  (xl mod 2 ^ (63 - i)) mod 2 ^ (63 - (i + 1)))%Z
-       with ((q0 * y + xh0') * 2 ^ (63 - i) + xl mod 2^(63-i))%Z=>//.
-    rewrite <- Z.add_assoc.
-    rewrite [(xl mod 2 ^ (63 - i) / 2 ^ (63 - (i + 1)) * 2 ^ (63 - (i + 1)))%Z] Z.mul_comm.
-    rewrite <- Hxldivmod. reflexivity. }
 
   destruct (Z_lt_dec xh1' y) as [Hlt | Hge].
   { (* xh1' < y *)
@@ -1701,7 +1715,7 @@ Proof with eassumption.
         rewrite [(2 * (xl * 2^i))%Z] Z.mul_comm.
         replace (xl * 2^i * 2)%Z with (xl * (2^i * 2^1))%Z by liat.
         clear_except Hi. rewrite <- Z.pow_add_r; lia.
-      assumption. }
+      by eapply div21_loop_arith_lemma; eauto. }
     eapply update_global_get_other with (sr:=s1) (j:=glob_tmp4); eauto. discriminate.
     eapply update_global_get_other with (sr:=s0) (j:=glob_tmp1); eauto. discriminate.
     eapply update_global_get_other with (sr:=sr) (j:=glob_tmp2); eauto. discriminate. }
@@ -1804,7 +1818,8 @@ Proof with eassumption.
       replace (xl * 2^i * 2)%Z with (xl * (2^i * 2^1))%Z by lia.
       rewrite <- Z.pow_add_r; lia. }
     replace (q1 * y + y + (xh1' - y))%Z with (q1 * y + xh1')%Z by liat.
-    rewrite -Hdiv_eq. lia. }
+    erewrite <- div21_loop_arith_lemma with (q1:=q1); eauto.
+    f_equal. subst xl1'. lia. }
 Qed.
 
 Lemma div21_loop_reduce_full :
