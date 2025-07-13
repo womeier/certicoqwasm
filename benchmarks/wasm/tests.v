@@ -4,7 +4,7 @@ Require Import CertiCoq.Benchmarks.lib.Binom.
 Require Import CertiCoq.Benchmarks.lib.Color.
 Require Import CertiCoq.Benchmarks.lib.sha256.
 Require Import CertiCoq.Benchmarks.lib.coind.
-Require Import CertiCoq.Benchmarks.lib.coqprime.
+Require Import CertiCoq.Benchmarks.lib.coqprime. (* Requires: opam install coq-coqprime *)
 Require Import CertiCoq.Benchmarks.lib.BernsteinYangTermination.
 Require Import CertiCoq.Benchmarks.lib.stack_machine.
 

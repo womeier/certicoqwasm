@@ -2645,29 +2645,6 @@ Proof.
         cbn. repeat rewrite Wasm_int.Int32.Z_mod_modulus_id; simpl_modulus; cbn; lia. } } }
 Qed.
 
-Lemma constr_size_ge_32 : forall t constr_size arity,
-  get_ctor_size cenv t = Ret constr_size ->
-  get_ctor_arity cenv t = Ret arity ->
-  arity > 0 ->
-  (constr_size >= 32)%N.
-Proof.
-  intros ??? Hsize Harr ?.
-  unfold get_ctor_size in Hsize.
-  rewrite Harr in Hsize. cbn in Hsize.
-  destruct (arity=?0) eqn:Ha; inv Hsize; lia.
-Qed.
-
-Lemma constr_size_0 : forall t constr_size,
-  get_ctor_size cenv t = Ret constr_size ->
-  get_ctor_arity cenv t = Ret 0 ->
-  (constr_size = 0)%N.
-Proof.
-  intros ?? Hsize Harr.
-  unfold get_ctor_size in Hsize.
-  rewrite Harr in Hsize. cbn in Hsize.
-  now inv Hsize.
-Qed.
-
 Lemma store_constr_reduce {lenv} : forall state s f rho fds ys (vs : list cps.val) t n sargs m gmp_v ord constr_size mem',
   get_ctor_size cenv t = Ret constr_size ->
   get_ctor_ord cenv t = Ret ord ->

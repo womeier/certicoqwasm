@@ -119,8 +119,6 @@ extraction/ctypesdefs.ml
 extraction/ctypesdefs.mli
 extraction/datatypes.ml
 extraction/datatypes.mli
-extraction/operations.ml
-extraction/operations.mli
 extraction/dead_param_elim.ml
 extraction/dead_param_elim.mli
 extraction/decidableClass.ml

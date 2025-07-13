@@ -31,15 +31,16 @@ jobs:
           before_install: | # comment back in if MetaCoq commit changes
             startGroup "fix permission issues"
               sudo chown -R coq:coq .
-
-              # remove once proper docker image exists
-              opam pin add coq-compcert 3.14 -y
             endGroup
-            # startGroup "opam pin"
+
+            startGroup "opam pin"
+              # TODO: this should be done in the Dockerfile
+              opam pin add coq-compcert 3.14 -y
             #   opam pin -n -y submodules/metacoq
-            # endGroup
+            endGroup
           before_script: |
             startGroup "Install more dependencies"
+              # TODO: install node with apt once a more recent version is available for debian. We need at least version 22.
               sudo apt-get install --yes wabt
               # install node via https://github.com/nvm-sh/nvm
               curl https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
