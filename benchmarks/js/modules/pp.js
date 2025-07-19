@@ -138,10 +138,9 @@ export const print_option = (val, dataView, print_elem) => {
 	process.stdout.write("None");
     }
     else {
-	process.stdout.write("Some (");
+	process.stdout.write("Some ");
 	const arg = dataView.getInt32(val + 4, true);
 	print_elem(arg, dataView);
-	process.stdout.write(")");
     }
 }
 
@@ -213,4 +212,18 @@ export const print_compcert_byte_sexp = (val, dataView) => {
     const arg = dataView.getInt32(val + 4, true);
     print_Z_sexp(arg, dataView);
     process.stdout.write(")");
+}
+
+export const print_carry = (val, dataView, print_elem) => {
+    const tag = dataView.getInt32(val, true);
+    switch (tag) {
+    case 0:
+	process.stdout.write("C0 ");
+	break;
+    case 1:
+	process.stdout.write("C1 ");
+	break;
+    }
+	const arg = dataView.getInt32(val + 4, true);
+	print_elem(arg, dataView);
 }
