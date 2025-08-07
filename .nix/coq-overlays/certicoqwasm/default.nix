@@ -13,7 +13,7 @@
 with lib;
 mkCoqDerivation {
   pname = "CertiCoq-Wasm";
-  isPlugin = true;
+  mlPlugin = true;
 
   inherit version;
   releaseRev = v: "v${v}";
@@ -28,6 +28,12 @@ mkCoqDerivation {
     ExtLib
     metacoq
   ];
+
+  patchPhase = ''
+    patchShebangs ./configure.sh
+    patchShebangs ./clean_extraction.sh
+    patchShebangs ./make_plugin.sh
+  '';
 
   meta = {
     description = "CertiCoq-Wasm";
