@@ -24,42 +24,47 @@
         );
 
         coq = pkgs.coq_8_20;
-        coqPackages = pkgs.coqPackages_8_20;
-        compcert = coqPackages.compcert.override { version = "3.14"; };
+        ocamlPkgs = coq.ocamlPackages;
 
-        ocamlPackages = coq.ocamlPackages;
-        vscoq-lang-server = coqPackages.vscoq-language-server;
+        coqPkgs = pkgs.coqPackages_8_20.overrideScope (
+          self: super: {
+            compcert = super.compcert.override { version = "3.14"; };
+            # ...
+          }
+        );
       in
       {
-        packages.default = coqPackages.mkCoqDerivation {
+        packages.default = coqPkgs.mkCoqDerivation {
           pname = "certicoq-wasm";
           owner = "Wolfgang Meier";
           version = "0.0.1";
 
           src = ./.;
 
-          propagatedBuildInputs =
-            with coqPackages;
-            [
-              wasmcert
-              metacoq
-              ExtLib
-              equations
-              coqide
-            ]
-            ++ [
-              vscoq-lang-server
-              compcert
-            ];
+          isPlugin = true;
+
+          buildInputs = [ pkgs.clang ];
+
+          propagatedBuildInputs = with coqPkgs; [
+            metacoq
+            ExtLib
+            equations
+            compcert
+            wasmcert
+          ];
 
           meta = {
             description = "CertiCoq-Wasm";
-            license = coqPackages.lib.licenses.mit;
+            license = pkgs.lib.licenses.mit;
           };
         };
 
         devShells.default = pkgs.mkShell {
-          inputsFrom = [ self.packages.${system}.default ];
+          inputsFrom = [
+            self.packages.${system}.default
+            coqPkgs.vscoq-language-server
+            coqPkgs.coqide
+          ];
 
           shellHook = ''
             ORIGINAL_PS1="$PS1"
