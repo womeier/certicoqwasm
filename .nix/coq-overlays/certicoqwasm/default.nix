@@ -35,6 +35,10 @@ mkCoqDerivation {
     patchShebangs ./make_plugin.sh
   '';
 
+  configurePhase = ''
+    ./configure.sh local
+  '';
+
   meta = {
     description = "CertiCoq-Wasm";
     maintainers = with maintainers; [ womeier ];
