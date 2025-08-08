@@ -104,6 +104,7 @@
   cachix.math-comp = {};
   cachix.coq-community = {};
   
+  cachix.womeier.authToken = "CACHIX_TOKEN";
   ## If you have write access to one of these caches you can
   ## provide the auth token or signing key through a secret
   ## variable on GitHub. Then, you should give the variable
