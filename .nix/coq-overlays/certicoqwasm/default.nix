@@ -39,6 +39,13 @@ mkCoqDerivation {
     ./configure.sh local
   '';
 
+  installPhase = ''
+    runHook preInstall
+    # DST only used in runtime/Makefile
+    make DST=$(out)/lib/coq/${coq.coq-version}/user-contrib/CertiCoq/Plugin/runtime install
+    runHook postInstall
+  '';
+
   meta = {
     description = "CertiCoq-Wasm";
     maintainers = with maintainers; [ womeier ];
