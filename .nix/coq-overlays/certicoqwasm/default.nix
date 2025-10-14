@@ -4,6 +4,7 @@
   mkCoqDerivation,
   coq,
   wasmcert,
+  coqprime,
   compcert,
   metacoq,
   ExtLib,
@@ -23,10 +24,11 @@ mkCoqDerivation {
   ];
 
   propagatedBuildInputs = [
-    wasmcert
+    wasmcert # TODO: enforce 2.2.0
+    coqprime
     compcert
     ExtLib
-    metacoq
+    metacoq # TODO: enforce 1.3.1+8.20
   ];
 
   patchPhase = ''
@@ -37,13 +39,6 @@ mkCoqDerivation {
 
   configurePhase = ''
     ./configure.sh local
-  '';
-
-  installPhase = ''
-    runHook preInstall
-    # DST only used in runtime/Makefile
-    make DST=$(out)/lib/coq/${coq.coq-version}/user-contrib/CertiCoq/Plugin/runtime install
-    runHook postInstall
   '';
 
   meta = {

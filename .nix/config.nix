@@ -57,6 +57,7 @@
     ## through the following attribute
     coqPackages.coq.override.version = "8.20";
     coqPackages.compcert.override.version = "3.14";
+    coqPackages.wasmcert.override.version = "v2.2.0";
 
     ## In some cases, light overrides are not available/enough
     ## in which case you can use either
