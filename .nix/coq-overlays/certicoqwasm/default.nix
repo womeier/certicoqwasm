@@ -43,17 +43,27 @@ mkCoqDerivation {
 
   buildPhase = ''
     runHook preBuild
-    # DST only used in runtime/Makefile
-    DST=$out/lib/coq/${coq.coq-version}/user-contrib/CertiCoq/Plugin/runtime make
+
+    make
+    make plugin
+    make cplugin
+
     runHook postBuild
-    '';
+  '';
 
   installPhase = ''
     runHook preInstall
-    # DST only used in runtime/Makefile
-    DST=$out/lib/coq/${coq.coq-version}/user-contrib/CertiCoq/Plugin/runtime make install
+
+    OUTDIR=$out/lib/coq/${coq.coq-version}/user-contrib
+
+    DST=$OUTDIR/CertiCoq/Plugin/runtime make -C runtime install
+    COQLIBINSTALL=$OUTDIR make -C theories install
+    COQLIBINSTALL=$OUTDIR make -C libraries install
+    COQLIBINSTALL=$OUTDIR COQPLUGININSTALL=$OCAMLFIND_DESTDIR make -C plugin install
+    COQLIBINSTALL=$OUTDIR COQPLUGININSTALL=$OCAMLFIND_DESTDIR make -C cplugin install
+
     runHook postInstall
-    '';
+  '';
 
   meta = {
     description = "CertiCoq-Wasm";
