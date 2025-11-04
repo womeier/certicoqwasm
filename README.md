@@ -1,7 +1,6 @@
 This repo contains a WebAssembly-backend for CertiCoq ([CPP'25](https://popl25.sigplan.org/details/CPP-2025-papers/9/CertiCoq-Wasm-A-verified-WebAssembly-backend-for-CertiCoq))
-targeting the AST of the [WasmCert](https://github.com/WasmCert/WasmCert-Coq) mechanisation. (It is not yet available in upstream CertiCoq.)
-Backend and correctness proof are in `theories/CodegenWasm/`,
-there are no substantial changes to the rest, essentially only adjustments for testing and CI. <br>
+targeting the AST of the [WasmCert](https://github.com/WasmCert/WasmCert-Coq) mechanisation. (It is also available in upstream CertiCoq.)
+Backend and correctness proof are in `theories/CodegenWasm/`.
 
 ### Basic setup (Linux/Mac)
 Install [Node.js](https://nodejs.org/en/download/package-manager) (version 22 or higher), then:
