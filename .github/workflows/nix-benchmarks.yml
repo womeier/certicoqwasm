@@ -37,12 +37,12 @@ jobs:
       run: exit 1
 
     - name: Run Wasm benchmarks
-      run: "nix-shell -p $(readlink -f result) coq_8_20 python3 nodejs_22 --pure
-        --run \"make -C benchmarks/wasm\""
+      run: "NIXPKGS_ALLOW_UNFREE=1 nix-build &&
+        nix-shell -p $(readlink -f result) coq_8_20 python3 nodejs_22 --pure --run \"make -C benchmarks/wasm\""
 
     - name: Run C benchmarks
-      run: "nix-shell -p $(readlink -f result) coq_8_20 python3 --pure
-        --run \"make -C benchmarks\""
+      run: "NIXPKGS_ALLOW_UNFREE=1 nix-build &&
+        nix-shell -p $(readlink -f result) coq_8_20 python3 --pure --run \"make -C benchmarks\""
 
 name: Benchmarking
 on:
