@@ -13,7 +13,7 @@
 
 with lib;
 mkCoqDerivation {
-  pname = "CertiCoq-Wasm";
+  pname = "CertiCoq";
   mlPlugin = true;
 
   inherit version;
@@ -66,7 +66,7 @@ mkCoqDerivation {
   '';
 
   meta = {
-    description = "CertiCoq-Wasm";
+    description = "CertiCoq";
     maintainers = with maintainers; [ womeier ];
     license = licenses.mit;
   };

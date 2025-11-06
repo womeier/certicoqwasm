@@ -1,0 +1,53 @@
+jobs:
+  benchmarking:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Git checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Cachix install
+      uses: cachix/install-nix-action@v31
+      with:
+        nix_path: nixpkgs=channel:nixpkgs-unstable
+    - name: Cachix setup womeier
+      uses: cachix/cachix-action@v16
+      with:
+        authToken: ${{ secrets.CACHIX_TOKEN }}
+        extraPullNames: coq, coq-community, math-comp
+        name: womeier
+
+    - id: stepGetDerivation
+      name: Getting derivation for current job (CertiCoq)
+      run: "NIXPKGS_ALLOW_UNFREE=1 nix-build --argstr bundle \"default\"
+        --argstr job \"CertiCoq\" --dry-run 2> err > out ||
+        (touch fail; true)\ncat out err\nif [ -e fail ]; then echo \"Error: getting
+        derivation failed\"; exit 1; fi\n"
+
+    - id: stepCheck
+      name: Checking presence of CI target for current job
+      run: "if $(cat out err | grep -q \"built:\") ; then\n  echo \"CI target needs
+        actual building\"\n  if $(cat out err | grep -q \"derivations will be built:\"\
+        ) ; then\n    echo \"waiting a bit for derivations that should be in cache\"\
+        \n    sleep 30\n  fi\nelse\n  echo \"CI target already built\"\n  echo \"\
+        status=fetched\" >> $GITHUB_OUTPUT\nfi\n"
+
+    - if: steps.stepCheck.outputs.status == 'fetched'
+      name: Run Wasm benchmarks
+      run: "nix-shell -p $(readlink -f result) coq_8_20 python3 nodejs_22 --pure
+        make -C benchmarks/wasm"
+
+    - if: steps.stepCheck.outputs.status == 'fetched'
+      name: Run C benchmarks
+      run: "nix-shell -p $(readlink -f result) coq_8_20 python3 --pure
+        make -C benchmarks"
+
+name: Benchmarking
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+  # Run after the generated workflow succeeded
+  workflow_run:
+    workflows: [Nix CI for bundle default] # name of the other workflow
+    types: [completed]
