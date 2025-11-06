@@ -1,5 +1,5 @@
 jobs:
-  certicoqwasm:
+  CertiCoq:
     needs:
     - coq
     - wasmcert
@@ -40,11 +40,11 @@ jobs:
         extraPullNames: coq, coq-community, math-comp
         name: womeier
     - id: stepGetDerivation
-      name: Getting derivation for current job (certicoqwasm)
+      name: Getting derivation for current job (CertiCoq)
       run: "NIXPKGS_ALLOW_UNFREE=1 nix-build --no-out-link \\\n   --argstr bundle
-        \"default\" --argstr job \"certicoqwasm\" \\\n   --dry-run 2> err > out ||
-        (touch fail; true)\ncat out err\nif [ -e fail ]; then echo \"Error: getting
-        derivation failed\"; exit 1; fi\n"
+        \"default\" --argstr job \"CertiCoq\" \\\n   --dry-run 2> err > out || (touch
+        fail; true)\ncat out err\nif [ -e fail ]; then echo \"Error: getting derivation
+        failed\"; exit 1; fi\n"
     - id: stepCheck
       name: Checking presence of CI target for current job
       run: "if $(cat out err | grep -q \"built:\") ; then\n  echo \"CI target needs
@@ -79,7 +79,7 @@ jobs:
     - if: steps.stepCheck.outputs.status != 'fetched'
       name: Building/fetching current CI target
       run: NIXPKGS_ALLOW_UNFREE=1 nix-build --no-out-link --argstr bundle "default"
-        --argstr job "certicoqwasm"
+        --argstr job "CertiCoq"
   compcert:
     needs:
     - coq

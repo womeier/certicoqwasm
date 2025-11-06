@@ -141,3 +141,4 @@ bootstrap/certicoqc/tests/test.demo1.c
 bootstrap/certicoqc/tests/test.demo1.h
 plugin/.filestoinstall
 cplugin/.merlin
+result
