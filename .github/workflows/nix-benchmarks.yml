@@ -32,13 +32,15 @@ jobs:
         \n    sleep 30\n  fi\nelse\n  echo \"CI target already built\"\n  echo \"\
         status=fetched\" >> $GITHUB_OUTPUT\nfi\n"
 
-    - if: steps.stepCheck.outputs.status == 'fetched'
-      name: Run Wasm benchmarks
+    - if: steps.stepCheck.outputs.status != 'fetched'
+      name: Abort if not yet built
+      run: exit 1
+
+    - name: Run Wasm benchmarks
       run: "nix-shell -p $(readlink -f result) coq_8_20 python3 nodejs_22 --pure
         make -C benchmarks/wasm"
 
-    - if: steps.stepCheck.outputs.status == 'fetched'
-      name: Run C benchmarks
+    - name: Run C benchmarks
       run: "nix-shell -p $(readlink -f result) coq_8_20 python3 --pure
         make -C benchmarks"
 
