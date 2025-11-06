@@ -16,11 +16,6 @@ mkCoqDerivation {
   pname = "CertiCoq";
   mlPlugin = true;
 
-  src = pkgs.lib.fileset.toSource {
-    root = ./.;
-    fileset = lib.fileset.fileFilter (file: file.hasExt "yaml" || file.hasExt "md") ./.;
-  };
-
   inherit version;
   releaseRev = v: "v${v}";
 
